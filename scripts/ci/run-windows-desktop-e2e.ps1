@@ -3,7 +3,7 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
 
-    [string]$Scenario = "installed-workflow",
+    [string]$Scenario = "keyboard-workflow",
 
     [string]$OutputDir = "$env:RUNNER_TEMP\desktop-e2e",
 
@@ -97,6 +97,7 @@ if ($logPixels -and $logPixels.LogPixels) {
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public class OpenKaraWin32 {
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -115,6 +116,33 @@ public class OpenKaraWin32 {
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    public static IntPtr FindWindowByTitle(int processId, string title) {
+        IntPtr found = IntPtr.Zero;
+        string lowerTitle = title.ToLowerInvariant();
+        EnumWindows((hWnd, lParam) => {
+            if (!IsWindowVisible(hWnd)) return true;
+            if (GetWindowThreadProcessId(hWnd, out uint pid) == 0 || (int)pid != processId) return true;
+            StringBuilder sb = new StringBuilder(512);
+            if (GetWindowText(hWnd, sb, sb.Capacity) > 0) {
+                if (sb.ToString().ToLowerInvariant().IndexOf(lowerTitle) >= 0) {
+                    found = hWnd;
+                    return false;
+                }
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
 }
 "@ -ErrorAction Stop
 
@@ -153,7 +181,6 @@ function Get-NowMs {
 }
 
 function Start-OpenKaraApp {
-    # Ensure a clean single-instance state for CI smoke runs.
     Get-Process -Name "OpenKara" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 
@@ -175,7 +202,6 @@ function Wait-For-ProcessWindow {
                 return $Process.MainWindowHandle
             }
         } catch {
-            # process may have exited
         }
         Start-Sleep -Milliseconds 100
     }
@@ -183,10 +209,15 @@ function Wait-For-ProcessWindow {
 }
 
 function Get-UiTree {
-    param([int]$ProcessId)
+    param([int]$ProcessId, [string]$WindowTitle = "", [int]$TimeoutMs = $ProbeTimeoutMs)
 
     $snapshotPath = Join-Path $OutputDir ("uia-tree-{0}-{1}.json" -f $ProcessId, ([Guid]::NewGuid().ToString("N")))
-    & $script:ProbePath --process-id $ProcessId --output $snapshotPath --timeout $ProbeTimeoutMs
+    $argList = @("--process-id", $ProcessId, "--output", $snapshotPath, "--timeout", $TimeoutMs)
+    if (-not [string]::IsNullOrWhiteSpace($WindowTitle)) {
+        $argList += @("--window-title", $WindowTitle)
+    }
+
+    & $script:ProbePath @argList
     if ($LASTEXITCODE -ne 0) {
         throw "AccessibilityProbe exited with code $LASTEXITCODE"
     }
@@ -199,20 +230,32 @@ function Get-UiTree {
 }
 
 function Send-KeyboardInput {
-    param([string]$Keys)
+    param([string]$Keys, [IntPtr]$Handle = [IntPtr]::Zero)
 
-    $mainWindow = $script:process.MainWindowHandle
-    if ($mainWindow -eq [IntPtr]::Zero) {
+    if ($Handle -eq [IntPtr]::Zero) {
+        $Handle = $script:process.MainWindowHandle
+    }
+    if ($Handle -eq [IntPtr]::Zero) {
         throw "Main window handle is not available"
     }
 
-    $foregroundResult = [OpenKaraWin32]::SetForegroundWindow($mainWindow)
+    $foregroundResult = [OpenKaraWin32]::SetForegroundWindow($Handle)
     if (-not $foregroundResult) {
         Write-Warning "SetForegroundWindow returned false"
     }
-    Start-Sleep -Milliseconds 50
+    Start-Sleep -Milliseconds 100
     [System.Windows.Forms.SendKeys]::SendWait($Keys)
     Start-Sleep -Milliseconds $StepDelayMs
+}
+
+function Send-Keys-To-Window-By-Title {
+    param([string]$Title, [string]$Keys)
+
+    $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, $Title)
+    if ($hWnd -eq [IntPtr]::Zero) {
+        throw "Window with title '$Title' not found"
+    }
+    Send-KeyboardInput -Keys $Keys -Handle $hWnd
 }
 
 function Find-Element {
@@ -236,9 +279,110 @@ function Find-ElementByName {
     return Find-Element -Tree $Tree -Predicate { param($n) $n.name -and $n.name.IndexOf($Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }
 }
 
+function Find-ElementByNameVisible {
+    param([array]$Tree, [string]$Name)
+    return Find-Element -Tree $Tree -Predicate { param($n) $n.name -and $n.name.IndexOf($Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $n.isOffscreen -eq $false }
+}
+
 function Find-ElementByControlType {
     param([array]$Tree, [string]$ControlType)
     return Find-Element -Tree $Tree -Predicate { param($n) $n.controlType -eq $ControlType }
+}
+
+function Find-Play-Pause-Button {
+    param([array]$Tree)
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause" -or $n.name -eq "Loading")
+    }
+}
+
+function Find-Mute-Button {
+    param([array]$Tree)
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        $n.controlType -eq "Button" -and ($n.name -eq "Mute" -or $n.name -eq "Unmute")
+    }
+}
+
+function Find-Queue-Button {
+    param([array]$Tree)
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        $n.controlType -eq "Button" -and $n.name -and $n.name.IndexOf("Queue", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+    }
+}
+
+function Find-Expand-Stems-Button {
+    param([array]$Tree)
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        $n.controlType -eq "Button" -and $n.name -and ($n.name.IndexOf("stems", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $n.name.IndexOf("Stem", [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    }
+}
+
+function Find-Track {
+    param([array]$Tree, [string]$Name = "")
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem") -and
+        $n.name -and
+        ($Name -eq "" -or $n.name.IndexOf($Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    }
+}
+
+function Find-ElementByRegex {
+    param([array]$Tree, [string]$Pattern, [string]$Property = "name")
+    $regex = [System.Text.RegularExpressions.Regex]::new($Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    return Find-Element -Tree $Tree -Predicate { param($n) $n.$Property -and $regex.IsMatch($n.$Property) }
+}
+
+function Wait-For-Condition {
+    param([scriptblock]$Condition, [int]$TimeoutMs = $StepTimeoutMs, [int]$PollMs = 500)
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $tree = $null
+        try {
+            $tree = Get-UiTree -ProcessId $script:process.Id
+        } catch {
+            $tree = $null
+        }
+        if ($null -ne $tree -and (& $Condition $tree)) {
+            return $tree
+        }
+        Start-Sleep -Milliseconds $PollMs
+    }
+    return $null
+}
+
+function Wait-For-Element {
+    param([scriptblock]$Predicate, [int]$TimeoutMs = $StepTimeoutMs)
+    $result = $null
+    Wait-For-Condition -Condition {
+        param($t)
+        $result = Find-Element -Tree $t -Predicate $Predicate
+        return $null -ne $result
+    } -TimeoutMs $TimeoutMs | Out-Null
+    return $result
+}
+
+function Tab-To-Element {
+    param([scriptblock]$Predicate, [int]$MaxTabs = 30, [int]$TimeoutMs = $StepTimeoutMs)
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    for ($i = 0; $i -lt $MaxTabs; $i++) {
+        $tree = Get-UiTree -ProcessId $script:process.Id
+        $focused = Find-FocusedElement -Tree $tree
+        if ($null -ne $focused -and (& $Predicate $focused)) {
+            return $focused
+        }
+        Send-KeyboardInput "{TAB}"
+        if ([DateTime]::UtcNow -gt $deadline) {
+            break
+        }
+    }
+    return $null
 }
 
 function Add-FailingAssertion {
@@ -312,7 +456,6 @@ function Invoke-StepAction {
 
             "navigate-sidebar" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
-                $before = Find-FocusedElement -Tree $script:currentTree
                 Send-KeyboardInput "{TAB}"
                 $tree = Get-UiTree -ProcessId $script:process.Id
 
@@ -329,23 +472,13 @@ function Invoke-StepAction {
 
             "select-library" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
-                $found = $false
-                $lastFocusedName = ""
-                for ($i = 0; $i -lt 20; $i++) {
-                    $tree = Get-UiTree -ProcessId $script:process.Id
-                    $focused = Find-FocusedElement -Tree $tree
-                    if ($null -ne $focused) {
-                        $lastFocusedName = $focused.name
-                        if ($focused.name -and $focused.name.IndexOf("Library", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                            $found = $true
-                            break
-                        }
-                    }
-                    Send-KeyboardInput "{TAB}"
-                }
+                $found = Tab-To-Element -Predicate {
+                    param($n)
+                    $n.name -and $n.name.IndexOf("Library", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                } -MaxTabs 30 -TimeoutMs $StepTimeoutMs
 
-                if (-not $found) {
-                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "focused control was not Library (last: $lastFocusedName)"
+                if ($null -eq $found) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "could not Tab to a Library control"
                     $stepStatus = "failed"
                 } else {
                     Send-KeyboardInput "~"
@@ -354,7 +487,7 @@ function Invoke-StepAction {
                         param($t)
                         $lib = Find-ElementByName -Tree $t -Name "Library"
                         if ($null -eq $lib) { return "Library element not found after selection" }
-                        if ($lib.hasKeyboardFocus -or ($lib.isSelected -eq $true)) { return $true }
+                        if ($lib.hasKeyboardFocus -or ($lib.isSelected -eq $true) -or ($lib.toggleState -and $lib.toggleState -eq "On")) { return $true }
                         return "Library element is not focused or selected"
                     }
                     if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -363,49 +496,331 @@ function Invoke-StepAction {
 
             "import-fixture" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $fixturePath = $Step.target
+                if ([System.IO.Path]::IsPathRooted($fixturePath) -eq $false) {
+                    $fixturePath = [System.IO.Path]::Combine($repoRoot, $fixturePath)
+                }
+                if (-not (Test-Path -Path $fixturePath -PathType Leaf)) {
+                    throw "Fixture file was not found at $fixturePath"
+                }
+                $fixturePath = [System.IO.Path]::GetFullPath($fixturePath)
+
                 Send-KeyboardInput "^o"
-                Start-Sleep -Milliseconds 500
-                # Cancel the file picker so the app is not left in a dialog state.
-                Send-KeyboardInput "{ESC}"
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "import-fixture requires a fixture path and file dialog automation that is not yet implemented"
-                $stepStatus = "failed"
+                Start-Sleep -Milliseconds 2000
+
+                $dialog = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "Open")
+                if ($dialog -ne [IntPtr]::Zero) {
+                    Send-KeyboardInput -Keys $fixturePath -Handle $dialog
+                    Start-Sleep -Milliseconds 100
+                    Send-KeyboardInput -Keys "~" -Handle $dialog
+                } else {
+                    Send-KeyboardInput $fixturePath
+                    Start-Sleep -Milliseconds 100
+                    Send-KeyboardInput "~"
+                }
+
+                $track = Wait-For-Element -Predicate {
+                    param($n)
+                        ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem") -and
+                        $n.name -and $n.name.IndexOf("fixture", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                    param($t)
+                    if ($null -eq $track) { return "imported fixture track did not appear in the UIA tree" }
+                    $btn = Find-Track -Tree $t -Name "fixture"
+                    if ($null -eq $btn) { return "no track named fixture in the current tree" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "select-track" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "select-track is not yet automated without a known library state"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $targetName = if ($Step.target) { $Step.target } else { "fixture" }
+                $found = Tab-To-Element -Predicate {
+                    param($n)
+                    $n.name -and $n.name.IndexOf($targetName, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                    ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem")
+                } -MaxTabs 40 -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+
+                if ($null -eq $found) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "could not Tab to a track named '$targetName'"
+                    $stepStatus = "failed"
+                } else {
+                    Send-KeyboardInput "~"
+                    Start-Sleep -Milliseconds $StepDelayMs
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+
+                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                        param($t)
+                        $btn = Find-Play-Pause-Button -Tree $t
+                        if ($null -eq $btn) { return "Play/Pause button not found; track may not be selected" }
+                        if ($btn.isEnabled -eq $false) { return "Play/Pause button is disabled" }
+                        return $true
+                    }
+                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                }
             }
 
             "start-playback" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
-                Send-KeyboardInput " "
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "start-playback requires a selected track and is not yet automated"
-                $stepStatus = "failed"
+
+                $btn = Wait-For-Element -Predicate {
+                    param($n)
+                    $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause" -or $n.name -eq "Loading")
+                } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+
+                if ($null -eq $btn) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Play/Pause button not found"
+                    $stepStatus = "failed"
+                } else {
+                    if ($btn.name -eq "Loading") {
+                        Wait-For-Condition -Condition {
+                            param($t)
+                            $b = Find-Play-Pause-Button -Tree $t
+                            return ($null -ne $b -and ($b.name -eq "Play" -or $b.name -eq "Pause"))
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)) | Out-Null
+                        $btn = Find-Play-Pause-Button -Tree $script:currentTree
+                    }
+
+                    if ($null -eq $btn) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Play/Pause button disappeared"
+                        $stepStatus = "failed"
+                    } elseif ($btn.name -eq "Play") {
+                        $focused = Tab-To-Element -Predicate {
+                            param($n)
+                            $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause" -or $n.name -eq "Loading")
+                        } -MaxTabs 40 -TimeoutMs $StepTimeoutMs
+
+                        if ($null -ne $focused) {
+                            Send-KeyboardInput "~"
+                            Start-Sleep -Milliseconds $StepDelayMs
+                        }
+
+                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                            param($t)
+                            $b = Find-Play-Pause-Button -Tree $t
+                            if ($null -eq $b) { return "Play/Pause button not found" }
+                            if ($b.name -eq "Pause") { return $true }
+                            return "Play/Pause button is '$($b.name)' instead of Pause"
+                        }
+                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                    } else {
+                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                            param($t)
+                            $b = Find-Play-Pause-Button -Tree $t
+                            if ($null -eq $b) { return "Play/Pause button not found" }
+                            if ($b.name -eq "Pause") { return $true }
+                            return "Play/Pause button is '$($b.name)' instead of Pause"
+                        }
+                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                    }
+                }
             }
 
             "pause-resume" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "pause-resume is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $btn = Wait-For-Element -Predicate {
+                    param($n)
+                    $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause" -or $n.name -eq "Loading")
+                } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+
+                if ($null -eq $btn) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Play/Pause button not found"
+                    $stepStatus = "failed"
+                } else {
+                    if ($btn.name -eq "Loading") {
+                        Wait-For-Condition -Condition {
+                            param($t)
+                            $b = Find-Play-Pause-Button -Tree $t
+                            return ($null -ne $b -and ($b.name -eq "Play" -or $b.name -eq "Pause"))
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)) | Out-Null
+                        $btn = Find-Play-Pause-Button -Tree $script:currentTree
+                    }
+
+                    $toggledToPause = $false
+                    if ($null -ne $btn -and $btn.name -eq "Pause") {
+                        $focused = Tab-To-Element -Predicate {
+                            param($n)
+                            $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause" -or $n.name -eq "Loading")
+                        } -MaxTabs 40 -TimeoutMs $StepTimeoutMs
+
+                        if ($null -ne $focused) {
+                            Send-KeyboardInput "~"
+                            Start-Sleep -Milliseconds $StepDelayMs
+                        }
+
+                        $tree = Get-UiTree -ProcessId $script:process.Id
+                        $after1 = Find-Play-Pause-Button -Tree $tree
+                        if ($null -ne $after1 -and $after1.name -eq "Play") {
+                            $focused = Tab-To-Element -Predicate {
+                                param($n)
+                                $n.controlType -eq "Button" -and ($n.name -eq "Play" -or $n.name -eq "Pause")
+                            } -MaxTabs 40 -TimeoutMs $StepTimeoutMs
+
+                            if ($null -ne $focused) {
+                                Send-KeyboardInput "~"
+                                Start-Sleep -Milliseconds $StepDelayMs
+                            }
+
+                            $toggledToPause = (Wait-For-Condition -Condition {
+                                param($t)
+                                $b = Find-Play-Pause-Button -Tree $t
+                                return ($null -ne $b -and $b.name -eq "Pause")
+                            } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)))
+                        }
+                    }
+
+                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                        param($t)
+                        $b = Find-Play-Pause-Button -Tree $t
+                        if ($null -eq $b) { return "Play/Pause button not found" }
+                        if ($b.name -eq "Pause") { return $true }
+                        return "Play/Pause button is '$($b.name)' instead of Pause after pause-resume"
+                    }
+                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                }
             }
 
             "seek" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "seek is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $before = Find-ElementByName -Tree $script:currentTree -Name "Seek"
+                $beforeValue = if ($before -and $null -ne $before.rangeValue) { $before.rangeValue } else { -1 }
+
+                Send-KeyboardInput "^{RIGHT}"
+                Start-Sleep -Milliseconds 1000
+                $tree = Get-UiTree -ProcessId $script:process.Id
+
+                $after = Find-ElementByName -Tree $tree -Name "Seek"
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $slider = Find-ElementByName -Tree $t -Name "Seek"
+                    if ($null -eq $slider) { return "Seek slider not found" }
+                    if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue" }
+                    if ($beforeValue -ge 0 -and $slider.rangeValue -le $beforeValue) { return "Seek RangeValue did not increase" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+            }
+
+            "start-separation" {
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                Send-KeyboardInput "+^s"
+
+                $separating = Wait-For-Condition -Condition {
+                    param($t)
+                    $prog = Find-ElementByControlType -Tree $t -ControlType "ProgressBar"
+                    if ($null -ne $prog) { return $true }
+                    $text = Find-ElementByRegex -Tree $t -Pattern "(separating|separated|complete)"
+                    return $null -ne $text
+                } -TimeoutMs ([math]::Max($StepTimeoutMs, 120000)) -PollMs 1000
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                    param($t)
+                    if ($null -eq $separating) { return "separation progress did not appear" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "adjust-stems" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "adjust-stems is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $expand = Wait-For-Element -Predicate {
+                    param($n)
+                    $n.controlType -eq "Button" -and $n.isEnabled -eq $true -and
+                    $n.name -and ($n.name.IndexOf("stems", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $n.name.IndexOf("Stem", [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+                } -TimeoutMs ([math]::Max($StepTimeoutMs, 120000))
+
+                if ($null -eq $expand) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "stem-mixer button is not enabled; separation may not be complete"
+                    $stepStatus = "failed"
+                } else {
+                    $found = Tab-To-Element -Predicate {
+                        param($n)
+                        $n.name -and ($n.name.IndexOf("stems", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $n.name.IndexOf("Stem", [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+                    } -MaxTabs 20 -TimeoutMs $StepTimeoutMs
+
+                    if ($null -eq $found) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "could not Tab to stem-mixer button"
+                        $stepStatus = "failed"
+                    } else {
+                        Send-KeyboardInput "~"
+                        Start-Sleep -Milliseconds 500
+
+                        $slider = Tab-To-Element -Predicate {
+                            param($n)
+                            $n.controlType -eq "Slider" -and $n.name -and ($n.name.IndexOf("Vocals", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $n.name.IndexOf("Accompaniment", [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+                        } -MaxTabs 20 -TimeoutMs $StepTimeoutMs
+
+                        if ($null -eq $slider) {
+                            Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "could not Tab to a stem slider"
+                            $stepStatus = "failed"
+                        } else {
+                            $beforeValue = if ($null -ne $slider.rangeValue) { $slider.rangeValue } else { -1 }
+                            Send-KeyboardInput "{RIGHT}"
+                            Start-Sleep -Milliseconds 500
+                            $tree = Get-UiTree -ProcessId $script:process.Id
+
+                            $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                                param($t)
+                                $s = Find-Element -Tree $t -Predicate {
+                                    param($n)
+                                    $n.controlType -eq "Slider" -and $n.name -and ($n.name -eq $slider.name)
+                                }
+                                if ($null -eq $s) { return "stem slider disappeared" }
+                                if ($beforeValue -ge 0 -and $null -ne $s.rangeValue -and $s.rangeValue -ne $beforeValue) { return $true }
+                                if ($s.toggleState -and $s.toggleState -ne "Off") { return $true }
+                                return "stem slider value did not change"
+                            }
+                            if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                        }
+                    }
+                }
             }
 
             "mute" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "mute is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $before = Find-Mute-Button -Tree $script:currentTree
+                $wasMuted = if ($before -and $before.name -eq "Unmute") { $true } else { $false }
+
+                Send-KeyboardInput "m"
+                Start-Sleep -Milliseconds 500
+                $tree = Get-UiTree -ProcessId $script:process.Id
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $btn = Find-Mute-Button -Tree $t
+                    if ($null -eq $btn) { return "Mute button not found" }
+                    if ($btn.name -eq "Unmute") { return $true }
+                    if ($btn.toggleState -and $btn.toggleState -eq "On") { return $true }
+                    return "mute toggle did not switch to Unmute/On (name is '$($btn.name)')"
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "queue" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "queue is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                Send-KeyboardInput "q"
+                Start-Sleep -Milliseconds $StepDelayMs
+                $tree = Get-UiTree -ProcessId $script:process.Id
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $btn = Find-Queue-Button -Tree $t
+                    if ($null -eq $btn) { return "Queue button not found" }
+                    if ($btn.toggleState -and $btn.toggleState -eq "On") { return $true }
+                    return "Queue button is not pressed/On (toggleState: '$($btn.toggleState)')"
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "open-settings" {
@@ -425,54 +840,188 @@ function Invoke-StepAction {
             }
 
             "open-appearance" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "open-appearance is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $tree = Get-UiTree -ProcessId $script:process.Id
+                $appearance = Find-ElementByName -Tree $tree -Name "Appearance"
+                if ($null -eq $appearance) {
+                    # If not in the viewport, try to scroll the settings dialog with Tab.
+                    Tab-To-Element -Predicate {
+                        param($n)
+                        $n.name -and $n.name.IndexOf("Appearance", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                    } -MaxTabs 30 -TimeoutMs $StepTimeoutMs | Out-Null
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+                    $appearance = Find-ElementByName -Tree $tree -Name "Appearance"
+                }
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $app = Find-ElementByName -Tree $t -Name "Appearance"
+                    if ($null -eq $app) { return "Appearance section was not found" }
+                    $theme = Find-Element -Tree $t -Predicate {
+                        param($n)
+                        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
+                    }
+                    if ($null -eq $theme) { return "Appearance section found but theme options are missing" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "verify-model-runtime-status" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "verify-model-runtime-status is not yet automated"
-                $stepStatus = "failed"
-            }
+                if ($null -eq $script:process) { throw "Application has not been launched" }
 
-            "start-separation" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "start-separation is not yet automated"
-                $stepStatus = "failed"
+                $tree = Get-UiTree -ProcessId $script:process.Id
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $runtimeText = Find-ElementByRegex -Tree $t -Pattern "(Ready|Missing|Install required|v\d+\.\d+)"
+                    if ($null -eq $runtimeText) { return "no runtime/model status text found" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "toggle-fullscreen" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "toggle-fullscreen is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                # Close any open dialog/overlay first.
+                Send-KeyboardInput "{ESC}"
+                Start-Sleep -Milliseconds 500
+
+                Send-KeyboardInput "f"
+                $fs = $null
+                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 30000))
+                while ([DateTime]::UtcNow -lt $deadline) {
+                    try {
+                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 5000
+                        if ($fs) { break }
+                    } catch {
+                    }
+                    Start-Sleep -Milliseconds 500
+                }
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                    param($t)
+                    if ($null -eq $fs) { return "fullscreen window 'OpenKara Player' did not appear" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "stop-playback" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "stop-playback is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                Send-KeyboardInput "^."
+                Start-Sleep -Milliseconds 1000
+                $tree = Get-UiTree -ProcessId $script:process.Id
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $btn = Find-Play-Pause-Button -Tree $t
+                    if ($null -eq $btn) { return "Play/Pause button not found" }
+                    if ($btn.name -eq "Play") { return $true }
+                    return "Play/Pause button is '$($btn.name)' instead of Play"
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "open-fullscreen" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "open-fullscreen is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                Send-KeyboardInput "f"
+                $fs = $null
+                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 30000))
+                while ([DateTime]::UtcNow -lt $deadline) {
+                    try {
+                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 5000
+                        if ($fs) { break }
+                    } catch {
+                    }
+                    Start-Sleep -Milliseconds 500
+                }
+
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                    param($t)
+                    if ($null -eq $fs) { return "fullscreen window 'OpenKara Player' did not appear" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "close-fullscreen" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "close-fullscreen is not yet automated"
-                $stepStatus = "failed"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
+                if ($hWnd -eq [IntPtr]::Zero) {
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window was not found"
+                    $stepStatus = "failed"
+                } else {
+                    Send-KeyboardInput "{ESC}" -Handle $hWnd
+                    Start-Sleep -Milliseconds 1000
+
+                    $closed = $false
+                    $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 30000))
+                    while ([DateTime]::UtcNow -lt $deadline) {
+                        $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
+                        if ($hWnd -eq [IntPtr]::Zero) {
+                            $closed = $true
+                            break
+                        }
+                        Start-Sleep -Milliseconds 500
+                    }
+
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                        param($t)
+                        if ($closed) { return $true }
+                        return "fullscreen window did not close"
+                    }
+                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                }
             }
 
             "cancel-file-picker" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
-                Send-KeyboardInput "{ESC}"
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "cancel-file-picker is not yet automated"
-                $stepStatus = "failed"
+
+                Send-KeyboardInput "^o"
+                Start-Sleep -Milliseconds 2000
+
+                $dialog = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "Open")
+                if ($dialog -ne [IntPtr]::Zero) {
+                    Send-KeyboardInput "{ESC}" -Handle $dialog
+                } else {
+                    Send-KeyboardInput "{ESC}"
+                }
+                Start-Sleep -Milliseconds 1000
+
+                $tree = Get-UiTree -ProcessId $script:process.Id
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    $dialogWindow = Find-Element -Tree $t -Predicate {
+                        param($n)
+                        $n.controlType -eq "Window" -and $n.name -and $n.name.IndexOf("Open", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                    }
+                    if ($null -ne $dialogWindow) { return "file picker dialog is still open" }
+                    $main = Find-ElementByControlType -Tree $t -ControlType "Window"
+                    if ($null -eq $main) { return "main window not found after cancelling file picker" }
+                    return $true
+                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "set-display-scale" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "set-display-scale is not yet automated"
+                if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $current = Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "LogPixels" -ErrorAction SilentlyContinue
+                $currentScale = if ($current -and $current.LogPixels) { [math]::Round($current.LogPixels / 96 * 100) } else { 0 }
+                $targetScale = $Step.target -replace "%", ""
+
+                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "changing display scale requires elevated privileges (current: $currentScale%, target: $targetScale%)"
                 $stepStatus = "failed"
             }
 
             "enable-high-contrast" {
-                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "enable-high-contrast is not yet automated"
+                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "enabling high contrast from an unprivileged process is not supported in this release"
                 $stepStatus = "failed"
             }
 
@@ -657,5 +1206,3 @@ Write-Host "Windows desktop E2E report written to $reportPath"
 if ($script:overallStatus -eq "failed") {
     exit 1
 }
-
-exit 0

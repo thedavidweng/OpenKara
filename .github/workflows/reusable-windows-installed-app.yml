@@ -284,7 +284,7 @@ jobs:
           $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
           & scripts/ci/run-windows-desktop-e2e.ps1 `
             -InstallDir $installDir `
-            -Scenario installed-workflow `
+            -Scenario keyboard-workflow `
             -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
             -ProbePath $probe.FullName
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }

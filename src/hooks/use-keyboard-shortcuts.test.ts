@@ -33,11 +33,17 @@ function baseDeps(
     openImportDialog: vi.fn(),
     toggleSettings: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleQueue: vi.fn(),
+    toggleMute: vi.fn(),
+    toggleFullscreen: vi.fn(),
+    stopPlayback: vi.fn(),
+    separateCurrent: vi.fn(),
     ...rest,
     player: {
       snapshot: null,
       pause: vi.fn(),
       resume: vi.fn(),
+      seek: vi.fn(),
       setVolume: vi.fn(),
       ...playerOverride,
     },
@@ -143,6 +149,7 @@ describe("handleAppKeyDown", () => {
           pause,
           resume: vi.fn(),
           setVolume: vi.fn(),
+          seek: vi.fn(),
         },
       }),
     );
@@ -166,6 +173,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume,
           setVolume: vi.fn(),
+          seek: vi.fn(),
         },
       }),
     );
@@ -195,6 +203,7 @@ describe("handleAppKeyDown", () => {
           pause,
           resume,
           setVolume: vi.fn(),
+          seek: vi.fn(),
         },
       }),
     );
@@ -205,7 +214,7 @@ describe("handleAppKeyDown", () => {
     expect(resume).not.toHaveBeenCalled();
   });
 
-  test("does not seek with ArrowLeft or ArrowRight", () => {
+  test("does not seek with plain ArrowLeft or ArrowRight", () => {
     const left = createKeyboardEvent({
       code: "ArrowLeft",
       key: "ArrowLeft",
@@ -219,6 +228,64 @@ describe("handleAppKeyDown", () => {
     expect(handleAppKeyDown(right, baseDeps())).toBe(false);
     expect(left.preventDefault).not.toHaveBeenCalled();
     expect(right.preventDefault).not.toHaveBeenCalled();
+  });
+
+  test("seeks backward with Ctrl+ArrowLeft", () => {
+    const seek = vi.fn();
+    const event = createKeyboardEvent({
+      code: "ArrowLeft",
+      key: "ArrowLeft",
+      ctrlKey: true,
+    });
+
+    const handled = handleAppKeyDown(
+      event,
+      baseDeps({
+        player: {
+          snapshot: {
+            song_id: "abc",
+            position_ms: 12_000,
+            duration_ms: 120_000,
+          } as never,
+          pause: vi.fn(),
+          resume: vi.fn(),
+          seek,
+          setVolume: vi.fn(),
+        },
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(seek).toHaveBeenCalledWith(7_000);
+  });
+
+  test("seeks forward with Ctrl+ArrowRight", () => {
+    const seek = vi.fn();
+    const event = createKeyboardEvent({
+      code: "ArrowRight",
+      key: "ArrowRight",
+      ctrlKey: true,
+    });
+
+    const handled = handleAppKeyDown(
+      event,
+      baseDeps({
+        player: {
+          snapshot: {
+            song_id: "abc",
+            position_ms: 12_000,
+            duration_ms: 120_000,
+          } as never,
+          pause: vi.fn(),
+          resume: vi.fn(),
+          seek,
+          setVolume: vi.fn(),
+        },
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(seek).toHaveBeenCalledWith(17_000);
   });
 
   test("increases master volume by 0.05 with ArrowUp, capped at 1", () => {
@@ -236,6 +303,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
@@ -259,6 +327,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
@@ -281,6 +350,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
@@ -304,6 +374,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
@@ -332,6 +403,7 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
@@ -361,6 +433,7 @@ describe("handleAppKeyDown", () => {
           pause,
           resume: vi.fn(),
           setVolume: vi.fn(),
+          seek: vi.fn(),
         },
       }),
     );
@@ -391,11 +464,90 @@ describe("handleAppKeyDown", () => {
           pause: vi.fn(),
           resume: vi.fn(),
           setVolume,
+          seek: vi.fn(),
         },
       }),
     );
 
     expect(handled).toBe(false);
     expect(setVolume).not.toHaveBeenCalled();
+  });
+
+  test("toggles the queue panel with Q", () => {
+    const toggleQueue = vi.fn();
+    const event = createKeyboardEvent({ code: "KeyQ", key: "q" });
+
+    const handled = handleAppKeyDown(event, baseDeps({ toggleQueue }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(toggleQueue).toHaveBeenCalledOnce();
+  });
+
+  test("toggles mute with M", () => {
+    const toggleMute = vi.fn();
+    const event = createKeyboardEvent({ code: "KeyM", key: "m" });
+
+    const handled = handleAppKeyDown(event, baseDeps({ toggleMute }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(toggleMute).toHaveBeenCalledOnce();
+  });
+
+  test("toggles fullscreen with F", () => {
+    const toggleFullscreen = vi.fn();
+    const event = createKeyboardEvent({ code: "KeyF", key: "f" });
+
+    const handled = handleAppKeyDown(event, baseDeps({ toggleFullscreen }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(toggleFullscreen).toHaveBeenCalledOnce();
+  });
+
+  test("stops playback with Ctrl+Period", () => {
+    const stopPlayback = vi.fn();
+    const event = createKeyboardEvent({
+      code: "Period",
+      key: ".",
+      ctrlKey: true,
+    });
+
+    const handled = handleAppKeyDown(event, baseDeps({ stopPlayback }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(stopPlayback).toHaveBeenCalledOnce();
+  });
+
+  test("triggers current-song separation with Ctrl+Shift+S", () => {
+    const separateCurrent = vi.fn();
+    const event = createKeyboardEvent({
+      code: "KeyS",
+      key: "s",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    const handled = handleAppKeyDown(event, baseDeps({ separateCurrent }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(separateCurrent).toHaveBeenCalledOnce();
+  });
+
+  test("does not toggle queue while typing in an input", () => {
+    const toggleQueue = vi.fn();
+    const event = createKeyboardEvent({
+      code: "KeyQ",
+      key: "q",
+      target: createKeyboardTarget("INPUT"),
+    });
+
+    const handled = handleAppKeyDown(event, baseDeps({ toggleQueue }));
+
+    expect(handled).toBe(false);
+    expect(toggleQueue).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Windows;
 using System.Windows.Automation;
 
 namespace OpenKara.AccessibilityProbe;
@@ -18,6 +17,7 @@ class Program
         int? processId = null;
         string? processName = null;
         string? outputPath = null;
+        string? windowTitle = null;
         int timeoutMs = 0;
 
         for (int i = 0; i < args.Length; i++)
@@ -40,6 +40,10 @@ class Program
             {
                 outputPath = args[++i];
             }
+            else if (arg == "--window-title" && i + 1 < args.Length)
+            {
+                windowTitle = args[++i];
+            }
             else if (arg == "--timeout" && i + 1 < args.Length)
             {
                 if (!int.TryParse(args[++i], out int timeout))
@@ -52,7 +56,7 @@ class Program
             else
             {
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
-                Console.Error.WriteLine("Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> [--output <path>] [--timeout <ms>]");
+                Console.Error.WriteLine("Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> [--output <path>] [--timeout <ms>] [--window-title <title>]");
                 return 1;
             }
         }
@@ -78,7 +82,7 @@ class Program
             }
         }
 
-        var root = FindWindow(processId.Value, timeoutMs);
+        var root = FindWindow(processId.Value, timeoutMs, windowTitle);
         if (root is null)
         {
             Console.Error.WriteLine("Top-level window not found.");
@@ -116,11 +120,23 @@ class Program
         return 0;
     }
 
-    private static AutomationElement? FindWindow(int processId, int timeoutMs)
+    private static AutomationElement? FindWindow(int processId, int timeoutMs, string? windowTitle = null)
     {
-        var condition = new AndCondition(
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
-            new PropertyCondition(AutomationElement.ProcessIdProperty, processId));
+        Condition condition;
+        if (string.IsNullOrWhiteSpace(windowTitle))
+        {
+            condition = new AndCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
+                new PropertyCondition(AutomationElement.ProcessIdProperty, processId));
+        }
+        else
+        {
+            condition = new AndCondition(
+                new AndCondition(
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
+                    new PropertyCondition(AutomationElement.ProcessIdProperty, processId)),
+                new PropertyCondition(AutomationElement.NameProperty, windowTitle));
+        }
 
         var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 0));
         do
@@ -164,6 +180,8 @@ class Program
             IsSelected = TryGetSelected(element),
             ExpandCollapseState = TryGetExpandState(element),
             RangeValue = TryGetRangeValue(element),
+            Value = TryGetValue(element),
+            ToggleState = TryGetToggle(element),
             Parent = parent.Length == 0 ? null : parent,
         };
 
@@ -205,7 +223,7 @@ class Program
 
     private static string? GetBoundingRectangle(AutomationElement element)
     {
-        Rect rect = element.Current.BoundingRectangle;
+        System.Windows.Rect rect = element.Current.BoundingRectangle;
         if (rect.IsEmpty)
         {
             return null;
@@ -240,6 +258,24 @@ class Program
         return null;
     }
 
+    private static string? TryGetValue(AutomationElement element)
+    {
+        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern))
+        {
+            return ((ValuePattern)pattern!).Current.Value;
+        }
+        return null;
+    }
+
+    private static string? TryGetToggle(AutomationElement element)
+    {
+        if (element.TryGetCurrentPattern(TogglePattern.Pattern, out object? pattern))
+        {
+            return ((TogglePattern)pattern!).Current.ToggleState.ToString();
+        }
+        return null;
+    }
+
     private sealed class Node
     {
         public string Path { get; set; } = string.Empty;
@@ -255,6 +291,8 @@ class Program
         public bool? IsSelected { get; set; }
         public string? ExpandCollapseState { get; set; }
         public double? RangeValue { get; set; }
+        public string? Value { get; set; }
+        public string? ToggleState { get; set; }
         public string? Parent { get; set; }
         public List<string> Children { get; set; } = new List<string>();
     }

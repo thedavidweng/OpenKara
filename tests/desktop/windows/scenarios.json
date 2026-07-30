@@ -44,6 +44,11 @@
         "assertion": "The playback position updates to the seek target."
       },
       {
+        "action": "start-separation",
+        "target": "Vocal/instrumental separation",
+        "assertion": "The separation process starts for the selected track."
+      },
+      {
         "action": "adjust-stems",
         "target": "Stem volume sliders",
         "assertion": "The stem mix levels change."
@@ -72,11 +77,6 @@
         "action": "verify-model-runtime-status",
         "target": "Model and runtime status panel",
         "assertion": "The active model and runtime are reported."
-      },
-      {
-        "action": "start-separation",
-        "target": "Vocal/instrumental separation",
-        "assertion": "The separation process starts."
       },
       {
         "action": "toggle-fullscreen",
