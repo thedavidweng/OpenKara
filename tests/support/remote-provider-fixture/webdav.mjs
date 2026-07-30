@@ -128,10 +128,12 @@ async function handlePropfind(req, res, url) {
   const items = propfind(url, req.headers.depth);
   const syncToken = String(Date.now());
   const { xml } = buildMultistatus(items, syncToken);
-  send(res, 207, xml, {
+  res.writeHead(207, {
     "Content-Type": "text/xml; charset=utf-8",
+    "Content-Length": Buffer.byteLength(xml, "utf8"),
     "Sync-Token": syncToken,
   });
+  res.end(xml);
 }
 
 async function handleGet(req, res, url) {
@@ -147,10 +149,12 @@ async function handleGet(req, res, url) {
     res.socket.destroy();
     return;
   }
-  send(res, 200, file.content, {
+  res.writeHead(200, {
     "Content-Type": "application/octet-stream",
+    "Content-Length": file.content.length,
     ETag: file.etag,
   });
+  res.end(file.content);
 }
 
 async function handlePut(req, res, url) {
@@ -215,9 +219,12 @@ async function handleLock(req, res, url) {
     req.headers["client-id"] || url.searchParams.get("client") || "default";
   if (!path) return send(res, 400, "invalid path");
   locks.set(path, clientId);
-  send(res, 200, JSON.stringify({ locked: path, client: clientId }), {
+  const body = JSON.stringify({ locked: path, client: clientId });
+  res.writeHead(200, {
     "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body, "utf8"),
   });
+  res.end(body);
 }
 
 async function handleUnlock(req, res, url) {

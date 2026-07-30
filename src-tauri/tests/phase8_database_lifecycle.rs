@@ -11,7 +11,7 @@ fn database_lifecycle_setup() {
 
 #[test]
 fn scaffold_compiles() {
-    assert!(true);
+    database_lifecycle_setup();
 }
 
 #[test]

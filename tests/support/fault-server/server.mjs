@@ -31,11 +31,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/manifest") {
     const given = url.searchParams.get("checksum");
     if (given && given !== checksum) {
-      return json(res, 409, {
-        error: "checksum mismatch",
-        expected: checksum,
-        given,
-      });
+      return json(res, 409, { error: "checksum mismatch", expected: checksum });
     }
     return json(res, 200, {
       checksum,
@@ -46,12 +42,16 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/download") {
     const fault = url.searchParams.get("fault") || "none";
-    const handler = FAULTS[fault];
-    if (!handler) return json(res, 404, { error: "unknown fault" });
-    return handler(req, res, FIXTURE, checksum);
+    if (!Object.hasOwn(FAULTS, fault) || typeof FAULTS[fault] !== "function") {
+      return json(res, 404, { error: "unknown fault" });
+    }
+    return FAULTS[fault](req, res, FIXTURE, checksum);
   }
 
   if (url.pathname === "/range") {
+    if (!Object.hasOwn(FAULTS, "range") || typeof FAULTS.range !== "function") {
+      return json(res, 404, { error: "unknown fault" });
+    }
     return FAULTS.range(req, res, FIXTURE, checksum);
   }
 
