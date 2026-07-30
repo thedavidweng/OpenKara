@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -17,15 +17,15 @@ use std::{
 
 const REPORT_FILENAME: &str = "installed-app-smoke-report.json";
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum AutomationSmokePhase {
+pub enum AutomationSmokePhase {
     Prepare,
     Restart,
 }
 
 impl AutomationSmokePhase {
-    fn parse(value: &str) -> Result<Self> {
+    pub fn parse(value: &str) -> Result<Self> {
         match value {
             "prepare" => Ok(Self::Prepare),
             "restart" => Ok(Self::Restart),
@@ -35,30 +35,30 @@ impl AutomationSmokePhase {
 }
 
 #[derive(Debug)]
-struct AutomationSmokeConfig {
-    phase: AutomationSmokePhase,
-    app_data_dir: PathBuf,
-    input_dir: PathBuf,
-    output_dir: PathBuf,
+pub struct AutomationSmokeConfig {
+    pub phase: AutomationSmokePhase,
+    pub app_data_dir: PathBuf,
+    pub input_dir: PathBuf,
+    pub output_dir: PathBuf,
 }
 
-#[derive(Debug, Serialize)]
-struct BootstrapEvent<T> {
-    event: &'static str,
-    snapshot: T,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BootstrapEvent<T> {
+    pub event: String,
+    pub snapshot: T,
 }
 
-#[derive(Debug, Serialize)]
-struct InstalledAppSmokeReport {
-    generated_at: i64,
-    phase: AutomationSmokePhase,
-    app_data_dir: String,
-    runtime: runtime_bootstrap::RuntimeBootstrapStatusSnapshot,
-    runtime_events: Vec<BootstrapEvent<runtime_bootstrap::RuntimeBootstrapStatusSnapshot>>,
-    model: bootstrap::ModelBootstrapStatusSnapshot,
-    model_events: Vec<BootstrapEvent<bootstrap::ModelBootstrapStatusSnapshot>>,
-    model_path: String,
-    local_audio_smoke: Option<LocalAudioSmokeReport>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstalledAppSmokeReport {
+    pub generated_at: i64,
+    pub phase: AutomationSmokePhase,
+    pub app_data_dir: String,
+    pub runtime: runtime_bootstrap::RuntimeBootstrapStatusSnapshot,
+    pub runtime_events: Vec<BootstrapEvent<runtime_bootstrap::RuntimeBootstrapStatusSnapshot>>,
+    pub model: bootstrap::ModelBootstrapStatusSnapshot,
+    pub model_events: Vec<BootstrapEvent<bootstrap::ModelBootstrapStatusSnapshot>>,
+    pub model_path: String,
+    pub local_audio_smoke: Option<LocalAudioSmokeReport>,
 }
 
 pub fn maybe_run_from_cli() -> Result<bool> {
@@ -104,7 +104,24 @@ fn parse_config(mut arguments: impl Iterator<Item = String>) -> Result<Automatio
     })
 }
 
-fn run(config: AutomationSmokeConfig) -> Result<()> {
+pub fn run(config: AutomationSmokeConfig) -> Result<()> {
+    let report = run_phase(&config)?;
+    let report_path = config.output_dir.join(REPORT_FILENAME);
+    fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&report)
+            .context("failed to serialize installed app report")?,
+    )
+    .with_context(|| {
+        format!(
+            "failed to write installed app report {}",
+            report_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub fn run_phase(config: &AutomationSmokeConfig) -> Result<InstalledAppSmokeReport> {
     fs::create_dir_all(&config.app_data_dir).with_context(|| {
         format!(
             "failed to create automation app-data directory {}",
@@ -149,10 +166,16 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
         &runtime_status,
         &model_status,
         &mut |event, snapshot| {
-            runtime_events.push(BootstrapEvent { event, snapshot });
+            runtime_events.push(BootstrapEvent {
+                event: event.into(),
+                snapshot,
+            });
         },
         &mut |event, snapshot| {
-            model_events.push(BootstrapEvent { event, snapshot });
+            model_events.push(BootstrapEvent {
+                event: event.into(),
+                snapshot,
+            });
         },
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
@@ -186,7 +209,8 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
         .lock()
         .map_err(|_| anyhow::anyhow!("model bootstrap status lock was poisoned"))?
         .clone();
-    let report = InstalledAppSmokeReport {
+
+    Ok(InstalledAppSmokeReport {
         generated_at: unix_timestamp(),
         phase: config.phase,
         app_data_dir: config.app_data_dir.display().to_string(),
@@ -196,21 +220,7 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
         model_events,
         model_path: model_path.display().to_string(),
         local_audio_smoke,
-    };
-    let report_path = config.output_dir.join(REPORT_FILENAME);
-    fs::write(
-        &report_path,
-        serde_json::to_string_pretty(&report)
-            .context("failed to serialize installed app report")?,
-    )
-    .with_context(|| {
-        format!(
-            "failed to write installed app report {}",
-            report_path.display()
-        )
-    })?;
-
-    Ok(())
+    })
 }
 
 fn verify_cold_start_state(
