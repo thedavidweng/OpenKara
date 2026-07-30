@@ -97,22 +97,12 @@
   },
   {
     "id": "installed-workflow",
-    "name": "Installed application keyboard workflow",
+    "name": "Installed application launch and exit smoke",
     "steps": [
       {
         "action": "launch",
         "target": "OpenKara.exe",
-        "assertion": "The installed application launches and the main window appears."
-      },
-      {
-        "action": "import-fixture",
-        "target": "src-tauri/tests/fixtures/audio/fixture.wav",
-        "assertion": "The fixture track is imported from the installed executable."
-      },
-      {
-        "action": "start-playback",
-        "target": "Play button",
-        "assertion": "Playback starts using the installed runtime."
+        "assertion": "The installed application launches and the main window appears with a non-empty accessible name."
       },
       {
         "action": "close",

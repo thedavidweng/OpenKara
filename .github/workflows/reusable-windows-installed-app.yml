@@ -115,6 +115,21 @@ jobs:
       - name: Build automation driver
         run: cargo build --release --features automation-smoke --bin openkara_automation_driver
 
+      - name: Build UIA probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet build tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj -c Release
+
+      - name: Upload UIA probe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-uia-probe
+          path: tools/windows-accessibility/OpenKara.AccessibilityProbe/bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.*
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
       - name: Upload installer
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -251,6 +266,29 @@ jobs:
           & $driver.FullName --scenario $env:OPENKARA_SCENARIO --installed-exe $env:OPENKARA_INSTALLED_APP --app-data-dir $appData --input-dir $inputDir --output-dir $root
           if ($LASTEXITCODE -ne 0) { throw "Installed app scenario failed with exit code $LASTEXITCODE" }
 
+      - name: Download UIA probe
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-uia-probe
+          path: ${{ runner.temp }}/uia-probe
+
+      - name: Run Windows desktop UIA E2E
+        shell: pwsh
+        env:
+          OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-installed-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          $probe = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "uia-probe") -Filter "OpenKara.AccessibilityProbe.exe" -File | Select-Object -First 1
+          if ($null -eq $probe) { throw "UIA probe executable was not found." }
+
+          $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
+          & scripts/ci/run-windows-desktop-e2e.ps1 `
+            -InstallDir $installDir `
+            -Scenario installed-workflow `
+            -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
+            -ProbePath $probe.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }
+
       - name: Validate installed app smoke
         shell: pwsh
         env:
@@ -273,6 +311,8 @@ jobs:
             ${{ runner.temp }}/openkara-installed-app-smoke/**/automation-report.json
             ${{ runner.temp }}/openkara-installed-app-smoke/**/local-audio-smoke-report.*
             ${{ runner.temp }}/OpenKara-installed-smoke/**/OpenKara.exe
+            ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
+            ${{ runner.temp }}/desktop-e2e/uia-tree-*.json
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 

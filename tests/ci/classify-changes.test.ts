@@ -100,6 +100,12 @@ describe("classifyFile", () => {
     ]);
   });
 
+  test("reusable-windows-installed-app.yml is release_workflow", () => {
+    expect(
+      classifyFile(".github/workflows/reusable-windows-installed-app.yml"),
+    ).toEqual(["release_workflow"]);
+  });
+
   test("installed-app smoke validator is release_workflow", () => {
     expect(classifyFile("scripts/validate-installed-app-smoke.mjs")).toEqual([
       "release_workflow",

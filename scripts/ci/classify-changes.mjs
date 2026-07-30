@@ -135,6 +135,7 @@ const CATEGORY_PATTERNS = {
   release_workflow: [
     ".github/workflows/release.yml",
     ".github/workflows/release-please.yml",
+    ".github/workflows/reusable-windows-installed-app.yml",
     "tests/release-workflow.test.ts",
     "tests/desktop/windows/**",
     "scripts/ci/run-windows-desktop-e2e.ps1",

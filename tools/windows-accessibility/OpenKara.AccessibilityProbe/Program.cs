@@ -18,6 +18,7 @@ class Program
         int? processId = null;
         string? processName = null;
         string? outputPath = null;
+        int timeoutMs = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -39,10 +40,19 @@ class Program
             {
                 outputPath = args[++i];
             }
+            else if (arg == "--timeout" && i + 1 < args.Length)
+            {
+                if (!int.TryParse(args[++i], out int timeout))
+                {
+                    Console.Error.WriteLine("Invalid timeout value.");
+                    return 1;
+                }
+                timeoutMs = timeout;
+            }
             else
             {
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
-                Console.Error.WriteLine("Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> [--output <path>]");
+                Console.Error.WriteLine("Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> [--output <path>] [--timeout <ms>]");
                 return 1;
             }
         }
@@ -68,7 +78,7 @@ class Program
             }
         }
 
-        var root = FindWindow(processId.Value);
+        var root = FindWindow(processId.Value, timeoutMs);
         if (root is null)
         {
             Console.Error.WriteLine("Top-level window not found.");
@@ -106,13 +116,28 @@ class Program
         return 0;
     }
 
-    private static AutomationElement? FindWindow(int processId)
+    private static AutomationElement? FindWindow(int processId, int timeoutMs)
     {
         var condition = new AndCondition(
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
             new PropertyCondition(AutomationElement.ProcessIdProperty, processId));
 
-        return AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
+        var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 0));
+        do
+        {
+            var window = AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
+            if (window is not null)
+            {
+                return window;
+            }
+
+            if (timeoutMs > 0)
+            {
+                System.Threading.Thread.Sleep(100);
+            }
+        } while (DateTime.UtcNow < deadline);
+
+        return null;
     }
 
     private static void Walk(AutomationElement element, string parentPath, string parent, int index, List<Node> nodes)
@@ -132,6 +157,7 @@ class Program
             AutomationId = automationId,
             IsEnabled = element.Current.IsEnabled,
             IsFocusable = element.Current.IsKeyboardFocusable,
+            HasKeyboardFocus = element.Current.HasKeyboardFocus,
             IsOffscreen = element.Current.IsOffscreen,
             BoundingRectangle = GetBoundingRectangle(element),
             SupportedPatterns = GetPatternNames(element),
@@ -222,6 +248,7 @@ class Program
         public string AutomationId { get; set; } = string.Empty;
         public bool IsEnabled { get; set; }
         public bool IsFocusable { get; set; }
+        public bool HasKeyboardFocus { get; set; }
         public bool IsOffscreen { get; set; }
         public string? BoundingRectangle { get; set; }
         public List<string> SupportedPatterns { get; set; } = new List<string>();
