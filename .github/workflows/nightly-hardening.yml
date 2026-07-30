@@ -5,6 +5,10 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: nightly-hardening-${{ github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -73,71 +77,36 @@ jobs:
             }
           }
 
-  macos-smoke:
-    name: macOS smoke
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-
-      - name: Restore Rust cache
-        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.workflow }}-macos-smoke
-          workspaces: ./src-tauri -> target
-          cache-bin: false
-          key: macos-smoke
-
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download runtime and model
-        shell: bash
-        env:
-          OPENKARA_ORT_TARGET: aarch64-apple-darwin
-        run: ./scripts/setup.sh
-
-      - name: Record catalog artifact identities
-        shell: bash
-        run: |
-          echo "Staged runtime:" && cat src-tauri/generated/onnxruntime/manifest.json
-          echo "Pinned model:" && node scripts/resolve-model.mjs
-
-      - name: Run real separation smoke
-        shell: bash
-        env:
-          OPENKARA_SMOKE_EP: cpu
-        run: |
-          set -euo pipefail
-          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
-          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
-          mkdir -p "${input_dir}" "${output_dir}"
-          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
-          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
-
-      - name: Upload macOS smoke reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: nightly-macos-smoke-reports
-          path: |
-            ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
-          if-no-files-found: warn
-          retention-days: 7
+  separation-smoke:
+    name: ${{ matrix.name }}
+    needs: []
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Nightly Linux x64 smoke
+            os: ubuntu-22.04
+            ort_target: x86_64-unknown-linux-gnu
+            artifact_prefix: nightly-separation-smoke-x86_64-linux
+          - name: Nightly Linux arm64 smoke
+            os: ubuntu-24.04-arm
+            ort_target: aarch64-unknown-linux-gnu
+            artifact_prefix: nightly-separation-smoke-aarch64-linux
+          - name: Nightly macOS Apple Silicon smoke
+            os: macos-14
+            ort_target: aarch64-apple-darwin
+            artifact_prefix: nightly-separation-smoke-aarch64-apple
+          - name: Nightly macOS Intel smoke
+            os: macos-15-intel
+            ort_target: x86_64-apple-darwin
+            artifact_prefix: nightly-separation-smoke-x86_64-apple
+    uses: ./.github/workflows/reusable-separation-smoke.yml
+    with:
+      name: ${{ matrix.name }}
+      os: ${{ matrix.os }}
+      ort_target: ${{ matrix.ort_target }}
+      artifact_prefix: ${{ matrix.artifact_prefix }}
+      retention_days: 7
 
   windows-installed-app:
     name: Windows installed app smoke
@@ -146,6 +115,47 @@ jobs:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-windows-installed-app
       scenario: clean-install
+      previous_version: none
+      retention_days: 7
+
+  macos-installed-app:
+    name: macOS installed app smoke (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            os: macos-14
+            rust_target: aarch64-apple-darwin
+            tauri_target: aarch64-apple-darwin
+            artifact_prefix: nightly-macos-installed-app-aarch64
+          - name: Intel
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            tauri_target: x86_64-apple-darwin
+            artifact_prefix: nightly-macos-installed-app-x86_64
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: ${{ matrix.artifact_prefix }}
+      os: ${{ matrix.os }}
+      rust_target: ${{ matrix.rust_target }}
+      tauri_target: ${{ matrix.tauri_target }}
+      scenario: clean-install
+      previous_version: none
+      retention_days: 7
+
+  linux-installed-app:
+    name: Linux installed app smoke
+    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-linux-installed-app-x86_64
+      os: ubuntu-22.04
+      rust_target: x86_64-unknown-linux-gnu
+      tauri_target: x86_64-unknown-linux-gnu
+      scenario: clean-install
+      previous_version: none
       retention_days: 7
 
   aggregate-reports:
@@ -154,8 +164,10 @@ jobs:
     timeout-minutes: 15
     needs:
       - windows-matrix
-      - macos-smoke
+      - separation-smoke
       - windows-installed-app
+      - macos-installed-app
+      - linux-installed-app
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

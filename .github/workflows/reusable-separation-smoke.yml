@@ -1,0 +1,177 @@
+name: Reusable separation smoke
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Display name for this smoke leg"
+        required: true
+        type: string
+      os:
+        description: "Runner OS"
+        required: true
+        type: string
+      ort_target:
+        description: "ONNX Runtime target triple"
+        required: true
+        type: string
+      artifact_prefix:
+        description: "Prefix for uploaded artifacts"
+        required: true
+        type: string
+      retention_days:
+        description: "Artifact retention in days"
+        required: false
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  separation-smoke:
+    name: ${{ inputs.name }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-${{ inputs.os }}-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: ${{ inputs.os }}-smoke
+
+      - name: Install Linux smoke dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Download runtime and model
+        shell: bash
+        env:
+          OPENKARA_ORT_TARGET: ${{ inputs.ort_target }}
+        run: ./scripts/setup.sh
+
+      - name: Record catalog artifact identities
+        shell: bash
+        run: |
+          echo "Staged runtime:" && cat src-tauri/generated/onnxruntime/manifest.json
+          echo "Pinned model:" && node scripts/resolve-model.mjs
+
+      - name: Run real separation smoke
+        shell: bash
+        env:
+          OPENKARA_SMOKE_EP: cpu
+        run: |
+          set -euo pipefail
+
+          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
+          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
+          mkdir -p "${input_dir}" "${output_dir}"
+          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
+
+          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
+
+      - name: Validate real separation smoke report
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          report_path="${RUNNER_TEMP}/openkara-smoke-output/local-audio-smoke-report.json"
+          node --input-type=module - "${report_path}" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const reportPath = process.argv[2];
+          const report = JSON.parse(readFileSync(reportPath, "utf8"));
+          const summary = report.summary;
+          const failures = [];
+
+          if (report.model.status !== "passed") {
+            failures.push(`model status was ${report.model.status}`);
+          }
+          if (summary.discovered_files !== 1) {
+            failures.push(`expected 1 discovered file, got ${summary.discovered_files}`);
+          }
+          if (summary.imported !== 1) {
+            failures.push(`expected 1 imported file, got ${summary.imported}`);
+          }
+          if (summary.playback_failed !== 0) {
+            failures.push(`playback_failed was ${summary.playback_failed}`);
+          }
+          if (summary.separation_passed < 1) {
+            failures.push(`separation_passed was ${summary.separation_passed}`);
+          }
+          if (summary.separation_failed !== 0) {
+            failures.push(`separation_failed was ${summary.separation_failed}`);
+          }
+          if (summary.separation_skipped !== 0) {
+            failures.push(`separation_skipped was ${summary.separation_skipped}`);
+          }
+
+          const separatedSongs = report.songs.filter(
+            (song) =>
+              song.separation_status === "passed" &&
+              song.accompaniment_path !== null &&
+              song.vocals_path !== null,
+          );
+          if (separatedSongs.length < 1) {
+            failures.push("no song produced both accompaniment and vocals artifacts");
+          }
+
+          if (failures.length > 0) {
+            console.error(`Release separation smoke failed for ${reportPath}:`);
+            for (const failure of failures) {
+              console.error(`- ${failure}`);
+            }
+            process.exit(1);
+          }
+
+          console.log(
+            `Separation smoke passed: separation_passed=${summary.separation_passed}, separation_failed=${summary.separation_failed}, separation_skipped=${summary.separation_skipped}`,
+          );
+          NODE
+
+      - name: Upload separation smoke report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-smoke-report
+          path: |
+            ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+            src-tauri/generated/onnxruntime/manifest.json
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
