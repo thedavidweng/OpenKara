@@ -1,0 +1,212 @@
+[
+  {
+    "id": "keyboard-workflow",
+    "name": "Keyboard-only desktop end-to-end workflow",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "The main window is visible and accessible."
+      },
+      {
+        "action": "navigate-sidebar",
+        "target": "Sidebar",
+        "assertion": "Focus moves through each sidebar item with keyboard navigation."
+      },
+      {
+        "action": "select-library",
+        "target": "Library",
+        "assertion": "The library view becomes active."
+      },
+      {
+        "action": "import-fixture",
+        "target": "src-tauri/tests/fixtures/audio/fixture.wav",
+        "assertion": "The imported fixture track appears in the library."
+      },
+      {
+        "action": "select-track",
+        "target": "Imported fixture",
+        "assertion": "The track is selected and the details view loads."
+      },
+      {
+        "action": "start-playback",
+        "target": "Play button",
+        "assertion": "Playback state is playing."
+      },
+      {
+        "action": "pause-resume",
+        "target": "Pause/Play button",
+        "assertion": "Playback toggles between paused and playing."
+      },
+      {
+        "action": "seek",
+        "target": "Progress bar",
+        "assertion": "The playback position updates to the seek target."
+      },
+      {
+        "action": "adjust-stems",
+        "target": "Stem volume sliders",
+        "assertion": "The stem mix levels change."
+      },
+      {
+        "action": "mute",
+        "target": "Mute toggle",
+        "assertion": "Audio output is muted."
+      },
+      {
+        "action": "queue",
+        "target": "Queue",
+        "assertion": "The selected track is added to the queue."
+      },
+      {
+        "action": "open-settings",
+        "target": "Settings",
+        "assertion": "The settings panel opens."
+      },
+      {
+        "action": "open-appearance",
+        "target": "Appearance",
+        "assertion": "Appearance settings are visible."
+      },
+      {
+        "action": "verify-model-runtime-status",
+        "target": "Model and runtime status panel",
+        "assertion": "The active model and runtime are reported."
+      },
+      {
+        "action": "start-separation",
+        "target": "Vocal/instrumental separation",
+        "assertion": "The separation process starts."
+      },
+      {
+        "action": "toggle-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "The main window enters fullscreen."
+      },
+      {
+        "action": "stop-playback",
+        "target": "Stop",
+        "assertion": "Playback stops and the position resets."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The application process exits cleanly."
+      }
+    ]
+  },
+  {
+    "id": "installed-workflow",
+    "name": "Installed application keyboard workflow",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "The installed application launches and the main window appears."
+      },
+      {
+        "action": "import-fixture",
+        "target": "src-tauri/tests/fixtures/audio/fixture.wav",
+        "assertion": "The fixture track is imported from the installed executable."
+      },
+      {
+        "action": "start-playback",
+        "target": "Play button",
+        "assertion": "Playback starts using the installed runtime."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The installed application exits cleanly."
+      }
+    ]
+  },
+  {
+    "id": "display-scale-matrix",
+    "name": "Display scaling matrix at 100%, 125%, 150%, and 200%",
+    "steps": [
+      {
+        "action": "set-display-scale",
+        "target": "100%",
+        "assertion": "Window opens within the working area and all controls are reachable."
+      },
+      {
+        "action": "set-display-scale",
+        "target": "125%",
+        "assertion": "UI Automation bounding rectangles are non-zero and no control is clipped."
+      },
+      {
+        "action": "set-display-scale",
+        "target": "150%",
+        "assertion": "Minimum-size window remains operable and hit targets match visible controls."
+      },
+      {
+        "action": "set-display-scale",
+        "target": "200%",
+        "assertion": "Keyboard and pointer hit targets remain aligned with visible controls."
+      }
+    ]
+  },
+  {
+    "id": "high-contrast",
+    "name": "Windows High Contrast keyboard workflow",
+    "steps": [
+      {
+        "action": "enable-high-contrast",
+        "target": "System",
+        "assertion": "High contrast theme is active before the app launches."
+      },
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "Text and focus indicators remain visible."
+      },
+      {
+        "action": "navigate-sidebar",
+        "target": "Sidebar",
+        "assertion": "Selected and disabled states remain distinguishable."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The application exits cleanly."
+      }
+    ]
+  },
+  {
+    "id": "multi-window-and-dialogs",
+    "name": "Multi-window and native dialog focus transfer",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "One primary application window appears with a non-empty accessible name."
+      },
+      {
+        "action": "open-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "Main window to fullscreen player focus transfer is recorded."
+      },
+      {
+        "action": "close-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "Focus is restored to the main window."
+      },
+      {
+        "action": "open-settings",
+        "target": "Settings",
+        "assertion": "Settings modal appears in the same accessibility tree with modal state."
+      },
+      {
+        "action": "cancel-file-picker",
+        "target": "Library import",
+        "assertion": "The file picker can be cancelled without losing main window focus."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The application exits cleanly."
+      }
+    ]
+  }
+]
