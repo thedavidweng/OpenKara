@@ -199,7 +199,18 @@ jobs:
       - name: Install smoke runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libasound2-dev
+          # Runtime packages for the extracted AppImage (WebView2-class WebKit needs
+          # EGL + webkit2gtk at run time; -dev packages alone do not provide them).
+          sudo apt-get install -y \
+            xvfb \
+            libasound2 \
+            libasound2-dev \
+            libegl1 \
+            libgl1 \
+            libgtk-3-0 \
+            libwebkit2gtk-4.1-0 \
+            libayatana-appindicator3-1 \
+            librsvg2-2
 
       - name: Start Xvfb
         run: |
