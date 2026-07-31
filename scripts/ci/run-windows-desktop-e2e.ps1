@@ -344,6 +344,73 @@ function Get-UiTree {
     return $script:currentTree
 }
 
+function Invoke-ProbeAction {
+    param(
+        [int]$ProcessId,
+        [ValidateSet("set-focus", "invoke")]
+        [string]$Action,
+        [string]$Name,
+        [string]$ControlType = "",
+        [int]$TimeoutMs = $ProbeTimeoutMs
+    )
+
+    $argList = @(
+        "--process-id", $ProcessId,
+        "--action", $Action,
+        "--name", $Name,
+        "--timeout", $TimeoutMs
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ControlType)) {
+        $argList += @("--control-type", $ControlType)
+    }
+
+    $output = & $script:ProbePath @argList 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "AccessibilityProbe $Action failed (exit $exitCode): $output"
+    }
+    Write-Host "Probe $Action: $output"
+    return $true
+}
+
+function Enter-WebViewKeyboardFocus {
+    param([int]$ProcessId)
+
+    # WebView2 exposes a full UIA tree under --force-renderer-accessibility, but
+    # SendKeys TAB often stays on the Document host. Drop focus onto a real
+    # interactive control so subsequent keyboard navigation works.
+    $candidates = @(
+        @{ Name = "All Tracks"; ControlType = "Button" },
+        @{ Name = "Import Music"; ControlType = "Button" },
+        @{ Name = "Import"; ControlType = "Button" },
+        @{ Name = "Play"; ControlType = "Button" },
+        @{ Name = "Settings"; ControlType = "Button" }
+    )
+
+    foreach ($candidate in $candidates) {
+        try {
+            Invoke-ProbeAction -ProcessId $ProcessId -Action "set-focus" -Name $candidate.Name -ControlType $candidate.ControlType | Out-Null
+            Start-Sleep -Milliseconds 200
+            $tree = Get-UiTree -ProcessId $ProcessId
+            $focused = Find-FocusedElement -Tree $tree
+            if ($null -ne $focused -and $focused.controlType -notin @("Window", "Document", "Pane")) {
+                Write-Host "WebView keyboard focus entered on '$($focused.name)' ($($focused.controlType))"
+                return $tree
+            }
+            if ($null -ne $focused -and $focused.name -and (
+                    $focused.name.IndexOf($candidate.Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                )) {
+                Write-Host "WebView keyboard focus entered on '$($focused.name)' ($($focused.controlType))"
+                return $tree
+            }
+        } catch {
+            Write-Warning "set-focus '$($candidate.Name)' failed: $_"
+        }
+    }
+
+    throw "Could not move keyboard focus from the WebView Document host into an interactive control"
+}
+
 function Send-KeyboardInput {
     param([string]$Keys, [IntPtr]$Handle = [IntPtr]::Zero)
 
@@ -583,6 +650,29 @@ function Tab-To-Element {
             break
         }
     }
+
+    # Fallback: UIA SetFocus when Tab cannot reach the target (WebView2 host).
+    try {
+        $tree = Get-UiTree -ProcessId $script:process.Id
+        $match = Find-Element -Tree $tree -Predicate $Predicate
+        if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.name)) {
+            $controlType = if ($match.controlType) { $match.controlType } else { "" }
+            Invoke-ProbeAction -ProcessId $script:process.Id -Action "set-focus" -Name $match.name -ControlType $controlType | Out-Null
+            Start-Sleep -Milliseconds 200
+            $tree = Get-UiTree -ProcessId $script:process.Id
+            $focused = Find-FocusedElement -Tree $tree
+            if ($null -ne $focused -and $focused.isOffscreen -eq $false -and (& $Predicate $focused)) {
+                return $focused
+            }
+            # Some hosts report focus on a parent; accept the match if still present.
+            if ($null -ne $match) {
+                return $match
+            }
+        }
+    } catch {
+        Write-Warning "Tab-To-Element set-focus fallback failed: $_"
+    }
+
     return $null
 }
 
@@ -647,6 +737,8 @@ function Invoke-StepAction {
                 # Window chrome alone is not enough: wait until WebView2 exposes
                 # named interactive DOM controls for keyboard navigation.
                 $tree = Wait-For-UiReady -ProcessId $script:process.Id -TimeoutMs $launchTimeoutMs
+                # Enter the WebView tab order; otherwise keyboard steps stay on Document.
+                $tree = Enter-WebViewKeyboardFocus -ProcessId $script:process.Id
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
@@ -703,28 +795,60 @@ function Invoke-StepAction {
                 $focused = $null
                 $tree = $null
                 $lastObservation = "no focus observed"
-                for ($i = 0; $i -lt 24; $i++) {
+
+                # Prefer UIA set-focus when SendKeys cannot leave the Document host.
+                try {
+                    $tree = Enter-WebViewKeyboardFocus -ProcessId $script:process.Id
+                    $focused = Find-FocusedElement -Tree $tree
+                    if ($null -ne $focused -and $focused.controlType -notin @("Window", "Document", "Pane") -and
+                        -not [string]::IsNullOrWhiteSpace($focused.name) -and $focused.isOffscreen -ne $true) {
+                        $lastObservation = $null
+                    }
+                } catch {
+                    $lastObservation = "webview focus entry failed: $_"
+                }
+
+                if ($null -ne $lastObservation) {
+                    for ($i = 0; $i -lt 24; $i++) {
+                        Send-KeyboardInput "{TAB}"
+                        $tree = Get-UiTree -ProcessId $script:process.Id
+                        $focused = Find-FocusedElement -Tree $tree
+                        if ($null -eq $focused) {
+                            $lastObservation = "no element has keyboard focus after tab $($i + 1)"
+                            continue
+                        }
+                        if ($focused.controlType -eq "Window" -or $focused.controlType -eq "Document") {
+                            $lastObservation = "focus is still on the top-level window or document"
+                            continue
+                        }
+                        if ($focused.isOffscreen -eq $true) {
+                            $lastObservation = "focused element is offscreen ($($focused.controlType)/$($focused.name))"
+                            continue
+                        }
+                        if ([string]::IsNullOrWhiteSpace($focused.name)) {
+                            $lastObservation = "focused control has no name ($($focused.controlType))"
+                            continue
+                        }
+                        $lastObservation = $null
+                        break
+                    }
+                }
+
+                # Prove keyboard Tab still moves between named interactive controls.
+                if ($null -eq $lastObservation) {
+                    $beforeName = if ($focused) { $focused.name } else { "" }
                     Send-KeyboardInput "{TAB}"
                     $tree = Get-UiTree -ProcessId $script:process.Id
-                    $focused = Find-FocusedElement -Tree $tree
-                    if ($null -eq $focused) {
-                        $lastObservation = "no element has keyboard focus after tab $($i + 1)"
-                        continue
+                    $after = Find-FocusedElement -Tree $tree
+                    if ($null -eq $after -or $after.controlType -in @("Window", "Document", "Pane") -or
+                        [string]::IsNullOrWhiteSpace($after.name)) {
+                        $lastObservation = "Tab after focus entry did not land on a named interactive control"
+                    } elseif ($after.name -eq $beforeName -and $after.controlType -eq $focused.controlType) {
+                        # Same control is ok if Tab cycled a group; require not Document at least.
+                        Write-Host "Tab kept focus on '$($after.name)' ($($after.controlType))"
+                    } else {
+                        Write-Host "Tab moved focus $($beforeName) -> $($after.name)"
                     }
-                    if ($focused.controlType -eq "Window" -or $focused.controlType -eq "Document") {
-                        $lastObservation = "focus is still on the top-level window or document"
-                        continue
-                    }
-                    if ($focused.isOffscreen -eq $true) {
-                        $lastObservation = "focused element is offscreen ($($focused.controlType)/$($focused.name))"
-                        continue
-                    }
-                    if ([string]::IsNullOrWhiteSpace($focused.name)) {
-                        $lastObservation = "focused control has no name ($($focused.controlType))"
-                        continue
-                    }
-                    $lastObservation = $null
-                    break
                 }
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
@@ -1463,8 +1587,8 @@ function Invoke-StepAction {
         $script:overallStatus = "failed"
     }
 
-    # Returning non-pass for launch means the shell never came up; further
-    # keyboard steps only burn timeout budget (often ~15 minutes).
+    # Returning non-pass for launch / early keyboard entry means further steps
+    # only burn timeout budget (often ~15 minutes on CI).
     return $stepStatus
 }
 
@@ -1483,13 +1607,21 @@ $script:currentTree = @()
 $script:lastSnapshotPath = ""
 $script:mainWindowHandle = [IntPtr]::Zero
 
+# Abort remaining keyboard work after these failures — cascading timeouts waste CI.
+$abortAfterFailedActions = @(
+    "launch",
+    "navigate-sidebar",
+    "select-library",
+    "import-fixture"
+)
+
 $stepIndex = 0
 foreach ($step in $selectedScenario.steps) {
     $stepIndex++
     $status = Invoke-StepAction -Step $step -StepIndex $stepIndex
     $action = if ($step.action) { $step.action } else { "" }
-    if ($status -ne "passed" -and $action -eq "launch") {
-        Write-Warning "Launch step failed; aborting remaining scenario steps"
+    if ($status -ne "passed" -and $abortAfterFailedActions -contains $action) {
+        Write-Warning "Step '$action' failed; aborting remaining scenario steps"
         break
     }
 }

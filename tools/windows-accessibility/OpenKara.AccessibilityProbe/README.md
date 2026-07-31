@@ -1,6 +1,7 @@
 # OpenKara.AccessibilityProbe
 
-A Windows-only .NET tool that captures an accessibility snapshot of the OpenKara top-level window.
+A Windows-only .NET tool that captures an accessibility snapshot of the OpenKara
+top-level window, and can set focus or invoke named controls for CI keyboard UIA.
 
 ## Requirements
 
@@ -31,6 +32,18 @@ OpenKara.AccessibilityProbe --process-name OpenKara --output snapshot.json
 ```
 
 Omit `--output` to print the JSON to `stdout`.
+
+Set keyboard focus on a named control (substring match):
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action set-focus --name "All Tracks" --control-type Button
+```
+
+Invoke a named control:
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action invoke --name "Play" --control-type Button
+```
 
 ## Output
 

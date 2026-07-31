@@ -18,6 +18,9 @@ class Program
         string? processName = null;
         string? outputPath = null;
         string? windowTitle = null;
+        string action = "snapshot";
+        string? targetName = null;
+        string? controlTypeFilter = null;
         int timeoutMs = 0;
 
         for (int i = 0; i < args.Length; i++)
@@ -53,10 +56,25 @@ class Program
                 }
                 timeoutMs = timeout;
             }
+            else if (arg == "--action" && i + 1 < args.Length)
+            {
+                action = args[++i].Trim().ToLowerInvariant();
+            }
+            else if (arg == "--name" && i + 1 < args.Length)
+            {
+                targetName = args[++i];
+            }
+            else if (arg == "--control-type" && i + 1 < args.Length)
+            {
+                controlTypeFilter = args[++i];
+            }
             else
             {
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
-                Console.Error.WriteLine("Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> [--output <path>] [--timeout <ms>] [--window-title <title>]");
+                Console.Error.WriteLine(
+                    "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
+                    "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
+                    "[--action snapshot|set-focus|invoke] [--name <substring>] [--control-type <type>]");
                 return 1;
             }
         }
@@ -65,6 +83,21 @@ class Program
         {
             Console.Error.WriteLine("Specify --process-id or --process-name.");
             return 1;
+        }
+
+        if (action is not ("snapshot" or "set-focus" or "invoke"))
+        {
+            Console.Error.WriteLine($"Unsupported action: {action}");
+            return 1;
+        }
+
+        if (action is "set-focus" or "invoke")
+        {
+            if (string.IsNullOrWhiteSpace(targetName))
+            {
+                Console.Error.WriteLine($"Action '{action}' requires --name <substring>.");
+                return 1;
+            }
         }
 
         if (processId is null)
@@ -87,6 +120,49 @@ class Program
         {
             Console.Error.WriteLine("Top-level window not found.");
             return 1;
+        }
+
+        if (action is "set-focus" or "invoke")
+        {
+            var target = FindNamedElement(root, targetName!, controlTypeFilter);
+            if (target is null)
+            {
+                Console.Error.WriteLine(
+                    $"No matching element for name '{targetName}'" +
+                    (string.IsNullOrWhiteSpace(controlTypeFilter) ? "" : $" control-type '{controlTypeFilter}'") +
+                    ".");
+                return 2;
+            }
+
+            try
+            {
+                if (action == "set-focus")
+                {
+                    target.SetFocus();
+                    Console.WriteLine($"set-focus ok: {Describe(target)}");
+                }
+                else
+                {
+                    if (!target.TryGetCurrentPattern(InvokePattern.Pattern, out object? pattern) || pattern is null)
+                    {
+                        Console.Error.WriteLine($"Element does not support Invoke: {Describe(target)}");
+                        return 3;
+                    }
+                    ((InvokePattern)pattern).Invoke();
+                    Console.WriteLine($"invoke ok: {Describe(target)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Action '{action}' failed: {ex.Message}");
+                return 4;
+            }
+
+            // Optional snapshot after the action for diagnostics.
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                return 0;
+            }
         }
 
         var nodes = new List<Node>();
@@ -112,12 +188,92 @@ class Program
             }
             File.WriteAllText(outputPath, json);
         }
-        else
+        else if (action == "snapshot")
         {
             Console.WriteLine(json);
         }
 
         return 0;
+    }
+
+    private static string Describe(AutomationElement element)
+    {
+        var current = TryGetCurrent(element);
+        return $"{GetControlTypeName(current.ControlType)} name='{current.Name}'";
+    }
+
+    private static AutomationElement? FindNamedElement(
+        AutomationElement root,
+        string nameSubstring,
+        string? controlTypeFilter)
+    {
+        var matches = new List<(AutomationElement Element, int Score)>();
+        CollectNamedMatches(root, nameSubstring, controlTypeFilter, matches);
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        // Prefer exact (case-insensitive) name, then shortest name, then first.
+        return matches
+            .OrderBy(m => m.Score)
+            .ThenBy(m =>
+            {
+                try { return (m.Element.Current.Name ?? string.Empty).Length; }
+                catch { return int.MaxValue; }
+            })
+            .Select(m => m.Element)
+            .First();
+    }
+
+    private static void CollectNamedMatches(
+        AutomationElement? element,
+        string nameSubstring,
+        string? controlTypeFilter,
+        List<(AutomationElement Element, int Score)> matches)
+    {
+        if (element is null || IsStale(element))
+        {
+            return;
+        }
+
+        var current = TryGetCurrent(element);
+        string name = current.Name ?? string.Empty;
+        string controlType = GetControlTypeName(current.ControlType);
+
+        if (!string.IsNullOrWhiteSpace(name) &&
+            name.IndexOf(nameSubstring, StringComparison.OrdinalIgnoreCase) >= 0 &&
+            (string.IsNullOrWhiteSpace(controlTypeFilter) ||
+             controlType.Equals(controlTypeFilter, StringComparison.OrdinalIgnoreCase)) &&
+            current.IsOffscreen == false)
+        {
+            int score = name.Equals(nameSubstring, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            // Prefer keyboard-focusable interactive controls when set-focusing.
+            if (!current.IsKeyboardFocusable)
+            {
+                score += 10;
+            }
+            matches.Add((element, score));
+        }
+
+        AutomationElementCollection? children = null;
+        try
+        {
+            children = element.FindAll(TreeScope.Children, Condition.TrueCondition);
+        }
+        catch (ElementNotAvailableException)
+        {
+        }
+
+        if (children is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            CollectNamedMatches(children[i], nameSubstring, controlTypeFilter, matches);
+        }
     }
 
     private static AutomationElement? FindWindow(int processId, int timeoutMs, string? windowTitle = null)
