@@ -188,38 +188,47 @@ export function SettingsEqSection() {
             </div>
           </div>
 
-          {draft.map((gain, band) => (
-            <div key={band} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="flex items-baseline gap-2 text-[12px]">
-                  <span className="font-medium text-[var(--color-text)]">
-                    {t(EQ_BAND_NAME_KEYS[band])}
+          {draft.map((gain, band) => {
+            const bandInputId = `settings-eq-band-${band}`;
+            const bandLabel = `${t(EQ_BAND_NAME_KEYS[band])} (${t(EQ_BAND_KEYS[band])})`;
+            return (
+              <div key={band} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor={bandInputId}
+                    className="flex items-baseline gap-2 text-[12px]"
+                  >
+                    <span className="font-medium text-[var(--color-text)]">
+                      {t(EQ_BAND_NAME_KEYS[band])}
+                    </span>
+                    <span className="text-[10px] text-[var(--color-text-dim)]">
+                      {t(EQ_BAND_KEYS[band])}
+                    </span>
+                  </label>
+                  <span className="text-[11px] tabular-nums text-[var(--color-text-dim)]">
+                    {gain > 0 ? "+" : ""}
+                    {gain.toFixed(1)} dB
                   </span>
-                  <span className="text-[10px] text-[var(--color-text-dim)]">
-                    {t(EQ_BAND_KEYS[band])}
-                  </span>
-                </label>
-                <span className="text-[11px] tabular-nums text-[var(--color-text-dim)]">
-                  {gain > 0 ? "+" : ""}
-                  {gain.toFixed(1)} dB
-                </span>
+                </div>
+                <input
+                  id={bandInputId}
+                  type="range"
+                  min={-12}
+                  max={12}
+                  step={0.5}
+                  value={gain}
+                  aria-label={bandLabel}
+                  onChange={(event) =>
+                    handleBandChange(band, parseFloat(event.target.value))
+                  }
+                  onPointerUp={() => flushRef.current()}
+                  onKeyUp={() => flushRef.current()}
+                  disabled={meta.isInitializing || !state.eqEnabled}
+                  className="w-full accent-[var(--color-accent)]"
+                />
               </div>
-              <input
-                type="range"
-                min={-12}
-                max={12}
-                step={0.5}
-                value={gain}
-                onChange={(event) =>
-                  handleBandChange(band, parseFloat(event.target.value))
-                }
-                onPointerUp={() => flushRef.current()}
-                onKeyUp={() => flushRef.current()}
-                disabled={meta.isInitializing || !state.eqEnabled}
-                className="w-full accent-[var(--color-accent)]"
-              />
-            </div>
-          ))}
+            );
+          })}
 
           <div
             aria-hidden="true"

@@ -1,9 +1,15 @@
-import { expect, test } from "./fixtures/accessibility-test";
+import {
+  ACCESSIBILITY_MATRIX,
+  expect,
+  test,
+} from "./fixtures/accessibility-test";
 
 test.describe("Themes and motion accessibility", () => {
+  test.describe.configure({ retries: 0 });
+
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveURL("/");
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("theme and motion helpers apply to the document", async ({
@@ -35,24 +41,106 @@ test.describe("Themes and motion accessibility", () => {
     expect(zoom).toBe("1.5");
   });
 
-  test.fixme("dark and light themes pass axe in default and reduced-motion states", async ({
+  for (const theme of ["dark", "light"] as const) {
+    test(`${theme} theme passes axe with default motion`, async ({ a11y }) => {
+      await a11y.disableTransitions();
+      await a11y.setReducedMotion(false);
+      await a11y.setTheme(theme);
+      await a11y.axeCheck();
+    });
+
+    test(`${theme} theme passes axe with reduced motion`, async ({ a11y }) => {
+      await a11y.disableTransitions();
+      await a11y.setReducedMotion(true);
+      await a11y.setTheme(theme);
+      await a11y.axeCheck();
+    });
+  }
+
+  for (const theme of ["dark", "light"] as const) {
+    test(`${theme} theme remains operable at 200% zoom`, async ({
+      page,
+      a11y,
+    }) => {
+      await a11y.disableTransitions();
+      await a11y.setTheme(theme);
+      await a11y.setZoom(2);
+
+      await expect(
+        page.getByRole("button", { name: "Settings" }),
+      ).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Search" })).toBeVisible();
+      await a11y.axeCheck();
+    });
+  }
+
+  test("200% zoom keeps toolbar controls focusable and labeled", async ({
+    page,
     a11y,
   }) => {
-    test.fixme("TODO: implement theme/motion axe matrix");
+    await a11y.disableTransitions();
     await a11y.setTheme("dark");
-    await a11y.setReducedMotion(true);
-    await a11y.axeCheck();
-    await a11y.setTheme("light");
-    await a11y.setReducedMotion(false);
-    await a11y.axeCheck();
+    await a11y.setZoom(2);
+
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.focus();
+    await expect(settings).toBeFocused();
+    await expect(settings).toHaveAccessibleName("Settings");
   });
 
-  test.fixme("forced colors and 200% zoom keep controls focusable and labeled", async ({
-    a11y,
-  }) => {
-    test.fixme("TODO: implement forced-colors and zoom checks");
-    await a11y.setForcedColors(true);
-    await a11y.setZoom(2);
-    await a11y.axeCheck();
-  });
+  if (ACCESSIBILITY_MATRIX) {
+    for (const theme of ["dark", "light"] as const) {
+      test(`${theme} theme with forced colors passes axe`, async ({ a11y }) => {
+        await a11y.disableTransitions();
+        await a11y.setTheme(theme);
+        await a11y.setForcedColors(true);
+        await a11y.axeCheck();
+      });
+
+      test(`${theme} theme at 400% zoom keeps reflow shell operable`, async ({
+        page,
+        a11y,
+      }) => {
+        await a11y.disableTransitions();
+        await a11y.setTheme(theme);
+        await a11y.setZoom(4);
+
+        await expect(
+          page.getByRole("button", { name: "Settings" }),
+        ).toBeVisible();
+        await page.getByRole("button", { name: "Settings" }).click();
+        await expect(
+          page.getByRole("dialog", { name: "Preferences" }),
+        ).toBeVisible();
+        await a11y.axeCheck();
+      });
+    }
+
+    test("simplified Chinese locale keeps the shell labeled for axe", async ({
+      page,
+      a11y,
+    }) => {
+      await page.getByRole("button", { name: "Settings" }).click();
+      const dialog = page.getByRole("dialog", { name: "Preferences" });
+      await expect(dialog).toBeVisible();
+
+      const language = dialog.locator("select").filter({
+        has: page.locator("option[value='zh-CN']"),
+      });
+      await language.selectOption("zh-CN");
+      await page.keyboard.press("Escape");
+
+      await expect(
+        page
+          .getByRole("button", { name: "设置" })
+          .or(page.getByRole("button", { name: "Settings" })),
+      ).toBeVisible({ timeout: 5000 });
+
+      await a11y.disableTransitions();
+      await a11y.setTheme("dark");
+      await a11y.axeCheck();
+      await a11y.setTheme("light");
+      await a11y.axeCheck();
+    });
+  }
 });

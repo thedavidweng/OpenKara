@@ -1,9 +1,11 @@
 import { expect, test } from "./fixtures/accessibility-test";
 
 test.describe("Library accessibility", () => {
+  test.describe.configure({ retries: 0 });
+
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveURL("/");
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("library controls have accessible names and the song list is reachable", async ({
@@ -15,26 +17,52 @@ test.describe("Library accessibility", () => {
     await expect(page.getByRole("button", { name: "Earfquake" })).toBeVisible();
   });
 
-  test.fixme("virtualized song list exposes all rows to keyboard and screen readers", async ({
+  test("virtualized song list rows are keyboard focusable", async ({
     page,
   }) => {
-    test.fixme("TODO: implement virtual list accessibility checks");
-    await page.getByRole("button", { name: "Earfquake" }).focus();
+    const song = page.getByRole("button", { name: "Earfquake" });
+    await song.focus();
+    await expect(song).toBeFocused();
+
+    await page.keyboard.press("ArrowDown");
+    const focusedName = await page.evaluate(() => {
+      const active = document.activeElement;
+      return (
+        active?.getAttribute("aria-label") ??
+        (active as HTMLElement | null)?.innerText?.trim().split("\n")[0] ??
+        null
+      );
+    });
+    expect(focusedName).toBeTruthy();
   });
 
-  test.fixme("alphabet rail has correct labels and does not break focus order", async ({
+  test("alphabet rail has correct labels and does not break focus order", async ({
     page,
   }) => {
-    test.fixme("TODO: implement alphabet rail focus and label checks");
-    await expect(page.getByRole("button", { name: /Jump to/i })).toBeVisible();
+    await page.getByTestId("sort-mode-selector").selectOption("title_asc");
+    const rail = page.getByRole("navigation", { name: /alphabet/i });
+    await expect(rail).toBeVisible();
+
+    const jumpButtons = page.getByRole("button", { name: /Jump to/i });
+    await expect(jumpButtons.first()).toBeVisible();
+    await jumpButtons.first().focus();
+    await expect(jumpButtons.first()).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    const stillInDocument = await page.evaluate(
+      () =>
+        document.activeElement != null &&
+        document.activeElement !== document.body,
+    );
+    expect(stillInDocument).toBe(true);
   });
 
-  test.fixme("library has no axe violations after searching and filtering", async ({
+  test("library has no axe violations after searching and filtering", async ({
     page,
     a11y,
   }) => {
-    test.fixme("TODO: implement axe scan after search interaction");
     await page.getByRole("textbox", { name: "Search" }).fill("Earf");
-    await a11y.axeCheck();
+    await expect(page.getByRole("button", { name: "Earfquake" })).toBeVisible();
+    await a11y.axeForThemes();
   });
 });

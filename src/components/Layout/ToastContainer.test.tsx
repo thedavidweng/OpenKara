@@ -52,6 +52,8 @@ describe("ToastContainer", () => {
 
     expect(markup).toContain("Import Failed");
     expect(markup).toContain("Could not read file");
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("text-[var(--color-destructive)]");
     expect(markup).toContain("border-[var(--color-border)]");
   });
@@ -70,6 +72,8 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).toContain("Song Imported");
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain("text-[var(--color-text)]");
     expect(markup).toContain("border-[var(--color-border)]");
   });

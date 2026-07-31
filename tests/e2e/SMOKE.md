@@ -1,10 +1,12 @@
 # OpenKara Smoke Tests
 
 This document is for local debugging and exploratory testing. It is not a
-release acceptance gate. The release gate is the set of required GitHub
-Actions jobs: installed-app smoke on Windows, macOS, and Linux; separation
-smoke; accessibility gates; runtime/model fault recovery; and the workflow
-contract tests.
+release acceptance gate. Product release acceptance comes only from required
+GitHub Actions checks and retained artifacts: Windows/macOS/Linux installed-app
+smoke (clean install, upgrade, uninstall, keyboard UI Automation), separation
+smoke, Playwright accessibility matrix, runtime/model fault recovery
+(`fault-injection`), report schema and workflow contract tests, and the release
+publish job graph that cannot start when any of those gates fail.
 
 ## Automated (Playwright UI smoke)
 

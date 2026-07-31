@@ -19,6 +19,26 @@ use std::{
 };
 use tauri::{Emitter, Manager, Runtime};
 
+/// Resolve the application data directory.
+///
+/// When the binary is built with `automation-smoke`, callers may set
+/// `OPENKARA_APP_DATA_DIR` so installed-app UI Automation and fault suites
+/// share the same isolated tree as the automation driver. Normal user builds
+/// always use the OS-managed app data path.
+fn resolve_app_data_dir<R: Runtime>(app: &tauri::App<R>) -> anyhow::Result<PathBuf> {
+    #[cfg(feature = "automation-smoke")]
+    if let Ok(override_dir) = std::env::var("OPENKARA_APP_DATA_DIR") {
+        let path = PathBuf::from(override_dir);
+        if !path.as_os_str().is_empty() {
+            return Ok(path);
+        }
+    }
+
+    app.path()
+        .app_data_dir()
+        .context("failed to resolve application data directory")
+}
+
 pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
     match app.path().app_log_dir() {
         Ok(log_dir) => {
@@ -41,10 +61,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .resource_dir()
         .context("failed to resolve bundled resource directory")?;
 
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .context("failed to resolve application data directory")?;
+    let app_data_dir = resolve_app_data_dir(app)?;
     fs::create_dir_all(&app_data_dir).with_context(|| {
         format!(
             "failed to create application data directory at {}",

@@ -115,9 +115,12 @@ jobs:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-windows-installed-app
       driver_scenario: clean-install
-      uia_scenario: installed-workflow
+      uia_scenario: keyboard-workflow
+      run_keyboard_uia: true
+      run_fault_injection: true
+      run_display_matrix: true
       previous_version: none
-      retention_days: 7
+      retention_days: 30
 
   macos-installed-app:
     name: macOS installed app smoke (${{ matrix.name }})

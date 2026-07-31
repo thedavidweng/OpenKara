@@ -49,6 +49,13 @@ describe("release workflow", () => {
       /  publish:[\s\S]*?\n  publish-windows:/,
     )?.[0];
     expect(publishSection).toBeDefined();
+    // macOS/Linux publish must wait for Windows installed-app smoke (and the
+    // other gates). A missing Windows need would let a failed Windows lifecycle
+    // gate ship macOS/Linux assets.
+    expect(publishSection).toMatch(/release-windows-installed-smoke/);
+    expect(publishSection).toMatch(/release-separation-smoke/);
+    expect(publishSection).toMatch(/release-macos-installed-smoke/);
+    expect(publishSection).toMatch(/release-linux-installed-smoke/);
 
     expect(releaseWorkflow).toContain("publish-windows:");
     expect(releaseWorkflow).toMatch(
@@ -75,18 +82,44 @@ describe("release workflow", () => {
     const reusableWorkflow = readProjectFile(
       ".github/workflows/reusable-windows-installed-app.yml",
     );
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
 
     expect(reusableWorkflow).toContain("openkara_automation_driver.exe");
     expect(reusableWorkflow).toContain("validate-installed-app-smoke.mjs");
-    expect(reusableWorkflow).toContain(
-      "Install previous stable then upgrade to candidate",
-    );
+    expect(reusableWorkflow).toContain("clean-install:");
+    expect(reusableWorkflow).toContain("upgrade-install:");
+    expect(reusableWorkflow).toContain("fault-injection:");
+    expect(reusableWorkflow).toContain("run_fault_injection");
+    expect(reusableWorkflow).toContain("run_keyboard_uia");
+    expect(reusableWorkflow).toContain("keyboard-workflow");
+    expect(reusableWorkflow).toContain("--scenario fault-injection");
+    expect(reusableWorkflow).toContain("--inject-faults");
+    expect(reusableWorkflow).toContain("OPENKARA_APP_DATA_DIR");
+    expect(reusableWorkflow).toContain("library-marker.txt");
     expect(reusableWorkflow).toContain("release_build:");
     expect(reusableWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(reusableWorkflow).toContain("src-tauri/tauri.release.conf.json");
     expect(reusableWorkflow).toContain("${{ inputs.artifact_prefix }}-updater");
     expect(reusableWorkflow).toContain("latest.json");
     expect(reusableWorkflow).toContain("*.sig");
+
+    // Release call must enable keyboard UIA, upgrade (empty previous_version),
+    // and fault injection, with long artifact retention.
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?uia_scenario:\s*keyboard-workflow/,
+    );
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?run_fault_injection:\s*true/,
+    );
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?run_display_matrix:\s*true/,
+    );
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?retention_days:\s*90/,
+    );
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?previous_version:\s*""/,
+    );
   });
 
   test("fails fast when the release tag and package.json version disagree", () => {

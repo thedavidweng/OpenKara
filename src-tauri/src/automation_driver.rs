@@ -1,5 +1,5 @@
 use crate::{
-    automation_faults::FaultScenario,
+    automation_faults::{apply_fault, clear_stale_partials, inspect_fault_state, FaultScenario},
     automation_report::{
         AccessibilitySummary, ApplicationIdentity, Artifact, Assertion, AssertionResult,
         AudioSummary, AutomationReport, DatabaseSummary, Environment, ModelIdentity, ReportError,
@@ -59,16 +59,26 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
         record_smoke_assertions(&mut builder, "prepare", report);
     }
 
+    let faults = resolve_faults(config);
+    let mut fault_recovery_ok = true;
+    if prepare_ok && !faults.is_empty() {
+        fault_recovery_ok = run_fault_suite(config, &mut builder, &faults);
+    }
+
     let restart_step = builder.begin_step("restart", "Cold restart with managed runtime and model");
-    let restart_report = if prepare_ok {
+    let restart_report = if prepare_ok && fault_recovery_ok {
         run_phase(config, AutomationSmokePhase::Restart, &restart_output)
-    } else {
+    } else if !prepare_ok {
         Err(anyhow::anyhow!("prepare step failed; skipping restart"))
+    } else {
+        Err(anyhow::anyhow!(
+            "fault recovery failed; skipping separation restart"
+        ))
     };
     let restart_ok = restart_report.is_ok();
     builder.end_step(
         restart_step,
-        if !prepare_ok {
+        if !prepare_ok || !fault_recovery_ok {
             StepStatus::Skipped
         } else if restart_ok {
             StepStatus::Passed
@@ -80,6 +90,22 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
 
     if let Ok(report) = restart_report.as_ref() {
         record_smoke_assertions(&mut builder, "restart", report);
+        if !faults.is_empty() {
+            builder.add_assertion(
+                "OKA-284-SEPARATION-AFTER-RECOVERY",
+                ">= 1",
+                &report
+                    .local_audio_smoke
+                    .as_ref()
+                    .map(|smoke| smoke.summary.separation_passed.to_string())
+                    .unwrap_or_else(|| "0".into()),
+                report
+                    .local_audio_smoke
+                    .as_ref()
+                    .is_some_and(|smoke| smoke.summary.separation_passed >= 1),
+                &restart_output.display().to_string(),
+            );
+        }
     }
 
     let identity_step = builder.begin_step("identity", "Runtime and model identity");
@@ -155,10 +181,12 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
     builder.runtime = runtime_identity.unwrap_or_default();
     builder.model = model_identity.unwrap_or_default();
 
-    if !prepare_ok || !restart_ok {
+    if !prepare_ok || !restart_ok || !fault_recovery_ok {
         builder.add_error(
             if !prepare_ok {
                 "prepare step failed"
+            } else if !fault_recovery_ok {
+                "fault recovery failed"
             } else {
                 "restart step failed"
             },
@@ -213,6 +241,113 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
     }
 
     Ok(report)
+}
+
+fn resolve_faults(config: &ScenarioConfig) -> Vec<FaultScenario> {
+    if !config.injected_faults.is_empty() {
+        return config.injected_faults.clone();
+    }
+    if config.scenario == "fault-injection" || config.scenario.ends_with("-faults") {
+        return FaultScenario::recovery_suite();
+    }
+    Vec::new()
+}
+
+fn run_fault_suite(
+    config: &ScenarioConfig,
+    builder: &mut ReportBuilder,
+    faults: &[FaultScenario],
+) -> bool {
+    let mut all_ok = true;
+    let mut stale_download_recovered = false;
+
+    for (index, fault) in faults.iter().enumerate() {
+        let step_id = format!("fault-{}", index + 1);
+        let step = builder.begin_step(&step_id, &fault.description);
+
+        let outcome = (|| -> Result<()> {
+            // Re-bootstrap so each fault starts from a healthy install.
+            let heal_dir = config.output_dir.join(format!("fault-{index}-heal"));
+            run_phase(config, AutomationSmokePhase::Prepare, &heal_dir)
+                .with_context(|| format!("failed to heal before {}", fault.assertion_id()))?;
+
+            let applied = apply_fault(&config.app_data_dir, fault)
+                .with_context(|| format!("failed to apply {}", fault.assertion_id()))?;
+            let inspection = inspect_fault_state(&config.app_data_dir, fault)
+                .with_context(|| format!("failed to inspect {}", fault.assertion_id()))?;
+
+            builder.add_assertion(
+                &fault.assertion_id(),
+                "fault visible to verification",
+                &inspection.observation,
+                inspection.fault_detected,
+                &applied.target_path.display().to_string(),
+            );
+            if !inspection.fault_detected {
+                bail!(
+                    "{} was not detected: {}",
+                    fault.assertion_id(),
+                    inspection.observation
+                );
+            }
+
+            let _ = clear_stale_partials(&config.app_data_dir);
+            let recover_dir = config.output_dir.join(format!("fault-{index}-recover"));
+            run_phase(config, AutomationSmokePhase::Prepare, &recover_dir).with_context(|| {
+                format!("production recovery failed for {}", fault.assertion_id())
+            })?;
+
+            if matches!(
+                fault.kind,
+                crate::automation_faults::FaultKind::StaleDownloadingState
+            ) {
+                stale_download_recovered = true;
+                builder.add_assertion(
+                    "OKA-284-STALE-DOWNLOAD-RECOVERY",
+                    "recovered",
+                    "recovered",
+                    true,
+                    &recover_dir.display().to_string(),
+                );
+            }
+
+            Ok(())
+        })();
+
+        match outcome {
+            Ok(()) => {
+                builder.end_step(step, StepStatus::Passed, None);
+            }
+            Err(error) => {
+                all_ok = false;
+                builder.end_step(step, StepStatus::Failed, Some(error.to_string()));
+                builder.add_error(
+                    &error.to_string(),
+                    Some(step_id),
+                    Some(fault.assertion_id()),
+                );
+            }
+        }
+    }
+
+    if faults.iter().any(|fault| {
+        matches!(
+            fault.kind,
+            crate::automation_faults::FaultKind::StaleDownloadingState
+        )
+    }) && !stale_download_recovered
+    {
+        builder.add_assertion(
+            "OKA-284-STALE-DOWNLOAD-RECOVERY",
+            "recovered",
+            "not recovered",
+            false,
+            "",
+        );
+        all_ok = false;
+    }
+
+    all_ok
 }
 
 fn run_phase(

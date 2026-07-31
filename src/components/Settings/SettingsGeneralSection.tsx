@@ -82,19 +82,31 @@ export function SettingsGeneralSection() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
-          <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
+          <label
+            htmlFor="settings-output-device"
+            className="text-[12px] font-medium text-[var(--color-text-dim)]"
+          >
             {t("settings.outputDevice.label")}
           </label>
-          <select className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none">
+          <select
+            id="settings-output-device"
+            aria-label={t("settings.outputDevice.label")}
+            className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+          >
             <option>{t("settings.outputDevice.systemDefault")}</option>
           </select>
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
-          <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
+          <label
+            htmlFor="settings-language"
+            className="text-[12px] font-medium text-[var(--color-text-dim)]"
+          >
             {t("settings.language.label")}
           </label>
           <select
+            id="settings-language"
+            aria-label={t("settings.language.label")}
             value={state.language}
             onChange={(event) => void actions.setLanguage(event.target.value)}
             disabled={meta.isInitializing}

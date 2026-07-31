@@ -13,7 +13,9 @@ param (
 
     [int]$StepDelayMs = 800,
 
-    [int]$StepTimeoutMs = 10000
+    # Keyboard-workflow separation and multi-step tab searches need more headroom
+    # than the short installed-workflow launch/close smoke.
+    [int]$StepTimeoutMs = 30000
 )
 
 $ErrorActionPreference = "Stop"
@@ -194,8 +196,23 @@ function Start-OpenKaraApp {
     Get-Process -Name "OpenKara" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 
-    $process = Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -PassThru
-    if ($null -eq $process) {
+    # Pass OPENKARA_APP_DATA_DIR explicitly so UI Automation reuses the seeded
+    # smoke app-data (managed runtime/model) instead of a fresh user profile.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exePath
+    $startInfo.WorkingDirectory = $InstallDir
+    $startInfo.UseShellExecute = $false
+    if (-not [string]::IsNullOrWhiteSpace($env:OPENKARA_APP_DATA_DIR)) {
+        $startInfo.EnvironmentVariables["OPENKARA_APP_DATA_DIR"] = $env:OPENKARA_APP_DATA_DIR
+        Write-Host "Launching OpenKara with OPENKARA_APP_DATA_DIR=$($env:OPENKARA_APP_DATA_DIR)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:OPENKARA_SMOKE_EP)) {
+        $startInfo.EnvironmentVariables["OPENKARA_SMOKE_EP"] = $env:OPENKARA_SMOKE_EP
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
         throw "Failed to start OpenKara.exe"
     }
     return $process
@@ -548,6 +565,37 @@ function Invoke-StepAction {
                     return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+
+                # Structural UIA: fail on focusable interactive controls with no name.
+                # Non-interactive unnamed focusables (Document/Pane/etc.) only warn.
+                $structural = Assert-Step -StepId "structural-accessible-names" -Expected "No focusable interactive control lacks an accessible name" -Tree $tree -Check {
+                    param($t)
+                    $focusableUnnamed = @($t | Where-Object {
+                        $_.isFocusable -eq $true -and
+                        [string]::IsNullOrWhiteSpace($_.name) -and
+                        $_.isOffscreen -ne $true
+                    })
+                    $interactiveTypes = @(
+                        "Button", "Edit", "CheckBox", "RadioButton", "Hyperlink",
+                        "ComboBox", "ListItem", "MenuItem", "TabItem", "Slider",
+                        "SplitButton", "TreeItem"
+                    )
+                    $violations = @($focusableUnnamed | Where-Object {
+                        $interactiveTypes -contains $_.controlType
+                    })
+                    if ($violations.Count -gt 0) {
+                        $sample = ($violations | Select-Object -First 5 | ForEach-Object {
+                            "{0}:{1}" -f $_.controlType, $_.path
+                        }) -join "; "
+                        return "focusable unnamed interactive controls ($($violations.Count)): $sample"
+                    }
+                    $other = $focusableUnnamed.Count
+                    if ($other -gt 0) {
+                        Write-Warning "Found $other non-interactive focusable control(s) without accessible names"
+                    }
+                    return $true
+                }
+                if ($structural.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "navigate-sidebar" {

@@ -1,9 +1,11 @@
 import { expect, test } from "./fixtures/accessibility-test";
 
 test.describe("Queue accessibility", () => {
+  test.describe.configure({ retries: 0 });
+
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveURL("/");
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("queue panel is reachable and announces its state", async ({ page }) => {
@@ -15,20 +17,46 @@ test.describe("Queue accessibility", () => {
     await expect(queueButton).toHaveAttribute("aria-pressed", "true");
   });
 
-  test.fixme("queue drag and drop exposes keyboard instructions and announces changes", async ({
+  test("empty queue state is readable by a screen reader", async ({ page }) => {
+    const queueButton = page.getByRole("button", { name: "Queue" });
+    await queueButton.click();
+    await expect(page.getByText("Queue is empty")).toBeVisible();
+  });
+
+  test("queue panel has no axe violations when open", async ({
     page,
     a11y,
   }) => {
-    test.fixme("TODO: implement dnd keyboard and announcement checks");
     await page.getByRole("button", { name: "Queue" }).click();
-    await a11y.startLiveRegionMonitor();
+    await expect(page.getByTestId("queue-panel")).toBeVisible();
+    await a11y.axeForThemes();
   });
 
-  test.fixme("empty queue state is readable by a screen reader", async ({
+  test("queue with items exposes drag instructions for assistive tech", async ({
     page,
+    tauriMock,
   }) => {
-    test.fixme("TODO: implement empty queue status checks");
+    await page
+      .getByRole("button", { name: "See You Again" })
+      .click({ button: "right" });
+    await expect
+      .poll(async () => tauriMock.getLastNativeMenu())
+      .toMatchObject({
+        items: expect.arrayContaining([
+          expect.objectContaining({ label: "Add to Queue" }),
+        ]),
+      });
+    await tauriMock.clickNativeMenuItem("Add to Queue");
+
     await page.getByRole("button", { name: "Queue" }).click();
-    await expect(page.getByText("Queue is empty")).toBeVisible();
+    await expect(
+      page.getByTestId("queue-panel").getByText("See You Again"),
+    ).toBeVisible({ timeout: 5000 });
+
+    const instructions = page.locator(
+      "#DndDescribedBy-0, [id^='DndDescribedBy']",
+    );
+    await expect(instructions.first()).toBeAttached();
+    await expect(instructions.first()).toContainText(/drag|keyboard|space/i);
   });
 });

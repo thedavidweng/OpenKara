@@ -11,9 +11,13 @@ export const WCAG_AA_TAGS = [
   "wcag22aa",
 ];
 
+export const ACCESSIBILITY_MATRIX =
+  process.env.OKA_ACCESSIBILITY_MATRIX === "1";
+
 export { expect };
 
 export interface AccessibilityHelpers {
+  disableTransitions(): Promise<void>;
   setTheme(theme: "dark" | "light"): Promise<void>;
   setReducedMotion(reduce: boolean): Promise<void>;
   setForcedColors(active: boolean): Promise<void>;
@@ -21,6 +25,7 @@ export interface AccessibilityHelpers {
   startLiveRegionMonitor(): Promise<void>;
   getAnnouncements(): Promise<string[]>;
   axeCheck(): Promise<void>;
+  axeForThemes(themes?: Array<"dark" | "light">): Promise<void>;
 }
 
 declare global {
@@ -34,6 +39,7 @@ declare global {
 export const test = baseTest.extend<{ a11y: AccessibilityHelpers }>({
   a11y: async ({ page }, use) => {
     await use({
+      disableTransitions: () => disableTransitions(page),
       setTheme: (theme) => setTheme(page, theme),
       setReducedMotion: (reduce) => setReducedMotion(page, reduce),
       setForcedColors: (active) => setForcedColors(page, active),
@@ -41,15 +47,40 @@ export const test = baseTest.extend<{ a11y: AccessibilityHelpers }>({
       startLiveRegionMonitor: () => startLiveRegionMonitor(page),
       getAnnouncements: () => getAnnouncements(page),
       axeCheck: () => axeCheck(page),
+      axeForThemes: (themes) => axeForThemes(page, themes),
     });
   },
 });
+
+async function disableTransitions(page: Page) {
+  await page.addStyleTag({
+    content: `
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    `,
+  });
+}
 
 async function setTheme(page: Page, theme: "dark" | "light") {
   await page.emulateMedia({ colorScheme: theme });
   await page.evaluate((selectedTheme) => {
     document.documentElement.dataset.theme = selectedTheme;
     document.documentElement.style.colorScheme = selectedTheme;
+  }, theme);
+
+  await page.waitForFunction((selectedTheme) => {
+    if (document.documentElement.dataset.theme !== selectedTheme) {
+      return false;
+    }
+    const probe =
+      document.querySelector("[data-window-chrome-platform]") ??
+      document.documentElement;
+    return (
+      getComputedStyle(probe).getPropertyValue("--color-text-dimmer").trim() !==
+      ""
+    );
   }, theme);
 }
 
@@ -72,7 +103,7 @@ async function setZoom(page: Page, scale: number) {
       "--a11y-test-zoom",
       String(zoomScale),
     );
-    const style = document.documentElement.style as unknown as {
+    const style = document.documentElement.style as CSSStyleDeclaration & {
       zoom?: string;
     };
     style.zoom = String(zoomScale);
@@ -114,6 +145,13 @@ async function startLiveRegionMonitor(page: Page) {
       }
     });
 
+    const recordText = (element: Element) => {
+      const text = element.textContent?.trim();
+      if (text) {
+        announcements.push(text);
+      }
+    };
+
     const observeElement = (element: Element) => {
       recorder.observe(element, {
         childList: true,
@@ -132,8 +170,12 @@ async function startLiveRegionMonitor(page: Page) {
           if (node instanceof Element) {
             if (node.matches(liveRegionSelector)) {
               observeElement(node);
+              recordText(node);
             }
-            observeLiveRegions(node);
+            node.querySelectorAll?.(liveRegionSelector).forEach((region) => {
+              observeElement(region);
+              recordText(region);
+            });
           }
         }
       }
@@ -174,4 +216,15 @@ async function axeCheck(page: Page) {
       )
       .join("\n"),
   ).toEqual([]);
+}
+
+async function axeForThemes(
+  page: Page,
+  themes: Array<"dark" | "light"> = ["dark", "light"],
+) {
+  await disableTransitions(page);
+  for (const theme of themes) {
+    await setTheme(page, theme);
+    await axeCheck(page);
+  }
 }

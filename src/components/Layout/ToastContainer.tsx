@@ -20,9 +20,16 @@ function Toast({ notification }: { notification: Notification }) {
     notification.type === "error"
       ? "text-[var(--color-destructive)]"
       : "text-[var(--color-text)]";
+  const isAssertive =
+    notification.type === "error" || notification.type === "warning";
 
   return (
-    <div className="animate-slide-up flex items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] px-3 py-2.5 shadow-lg">
+    <div
+      role={isAssertive ? "alert" : "status"}
+      aria-live={isAssertive ? "assertive" : "polite"}
+      aria-atomic="true"
+      className="animate-slide-up flex items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] px-3 py-2.5 shadow-lg"
+    >
       <Icon size={14} className={`mt-0.5 shrink-0 ${iconColor}`} />
 
       <div className="min-w-0 flex-1">
@@ -36,6 +43,7 @@ function Toast({ notification }: { notification: Notification }) {
         )}
         {notification.retryable && notification.retryAction && (
           <button
+            type="button"
             onClick={() => {
               notification.retryAction?.();
               dismiss(notification.id);
@@ -48,6 +56,7 @@ function Toast({ notification }: { notification: Notification }) {
       </div>
 
       <button
+        type="button"
         onClick={() => dismiss(notification.id)}
         aria-label={t("common.close")}
         className="shrink-0 rounded-sm text-[var(--color-text-dimmer)] hover:text-[var(--color-text-dim)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"

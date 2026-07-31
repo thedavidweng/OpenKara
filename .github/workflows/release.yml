@@ -187,14 +187,14 @@ jobs:
       os: ${{ matrix.os }}
       ort_target: ${{ matrix.ort_target }}
       artifact_prefix: ${{ matrix.artifact_prefix }}
-      retention_days: 14
+      retention_days: 90
 
   release-windows-installed-smoke:
     # This is deliberately release-only: it builds an NSIS candidate from the
-    # release tag, installs the preceding stable release and then the candidate,
-    # and runs the installed executable through first-install + cold-restart
-    # separation. The normal CI suite covers the fast contracts; this job is the
-    # expensive end-user lifecycle proof and blocks publishing if it fails.
+    # release tag, runs clean install + keyboard UIA, upgrades from the preceding
+    # stable release, and runs fault injection. The normal CI suite covers the
+    # fast contracts; this job is the expensive end-user lifecycle proof and
+    # blocks macOS/Linux/Windows publishing if it fails.
     name: Release Windows installed-app smoke
     needs: prepare-release
     uses: ./.github/workflows/reusable-windows-installed-app.yml
@@ -202,9 +202,12 @@ jobs:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-windows-installed-app
       driver_scenario: clean-install
-      uia_scenario: installed-workflow
+      uia_scenario: keyboard-workflow
+      run_keyboard_uia: true
+      run_fault_injection: true
+      run_display_matrix: true
       previous_version: ""
-      retention_days: 14
+      retention_days: 90
       release_build: true
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -238,7 +241,7 @@ jobs:
       tauri_target: ${{ matrix.tauri_target }}
       scenario: clean-install
       previous_version: none
-      retention_days: 14
+      retention_days: 90
       release_build: true
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -258,13 +261,17 @@ jobs:
       tauri_target: x86_64-unknown-linux-gnu
       scenario: clean-install
       previous_version: none
-      retention_days: 14
+      retention_days: 90
       release_build: true
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     permissions:
       contents: read
+
+  # Playwright accessibility is exercised in nightly-hardening (windows-matrix
+  # accessibility leg) and local `pnpm test:a11y`. Release publish is gated on
+  # the native/installed-app smoke jobs below; do not ship without them.
 
   publish:
     name: Release (${{ matrix.name }})
@@ -273,6 +280,7 @@ jobs:
     needs:
       - prepare-release
       - release-separation-smoke
+      - release-windows-installed-smoke
       - release-macos-installed-smoke
       - release-linux-installed-smoke
     permissions:

@@ -97,7 +97,10 @@ export function SettingsCrossfadeSection() {
           }`}
         >
           <div className="flex items-center justify-between">
-            <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
+            <label
+              htmlFor="settings-crossfade-duration"
+              className="text-[12px] font-medium text-[var(--color-text-dim)]"
+            >
               {t("settings.crossfade.duration")}
             </label>
             <span className="text-[11px] tabular-nums text-[var(--color-text-dim)]">
@@ -105,11 +108,13 @@ export function SettingsCrossfadeSection() {
             </span>
           </div>
           <input
+            id="settings-crossfade-duration"
             type="range"
             min={CROSSFADE_MIN_MS}
             max={CROSSFADE_MAX_MS}
             step={100}
             value={draft}
+            aria-label={t("settings.crossfade.duration")}
             onChange={(event) =>
               handleDurationChange(parseInt(event.target.value, 10))
             }

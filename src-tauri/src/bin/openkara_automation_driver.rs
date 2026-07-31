@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use openkara_lib::automation_driver::{run_scenario, ScenarioConfig};
+use openkara_lib::automation_faults::FaultScenario;
 use std::env;
 use std::path::PathBuf;
 
@@ -34,6 +35,7 @@ fn parse_config(mut arguments: impl Iterator<Item = String>) -> Result<ScenarioC
     let mut execution_provider = None;
     let mut locale = None;
     let mut theme = None;
+    let mut inject_faults = false;
 
     while let Some(argument) = arguments.next() {
         let mut value = || {
@@ -50,12 +52,21 @@ fn parse_config(mut arguments: impl Iterator<Item = String>) -> Result<ScenarioC
             "--execution-provider" => execution_provider = Some(value()?),
             "--locale" => locale = Some(value()?),
             "--theme" => theme = Some(value()?),
+            "--inject-faults" => inject_faults = true,
             _ => bail!("unknown argument {argument}"),
         }
     }
 
+    let scenario = scenario.context("--scenario is required")?;
+    let injected_faults =
+        if inject_faults || scenario == "fault-injection" || scenario.ends_with("-faults") {
+            FaultScenario::recovery_suite()
+        } else {
+            Vec::new()
+        };
+
     Ok(ScenarioConfig {
-        scenario: scenario.context("--scenario is required")?,
+        scenario,
         app_data_dir: app_data_dir.context("--app-data-dir is required")?,
         input_dir: input_dir.context("--input-dir is required")?,
         output_dir: output_dir.context("--output-dir is required")?,
@@ -64,6 +75,6 @@ fn parse_config(mut arguments: impl Iterator<Item = String>) -> Result<ScenarioC
         locale,
         theme,
         seek_iterations: 32,
-        injected_faults: Vec::new(),
+        injected_faults,
     })
 }
