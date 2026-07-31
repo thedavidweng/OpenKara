@@ -226,8 +226,9 @@ jobs:
               gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
               $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
               if ($null -ne $previousInstaller) {
-                & $previousInstaller.FullName /S "/D=$env:INSTALL_DIR"
-                if ($LASTEXITCODE -ne 0) { throw "Previous installer failed with exit code $LASTEXITCODE" }
+                $previousInstallDir = ($env:INSTALL_DIR -replace '/','\\')
+                $previousInstallProcess = Start-Process -FilePath $previousInstaller.FullName -ArgumentList "/S", "/D=$previousInstallDir" -Wait -PassThru
+                if ($previousInstallProcess.ExitCode -ne 0) { throw "Previous installer failed with exit code $($previousInstallProcess.ExitCode)" }
               } else {
                 Write-Warning "Release $release did not include a Windows NSIS installer; continuing with clean candidate install."
               }
@@ -236,8 +237,9 @@ jobs:
             }
           }
 
-          & $candidateInstaller.FullName /S "/D=$env:INSTALL_DIR"
-          if ($LASTEXITCODE -ne 0) { throw "Candidate installer failed with exit code $LASTEXITCODE" }
+          $installDir = ($env:INSTALL_DIR -replace '/','\\')
+          $installProcess = Start-Process -FilePath $candidateInstaller.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Candidate installer failed with exit code $($installProcess.ExitCode)" }
 
           $installedApp = Get-ChildItem -Path $env:INSTALL_DIR -Recurse -File |
             Where-Object { $_.Name -ieq "OpenKara.exe" } |
