@@ -163,4 +163,31 @@ describe("release workflow", () => {
       /prepare-release:[\s\S]*Verify package\.json version matches release tag[\s\S]*publish:/,
     );
   });
+
+  test("release-please ensures a git tag and dispatches the Release workflow", () => {
+    // GITHUB_TOKEN tag/release events do not start other workflows. The
+    // release-please path must create a missing tag, rebind the draft release,
+    // and workflow_dispatch release.yml so installed-app smokes and publish run.
+    const releasePleaseWorkflow = readProjectFile(
+      ".github/workflows/release-please.yml",
+    );
+
+    expect(releasePleaseWorkflow).toContain("ensure-tag-and-dispatch-release:");
+    expect(releasePleaseWorkflow).toContain(
+      "name: Ensure tag and dispatch Release",
+    );
+    expect(releasePleaseWorkflow).toMatch(
+      /needs:\s*\[release-please,\s*sync-native-versions\]/,
+    );
+    expect(releasePleaseWorkflow).toContain("release_created == 'true'");
+    expect(releasePleaseWorkflow).toContain("actions: write");
+    expect(releasePleaseWorkflow).toContain("git tag -a");
+    expect(releasePleaseWorkflow).toContain("gh release edit");
+    expect(releasePleaseWorkflow).toContain("gh workflow run release.yml");
+    expect(releasePleaseWorkflow).toContain('--ref "${TAG_NAME}"');
+    expect(releasePleaseWorkflow).toContain('-f "version=${version}"');
+    expect(releasePleaseWorkflow).toContain("tag_name:");
+    expect(releasePleaseWorkflow).toContain("version:");
+    expect(releasePleaseWorkflow).toContain("sha:");
+  });
 });

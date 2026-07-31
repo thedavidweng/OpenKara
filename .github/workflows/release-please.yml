@@ -19,6 +19,8 @@ jobs:
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
+      sha: ${{ steps.rp.outputs.sha }}
     steps:
       - id: rp
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
@@ -71,3 +73,87 @@ jobs:
           git commit -m "chore(release): sync native manifests for ${TAG_NAME}"
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push
+
+  # GITHUB_TOKEN events do not start other workflows. release-please may also
+  # leave a draft release without a git tag. Ensure the tag exists, bind the
+  # draft release to it, then dispatch Release explicitly.
+  ensure-tag-and-dispatch-release:
+    name: Ensure tag and dispatch Release
+    needs: [release-please, sync-native-versions]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create missing release tags and rebind draft releases
+      actions: write # workflow_dispatch the Release workflow
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Ensure git tag and draft release binding
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAG_NAME}" ]; then
+            echo "::error::release-please reported release_created but tag_name is empty"
+            exit 1
+          fi
+
+          target_sha="${RELEASE_SHA}"
+          if [ -z "${target_sha}" ]; then
+            target_sha="$(git rev-parse HEAD)"
+            echo "release-please sha empty; falling back to main HEAD ${target_sha}"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
+            echo "Local tag ${TAG_NAME} already exists"
+          elif git ls-remote --tags origin "refs/tags/${TAG_NAME}" | grep -q .; then
+            echo "Remote tag ${TAG_NAME} already exists"
+            git fetch origin "refs/tags/${TAG_NAME}:refs/tags/${TAG_NAME}"
+          else
+            echo "Creating missing tag ${TAG_NAME} at ${target_sha}"
+            git tag -a "${TAG_NAME}" "${target_sha}" -m "Release ${TAG_NAME}"
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+            git push origin "refs/tags/${TAG_NAME}"
+          fi
+
+          # Draft releases created without a git ref show as untagged-*. Rebind
+          # the release to the real tag so assets and /releases/tag/vX.Y.Z work.
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" --tag "${TAG_NAME}" --target "${target_sha}" --draft=true
+            echo "Rebound draft release ${TAG_NAME} to ${target_sha}"
+          else
+            echo "::warning::No GitHub release found for ${TAG_NAME}; Release workflow may create assets only after a draft exists"
+          fi
+
+      - name: Dispatch Release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="${VERSION}"
+          if [ -z "${version}" ]; then
+            version="${TAG_NAME#v}"
+          fi
+
+          # workflow_dispatch is started by the API and is not blocked the way
+          # push/tag events from GITHUB_TOKEN are. Checkout the tag so package.json
+          # matches the release version gate.
+          gh workflow run release.yml \
+            --repo "${GH_REPO}" \
+            --ref "${TAG_NAME}" \
+            -f "version=${version}"
+
+          echo "Dispatched Release workflow for ${TAG_NAME} (version ${version})"
