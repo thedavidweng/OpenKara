@@ -149,6 +149,20 @@ fn ensure_active_model_ready_or_install_blocking_with_resolution(
 
     match resolution {
         separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {
+            // An interrupted identity commit can leave a verified ONNX without
+            // its `.identity.json`. Rewrite it so update comparisons and
+            // OKA-284 identity assertions remain valid after recovery.
+            if separator::catalog::read_installed_identity(&resolved.path).is_none() {
+                separator::catalog::write_installed_identity(
+                    &resolved.path,
+                    &descriptor.identity,
+                )
+                .map_err(|error| {
+                    internal_error(format!(
+                        "failed to restore model identity after recovery: {error}"
+                    ))
+                })?;
+            }
             let snapshot = ready_status(resolved.path.display().to_string());
             if let Ok(mut current) = status.lock() {
                 *current = snapshot.clone();
