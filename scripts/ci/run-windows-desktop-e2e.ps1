@@ -369,7 +369,7 @@ function Invoke-ProbeAction {
     if ($exitCode -ne 0) {
         throw "AccessibilityProbe $Action failed (exit $exitCode): $output"
     }
-    Write-Host "Probe $Action: $output"
+    Write-Host "Probe ${Action}: $output"
     return $true
 }
 
