@@ -19,8 +19,20 @@ class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
     private const int INPUT_KEYBOARD = 1;
+    private const int INPUT_MOUSE = 0;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    private const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    private const uint MOUSEEVENTF_MOVE = 0x0001;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -118,7 +130,7 @@ class Program
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
                     "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
-                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key] [--name <substring>] " +
+                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] [--name <substring>] " +
                     "[--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
             }
@@ -131,13 +143,13 @@ class Program
             return 1;
         }
 
-        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "set-value" or "press-key"))
+        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click"))
         {
             Console.Error.WriteLine($"Unsupported action: {action}");
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value")
+        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "click" or "double-click")
         {
             if (string.IsNullOrWhiteSpace(targetName))
             {
@@ -181,7 +193,7 @@ class Program
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key")
+        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click")
         {
             AutomationElement? target = null;
             if (!string.IsNullOrWhiteSpace(targetName))
@@ -228,6 +240,15 @@ class Program
                     }
                     ((TogglePattern)pattern).Toggle();
                     Console.WriteLine($"toggle ok: {Describe(target)}");
+                }
+                else if (action is "click" or "double-click")
+                {
+                    if (!TryMouseClick(root, target!, doubleClick: action == "double-click", out string? clickError))
+                    {
+                        Console.Error.WriteLine(clickError ?? $"Mouse {action} failed");
+                        return 3;
+                    }
+                    Console.WriteLine($"{action} ok: {Describe(target!)}");
                 }
                 else if (action == "press-key")
                 {
@@ -738,6 +759,72 @@ class Program
         {
         }
         return null;
+    }
+
+    private static bool TryMouseClick(
+        AutomationElement root,
+        AutomationElement target,
+        bool doubleClick,
+        out string? error)
+    {
+        error = null;
+        try
+        {
+            try
+            {
+                var hwnd = new IntPtr(root.Current.NativeWindowHandle);
+                if (hwnd != IntPtr.Zero)
+                {
+                    SetForegroundWindow(hwnd);
+                }
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+
+            int x;
+            int y;
+            try
+            {
+                var point = target.GetClickablePoint();
+                x = (int)Math.Round(point.X);
+                y = (int)Math.Round(point.Y);
+            }
+            catch (NoClickablePointException)
+            {
+                var rect = target.Current.BoundingRectangle;
+                if (rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0)
+                {
+                    error = $"No clickable point for {Describe(target)}";
+                    return false;
+                }
+                x = (int)Math.Round(rect.Left + rect.Width / 2.0);
+                y = (int)Math.Round(rect.Top + rect.Height / 2.0);
+            }
+
+            if (!SetCursorPos(x, y))
+            {
+                error = $"SetCursorPos({x},{y}) failed";
+                return false;
+            }
+
+            System.Threading.Thread.Sleep(40);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            if (doubleClick)
+            {
+                System.Threading.Thread.Sleep(40);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
     }
 
     private static bool TrySendKeyCombo(string keySpec, out string? error)

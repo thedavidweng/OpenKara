@@ -358,7 +358,7 @@ function Get-UiTree {
 function Invoke-ProbeAction {
     param(
         [int]$ProcessId,
-        [ValidateSet("set-focus", "invoke", "toggle", "set-value", "press-key")]
+        [ValidateSet("set-focus", "invoke", "toggle", "set-value", "press-key", "click", "double-click")]
         [string]$Action,
         [string]$Name = "",
         [string]$ControlType = "",
@@ -1184,16 +1184,25 @@ function Invoke-StepAction {
 
                 $targetName = if ($Step.target) { $Step.target } else { "fixture" }
 
-                # Track rows expose Toggle (aria-pressed) without Invoke. Enter on the
-                # focused row runs playSong; SendKeys is unreliable in WebView2, so use
-                # the probe's SendInput press-key after UIA set-focus.
+                # Track rows expose Toggle (aria-pressed) without Invoke. Double-click
+                # runs playSong; CI SendInput keyboard often returns 0 events, so prefer
+                # UIA clickable-point mouse double-click.
                 $activated = $false
                 try {
-                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "set-focus" -Name $targetName -ControlType "Button" | Out-Null
-                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Name $targetName -ControlType "Button" -Key "enter" | Out-Null
+                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "double-click" -Name $targetName -ControlType "Button" | Out-Null
                     $activated = $true
                 } catch {
-                    Write-Warning "UIA activate track '$targetName' failed: $_"
+                    Write-Warning "UIA double-click track '$targetName' failed: $_"
+                }
+
+                if (-not $activated) {
+                    try {
+                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "set-focus" -Name $targetName -ControlType "Button" | Out-Null
+                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Name $targetName -ControlType "Button" -Key "enter" | Out-Null
+                        $activated = $true
+                    } catch {
+                        Write-Warning "UIA press-key activate track '$targetName' failed: $_"
+                    }
                 }
 
                 if (-not $activated) {
@@ -1211,7 +1220,7 @@ function Invoke-StepAction {
                         Start-Sleep -Milliseconds $StepDelayMs
                     }
                 } else {
-                    Start-Sleep -Milliseconds ([math]::Max($StepDelayMs, 1200))
+                    Start-Sleep -Milliseconds ([math]::Max($StepDelayMs, 1500))
                 }
 
                 if ($stepStatus -ne "failed") {
@@ -1589,24 +1598,17 @@ function Invoke-StepAction {
                 $alreadyMuted = $before -and ($before.name -eq "Unmute" -or $before.toggleState -eq "On")
 
                 if (-not $alreadyMuted) {
-                    if (-not (Send-AppShortcut -KeyCombo "m")) {
-                        Send-KeyboardInput "m"
+                    # Prefer UIA Toggle (aria-pressed); keyboard SendInput often fails on CI.
+                    if (-not (Invoke-NamedControl -Name "Mute" -PreferredAction "toggle")) {
+                        if (-not (Send-AppShortcut -KeyCombo "m")) {
+                            Send-KeyboardInput "m"
+                        }
                     }
-                    $muted = Wait-For-Condition -Condition {
+                    Wait-For-Condition -Condition {
                         param($t)
                         $btn = Find-Mute-Button -Tree $t
                         return ($null -ne $btn -and ($btn.name -eq "Unmute" -or $btn.toggleState -eq "On"))
-                    } -TimeoutMs ([math]::Min($StepTimeoutMs, 5000))
-
-                    if ($null -eq $muted) {
-                        # Mute exposes Toggle (aria-pressed), not Invoke.
-                        Invoke-NamedControl -Name "Mute" -PreferredAction "toggle" | Out-Null
-                        Wait-For-Condition -Condition {
-                            param($t)
-                            $btn = Find-Mute-Button -Tree $t
-                            return ($null -ne $btn -and ($btn.name -eq "Unmute" -or $btn.toggleState -eq "On"))
-                        } -TimeoutMs ([math]::Min($StepTimeoutMs, 8000)) | Out-Null
-                    }
+                    } -TimeoutMs ([math]::Min($StepTimeoutMs, 8000)) | Out-Null
                 }
 
                 $tree = Get-UiTree -ProcessId $script:process.Id
@@ -1625,24 +1627,17 @@ function Invoke-StepAction {
             "queue" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                if (-not (Send-AppShortcut -KeyCombo "q")) {
-                    Send-KeyboardInput "q"
+                if (-not (Invoke-NamedControl -Name "Queue" -PreferredAction "toggle")) {
+                    if (-not (Send-AppShortcut -KeyCombo "q")) {
+                        Send-KeyboardInput "q"
+                    }
                 }
 
-                $opened = Wait-For-Condition -Condition {
+                Wait-For-Condition -Condition {
                     param($t)
                     $panel = Find-Queue-Panel -Tree $t
                     return ($null -ne $panel -and $panel.isOffscreen -eq $false)
-                } -TimeoutMs ([math]::Min($StepTimeoutMs, 5000))
-
-                if ($null -eq $opened) {
-                    Invoke-NamedControl -Name "Queue" -PreferredAction "toggle" | Out-Null
-                    Wait-For-Condition -Condition {
-                        param($t)
-                        $panel = Find-Queue-Panel -Tree $t
-                        return ($null -ne $panel -and $panel.isOffscreen -eq $false)
-                    } -TimeoutMs ([math]::Min($StepTimeoutMs, 8000)) | Out-Null
-                }
+                } -TimeoutMs ([math]::Min($StepTimeoutMs, 8000)) | Out-Null
 
                 $tree = Get-UiTree -ProcessId $script:process.Id
 
@@ -1663,37 +1658,25 @@ function Invoke-StepAction {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
                 # Close any open panel/dialog first.
-                Send-AppShortcut -KeyCombo "escape" | Out-Null
+                try {
+                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" | Out-Null
+                } catch {
+                    Send-KeyboardInput "{ESC}"
+                }
                 Start-Sleep -Milliseconds 200
 
-                if (-not (Send-AppShortcut -KeyCombo "ctrl+comma")) {
-                    Send-KeyboardInput "^,"
+                # Settings has InvokePattern — prefer UIA over Ctrl+, (SendInput often fails on CI).
+                if (-not (Invoke-NamedControl -Name "Settings" -PreferredAction "invoke")) {
+                    if (-not (Send-AppShortcut -KeyCombo "ctrl+comma")) {
+                        Send-KeyboardInput "^,"
+                    }
                 }
 
-                $settingsReady = Wait-For-Condition -Condition {
+                Wait-For-Condition -Condition {
                     param($t)
                     $settings = Find-Settings-Overlay -Tree $t
                     return ($null -ne $settings -and $settings.isOffscreen -eq $false)
-                } -TimeoutMs ([math]::Min($StepTimeoutMs, 5000))
-
-                if ($null -eq $settingsReady) {
-                    if (-not (Invoke-NamedControl -Name "Settings" -PreferredAction "invoke")) {
-                        $settingsBtn = Tab-To-Element -Predicate {
-                            param($n)
-                            $n.controlType -eq "Button" -and $n.name -and (
-                                $n.name.Equals("Settings", [System.StringComparison]::OrdinalIgnoreCase)
-                            )
-                        } -MaxTabs 40 -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
-                        if ($null -ne $settingsBtn) {
-                            Send-KeyboardInput "~"
-                        }
-                    }
-                    Wait-For-Condition -Condition {
-                        param($t)
-                        $settings = Find-Settings-Overlay -Tree $t
-                        return ($null -ne $settings -and $settings.isOffscreen -eq $false)
-                    } -TimeoutMs $StepTimeoutMs | Out-Null
-                }
+                } -TimeoutMs $StepTimeoutMs | Out-Null
 
                 $tree = Get-UiTree -ProcessId $script:process.Id
 

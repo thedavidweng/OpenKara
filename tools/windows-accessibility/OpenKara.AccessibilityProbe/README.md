@@ -58,6 +58,13 @@ OpenKara.AccessibilityProbe --process-id 12345 --action press-key --key enter --
 OpenKara.AccessibilityProbe --process-id 12345 --action press-key --key ctrl+shift+s
 ```
 
+Click / double-click a named control via its UIA clickable point (preferred on headless CI when keyboard SendInput is blocked):
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action double-click --name "fixture" --control-type Button
+OpenKara.AccessibilityProbe --process-id 12345 --action click --name "Settings" --control-type Button
+```
+
 ## Output
 
 The tool emits a canonical JSON array sorted by `path`. Each object contains:
