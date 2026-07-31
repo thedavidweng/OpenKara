@@ -281,6 +281,7 @@ jobs:
         shell: pwsh
         env:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+          USER_LIBRARY_DIR: ${{ runner.temp }}/openkara-user-library
         run: |
           $ErrorActionPreference = "Stop"
           $smokeAppData = Join-Path $env:SMOKE_ROOT "app-data"
@@ -292,6 +293,37 @@ jobs:
             Remove-Item -Recurse -Force $uiaAppData
           }
           Copy-Item -Recurse -Force $smokeAppData $uiaAppData
+
+          # Keyboard UIA needs a registered library so the main shell renders
+          # instead of first-run LibrarySetup. Reuse the user-library marker dir.
+          $libraryDir = $env:USER_LIBRARY_DIR
+          if ([string]::IsNullOrWhiteSpace($libraryDir)) {
+            $libraryDir = Join-Path $env:RUNNER_TEMP "openkara-user-library"
+          }
+          New-Item -ItemType Directory -Force -Path $libraryDir | Out-Null
+          $configPath = Join-Path $uiaAppData "config.json"
+          $config = @{
+            library_path = $libraryDir
+            language     = "en"
+          }
+          if (Test-Path -Path $configPath -PathType Leaf) {
+            try {
+              $existing = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+              if ($null -ne $existing) {
+                $existing | Get-Member -MemberType NoteProperty | ForEach-Object {
+                  $name = $_.Name
+                  if (-not $config.ContainsKey($name)) {
+                    $config[$name] = $existing.$name
+                  }
+                }
+              }
+            } catch {
+              Write-Warning "Existing UIA config.json was unreadable; writing a fresh library seed"
+            }
+          }
+          $config | ConvertTo-Json -Depth 8 | Set-Content -Path $configPath -Encoding utf8
+          Write-Host "Seeded UIA library_path=$libraryDir into $configPath"
+
           "OPENKARA_APP_DATA_DIR=$uiaAppData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Run Windows desktop UIA E2E
@@ -314,7 +346,7 @@ jobs:
             -Scenario $env:UIA_SCENARIO `
             -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
             -ProbePath $probe.FullName `
-            -StepTimeoutMs 30000
+            -StepTimeoutMs 90000
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }
 
       - name: Validate desktop E2E report

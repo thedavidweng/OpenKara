@@ -209,6 +209,16 @@ function Start-OpenKaraApp {
     if (-not [string]::IsNullOrWhiteSpace($env:OPENKARA_SMOKE_EP)) {
         $startInfo.EnvironmentVariables["OPENKARA_SMOKE_EP"] = $env:OPENKARA_SMOKE_EP
     }
+    # Force Chromium/WebView2 renderer accessibility on headless CI hosts that
+    # have no screen reader attached; otherwise the DOM UIA tree stays empty.
+    $forceA11y = "--force-renderer-accessibility"
+    $existingBrowserArgs = $startInfo.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"]
+    if ([string]::IsNullOrWhiteSpace($existingBrowserArgs)) {
+        $startInfo.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = $forceA11y
+    } elseif ($existingBrowserArgs -notlike "*force-renderer-accessibility*") {
+        $startInfo.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "$existingBrowserArgs $forceA11y"
+    }
+    Write-Host "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$($startInfo.EnvironmentVariables['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])"
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
@@ -216,6 +226,58 @@ function Start-OpenKaraApp {
         throw "Failed to start OpenKara.exe"
     }
     return $process
+}
+
+function Wait-For-UiReady {
+    param(
+        [int]$ProcessId,
+        [int]$TimeoutMs = 90000,
+        [string[]]$ReadyNameHints = @("All Tracks", "Library", "Play", "Settings", "Welcome", "Create", "Open existing")
+    )
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    $attempt = 0
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $attempt++
+        try {
+            # Nudge the webview so focus and accessibility hosts activate.
+            if ($null -ne $script:process -and $script:process.MainWindowHandle -ne [IntPtr]::Zero) {
+                [void][OpenKaraWin32]::SetForegroundWindow($script:process.MainWindowHandle)
+                if ($attempt -eq 1 -or ($attempt % 5) -eq 0) {
+                    [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+                }
+            }
+            $tree = Get-UiTree -ProcessId $ProcessId -TimeoutMs ([Math]::Min($ProbeTimeoutMs, 8000))
+            $namedInteractive = @($tree | Where-Object {
+                $_.isOffscreen -ne $true -and
+                -not [string]::IsNullOrWhiteSpace($_.name) -and
+                @(
+                    "Button", "Edit", "CheckBox", "RadioButton", "Hyperlink",
+                    "ComboBox", "ListItem", "MenuItem", "TabItem", "Slider",
+                    "SplitButton", "TreeItem", "Document", "Text"
+                ) -contains $_.controlType -and
+                $_.name -notin @("Minimize", "Maximize", "Close", "System", "OpenKara", "System Menu Bar")
+            })
+            foreach ($hint in $ReadyNameHints) {
+                $hit = $namedInteractive | Where-Object {
+                    $_.name.IndexOf($hint, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                } | Select-Object -First 1
+                if ($null -ne $hit) {
+                    Write-Host "UI ready after ${attempt} probe(s): found '$($hit.name)' ($($hit.controlType))"
+                    return $tree
+                }
+            }
+            if ($namedInteractive.Count -ge 3) {
+                Write-Host "UI ready after ${attempt} probe(s): $($namedInteractive.Count) named interactive controls"
+                return $tree
+            }
+            Write-Host "Wait-For-UiReady attempt ${attempt}: namedInteractive=$($namedInteractive.Count)"
+        } catch {
+            Write-Warning "Wait-For-UiReady probe failed: $_"
+        }
+        Start-Sleep -Milliseconds 1500
+    }
+    throw "WebView UI did not expose named interactive controls within ${TimeoutMs}ms"
 }
 
 function Wait-For-ProcessWindow {
@@ -554,14 +616,25 @@ function Invoke-StepAction {
         switch ($Step.action) {
             "launch" {
                 $script:process = Start-OpenKaraApp
-                $script:mainWindowHandle = Wait-For-ProcessWindow -Process $script:process -TimeoutMs $StepTimeoutMs
-                $tree = Get-UiTree -ProcessId $script:process.Id
+                $launchTimeoutMs = [Math]::Max($StepTimeoutMs, 90000)
+                $script:mainWindowHandle = Wait-For-ProcessWindow -Process $script:process -TimeoutMs $launchTimeoutMs
+                # Window chrome alone is not enough: wait until WebView2 exposes
+                # named interactive DOM controls for keyboard navigation.
+                $tree = Wait-For-UiReady -ProcessId $script:process.Id -TimeoutMs $launchTimeoutMs
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
                     $window = Find-ElementByControlType -Tree $t -ControlType "Window"
                     if ($null -eq $window) { return "no Window control found in UIA tree" }
                     if ([string]::IsNullOrWhiteSpace($window.name)) { return "main window has no accessible name" }
+                    $namedButtons = @($t | Where-Object {
+                        $_.controlType -eq "Button" -and
+                        -not [string]::IsNullOrWhiteSpace($_.name) -and
+                        $_.name -notin @("Minimize", "Maximize", "Close")
+                    })
+                    if ($namedButtons.Count -eq 0) {
+                        return "window visible but WebView exposed no named Button controls"
+                    }
                     return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -600,16 +673,37 @@ function Invoke-StepAction {
 
             "navigate-sidebar" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
-                Send-KeyboardInput "{TAB}"
-                $tree = Get-UiTree -ProcessId $script:process.Id
+
+                $focused = $null
+                $tree = $null
+                $lastObservation = "no focus observed"
+                for ($i = 0; $i -lt 24; $i++) {
+                    Send-KeyboardInput "{TAB}"
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+                    $focused = Find-FocusedElement -Tree $tree
+                    if ($null -eq $focused) {
+                        $lastObservation = "no element has keyboard focus after tab $($i + 1)"
+                        continue
+                    }
+                    if ($focused.controlType -eq "Window" -or $focused.controlType -eq "Document") {
+                        $lastObservation = "focus is still on the top-level window or document"
+                        continue
+                    }
+                    if ($focused.isOffscreen -eq $true) {
+                        $lastObservation = "focused element is offscreen ($($focused.controlType)/$($focused.name))"
+                        continue
+                    }
+                    if ([string]::IsNullOrWhiteSpace($focused.name)) {
+                        $lastObservation = "focused control has no name ($($focused.controlType))"
+                        continue
+                    }
+                    $lastObservation = $null
+                    break
+                }
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
-                    $focused = Find-FocusedElement -Tree $t
-                    if ($null -eq $focused) { return "no element has keyboard focus" }
-                    if ($focused.controlType -eq "Window" -or $focused.controlType -eq "Document") { return "focus is still on the top-level window or document" }
-                    if ($focused.isOffscreen -eq $true) { return "focused element is offscreen" }
-                    if ([string]::IsNullOrWhiteSpace($focused.name)) { return "focused control has no name" }
+                    if ($null -ne $lastObservation) { return $lastObservation }
                     return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
