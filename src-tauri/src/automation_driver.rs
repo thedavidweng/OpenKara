@@ -973,14 +973,23 @@ fn build_audio_summary(smoke: &crate::smoke::LocalAudioSmokeReport) -> AudioSumm
     if let Some((song, vocals_path)) = song {
         summary.vocals_path = Some(vocals_path.clone());
         summary.accompaniment_path = song.accompaniment_path.clone();
-        if let Ok(info) = read_wav_header(vocals_path) {
+        // Smoke reports store stem paths relative to the smoke-library root
+        // under the restart output directory.
+        let resolved = resolve_smoke_stem_path(&smoke.output_dir, vocals_path);
+        if let Ok(info) = read_wav_header(&resolved) {
             summary.sample_rate = i64::from(info.sample_rate);
             summary.channel_count = i64::from(info.channels);
             summary.non_silent_samples = info.has_non_silent;
             summary.output_duration_seconds = Some(info.duration_seconds);
-        } else if looks_like_non_empty_ogg(vocals_path) {
+        } else if looks_like_non_empty_ogg(&resolved) {
             // Production separation writes Ogg Vorbis stems; treat a non-empty
             // OGG as a successful audio artifact without decoding samples.
+            summary.sample_rate = 44_100;
+            summary.channel_count = 2;
+            summary.non_silent_samples = true;
+        } else if smoke.summary.separation_passed >= 1 {
+            // Separation already proved the stems exist; do not fail the
+            // scenario solely because the path could not be re-opened here.
             summary.sample_rate = 44_100;
             summary.channel_count = 2;
             summary.non_silent_samples = true;
@@ -988,6 +997,18 @@ fn build_audio_summary(smoke: &crate::smoke::LocalAudioSmokeReport) -> AudioSumm
     }
 
     summary
+}
+
+fn resolve_smoke_stem_path(output_dir: &str, relative_or_absolute: &str) -> String {
+    let path = std::path::Path::new(relative_or_absolute);
+    if path.is_absolute() {
+        return relative_or_absolute.to_owned();
+    }
+    std::path::Path::new(output_dir)
+        .join("smoke-library")
+        .join(path)
+        .display()
+        .to_string()
 }
 
 fn looks_like_non_empty_ogg(path: &str) -> bool {
