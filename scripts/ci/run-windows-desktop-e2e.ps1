@@ -1002,34 +1002,47 @@ function Invoke-StepAction {
                         Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "file picker dialog with title 'Open' did not appear"
                         $stepStatus = "failed"
                     } else {
-                        Write-Host "File picker opened (hwnd=$dialog); typing fixture path"
+                        Write-Host "File picker opened (hwnd=$dialog); pasting fixture path"
                         [void][OpenKaraWin32]::SetForegroundWindow($dialog)
-                        Start-Sleep -Milliseconds 200
-                        # Focus filename field (common Open dialog accelerator).
+                        Start-Sleep -Milliseconds 250
+                        # Focus filename field, then paste (SendKeys cannot type raw paths reliably).
                         Send-KeyboardInput -Keys "%n" -Handle $dialog
                         Start-Sleep -Milliseconds 100
-                        Send-KeyboardInput -Keys $fixturePath -Handle $dialog
-                        Start-Sleep -Milliseconds 150
+                        try {
+                            Set-Clipboard -Value $fixturePath
+                        } catch {
+                            # Windows PowerShell 5.1 fallback used on some runners.
+                            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+                            [System.Windows.Forms.Clipboard]::SetText($fixturePath)
+                        }
+                        Send-KeyboardInput -Keys "^a" -Handle $dialog
+                        Start-Sleep -Milliseconds 50
+                        Send-KeyboardInput -Keys "^v" -Handle $dialog
+                        Start-Sleep -Milliseconds 200
                         Send-KeyboardInput -Keys "~" -Handle $dialog
 
-                        # Import flow may show a confirm dialog after path selection.
-                        $confirm = Wait-For-Dialog -Titles @("Import", "Confirm", "OpenKara") -TimeoutMs 5000
-                        if ($confirm -ne [IntPtr]::Zero -and $confirm -ne $dialog) {
-                            Write-Host "Confirm dialog detected; accepting"
+                        # App shows "Confirm import" after a valid selection.
+                        $confirm = Wait-For-Dialog -Titles @("Confirm import", "Confirm") -TimeoutMs 10000
+                        if ($confirm -ne [IntPtr]::Zero) {
+                            Write-Host "Confirm import dialog detected (hwnd=$confirm); accepting"
                             [void][OpenKaraWin32]::SetForegroundWindow($confirm)
-                            Start-Sleep -Milliseconds 100
+                            Start-Sleep -Milliseconds 150
+                            # Default button is Import; Enter accepts.
                             Send-KeyboardInput -Keys "~" -Handle $confirm
+                            Start-Sleep -Milliseconds 300
+                        } else {
+                            Write-Warning "Confirm import dialog was not detected after path selection"
                         }
 
                         $track = Wait-For-Element -Predicate {
                             param($n)
                                 ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem") -and
                                 $n.name -and $n.name.IndexOf("fixture", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
-                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 45000))
 
                         $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
                             param($t)
-                            if ($null -eq $track) { return "imported fixture track did not appear in the UIA tree" }
+                            if ($null -eq $track) { return "imported fixture track did not appear in the UIA tree (path=$fixturePath)" }
                             $btn = Find-Track -Tree $t -Name "fixture"
                             if ($null -eq $btn) { return "no track named fixture in the current tree" }
                             if ($btn.isOffscreen -eq $true) { return "fixture track is offscreen" }
