@@ -339,6 +339,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: clean-install
+    if: always()
     outputs:
       validation_passed: ${{ steps.summarize.outputs.passed }}
     steps:
