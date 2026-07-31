@@ -1,12 +1,12 @@
 use crate::config::ModelVariant;
 use crate::separator::{
     bootstrap::{self, descriptor_for, managed_model_path_for},
-    catalog::installed_identity_path,
+    catalog::{installed_identity_path, read_installed_identity},
     runtime_bootstrap::{
         self, installed_runtime, read_slots, runtime_artifact_dir, runtime_inventory,
         verify_runtime_files, write_slots,
     },
-    verified_manifest::verified_manifest_path,
+    verified_manifest::{verified_manifest_matches, verified_manifest_path},
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -225,12 +225,23 @@ pub fn apply_fault(app_data_dir: &Path, scenario: &FaultScenario) -> Result<Faul
                 .active
                 .clone()
                 .context("no active runtime for interrupt-after-extraction fault")?;
+            // Model: extracted artifact exists as candidate, no active slot yet.
+            // Keep the prior active id in `previous` so recovery can roll back.
             slots.candidate = Some(active.clone());
-            slots.previous = slots.active.take();
+            slots.previous = Some(active.clone());
             slots.active = None;
             slots.activation_pending = false;
             slots.activation_attempts = 0;
             write_slots(app_data_dir, &slots)?;
+            // Re-read to confirm the slot write stuck; some runners may race with
+            // antivirus scanners rewriting app-data.
+            let confirmed = read_slots(app_data_dir);
+            if confirmed.candidate.as_deref() != Some(active.as_str()) {
+                bail!(
+                    "interrupt-after-extraction slot write did not persist candidate (got {:?})",
+                    confirmed.candidate
+                );
+            }
             Ok(FaultApplication {
                 target_path: runtime_artifact_dir(app_data_dir, &active),
                 notes: "runtime left extracted as candidate without activation".into(),
@@ -401,7 +412,8 @@ pub fn inspect_fault_state(
         }
         (FaultTarget::Runtime, FaultKind::InterruptAfterExtraction) => {
             let slots = read_slots(app_data_dir);
-            let candidate_ok = slots
+            let candidate_present = slots.candidate.is_some();
+            let candidate_files_ok = slots
                 .candidate
                 .as_deref()
                 .and_then(|id| installed_runtime(app_data_dir, id))
@@ -409,10 +421,13 @@ pub fn inspect_fault_state(
                 .unwrap_or(false);
             Ok(FaultRecoveryResult {
                 scenario_id,
-                fault_detected: candidate_ok && slots.active.is_none(),
-                prior_runtime_usable: slots.previous.is_some(),
+                // Detected when activation has not been committed: no active slot
+                // and a candidate (or previous) still names an extracted runtime.
+                fault_detected: slots.active.is_none()
+                    && (candidate_present || slots.previous.is_some()),
+                prior_runtime_usable: slots.previous.is_some() || candidate_files_ok,
                 observation: format!(
-                    "candidate={candidate_ok} active={:?} previous={:?}",
+                    "candidate_present={candidate_present} candidate_files_ok={candidate_files_ok} active={:?} previous={:?}",
                     slots.active, slots.previous
                 ),
             })
@@ -429,28 +444,82 @@ pub fn inspect_fault_state(
                 ),
             })
         }
-        (FaultTarget::Model, FaultKind::CorruptInstalledFile)
-        | (FaultTarget::Model, FaultKind::StaleVerificationManifest)
-        | (FaultTarget::Model, FaultKind::InterruptAfterExtraction)
-        | (FaultTarget::Model, FaultKind::InterruptAfterActivation)
-        | (FaultTarget::Model, FaultKind::StaleDownloadingState) => {
+        (FaultTarget::Model, FaultKind::CorruptInstalledFile) => {
+            // Side-effect free: do not call resolve_managed_model_installation
+            // (it rewrites verified manifests on successful checksum).
             let path = active_model_path(app_data_dir)?;
             let descriptor = descriptor_for(ModelVariant::default());
-            let resolution = bootstrap::resolve_managed_model_installation(
-                &path,
-                descriptor.file_sha256.as_str(),
-            )?;
-            let ready = matches!(resolution, bootstrap::ModelInstallationResolution::Ready(_));
-            // Stale downloading leaves valid bytes; other faults must not remain Ready.
-            let fault_detected = match scenario.kind {
-                FaultKind::StaleDownloadingState => path.exists(),
-                _ => !ready,
-            };
+            let digest_ok = bootstrap::model_matches_digest(&path, descriptor.file_sha256.as_str())
+                .unwrap_or(false);
+            let identity_ok = read_installed_identity(&path)
+                .map(|identity| {
+                    bootstrap::model_matches_digest(&path, &identity.archive_sha256)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            let fault_detected = path.exists() && !digest_ok && !identity_ok;
             Ok(FaultRecoveryResult {
                 scenario_id,
                 fault_detected,
                 prior_runtime_usable: true,
-                observation: format!("model_path={} ready={ready}", path.display()),
+                observation: format!(
+                    "model_path={} exists={} digest_ok={digest_ok} identity_ok={identity_ok}",
+                    path.display(),
+                    path.exists()
+                ),
+            })
+        }
+        (FaultTarget::Model, FaultKind::StaleVerificationManifest) => {
+            let path = active_model_path(app_data_dir)?;
+            let descriptor = descriptor_for(ModelVariant::default());
+            let manifest = verified_manifest_path(&path)?;
+            let matches =
+                verified_manifest_matches(&path, descriptor.file_sha256.as_str()).unwrap_or(false);
+            let fault_detected = path.exists() && (!manifest.exists() || !matches);
+            Ok(FaultRecoveryResult {
+                scenario_id,
+                fault_detected,
+                prior_runtime_usable: true,
+                observation: format!(
+                    "model_path={} manifest_exists={} matches={matches}",
+                    path.display(),
+                    manifest.exists()
+                ),
+            })
+        }
+        (FaultTarget::Model, FaultKind::InterruptAfterExtraction)
+        | (FaultTarget::Model, FaultKind::InterruptAfterActivation) => {
+            let path = active_model_path(app_data_dir)?;
+            let identity = installed_identity_path(&path)?;
+            let manifest = verified_manifest_path(&path)?;
+            let fault_detected = path.exists() && (!identity.exists() || !manifest.exists());
+            Ok(FaultRecoveryResult {
+                scenario_id,
+                fault_detected,
+                prior_runtime_usable: true,
+                observation: format!(
+                    "model_path={} identity={} manifest={}",
+                    path.display(),
+                    identity.exists(),
+                    manifest.exists()
+                ),
+            })
+        }
+        (FaultTarget::Model, FaultKind::StaleDownloadingState) => {
+            let path = active_model_path(app_data_dir)?;
+            let partial = path.with_extension("onnx.part");
+            let identity = installed_identity_path(&path)?;
+            let fault_detected = path.exists() && (partial.exists() || !identity.exists());
+            Ok(FaultRecoveryResult {
+                scenario_id,
+                fault_detected,
+                prior_runtime_usable: true,
+                observation: format!(
+                    "model_path={} partial={} identity={}",
+                    path.display(),
+                    partial.exists(),
+                    identity.exists()
+                ),
             })
         }
         _ => Ok(FaultRecoveryResult {
@@ -501,5 +570,122 @@ pub fn clear_stale_partials(app_data_dir: &Path) -> Result<()> {
             let _ = fs::remove_file(&path);
         }
     }
+    Ok(())
+}
+
+/// After a fault has been observed, clear the broken artifact so the next
+/// production bootstrap reinstall can succeed without manual app-data deletion.
+///
+/// Production leaves digest-mismatched models as `LegacyManaged` (Settings
+/// delete required) and will still LoadLibrary a runtime whose PE trailer was
+/// only lengthened. The suite therefore removes those broken artifacts after
+/// detection, then re-runs the normal prepare path.
+pub fn quarantine_for_recovery(app_data_dir: &Path, scenario: &FaultScenario) -> Result<()> {
+    match (scenario.target, scenario.kind) {
+        (FaultTarget::Runtime, FaultKind::CorruptInstalledFile)
+        | (FaultTarget::Runtime, FaultKind::StaleVerificationManifest) => {
+            remove_unverifiable_active_runtime(app_data_dir)?;
+        }
+        (FaultTarget::Runtime, FaultKind::InterruptAfterExtraction)
+        | (FaultTarget::Runtime, FaultKind::InterruptAfterActivation) => {
+            let mut slots = read_slots(app_data_dir);
+            // Prefer a known-good previous slot; otherwise promote the staged
+            // candidate so prepare can load without a full reinstall.
+            if slots.active.is_none() {
+                if let Some(previous) = slots.previous.take() {
+                    slots.active = Some(previous);
+                } else if let Some(candidate) = slots.candidate.take() {
+                    slots.active = Some(candidate);
+                }
+            }
+            slots.candidate = None;
+            slots.activation_pending = false;
+            slots.activation_attempts = 0;
+            write_slots(app_data_dir, &slots)?;
+        }
+        (FaultTarget::Model, FaultKind::CorruptInstalledFile) => {
+            // Corrupt bytes must be removed so prepare sees Absent and reinstalls.
+            remove_managed_model_tree(app_data_dir)?;
+        }
+        (FaultTarget::Model, FaultKind::StaleVerificationManifest)
+        | (FaultTarget::Model, FaultKind::InterruptAfterExtraction)
+        | (FaultTarget::Model, FaultKind::InterruptAfterActivation) => {
+            // Keep ONNX bytes; only drop stale identity/manifest so bootstrap
+            // re-verifies and rewrites them.
+            let path = active_model_path(app_data_dir)?;
+            if let Ok(identity) = installed_identity_path(&path) {
+                let _ = fs::remove_file(identity);
+            }
+            if let Ok(manifest) = verified_manifest_path(&path) {
+                let _ = fs::remove_file(manifest);
+            }
+            clear_stale_partials(app_data_dir)?;
+        }
+        (FaultTarget::Model, FaultKind::StaleDownloadingState) => {
+            // Valid model remains on disk; only clear the stale .part marker.
+            // Identity was already removed by apply_fault — prepare rewrites it.
+            clear_stale_partials(app_data_dir)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Make app-data safe for a heal prepare: drop digest-mismatched models and
+/// unverifiable active runtimes that production will not auto-replace.
+pub fn ensure_recoverable_baseline(app_data_dir: &Path) -> Result<()> {
+    remove_unverifiable_active_runtime(app_data_dir)?;
+
+    let path = active_model_path(app_data_dir)?;
+    if path.exists() {
+        let descriptor = descriptor_for(ModelVariant::default());
+        let digest_ok = bootstrap::model_matches_digest(&path, descriptor.file_sha256.as_str())
+            .unwrap_or(false);
+        let identity_ok = read_installed_identity(&path)
+            .map(|identity| {
+                bootstrap::model_matches_digest(&path, &identity.archive_sha256).unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if !digest_ok && !identity_ok {
+            remove_managed_model_tree(app_data_dir)?;
+        }
+    }
+    clear_stale_partials(app_data_dir)?;
+    Ok(())
+}
+
+fn remove_unverifiable_active_runtime(app_data_dir: &Path) -> Result<()> {
+    let inventory = runtime_inventory(app_data_dir);
+    if let Some(active) = inventory.active.as_ref() {
+        let ok = verify_runtime_files(active).unwrap_or(false);
+        if !ok {
+            let _ = fs::remove_dir_all(&active.dir);
+            let mut slots = read_slots(app_data_dir);
+            if slots.active.as_deref() == Some(active.record.artifact_id.as_str()) {
+                slots.active = None;
+            }
+            if slots.candidate.as_deref() == Some(active.record.artifact_id.as_str()) {
+                slots.candidate = None;
+            }
+            slots.activation_pending = false;
+            slots.activation_attempts = 0;
+            write_slots(app_data_dir, &slots)?;
+        }
+    }
+    Ok(())
+}
+
+fn remove_managed_model_tree(app_data_dir: &Path) -> Result<()> {
+    let path = active_model_path(app_data_dir)?;
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    if let Ok(identity) = installed_identity_path(&path) {
+        let _ = fs::remove_file(identity);
+    }
+    if let Ok(manifest) = verified_manifest_path(&path) {
+        let _ = fs::remove_file(manifest);
+    }
+    clear_stale_partials(app_data_dir)?;
     Ok(())
 }

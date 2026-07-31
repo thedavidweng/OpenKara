@@ -1,5 +1,8 @@
 use crate::{
-    automation_faults::{apply_fault, clear_stale_partials, inspect_fault_state, FaultScenario},
+    automation_faults::{
+        apply_fault, clear_stale_partials, ensure_recoverable_baseline, inspect_fault_state,
+        quarantine_for_recovery, FaultScenario,
+    },
     automation_report::{
         AccessibilitySummary, ApplicationIdentity, Artifact, Assertion, AssertionResult,
         AudioSummary, AutomationReport, DatabaseSummary, Environment, ModelIdentity, ReportError,
@@ -266,6 +269,14 @@ fn run_fault_suite(
         let step = builder.begin_step(&step_id, &fault.description);
 
         let outcome = (|| -> Result<()> {
+            // Drop artifacts production will not auto-replace (LegacyManaged
+            // models, digest-mismatched runtimes that still LoadLibrary).
+            ensure_recoverable_baseline(&config.app_data_dir).with_context(|| {
+                format!(
+                    "failed to clear unrecoverable state before {}",
+                    fault.assertion_id()
+                )
+            })?;
             // Re-bootstrap so each fault starts from a healthy install.
             let heal_dir = config.output_dir.join(format!("fault-{index}-heal"));
             run_phase(config, AutomationSmokePhase::Prepare, &heal_dir)
@@ -291,6 +302,12 @@ fn run_fault_suite(
                 );
             }
 
+            quarantine_for_recovery(&config.app_data_dir, fault).with_context(|| {
+                format!(
+                    "failed to quarantine broken artifacts for {}",
+                    fault.assertion_id()
+                )
+            })?;
             let _ = clear_stale_partials(&config.app_data_dir);
             let recover_dir = config.output_dir.join(format!("fault-{index}-recover"));
             run_phase(config, AutomationSmokePhase::Prepare, &recover_dir).with_context(|| {
