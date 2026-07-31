@@ -358,10 +358,12 @@ function Get-UiTree {
 function Invoke-ProbeAction {
     param(
         [int]$ProcessId,
-        [ValidateSet("set-focus", "invoke")]
+        [ValidateSet("set-focus", "invoke", "set-value")]
         [string]$Action,
         [string]$Name,
         [string]$ControlType = "",
+        [string]$Value = "",
+        [string]$WindowTitle = "",
         [int]$TimeoutMs = $ProbeTimeoutMs
     )
 
@@ -373,6 +375,12 @@ function Invoke-ProbeAction {
     )
     if (-not [string]::IsNullOrWhiteSpace($ControlType)) {
         $argList += @("--control-type", $ControlType)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WindowTitle)) {
+        $argList += @("--window-title", $WindowTitle)
+    }
+    if ($Action -eq "set-value") {
+        $argList += @("--value", $Value)
     }
 
     $output = & $script:ProbePath @argList 2>&1
@@ -1002,24 +1010,51 @@ function Invoke-StepAction {
                         Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "file picker dialog with title 'Open' did not appear"
                         $stepStatus = "failed"
                     } else {
-                        Write-Host "File picker opened (hwnd=$dialog); pasting fixture path"
+                        Write-Host "File picker opened (hwnd=$dialog); setting fixture path via UIA"
                         [void][OpenKaraWin32]::SetForegroundWindow($dialog)
                         Start-Sleep -Milliseconds 250
-                        # Focus filename field, then paste (SendKeys cannot type raw paths reliably).
-                        Send-KeyboardInput -Keys "%n" -Handle $dialog
-                        Start-Sleep -Milliseconds 100
-                        try {
-                            Set-Clipboard -Value $fixturePath
-                        } catch {
-                            # Windows PowerShell 5.1 fallback used on some runners.
-                            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-                            [System.Windows.Forms.Clipboard]::SetText($fixturePath)
+
+                        $dialogPid = [int]$script:process.Id
+                        $pathSet = $false
+                        foreach ($fieldName in @("File name:", "File name", "Filename", "Name")) {
+                            try {
+                                Invoke-ProbeAction -ProcessId $dialogPid -Action "set-value" -Name $fieldName -ControlType "Edit" -Value $fixturePath -WindowTitle "Open" | Out-Null
+                                $pathSet = $true
+                                break
+                            } catch {
+                                Write-Warning "set-value '$fieldName' failed: $_"
+                            }
                         }
-                        Send-KeyboardInput -Keys "^a" -Handle $dialog
-                        Start-Sleep -Milliseconds 50
-                        Send-KeyboardInput -Keys "^v" -Handle $dialog
-                        Start-Sleep -Milliseconds 200
-                        Send-KeyboardInput -Keys "~" -Handle $dialog
+
+                        if (-not $pathSet) {
+                            # Clipboard paste fallback when UIA Value is unavailable.
+                            Send-KeyboardInput -Keys "%n" -Handle $dialog
+                            Start-Sleep -Milliseconds 100
+                            try {
+                                Set-Clipboard -Value $fixturePath
+                            } catch {
+                                Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+                                [System.Windows.Forms.Clipboard]::SetText($fixturePath)
+                            }
+                            Send-KeyboardInput -Keys "^a" -Handle $dialog
+                            Start-Sleep -Milliseconds 50
+                            Send-KeyboardInput -Keys "^v" -Handle $dialog
+                        }
+
+                        Start-Sleep -Milliseconds 150
+                        # Prefer Invoke on the Open button; Enter as fallback.
+                        $opened = $false
+                        foreach ($openName in @("Open", "OK")) {
+                            try {
+                                Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $openName -ControlType "Button" -WindowTitle "Open" | Out-Null
+                                $opened = $true
+                                break
+                            } catch {
+                            }
+                        }
+                        if (-not $opened) {
+                            Send-KeyboardInput -Keys "~" -Handle $dialog
+                        }
 
                         # App shows "Confirm import" after a valid selection.
                         $confirm = Wait-For-Dialog -Titles @("Confirm import", "Confirm") -TimeoutMs 10000
@@ -1027,9 +1062,25 @@ function Invoke-StepAction {
                             Write-Host "Confirm import dialog detected (hwnd=$confirm); accepting"
                             [void][OpenKaraWin32]::SetForegroundWindow($confirm)
                             Start-Sleep -Milliseconds 150
-                            # Default button is Import; Enter accepts.
-                            Send-KeyboardInput -Keys "~" -Handle $confirm
-                            Start-Sleep -Milliseconds 300
+                            $accepted = $false
+                            foreach ($okName in @("Import", "OK", "Yes")) {
+                                try {
+                                    Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm import" | Out-Null
+                                    $accepted = $true
+                                    break
+                                } catch {
+                                    try {
+                                        Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm" | Out-Null
+                                        $accepted = $true
+                                        break
+                                    } catch {
+                                    }
+                                }
+                            }
+                            if (-not $accepted) {
+                                Send-KeyboardInput -Keys "~" -Handle $confirm
+                            }
+                            Start-Sleep -Milliseconds 400
                         } else {
                             Write-Warning "Confirm import dialog was not detected after path selection"
                         }

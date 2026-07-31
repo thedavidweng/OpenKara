@@ -21,6 +21,7 @@ class Program
         string action = "snapshot";
         string? targetName = null;
         string? controlTypeFilter = null;
+        string? valueText = null;
         int timeoutMs = 0;
 
         for (int i = 0; i < args.Length; i++)
@@ -68,13 +69,18 @@ class Program
             {
                 controlTypeFilter = args[++i];
             }
+            else if (arg == "--value" && i + 1 < args.Length)
+            {
+                valueText = args[++i];
+            }
             else
             {
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
                     "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
-                    "[--action snapshot|set-focus|invoke] [--name <substring>] [--control-type <type>]");
+                    "[--action snapshot|set-focus|invoke|set-value] [--name <substring>] " +
+                    "[--control-type <type>] [--value <text>]");
                 return 1;
             }
         }
@@ -85,19 +91,25 @@ class Program
             return 1;
         }
 
-        if (action is not ("snapshot" or "set-focus" or "invoke"))
+        if (action is not ("snapshot" or "set-focus" or "invoke" or "set-value"))
         {
             Console.Error.WriteLine($"Unsupported action: {action}");
             return 1;
         }
 
-        if (action is "set-focus" or "invoke")
+        if (action is "set-focus" or "invoke" or "set-value")
         {
             if (string.IsNullOrWhiteSpace(targetName))
             {
                 Console.Error.WriteLine($"Action '{action}' requires --name <substring>.");
                 return 1;
             }
+        }
+
+        if (action == "set-value" && valueText is null)
+        {
+            Console.Error.WriteLine("Action 'set-value' requires --value <text>.");
+            return 1;
         }
 
         if (processId is null)
@@ -122,7 +134,7 @@ class Program
             return 1;
         }
 
-        if (action is "set-focus" or "invoke")
+        if (action is "set-focus" or "invoke" or "set-value")
         {
             var target = FindNamedElement(root, targetName!, controlTypeFilter);
             if (target is null)
@@ -141,7 +153,7 @@ class Program
                     target.SetFocus();
                     Console.WriteLine($"set-focus ok: {Describe(target)}");
                 }
-                else
+                else if (action == "invoke")
                 {
                     if (!target.TryGetCurrentPattern(InvokePattern.Pattern, out object? pattern) || pattern is null)
                     {
@@ -150,6 +162,16 @@ class Program
                     }
                     ((InvokePattern)pattern).Invoke();
                     Console.WriteLine($"invoke ok: {Describe(target)}");
+                }
+                else
+                {
+                    if (!target.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern) || pattern is null)
+                    {
+                        Console.Error.WriteLine($"Element does not support Value: {Describe(target)}");
+                        return 3;
+                    }
+                    ((ValuePattern)pattern).SetValue(valueText!);
+                    Console.WriteLine($"set-value ok: {Describe(target)} value='{valueText}'");
                 }
             }
             catch (Exception ex)
