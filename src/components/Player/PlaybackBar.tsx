@@ -149,6 +149,7 @@ export function PlaybackBar({
               label={volume === 0 ? t("player.unmute") : t("player.mute")}
             >
               <button
+                id="master-mute"
                 type="button"
                 onClick={handleMasterMuteToggle}
                 aria-label={

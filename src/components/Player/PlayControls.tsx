@@ -54,6 +54,7 @@ export function PlayControls({
         <SkipBack size={20} fill="currentColor" />
       </button>
       <button
+        id="play-pause"
         onClick={handleToggle}
         disabled={isStarting}
         className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-control-primary)]/50 disabled:cursor-default disabled:opacity-80"

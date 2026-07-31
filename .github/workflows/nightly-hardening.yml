@@ -114,7 +114,8 @@ jobs:
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-windows-installed-app
-      scenario: clean-install
+      driver_scenario: clean-install
+      uia_scenario: keyboard-workflow
       previous_version: none
       retention_days: 7
 

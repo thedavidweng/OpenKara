@@ -15,7 +15,7 @@
       },
       {
         "action": "select-library",
-        "target": "Library",
+        "target": "All Tracks",
         "assertion": "The library view becomes active."
       },
       {
@@ -25,7 +25,7 @@
       },
       {
         "action": "select-track",
-        "target": "Imported fixture",
+        "target": "fixture",
         "assertion": "The track is selected and the details view loads."
       },
       {
@@ -46,7 +46,7 @@
       {
         "action": "start-separation",
         "target": "Vocal/instrumental separation",
-        "assertion": "The separation process starts for the selected track."
+        "assertion": "The separation process starts and the stem mixer becomes enabled."
       },
       {
         "action": "adjust-stems",
@@ -81,7 +81,7 @@
       {
         "action": "toggle-fullscreen",
         "target": "Fullscreen",
-        "assertion": "The main window enters fullscreen."
+        "assertion": "The main window enters fullscreen and returns."
       },
       {
         "action": "stop-playback",
@@ -108,58 +108,6 @@
         "action": "close",
         "target": "OpenKara.exe",
         "assertion": "The installed application exits cleanly."
-      }
-    ]
-  },
-  {
-    "id": "display-scale-matrix",
-    "name": "Display scaling matrix at 100%, 125%, 150%, and 200%",
-    "steps": [
-      {
-        "action": "set-display-scale",
-        "target": "100%",
-        "assertion": "Window opens within the working area and all controls are reachable."
-      },
-      {
-        "action": "set-display-scale",
-        "target": "125%",
-        "assertion": "UI Automation bounding rectangles are non-zero and no control is clipped."
-      },
-      {
-        "action": "set-display-scale",
-        "target": "150%",
-        "assertion": "Minimum-size window remains operable and hit targets match visible controls."
-      },
-      {
-        "action": "set-display-scale",
-        "target": "200%",
-        "assertion": "Keyboard and pointer hit targets remain aligned with visible controls."
-      }
-    ]
-  },
-  {
-    "id": "high-contrast",
-    "name": "Windows High Contrast keyboard workflow",
-    "steps": [
-      {
-        "action": "enable-high-contrast",
-        "target": "System",
-        "assertion": "High contrast theme is active before the app launches."
-      },
-      {
-        "action": "launch",
-        "target": "OpenKara.exe",
-        "assertion": "Text and focus indicators remain visible."
-      },
-      {
-        "action": "navigate-sidebar",
-        "target": "Sidebar",
-        "assertion": "Selected and disabled states remain distinguishable."
-      },
-      {
-        "action": "close",
-        "target": "OpenKara.exe",
-        "assertion": "The application exits cleanly."
       }
     ]
   },

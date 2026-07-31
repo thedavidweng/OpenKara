@@ -12,6 +12,7 @@ export function QueueButton() {
   return (
     <Tooltip label={t("queue.title")}>
       <button
+        id="queue-button"
         onClick={togglePanel}
         aria-label={t("queue.title")}
         aria-pressed={isOpen}

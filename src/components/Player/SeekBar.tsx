@@ -295,6 +295,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       </span>
       <div
         ref={barRef}
+        id="seek-slider"
         className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 rounded-full bg-[var(--color-border)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
         onMouseDown={handleMouseDown}
         role="slider"

@@ -11,11 +11,16 @@ on:
         description: "Prefix for all uploaded artifacts"
         required: true
         type: string
-      scenario:
-        description: "Automation scenario name"
+      driver_scenario:
+        description: "Automation driver scenario name"
         required: false
         type: string
         default: "clean-install"
+      uia_scenario:
+        description: "UI Automation E2E scenario name"
+        required: false
+        type: string
+        default: "keyboard-workflow"
       previous_version:
         description: "Previous release to install before the candidate (empty = latest stable, none = clean install only)"
         required: false
@@ -248,7 +253,7 @@ jobs:
         shell: pwsh
         env:
           OPENKARA_SMOKE_EP: cpu
-          OPENKARA_SCENARIO: ${{ inputs.scenario }}
+          OPENKARA_SCENARIO: ${{ inputs.driver_scenario }}
           SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
         run: |
           $ErrorActionPreference = "Stop"
@@ -276,6 +281,7 @@ jobs:
         shell: pwsh
         env:
           OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-installed-smoke
+          UIA_SCENARIO: ${{ inputs.uia_scenario }}
         run: |
           $ErrorActionPreference = "Stop"
           $probe = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "uia-probe") -Filter "OpenKara.AccessibilityProbe.exe" -File | Select-Object -First 1
@@ -284,10 +290,20 @@ jobs:
           $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
           & scripts/ci/run-windows-desktop-e2e.ps1 `
             -InstallDir $installDir `
-            -Scenario keyboard-workflow `
+            -Scenario $env:UIA_SCENARIO `
             -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
             -ProbePath $probe.FullName
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }
+
+      - name: Validate desktop E2E report
+        if: always()
+        shell: bash
+        env:
+          UIA_SCENARIO: ${{ inputs.uia_scenario }}
+        run: |
+          node scripts/validate-desktop-e2e-report.mjs \
+            "${RUNNER_TEMP}/desktop-e2e/desktop-e2e-report.json" \
+            "${UIA_SCENARIO}"
 
       - name: Validate installed app smoke
         shell: pwsh
