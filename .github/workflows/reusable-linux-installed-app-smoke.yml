@@ -144,6 +144,7 @@ jobs:
           fi
 
       - name: Build automation driver
+        working-directory: src-tauri
         env:
           RUST_TARGET: ${{ inputs.rust_target }}
         run: cargo build --release --target "${RUST_TARGET}" --features automation-smoke --bin openkara_automation_driver
