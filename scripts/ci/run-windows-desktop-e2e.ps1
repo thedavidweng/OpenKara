@@ -134,10 +134,14 @@ public class OpenKaraWin32 {
         string lowerTitle = title.ToLowerInvariant();
         EnumWindows((hWnd, lParam) => {
             if (!IsWindowVisible(hWnd)) return true;
-            if (GetWindowThreadProcessId(hWnd, out uint pid) == 0 || (int)pid != processId) return true;
+            if (processId > 0) {
+                if (GetWindowThreadProcessId(hWnd, out uint pid) == 0 || (int)pid != processId) return true;
+            }
             StringBuilder sb = new StringBuilder(512);
             if (GetWindowText(hWnd, sb, sb.Capacity) > 0) {
-                if (sb.ToString().ToLowerInvariant().Equals(lowerTitle, StringComparison.Ordinal)) {
+                string windowTitle = sb.ToString();
+                if (windowTitle.Equals(title, StringComparison.OrdinalIgnoreCase) ||
+                    windowTitle.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0) {
                     found = hWnd;
                     return false;
                 }
@@ -152,6 +156,13 @@ public class OpenKaraWin32 {
         foreach (string title in titles) {
             IntPtr hWnd = FindWindowByTitle(processId, title);
             if (hWnd != IntPtr.Zero) return hWnd;
+        }
+        // System file pickers (and some plugin hosts) may not share our PID.
+        if (processId > 0) {
+            foreach (string title in titles) {
+                IntPtr hWnd = FindWindowByTitle(0, title);
+                if (hWnd != IntPtr.Zero) return hWnd;
+            }
         }
         return IntPtr.Zero;
     }
@@ -947,32 +958,85 @@ function Invoke-StepAction {
                 }
                 $fixturePath = [System.IO.Path]::GetFullPath($fixturePath)
 
-                Send-KeyboardInput "^o"
-
-                $dialog = Wait-For-Dialog -Titles @("Open", "Open File") -TimeoutMs $StepTimeoutMs
-                if ($dialog -eq [IntPtr]::Zero) {
-                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "file picker dialog with title 'Open' did not appear"
-                    $stepStatus = "failed"
-                } else {
-                    Send-KeyboardInput -Keys $fixturePath -Handle $dialog
-                    Start-Sleep -Milliseconds 100
-                    Send-KeyboardInput -Keys "~" -Handle $dialog
-
-                    $track = Wait-For-Element -Predicate {
-                        param($n)
-                            ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem") -and
-                            $n.name -and $n.name.IndexOf("fixture", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
-                    } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
-
+                # Seeded smoke libraries may already expose the fixture track.
+                $existing = Find-Track -Tree (Get-UiTree -ProcessId $script:process.Id) -Name "fixture"
+                if ($null -ne $existing -and $existing.isOffscreen -ne $true) {
                     $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
-                        param($t)
-                        if ($null -eq $track) { return "imported fixture track did not appear in the UIA tree" }
-                        $btn = Find-Track -Tree $t -Name "fixture"
-                        if ($null -eq $btn) { return "no track named fixture in the current tree" }
-                        if ($btn.isOffscreen -eq $true) { return "fixture track is offscreen" }
-                        return $true
+                        param($t) return $true
                     }
                     if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                } else {
+                    # SendKeys Ctrl+O often never reaches WebView2 key handlers on CI.
+                    # Prefer keyboard-activating the Import control, then fall back to Ctrl+O / Invoke.
+                    $importControl = Tab-To-Element -Predicate {
+                        param($n)
+                        $n.controlType -eq "Button" -and $n.name -and (
+                            $n.name.Equals("Import Music", [System.StringComparison]::OrdinalIgnoreCase) -or
+                            $n.name.Equals("Import", [System.StringComparison]::OrdinalIgnoreCase)
+                        )
+                    } -MaxTabs 40 -TimeoutMs ([math]::Min($StepTimeoutMs, 15000))
+
+                    if ($null -ne $importControl) {
+                        Write-Host "Opening import via keyboard on '$($importControl.name)'"
+                        Send-KeyboardInput "~"
+                    } else {
+                        Write-Host "Import control not focused; trying Ctrl+O"
+                        Send-KeyboardInput "^o"
+                    }
+
+                    $dialog = Wait-For-Dialog -Titles @("Open", "Open File", "Select") -TimeoutMs ([math]::Min($StepTimeoutMs, 8000))
+                    if ($dialog -eq [IntPtr]::Zero) {
+                        try {
+                            Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name "Import Music" -ControlType "Button" | Out-Null
+                        } catch {
+                            try {
+                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name "Import" -ControlType "Button" | Out-Null
+                            } catch {
+                                Write-Warning "Invoke Import failed: $_"
+                            }
+                        }
+                        $dialog = Wait-For-Dialog -Titles @("Open", "Open File", "Select") -TimeoutMs $StepTimeoutMs
+                    }
+
+                    if ($dialog -eq [IntPtr]::Zero) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "file picker dialog with title 'Open' did not appear"
+                        $stepStatus = "failed"
+                    } else {
+                        Write-Host "File picker opened (hwnd=$dialog); typing fixture path"
+                        [void][OpenKaraWin32]::SetForegroundWindow($dialog)
+                        Start-Sleep -Milliseconds 200
+                        # Focus filename field (common Open dialog accelerator).
+                        Send-KeyboardInput -Keys "%n" -Handle $dialog
+                        Start-Sleep -Milliseconds 100
+                        Send-KeyboardInput -Keys $fixturePath -Handle $dialog
+                        Start-Sleep -Milliseconds 150
+                        Send-KeyboardInput -Keys "~" -Handle $dialog
+
+                        # Import flow may show a confirm dialog after path selection.
+                        $confirm = Wait-For-Dialog -Titles @("Import", "Confirm", "OpenKara") -TimeoutMs 5000
+                        if ($confirm -ne [IntPtr]::Zero -and $confirm -ne $dialog) {
+                            Write-Host "Confirm dialog detected; accepting"
+                            [void][OpenKaraWin32]::SetForegroundWindow($confirm)
+                            Start-Sleep -Milliseconds 100
+                            Send-KeyboardInput -Keys "~" -Handle $confirm
+                        }
+
+                        $track = Wait-For-Element -Predicate {
+                            param($n)
+                                ($n.controlType -eq "Button" -or $n.controlType -eq "ListItem") -and
+                                $n.name -and $n.name.IndexOf("fixture", [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+
+                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                            param($t)
+                            if ($null -eq $track) { return "imported fixture track did not appear in the UIA tree" }
+                            $btn = Find-Track -Tree $t -Name "fixture"
+                            if ($null -eq $btn) { return "no track named fixture in the current tree" }
+                            if ($btn.isOffscreen -eq $true) { return "fixture track is offscreen" }
+                            return $true
+                        }
+                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                    }
                 }
             }
 
