@@ -11,7 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LibraryRegistrySnapshot {
@@ -286,9 +286,11 @@ pub fn get_library_path(state: State<'_, AppState>) -> CommandResult<Option<Stri
 }
 
 #[tauri::command]
-pub fn get_library_registry(app_handle: AppHandle) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
-    let config = load_app_config(&app_data_dir)?;
+pub fn get_library_registry(state: State<'_, AppState>) -> CommandResult<LibraryRegistrySnapshot> {
+    // Use the resolved shell app-data path (respects OPENKARA_APP_DATA_DIR under
+    // automation-smoke). Tauri's path().app_data_dir() ignores that override and
+    // makes the frontend think no library is registered.
+    let config = load_app_config(&state.shell.app_data_dir)?;
 
     Ok(LibraryRegistrySnapshot {
         active_library_id: config.active_library_id.clone(),
@@ -297,9 +299,8 @@ pub fn get_library_registry(app_handle: AppHandle) -> CommandResult<LibraryRegis
 }
 
 #[tauri::command]
-pub fn get_active_library(app_handle: AppHandle) -> CommandResult<Option<RegisteredLibrary>> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
-    let config = load_app_config(&app_data_dir)?;
+pub fn get_active_library(state: State<'_, AppState>) -> CommandResult<Option<RegisteredLibrary>> {
+    let config = load_app_config(&state.shell.app_data_dir)?;
 
     Ok(config.active_library().cloned())
 }
@@ -307,10 +308,9 @@ pub fn get_active_library(app_handle: AppHandle) -> CommandResult<Option<Registe
 #[tauri::command]
 pub fn remove_library(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
     library_id: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
+    let app_data_dir = state.shell.app_data_dir.clone();
     let mut config = load_app_config(&app_data_dir)?;
     let removed_active = config.active_library_id.as_deref() == Some(library_id.as_str());
     let removed_libraries: Vec<_> = config
@@ -360,21 +360,19 @@ pub fn remove_library(
 
 #[tauri::command]
 pub fn rename_library(
-    app_handle: AppHandle,
+    state: State<'_, AppState>,
     library_id: String,
     display_name: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
-    update_library_display_name(&app_data_dir, &library_id, &display_name)
+    update_library_display_name(&state.shell.app_data_dir, &library_id, &display_name)
 }
 
 #[tauri::command]
 pub fn delete_library(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
     library_id: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
+    let app_data_dir = state.shell.app_data_dir.clone();
     let config = load_app_config(&app_data_dir)?;
     let Some(library) = config
         .libraries
@@ -388,7 +386,7 @@ pub fn delete_library(
     };
 
     delete_library_data(&app_data_dir, &library)?;
-    remove_library(state, app_handle, library_id)
+    remove_library(state, library_id)
 }
 
 #[cfg(test)]

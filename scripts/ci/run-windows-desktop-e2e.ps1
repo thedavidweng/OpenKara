@@ -1462,6 +1462,10 @@ function Invoke-StepAction {
     if ($stepStatus -ne "passed") {
         $script:overallStatus = "failed"
     }
+
+    # Returning non-pass for launch means the shell never came up; further
+    # keyboard steps only burn timeout budget (often ~15 minutes).
+    return $stepStatus
 }
 
 Resolve-ProbePath
@@ -1482,7 +1486,12 @@ $script:mainWindowHandle = [IntPtr]::Zero
 $stepIndex = 0
 foreach ($step in $selectedScenario.steps) {
     $stepIndex++
-    Invoke-StepAction -Step $step -StepIndex $stepIndex
+    $status = Invoke-StepAction -Step $step -StepIndex $stepIndex
+    $action = if ($step.action) { $step.action } else { "" }
+    if ($status -ne "passed" -and $action -eq "launch") {
+        Write-Warning "Launch step failed; aborting remaining scenario steps"
+        break
+    }
 }
 
 if ($null -ne $script:process -and -not $script:process.HasExited) {
