@@ -104,15 +104,19 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("*.sig");
 
     // Build-path speed: non-release smoke must not re-key the rust cache per
-    // commit, and must thin-LTO the release profile so driver+app do not each
-    // pay a fat-LTO link.
+    // commit, and must thin-LTO + opt-level=1 the release profile so driver+app
+    // do not each pay a fat-LTO / size-opt link.
     expect(reusableWorkflow).not.toMatch(/key:\s*\$\{\{\s*github\.sha\s*\}\}/);
     expect(reusableWorkflow).toContain("CARGO_PROFILE_RELEASE_LTO");
+    expect(reusableWorkflow).toContain("CARGO_PROFILE_RELEASE_OPT_LEVEL");
     expect(reusableWorkflow).toContain("thin");
+    expect(reusableWorkflow).toContain("thin-lto-o1");
     expect(reusableWorkflow).toContain(
       "cargo build --release --features automation-smoke --bin openkara_automation_driver",
     );
     expect(reusableWorkflow).toMatch(/cache:\s*pnpm/);
+    // UIA probe builds in parallel with cargo, not as a serial follow-up step.
+    expect(reusableWorkflow).toContain('Start-Process -FilePath "dotnet"');
 
     // Release call must enable keyboard UIA, upgrade (empty previous_version),
     // and fault injection, with long artifact retention.

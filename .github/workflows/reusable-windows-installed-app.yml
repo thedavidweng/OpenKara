@@ -106,8 +106,11 @@ jobs:
           shared-key: openkara-windows-installed-smoke
           workspaces: ./src-tauri -> target
           cache-bin: false
-          prefix-key: v1-windows-smoke
-          key: ${{ inputs.release_build && 'fat-lto' || 'thin-lto' }}
+          # save even when later jobs fail so the next push still warms.
+          save-if: true
+          prefix-key: v2-windows-smoke
+          # Profile shape is part of the key: fat (release) vs thin+O1 (smoke).
+          key: ${{ inputs.release_build && 'fat-lto' || 'thin-lto-o1' }}
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -130,29 +133,48 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      # Product Cargo.toml uses fat LTO + codegen-units=1. That is correct for
-      # shipped builds, but linking the app *and* the automation driver as two
-      # separate fat-LTO bins costs ~15 minutes. Non-release smoke builds use
-      # thin LTO so one cargo graph + one NSIS package finishes much faster.
-      # release_build=true keeps the Cargo.toml fat-LTO settings for publish.
-      - name: Build automation driver and NSIS candidate
+      # Product Cargo.toml uses fat LTO + opt-level=s + codegen-units=1. That is
+      # correct for shipped builds, but linking the app *and* the automation
+      # driver as two separate fat-LTO bins costs ~15 minutes. Non-release smoke
+      # builds use thin LTO, opt-level=1, and higher codegen-units so one cargo
+      # graph + one NSIS package finishes much faster. release_build=true keeps
+      # the Cargo.toml fat-LTO settings for publish.
+      - name: Build automation driver, NSIS candidate, and UIA probe
         env:
           CI: true
           RELEASE_BUILD: ${{ inputs.release_build }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Thin LTO only when this is not a signed release candidate.
+          # Smoke profile overrides (ignored when RELEASE_BUILD=true below).
           CARGO_PROFILE_RELEASE_LTO: ${{ inputs.release_build && 'fat' || 'thin' }}
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.release_build && '1' || '8' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.release_build && '1' || '16' }}
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ inputs.release_build && 's' || '1' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+
+          # UIA probe is independent of Rust; start it in parallel with cargo.
+          $probeOut = Join-Path $env:RUNNER_TEMP "uia-probe-build.out.log"
+          $probeErr = Join-Path $env:RUNNER_TEMP "uia-probe-build.err.log"
+          $probe = Start-Process -FilePath "dotnet" `
+            -ArgumentList @(
+              "build",
+              "tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj",
+              "-c", "Release",
+              "--verbosity", "minimal"
+            ) `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput $probeOut `
+            -RedirectStandardError $probeErr
 
           # Build the driver first so the subsequent tauri link reuses the same
           # release unit graph instead of starting a second cold compile.
           Push-Location src-tauri
           cargo build --release --features automation-smoke --bin openkara_automation_driver
-          if ($LASTEXITCODE -ne 0) { throw "automation driver build failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            throw "automation driver build failed with exit code $LASTEXITCODE"
+          }
           Pop-Location
 
           if ($env:RELEASE_BUILD -eq "true") {
@@ -160,17 +182,20 @@ jobs:
           } else {
             pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign
           }
-          if ($LASTEXITCODE -ne 0) { throw "tauri build failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            throw "tauri build failed with exit code $LASTEXITCODE"
+          }
 
           if (-not (Test-Path -Path "src-tauri/target/release/openkara_automation_driver.exe" -PathType Leaf)) {
             throw "automation driver binary missing after build"
           }
 
-      - name: Build UIA probe
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          dotnet build tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj -c Release --verbosity minimal
+          Wait-Process -Id $probe.Id
+          Get-Content -Path $probeOut, $probeErr -ErrorAction SilentlyContinue | Write-Host
+          if ($probe.ExitCode -ne 0) {
+            throw "UIA probe build failed with exit code $($probe.ExitCode)"
+          }
 
       - name: Upload UIA probe
         if: always()
@@ -324,35 +349,83 @@ jobs:
           }
           Copy-Item -Recurse -Force $smokeAppData $uiaAppData
 
-          # Keyboard UIA needs a registered library so the main shell renders
-          # instead of first-run LibrarySetup. Reuse the user-library marker dir.
-          $libraryDir = $env:USER_LIBRARY_DIR
-          if ([string]::IsNullOrWhiteSpace($libraryDir)) {
-            $libraryDir = Join-Path $env:RUNNER_TEMP "openkara-user-library"
+          # Keyboard UIA must land in the main shell, not first-run LibrarySetup.
+          # libraryReady is active_library_id !== null, and the root must be a
+          # real LibraryRoot (has .openkara-library). Prefer the driver's
+          # restart smoke-library (has fixture media + stems); else create one.
+          $fallbackLibrary = $env:USER_LIBRARY_DIR
+          if ([string]::IsNullOrWhiteSpace($fallbackLibrary)) {
+            $fallbackLibrary = Join-Path $env:RUNNER_TEMP "openkara-user-library"
           }
-          New-Item -ItemType Directory -Force -Path $libraryDir | Out-Null
+          $libraryCandidates = @(
+            (Join-Path $env:SMOKE_ROOT "restart\smoke-library"),
+            (Join-Path $env:SMOKE_ROOT "smoke-library"),
+            $fallbackLibrary
+          )
+          $libraryDir = $null
+          foreach ($candidate in $libraryCandidates) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $marker = Join-Path $candidate ".openkara-library"
+            if (Test-Path -Path $marker -PathType Leaf) {
+              $libraryDir = (Resolve-Path -Path $candidate).Path
+              Write-Host "Reusing existing library root at $libraryDir"
+              break
+            }
+          }
+          if ($null -eq $libraryDir) {
+            $libraryDir = $fallbackLibrary
+            New-Item -ItemType Directory -Force -Path $libraryDir | Out-Null
+            $libraryDir = (Resolve-Path -Path $libraryDir).Path
+            $markerPath = Join-Path $libraryDir ".openkara-library"
+            $marker = @{
+              version    = 1
+              created_at = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+              identifier = "com.openkara.library"
+            }
+            $marker | ConvertTo-Json -Depth 4 | Set-Content -Path $markerPath -Encoding utf8
+            foreach ($sub in @("media", "media-g", "stems", "artwork")) {
+              New-Item -ItemType Directory -Force -Path (Join-Path $libraryDir $sub) | Out-Null
+            }
+            Write-Host "Created UIA library root at $libraryDir"
+          }
+
+          $sha = [System.Security.Cryptography.SHA256]::Create()
+          $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($libraryDir))
+          $libraryId = "library-" + (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
+          $displayName = Split-Path -Path $libraryDir -Leaf
+          if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = "OpenKara Library" }
+
           $configPath = Join-Path $uiaAppData "config.json"
-          $config = @{
-            library_path = $libraryDir
-            language     = "en"
-          }
+          $config = [ordered]@{}
           if (Test-Path -Path $configPath -PathType Leaf) {
             try {
               $existing = Get-Content -Path $configPath -Raw | ConvertFrom-Json
               if ($null -ne $existing) {
                 $existing | Get-Member -MemberType NoteProperty | ForEach-Object {
-                  $name = $_.Name
-                  if (-not $config.ContainsKey($name)) {
-                    $config[$name] = $existing.$name
-                  }
+                  $config[$_.Name] = $existing.($_.Name)
                 }
               }
             } catch {
               Write-Warning "Existing UIA config.json was unreadable; writing a fresh library seed"
             }
           }
+
+          # Registry form is authoritative; clear legacy library_path so migrate
+          # cannot overwrite libraries with the old single-path field.
+          $config["language"] = "en"
+          $config["library_path"] = $null
+          $config["libraries"] = @(
+            [ordered]@{
+              kind         = "local"
+              id           = $libraryId
+              display_name = $displayName
+              root_path    = $libraryDir
+            }
+          )
+          $config["active_library_id"] = $libraryId
+
           $config | ConvertTo-Json -Depth 8 | Set-Content -Path $configPath -Encoding utf8
-          Write-Host "Seeded UIA library_path=$libraryDir into $configPath"
+          Write-Host "Seeded UIA active_library_id=$libraryId root=$libraryDir into $configPath"
 
           "OPENKARA_APP_DATA_DIR=$uiaAppData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 

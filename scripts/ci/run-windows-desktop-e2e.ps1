@@ -232,11 +232,25 @@ function Wait-For-UiReady {
     param(
         [int]$ProcessId,
         [int]$TimeoutMs = 90000,
-        [string[]]$ReadyNameHints = @("All Tracks", "Library", "Play", "Settings", "Welcome", "Create", "Open existing")
+        # Main shell / post-setup only. Language-picker buttons alone must NOT
+        # count as ready — that trapped keyboard-workflow on first-run for ~15m.
+        [string[]]$ReadyNameHints = @(
+            "All Tracks",
+            "Separated",
+            "Play",
+            "Settings",
+            "Import",
+            "Queue",
+            "Create a new library",
+            "Open an existing library",
+            "Create new",
+            "Open existing"
+        )
     )
 
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
     $attempt = 0
+    $lastObservation = "no named interactive controls observed"
     while ([DateTime]::UtcNow -lt $deadline) {
         $attempt++
         try {
@@ -258,6 +272,20 @@ function Wait-For-UiReady {
                 ) -contains $_.controlType -and
                 $_.name -notin @("Minimize", "Maximize", "Close", "System", "OpenKara", "System Menu Bar")
             })
+
+            $languagePicker = @($namedInteractive | Where-Object {
+                $_.name -and (
+                    $_.name.IndexOf("Choose a language", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+                    $_.name -match '^(EN English|DE Deutsch|FR Français|JA 日本語|简 简体中文)$'
+                )
+            })
+            if ($languagePicker.Count -gt 0) {
+                $lastObservation = "first-run language picker is still visible ($($languagePicker.Count) controls); library seed did not skip LibrarySetup"
+                Write-Host "Wait-For-UiReady attempt ${attempt}: $lastObservation"
+                Start-Sleep -Milliseconds 1500
+                continue
+            }
+
             foreach ($hint in $ReadyNameHints) {
                 $hit = $namedInteractive | Where-Object {
                     $_.name.IndexOf($hint, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
@@ -267,17 +295,15 @@ function Wait-For-UiReady {
                     return $tree
                 }
             }
-            if ($namedInteractive.Count -ge 3) {
-                Write-Host "UI ready after ${attempt} probe(s): $($namedInteractive.Count) named interactive controls"
-                return $tree
-            }
-            Write-Host "Wait-For-UiReady attempt ${attempt}: namedInteractive=$($namedInteractive.Count)"
+            $lastObservation = "namedInteractive=$($namedInteractive.Count); no main-shell ready hint yet"
+            Write-Host "Wait-For-UiReady attempt ${attempt}: $lastObservation"
         } catch {
             Write-Warning "Wait-For-UiReady probe failed: $_"
+            $lastObservation = "probe error: $_"
         }
         Start-Sleep -Milliseconds 1500
     }
-    throw "WebView UI did not expose named interactive controls within ${TimeoutMs}ms"
+    throw "WebView UI did not reach main shell within ${TimeoutMs}ms ($lastObservation)"
 }
 
 function Wait-For-ProcessWindow {
