@@ -316,6 +316,7 @@ jobs:
             (Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json") `
             (Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json") `
             $env:SMOKE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw "Installed app smoke validation failed with exit code $LASTEXITCODE" }
 
       - name: Upload smoke reports
         if: always()

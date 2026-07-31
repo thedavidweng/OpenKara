@@ -6,7 +6,8 @@ import {
 } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SUMMARY_PATH = process.env.GITHUB_STEP_SUMMARY;
 
@@ -794,7 +795,10 @@ async function main() {
   console.log("Installed app release smoke passed.");
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (
+  process.argv[1] &&
+  resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])
+) {
   main().catch((error) => {
     console.error(error.message);
     process.exit(1);
