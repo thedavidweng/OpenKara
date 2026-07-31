@@ -191,7 +191,12 @@ jobs:
             throw "automation driver binary missing after build"
           }
 
-          Wait-Process -Id $probe.Id
+          # Probe often finishes well before the Rust/NSIS link; Wait-Process
+          # errors if the PID is already gone, so only wait when still alive.
+          if (-not $probe.HasExited) {
+            Wait-Process -Id $probe.Id
+          }
+          $probe.Refresh()
           Get-Content -Path $probeOut, $probeErr -ErrorAction SilentlyContinue | Write-Host
           if ($probe.ExitCode -ne 0) {
             throw "UIA probe build failed with exit code $($probe.ExitCode)"
