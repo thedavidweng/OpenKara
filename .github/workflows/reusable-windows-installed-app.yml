@@ -118,6 +118,7 @@ jobs:
           }
 
       - name: Build automation driver
+        working-directory: src-tauri
         run: cargo build --release --features automation-smoke --bin openkara_automation_driver
 
       - name: Build UIA probe
@@ -306,6 +307,7 @@ jobs:
             "${UIA_SCENARIO}"
 
       - name: Validate installed app smoke
+        if: always()
         shell: pwsh
         env:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
