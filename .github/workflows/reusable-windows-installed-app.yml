@@ -177,10 +177,13 @@ jobs:
           }
           Pop-Location
 
+          # Build only the main binary so the CI driver is not packaged into
+          # the NSIS installer. The driver is already built above as a separate
+          # artifact (and must stay outside the product installer).
           if ($env:RELEASE_BUILD -eq "true") {
-            pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           } else {
-            pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign -- --bin openkara
           }
           if ($LASTEXITCODE -ne 0) {
             if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
