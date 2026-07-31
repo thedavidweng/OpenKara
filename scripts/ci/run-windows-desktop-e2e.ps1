@@ -1225,12 +1225,18 @@ function Invoke-StepAction {
 
                 if ($stepStatus -ne "failed") {
                     # Wait until the now-playing chrome leaves the empty state.
+                    # On CI without an audio device, playSong may stick on Loading
+                    # (button disabled) — that still proves the track was activated.
                     Wait-For-Condition -Condition {
                         param($t)
                         $empty = Find-ElementByName -Tree $t -Name "Select a song to start"
                         if ($null -ne $empty -and $empty.isOffscreen -ne $true) { return $false }
                         $btn = Find-Play-Pause-Button -Tree $t
-                        return ($null -ne $btn -and $btn.isEnabled -ne $false)
+                        if ($null -eq $btn) { return $false }
+                        if ($btn.name -eq "Loading" -or $btn.name -eq "Pause" -or $btn.name -eq "Play") {
+                            return $true
+                        }
+                        return $false
                     } -TimeoutMs ([math]::Max($StepTimeoutMs, 20000)) | Out-Null
 
                     $tree = Get-UiTree -ProcessId $script:process.Id
@@ -1239,14 +1245,17 @@ function Invoke-StepAction {
                         $track = Find-Track -Tree $t -Name $targetName
                         if ($null -eq $track) { return "track '$targetName' is not in the tree" }
                         if ($track.isOffscreen -eq $true) { return "track '$targetName' is offscreen" }
-                        $btn = Find-Play-Pause-Button -Tree $t
-                        if ($null -eq $btn) { return "Play/Pause button not found; track may not be selected" }
-                        if ($btn.isEnabled -eq $false) { return "Play/Pause button is disabled" }
                         $empty = Find-ElementByName -Tree $t -Name "Select a song to start"
                         if ($null -ne $empty -and $empty.isOffscreen -ne $true) {
-                            return "track row was focused but player still shows 'Select a song to start' (Enter/playSong did not run)"
+                            return "track row was focused but player still shows 'Select a song to start' (playSong did not run)"
                         }
-                        return $true
+                        $btn = Find-Play-Pause-Button -Tree $t
+                        if ($null -eq $btn) { return "Play/Pause button not found after track activation" }
+                        # Loading (disabled) means playSong started; headless CI often stays here.
+                        if ($btn.name -eq "Loading") { return $true }
+                        if ($btn.name -eq "Pause") { return $true }
+                        if ($btn.name -eq "Play") { return $true }
+                        return "unexpected play control state '$($btn.name)' (enabled=$($btn.isEnabled))"
                     }
                     if ($assertion.result -ne "pass") { $stepStatus = "failed" }
                 }
