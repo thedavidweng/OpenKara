@@ -141,10 +141,16 @@ class Program
         var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 0));
         do
         {
-            var window = AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
-            if (window is not null)
+            try
             {
-                return window;
+                var window = AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
+                if (window is not null)
+                {
+                    return window;
+                }
+            }
+            catch (ElementNotAvailableException)
+            {
             }
 
             if (timeoutMs > 0)
@@ -156,11 +162,43 @@ class Program
         return null;
     }
 
-    private static void Walk(AutomationElement element, string parentPath, string parent, int index, List<Node> nodes)
+    private static AutomationElement.AutomationElementInformation TryGetCurrent(AutomationElement element)
     {
-        string controlType = GetControlTypeName(element.Current.ControlType);
-        string name = element.Current.Name ?? string.Empty;
-        string automationId = element.Current.AutomationId ?? string.Empty;
+        try
+        {
+            return element.Current;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return default;
+        }
+    }
+
+    private static bool IsStale(AutomationElement? element)
+    {
+        if (element is null) return true;
+        try
+        {
+            _ = element.Current.ControlType;
+            return false;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return true;
+        }
+    }
+
+    private static void Walk(AutomationElement? element, string parentPath, string parent, int index, List<Node> nodes)
+    {
+        if (element is null || IsStale(element))
+        {
+            return;
+        }
+
+        var current = TryGetCurrent(element);
+        string controlType = GetControlTypeName(current.ControlType);
+        string name = current.Name ?? string.Empty;
+        string automationId = current.AutomationId ?? string.Empty;
 
         string segment = $"{controlType}[{index}]";
         string path = parentPath.Length == 0 ? $"/{segment}" : $"{parentPath}/{segment}";
@@ -171,11 +209,11 @@ class Program
             ControlType = controlType,
             Name = name,
             AutomationId = automationId,
-            IsEnabled = element.Current.IsEnabled,
-            IsFocusable = element.Current.IsKeyboardFocusable,
-            HasKeyboardFocus = element.Current.HasKeyboardFocus,
-            IsOffscreen = element.Current.IsOffscreen,
-            BoundingRectangle = GetBoundingRectangle(element),
+            IsEnabled = current.IsEnabled,
+            IsFocusable = current.IsKeyboardFocusable,
+            HasKeyboardFocus = current.HasKeyboardFocus,
+            IsOffscreen = current.IsOffscreen,
+            BoundingRectangle = GetBoundingRectangle(current),
             SupportedPatterns = GetPatternNames(element),
             IsSelected = TryGetSelected(element),
             ExpandCollapseState = TryGetExpandState(element),
@@ -187,21 +225,39 @@ class Program
 
         nodes.Add(node);
 
-        var child = TreeWalker.RawViewWalker.GetFirstChild(element);
-        int childIndex = 0;
-        while (child is not null)
+        AutomationElementCollection? children = null;
+        try
         {
-            Walk(child, path, path, childIndex, nodes);
-            node.Children.Add($"{path}/{GetControlTypeName(child.Current.ControlType)}[{childIndex}]");
-            child = TreeWalker.RawViewWalker.GetNextSibling(child);
-            childIndex++;
+            children = element.FindAll(TreeScope.Children, Condition.TrueCondition);
+        }
+        catch (ElementNotAvailableException)
+        {
+        }
+
+        if (children is not null)
+        {
+            for (int i = 0; i < children.Count; i++)
+            {
+                var child = children[i];
+                if (child is null || IsStale(child)) continue;
+
+                Walk(child, path, path, i, nodes);
+
+                var childCurrent = TryGetCurrent(child);
+                string childType = GetControlTypeName(childCurrent.ControlType);
+                node.Children.Add($"{path}/{childType}[{i}]");
+            }
         }
 
         node.Children.Sort(StringComparer.Ordinal);
     }
 
-    private static string GetControlTypeName(ControlType controlType)
+    private static string GetControlTypeName(ControlType? controlType)
     {
+        if (controlType is null)
+        {
+            return "Unknown";
+        }
         string name = controlType.ProgrammaticName;
         const string prefix = "ControlType.";
         return name.StartsWith(prefix, StringComparison.Ordinal)
@@ -212,66 +268,109 @@ class Program
     private static List<string> GetPatternNames(AutomationElement element)
     {
         var names = new List<string>();
-        foreach (var pattern in element.GetSupportedPatterns())
+        try
         {
-            string? name = Automation.PatternName(pattern);
-            names.Add(name ?? pattern.ProgrammaticName ?? "Unknown");
+            foreach (var pattern in element.GetSupportedPatterns())
+            {
+                string? name = Automation.PatternName(pattern);
+                names.Add(name ?? pattern.ProgrammaticName ?? "Unknown");
+            }
+            names.Sort(StringComparer.Ordinal);
         }
-        names.Sort(StringComparer.Ordinal);
+        catch (ElementNotAvailableException)
+        {
+        }
         return names;
     }
 
-    private static string? GetBoundingRectangle(AutomationElement element)
+    private static string? GetBoundingRectangle(AutomationElement.AutomationElementInformation current)
     {
-        System.Windows.Rect rect = element.Current.BoundingRectangle;
-        if (rect.IsEmpty)
+        try
+        {
+            if (current.BoundingRectangle.IsEmpty)
+            {
+                return null;
+            }
+            var rect = current.BoundingRectangle;
+            return FormattableString.Invariant($"{rect.Left:F1},{rect.Top:F1},{rect.Width:F1},{rect.Height:F1}");
+        }
+        catch (ElementNotAvailableException)
         {
             return null;
         }
-        return FormattableString.Invariant($"{rect.Left:F1},{rect.Top:F1},{rect.Width:F1},{rect.Height:F1}");
     }
 
     private static bool? TryGetSelected(AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object? pattern))
+        try
         {
-            return ((SelectionItemPattern)pattern!).Current.IsSelected;
+            if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object? pattern) && pattern is not null)
+            {
+                return ((SelectionItemPattern)pattern).Current.IsSelected;
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
         }
         return null;
     }
 
     private static string? TryGetExpandState(AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object? pattern))
+        try
         {
-            return ((ExpandCollapsePattern)pattern!).Current.ExpandCollapseState.ToString();
+            if (element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object? pattern) && pattern is not null)
+            {
+                return ((ExpandCollapsePattern)pattern).Current.ExpandCollapseState.ToString();
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
         }
         return null;
     }
 
     private static double? TryGetRangeValue(AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(RangeValuePattern.Pattern, out object? pattern))
+        try
         {
-            return ((RangeValuePattern)pattern!).Current.Value;
+            if (element.TryGetCurrentPattern(RangeValuePattern.Pattern, out object? pattern) && pattern is not null)
+            {
+                return ((RangeValuePattern)pattern).Current.Value;
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
         }
         return null;
     }
 
     private static string? TryGetValue(AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern))
+        try
         {
-            return ((ValuePattern)pattern!).Current.Value;
+            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern) && pattern is not null)
+            {
+                return ((ValuePattern)pattern).Current.Value;
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
         }
         return null;
     }
 
     private static string? TryGetToggle(AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(TogglePattern.Pattern, out object? pattern))
+        try
         {
-            return ((TogglePattern)pattern!).Current.ToggleState.ToString();
+            if (element.TryGetCurrentPattern(TogglePattern.Pattern, out object? pattern) && pattern is not null)
+            {
+                return ((TogglePattern)pattern).Current.ToggleState.ToString();
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
         }
         return null;
     }

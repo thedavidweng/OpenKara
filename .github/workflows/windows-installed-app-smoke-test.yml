@@ -20,6 +20,6 @@ jobs:
       openkara_version: "0.0.0-test"
       artifact_prefix: test-windows-installed-app
       driver_scenario: clean-install
-      uia_scenario: keyboard-workflow
+      uia_scenario: installed-workflow
       previous_version: none
       retention_days: 1

@@ -202,7 +202,7 @@ jobs:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-windows-installed-app
       driver_scenario: clean-install
-      uia_scenario: keyboard-workflow
+      uia_scenario: installed-workflow
       previous_version: ""
       retention_days: 14
       release_build: true

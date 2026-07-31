@@ -20,7 +20,7 @@ on:
         description: "UI Automation E2E scenario name"
         required: false
         type: string
-        default: "keyboard-workflow"
+        default: "installed-workflow"
       previous_version:
         description: "Previous release to install before the candidate (empty = latest stable, none = clean install only)"
         required: false

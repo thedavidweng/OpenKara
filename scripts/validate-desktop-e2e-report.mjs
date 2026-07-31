@@ -76,8 +76,12 @@ for (const [index, assertion] of report.assertions.entries()) {
   }
 }
 
-if (report.status === "passed" && failCount > 0) {
-  fail(`report.status is "passed" but ${failCount} assertion(s) failed`);
+if (failCount > 0) {
+  fail(`${failCount} assertion(s) failed`);
+}
+
+if (report.status !== "passed") {
+  fail(`report.status is "${report.status}"; expected "passed"`);
 }
 
 console.log(
