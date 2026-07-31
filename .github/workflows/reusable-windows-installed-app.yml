@@ -394,6 +394,18 @@ jobs:
             Write-Host "Created UIA library root at $libraryDir"
           }
 
+          # Local-audio smoke indexes songs in restart/local-audio-smoke.sqlite3 while
+          # media/stems live under smoke-library/. The GUI only opens openkara.db in
+          # the library root — copy the smoke index so keyboard UIA sees tracks.
+          $smokeDb = Join-Path $env:SMOKE_ROOT "restart\local-audio-smoke.sqlite3"
+          $libraryDb = Join-Path $libraryDir "openkara.db"
+          if (Test-Path -Path $smokeDb -PathType Leaf) {
+            Copy-Item -Force $smokeDb $libraryDb
+            Write-Host "Seeded library database from $smokeDb -> $libraryDb"
+          } else {
+            Write-Warning "Smoke database not found at $smokeDb; UIA library may be empty"
+          }
+
           $sha = [System.Security.Cryptography.SHA256]::Create()
           $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($libraryDir))
           $libraryId = "library-" + (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
