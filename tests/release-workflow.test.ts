@@ -103,6 +103,17 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("latest.json");
     expect(reusableWorkflow).toContain("*.sig");
 
+    // Build-path speed: non-release smoke must not re-key the rust cache per
+    // commit, and must thin-LTO the release profile so driver+app do not each
+    // pay a fat-LTO link.
+    expect(reusableWorkflow).not.toMatch(/key:\s*\$\{\{\s*github\.sha\s*\}\}/);
+    expect(reusableWorkflow).toContain("CARGO_PROFILE_RELEASE_LTO");
+    expect(reusableWorkflow).toContain("thin");
+    expect(reusableWorkflow).toContain(
+      "cargo build --release --features automation-smoke --bin openkara_automation_driver",
+    );
+    expect(reusableWorkflow).toMatch(/cache:\s*pnpm/);
+
     // Release call must enable keyboard UIA, upgrade (empty previous_version),
     // and fault injection, with long artifact retention.
     expect(releaseWorkflow).toMatch(
@@ -112,6 +123,9 @@ describe("release workflow", () => {
       /release-windows-installed-smoke:[\s\S]*?run_fault_injection:\s*true/,
     );
     expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?run_keyboard_uia:\s*true/,
+    );
+    expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?run_display_matrix:\s*true/,
     );
     expect(releaseWorkflow).toMatch(
@@ -119,6 +133,10 @@ describe("release workflow", () => {
     );
     expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?previous_version:\s*""/,
+    );
+    // Signed release builds keep fat LTO via release_build: true.
+    expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?release_build:\s*true/,
     );
   });
 

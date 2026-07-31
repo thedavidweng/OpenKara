@@ -22,10 +22,12 @@ on:
         type: string
         default: "keyboard-workflow"
       run_keyboard_uia:
-        description: "Run Windows keyboard/UIA desktop E2E after clean install"
+        description: "Run Windows keyboard/UIA desktop E2E after clean install (enable on release/nightly/full PR)"
         required: false
         type: boolean
-        default: true
+        # Default off so callers that only need clean-install stay fast. Release
+        # and nightly pass true explicitly for the full #303 gate.
+        default: false
       run_fault_injection:
         description: "Run the fault-injection automation driver scenario after a clean install"
         required: false
@@ -89,7 +91,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          package-manager-cache: false
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -99,10 +101,13 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: openkara-windows-release
+          # Stable across commits so adjacent pushes hit the cache. Do not key
+          # on github.sha — that forced a cold cache on every push.
+          shared-key: openkara-windows-installed-smoke
           workspaces: ./src-tauri -> target
           cache-bin: false
-          key: ${{ github.sha }}
+          prefix-key: v1-windows-smoke
+          key: ${{ inputs.release_build && 'fat-lto' || 'thin-lto' }}
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -114,33 +119,58 @@ jobs:
         shell: bash
         run: node scripts/prepare-onnx-runtime.mjs --target x86_64-pc-windows-msvc
 
+      - name: Restore NuGet cache for UIA probe
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-uia-probe-${{ hashFiles('tools/windows-accessibility/**/*.csproj') }}
+          restore-keys: |
+            nuget-uia-probe-
+
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build NSIS release candidate with automation smoke entry point
+      # Product Cargo.toml uses fat LTO + codegen-units=1. That is correct for
+      # shipped builds, but linking the app *and* the automation driver as two
+      # separate fat-LTO bins costs ~15 minutes. Non-release smoke builds use
+      # thin LTO so one cargo graph + one NSIS package finishes much faster.
+      # release_build=true keeps the Cargo.toml fat-LTO settings for publish.
+      - name: Build automation driver and NSIS candidate
         env:
           CI: true
           RELEASE_BUILD: ${{ inputs.release_build }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Thin LTO only when this is not a signed release candidate.
+          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.release_build && 'fat' || 'thin' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.release_build && '1' || '8' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+
+          # Build the driver first so the subsequent tauri link reuses the same
+          # release unit graph instead of starting a second cold compile.
+          Push-Location src-tauri
+          cargo build --release --features automation-smoke --bin openkara_automation_driver
+          if ($LASTEXITCODE -ne 0) { throw "automation driver build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+
           if ($env:RELEASE_BUILD -eq "true") {
             pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json
           } else {
             pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign
           }
+          if ($LASTEXITCODE -ne 0) { throw "tauri build failed with exit code $LASTEXITCODE" }
 
-      - name: Build automation driver
-        working-directory: src-tauri
-        run: cargo build --release --features automation-smoke --bin openkara_automation_driver
+          if (-not (Test-Path -Path "src-tauri/target/release/openkara_automation_driver.exe" -PathType Leaf)) {
+            throw "automation driver binary missing after build"
+          }
 
       - name: Build UIA probe
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          dotnet build tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj -c Release
+          dotnet build tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj -c Release --verbosity minimal
 
       - name: Upload UIA probe
         if: always()
@@ -341,12 +371,14 @@ jobs:
           if ($null -eq $probe) { throw "UIA probe executable was not found." }
 
           $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
+          # 60s per step is enough once Wait-For-UiReady has already proven the
+          # WebView tree is live; keep headroom above the old 30s default.
           & scripts/ci/run-windows-desktop-e2e.ps1 `
             -InstallDir $installDir `
             -Scenario $env:UIA_SCENARIO `
             -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
             -ProbePath $probe.FullName `
-            -StepTimeoutMs 90000
+            -StepTimeoutMs 60000
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }
 
       - name: Validate desktop E2E report

@@ -1,9 +1,21 @@
 name: Windows installed app smoke test
 
+# Branch-local gate for #303 work. Use workflow_dispatch suite=fast for a
+# quicker clean-install-only loop; suite=full (default on push) keeps the
+# keyboard UIA + fault-injection proof.
 on:
   push:
     branches:
       - fix/automation-assertions-and-workflows
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "fast = clean install only; full = clean + keyboard UIA + faults"
+        type: choice
+        options:
+          - full
+          - fast
+        default: full
 
 concurrency:
   group: windows-installed-app-smoke-test-${{ github.ref_name }}
@@ -21,7 +33,9 @@ jobs:
       artifact_prefix: test-windows-installed-app
       driver_scenario: clean-install
       uia_scenario: keyboard-workflow
-      run_keyboard_uia: true
-      run_fault_injection: true
+      # push always runs full #303 proof; workflow_dispatch can pick fast.
+      run_keyboard_uia: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
+      run_fault_injection: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
+      run_display_matrix: false
       previous_version: none
       retention_days: 1
