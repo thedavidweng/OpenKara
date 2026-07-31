@@ -51,14 +51,32 @@ describe("fault-server delivery modes", () => {
       }
       if (url.pathname === "/download") {
         const fault = url.searchParams.get("fault") || "none";
-        const handler = (FAULTS as Record<string, Function>)[fault];
-        if (!handler) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: "unknown fault" }));
-          return;
+        // Explicit dispatch only — avoid dynamic method call on the FAULTS map
+        // (CodeQL js/unvalidated-dynamic-method-call).
+        switch (fault) {
+          case "none":
+            void FAULTS.none(req, res, fixturePath, checksum);
+            return;
+          case "http-500":
+            void FAULTS["http-500"](req, res, fixturePath, checksum);
+            return;
+          case "http-429":
+            void FAULTS["http-429"](req, res, fixturePath, checksum);
+            return;
+          case "checksum-mismatch":
+            void FAULTS["checksum-mismatch"](req, res, fixturePath, checksum);
+            return;
+          case "dropped":
+            void FAULTS.dropped(req, res, fixturePath, checksum);
+            return;
+          case "invalid-archive":
+            void FAULTS["invalid-archive"](req, res, fixturePath, checksum);
+            return;
+          default:
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: "unknown fault" }));
+            return;
         }
-        void handler(req, res, fixturePath, checksum);
-        return;
       }
       res.writeHead(404);
       res.end("not found");
