@@ -393,14 +393,24 @@ function Enter-WebViewKeyboardFocus {
             Start-Sleep -Milliseconds 200
             $tree = Get-UiTree -ProcessId $ProcessId
             $focused = Find-FocusedElement -Tree $tree
-            if ($null -ne $focused -and $focused.controlType -notin @("Window", "Document", "Pane")) {
+            if ($null -ne $focused -and $focused.controlType -notin @("Window", "Document", "Pane", "Group") -and
+                -not [string]::IsNullOrWhiteSpace($focused.name)) {
                 Write-Host "WebView keyboard focus entered on '$($focused.name)' ($($focused.controlType))"
                 return $tree
             }
-            if ($null -ne $focused -and $focused.name -and (
-                    $focused.name.IndexOf($candidate.Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
-                )) {
-                Write-Host "WebView keyboard focus entered on '$($focused.name)' ($($focused.controlType))"
+
+            # Host nodes may still report focus; accept when the target itself is flagged.
+            $targetFocused = @($tree | Where-Object {
+                $_.hasKeyboardFocus -eq $true -and
+                $_.name -and
+                $_.name.IndexOf($candidate.Name, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                (
+                    [string]::IsNullOrWhiteSpace($candidate.ControlType) -or
+                    $_.controlType -eq $candidate.ControlType
+                )
+            })
+            if ($targetFocused.Count -gt 0) {
+                Write-Host "WebView keyboard focus entered on '$($targetFocused[0].name)' ($($targetFocused[0].controlType))"
                 return $tree
             }
         } catch {
@@ -453,7 +463,34 @@ function Find-Element {
 
 function Find-FocusedElement {
     param([array]$Tree)
-    return Find-Element -Tree $Tree -Predicate { param($n) $n.hasKeyboardFocus -eq $true }
+    # WebView2 often marks both a host Pane and the real control as focused.
+    # Prefer named interactive controls over chrome hosts.
+    $interactiveTypes = @(
+        "Button", "Edit", "CheckBox", "RadioButton", "Hyperlink",
+        "ComboBox", "ListItem", "MenuItem", "TabItem", "Slider",
+        "SplitButton", "TreeItem"
+    )
+    $focused = @($Tree | Where-Object { $_.hasKeyboardFocus -eq $true })
+    if ($focused.Count -eq 0) { return $null }
+
+    $namedInteractive = @($focused | Where-Object {
+        ($interactiveTypes -contains $_.controlType) -and
+        -not [string]::IsNullOrWhiteSpace($_.name) -and
+        $_.isOffscreen -ne $true
+    })
+    if ($namedInteractive.Count -gt 0) {
+        return $namedInteractive[0]
+    }
+
+    $nonHost = @($focused | Where-Object {
+        $_.controlType -notin @("Window", "Document", "Pane", "Group") -and
+        $_.isOffscreen -ne $true
+    })
+    if ($nonHost.Count -gt 0) {
+        return $nonHost[0]
+    }
+
+    return $focused[0]
 }
 
 function Find-ElementByName {
