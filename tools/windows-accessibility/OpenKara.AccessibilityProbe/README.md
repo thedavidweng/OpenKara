@@ -45,6 +45,19 @@ Invoke a named control:
 OpenKara.AccessibilityProbe --process-id 12345 --action invoke --name "Play" --control-type Button
 ```
 
+Toggle a named control (`aria-pressed` / TogglePattern):
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action toggle --name "Mute" --control-type Button
+```
+
+Inject a key combo with SendInput (optionally after focusing a named control):
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action press-key --key enter --name "fixture" --control-type Button
+OpenKara.AccessibilityProbe --process-id 12345 --action press-key --key ctrl+shift+s
+```
+
 ## Output
 
 The tool emits a canonical JSON array sorted by `path`. Each object contains:

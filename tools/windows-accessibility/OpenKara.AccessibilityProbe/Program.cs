@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows.Automation;
@@ -11,6 +12,39 @@ namespace OpenKara.AccessibilityProbe;
 
 class Program
 {
+    [DllImport("user32.dll")]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    private const int INPUT_KEYBOARD = 1;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public int type;
+        public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
     [STAThread]
     static int Main(string[] args)
     {
@@ -22,6 +56,7 @@ class Program
         string? targetName = null;
         string? controlTypeFilter = null;
         string? valueText = null;
+        string? keyName = null;
         int timeoutMs = 0;
 
         for (int i = 0; i < args.Length; i++)
@@ -73,14 +108,18 @@ class Program
             {
                 valueText = args[++i];
             }
+            else if (arg == "--key" && i + 1 < args.Length)
+            {
+                keyName = args[++i];
+            }
             else
             {
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
                     "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
-                    "[--action snapshot|set-focus|invoke|set-value] [--name <substring>] " +
-                    "[--control-type <type>] [--value <text>]");
+                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key] [--name <substring>] " +
+                    "[--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
             }
         }
@@ -92,13 +131,13 @@ class Program
             return 1;
         }
 
-        if (action is not ("snapshot" or "set-focus" or "invoke" or "set-value"))
+        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "set-value" or "press-key"))
         {
             Console.Error.WriteLine($"Unsupported action: {action}");
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "set-value")
+        if (action is "set-focus" or "invoke" or "toggle" or "set-value")
         {
             if (string.IsNullOrWhiteSpace(targetName))
             {
@@ -110,6 +149,12 @@ class Program
         if (action == "set-value" && valueText is null)
         {
             Console.Error.WriteLine("Action 'set-value' requires --value <text>.");
+            return 1;
+        }
+
+        if (action == "press-key" && string.IsNullOrWhiteSpace(keyName))
+        {
+            Console.Error.WriteLine("Action 'press-key' requires --key <name> (enter|escape|space|tab|m|q|f|...).");
             return 1;
         }
 
@@ -136,28 +181,37 @@ class Program
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "set-value")
+        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key")
         {
-            var target = FindNamedElement(root, targetName!, controlTypeFilter);
-            if (target is null)
+            AutomationElement? target = null;
+            if (!string.IsNullOrWhiteSpace(targetName))
             {
-                Console.Error.WriteLine(
-                    $"No matching element for name '{targetName}'" +
-                    (string.IsNullOrWhiteSpace(controlTypeFilter) ? "" : $" control-type '{controlTypeFilter}'") +
-                    ".");
-                return 2;
+                target = FindNamedElement(root, targetName!, controlTypeFilter);
+                if (target is null)
+                {
+                    Console.Error.WriteLine(
+                        $"No matching element for name '{targetName}'" +
+                        (string.IsNullOrWhiteSpace(controlTypeFilter) ? "" : $" control-type '{controlTypeFilter}'") +
+                        ".");
+                    return 2;
+                }
+            }
+            else if (action == "press-key")
+            {
+                // Global app shortcuts: focus the window root before injecting keys.
+                target = root;
             }
 
             try
             {
                 if (action == "set-focus")
                 {
-                    target.SetFocus();
+                    target!.SetFocus();
                     Console.WriteLine($"set-focus ok: {Describe(target)}");
                 }
                 else if (action == "invoke")
                 {
-                    if (!target.TryGetCurrentPattern(InvokePattern.Pattern, out object? pattern) || pattern is null)
+                    if (!target!.TryGetCurrentPattern(InvokePattern.Pattern, out object? pattern) || pattern is null)
                     {
                         Console.Error.WriteLine($"Element does not support Invoke: {Describe(target)}");
                         return 3;
@@ -165,9 +219,72 @@ class Program
                     ((InvokePattern)pattern).Invoke();
                     Console.WriteLine($"invoke ok: {Describe(target)}");
                 }
+                else if (action == "toggle")
+                {
+                    if (!target!.TryGetCurrentPattern(TogglePattern.Pattern, out object? pattern) || pattern is null)
+                    {
+                        Console.Error.WriteLine($"Element does not support Toggle: {Describe(target)}");
+                        return 3;
+                    }
+                    ((TogglePattern)pattern).Toggle();
+                    Console.WriteLine($"toggle ok: {Describe(target)}");
+                }
+                else if (action == "press-key")
+                {
+                    if (target is not null)
+                    {
+                        try
+                        {
+                            // Bring the hosting top-level window forward so SendInput
+                            // lands in the WebView, then set UIA focus on the control.
+                            try
+                            {
+                                var hwnd = new IntPtr(root.Current.NativeWindowHandle);
+                                if (hwnd != IntPtr.Zero)
+                                {
+                                    SetForegroundWindow(hwnd);
+                                }
+                            }
+                            catch (ElementNotAvailableException)
+                            {
+                            }
+
+                            target.SetFocus();
+                            System.Threading.Thread.Sleep(80);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"press-key focus warning: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var hwnd = new IntPtr(root.Current.NativeWindowHandle);
+                            if (hwnd != IntPtr.Zero)
+                            {
+                                SetForegroundWindow(hwnd);
+                                System.Threading.Thread.Sleep(50);
+                            }
+                        }
+                        catch (ElementNotAvailableException)
+                        {
+                        }
+                    }
+
+                    if (!TrySendKeyCombo(keyName!, out string? sendError))
+                    {
+                        Console.Error.WriteLine(sendError ?? $"Unknown key combo: {keyName}");
+                        return 3;
+                    }
+                    Console.WriteLine(
+                        $"press-key ok: key='{keyName}'" +
+                        (target is null ? "" : $" on {Describe(target)}"));
+                }
                 else
                 {
-                    if (!target.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern) || pattern is null)
+                    if (!target!.TryGetCurrentPattern(ValuePattern.Pattern, out object? pattern) || pattern is null)
                     {
                         Console.Error.WriteLine($"Element does not support Value: {Describe(target)}");
                         return 3;
@@ -622,6 +739,143 @@ class Program
         }
         return null;
     }
+
+    private static bool TrySendKeyCombo(string keySpec, out string? error)
+    {
+        error = null;
+        var parts = keySpec
+            .Split(new[] { '+', '-' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => p.Trim().ToLowerInvariant())
+            .Where(p => p.Length > 0)
+            .ToArray();
+
+        if (parts.Length == 0)
+        {
+            error = "Empty key combo.";
+            return false;
+        }
+
+        var modifiers = new List<ushort>();
+        ushort? mainVk = null;
+
+        foreach (var part in parts)
+        {
+            if (part is "ctrl" or "control")
+            {
+                modifiers.Add(0x11); // VK_CONTROL
+                continue;
+            }
+            if (part is "shift")
+            {
+                modifiers.Add(0x10); // VK_SHIFT
+                continue;
+            }
+            if (part is "alt" or "menu")
+            {
+                modifiers.Add(0x12); // VK_MENU
+                continue;
+            }
+            if (part is "win" or "meta" or "cmd")
+            {
+                modifiers.Add(0x5B); // VK_LWIN
+                continue;
+            }
+
+            if (mainVk is not null)
+            {
+                error = $"Multiple non-modifier keys in combo '{keySpec}'.";
+                return false;
+            }
+
+            mainVk = part switch
+            {
+                "enter" or "return" => (ushort)0x0D,
+                "escape" or "esc" => (ushort)0x1B,
+                "space" => (ushort)0x20,
+                "tab" => (ushort)0x09,
+                "left" => (ushort)0x25,
+                "up" => (ushort)0x26,
+                "right" => (ushort)0x27,
+                "down" => (ushort)0x28,
+                "f" => (ushort)0x46,
+                "m" => (ushort)0x4D,
+                "q" => (ushort)0x51,
+                "s" => (ushort)0x53,
+                "o" => (ushort)0x4F,
+                "b" => (ushort)0x42,
+                "comma" or "," => (ushort)0xBC,
+                "period" or "." => (ushort)0xBE,
+                _ when part.Length == 1 && char.IsLetterOrDigit(part[0]) =>
+                    (ushort)char.ToUpperInvariant(part[0]),
+                _ => (ushort)0,
+            };
+
+            if (mainVk == 0)
+            {
+                error = $"Unsupported key '{part}' in combo '{keySpec}'.";
+                return false;
+            }
+        }
+
+        if (mainVk is null)
+        {
+            error = $"No main key in combo '{keySpec}'.";
+            return false;
+        }
+
+        var inputs = new List<INPUT>();
+        foreach (var mod in modifiers)
+        {
+            inputs.Add(KeyDown(mod));
+        }
+        inputs.Add(KeyDown(mainVk.Value));
+        inputs.Add(KeyUp(mainVk.Value));
+        for (int i = modifiers.Count - 1; i >= 0; i--)
+        {
+            inputs.Add(KeyUp(modifiers[i]));
+        }
+
+        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+        if (sent != inputs.Count)
+        {
+            error = $"SendInput sent {sent}/{inputs.Count} events.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static INPUT KeyDown(ushort vk) => new INPUT
+    {
+        type = INPUT_KEYBOARD,
+        U = new InputUnion
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = vk,
+                wScan = 0,
+                dwFlags = 0,
+                time = 0,
+                dwExtraInfo = IntPtr.Zero,
+            },
+        },
+    };
+
+    private static INPUT KeyUp(ushort vk) => new INPUT
+    {
+        type = INPUT_KEYBOARD,
+        U = new InputUnion
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = vk,
+                wScan = 0,
+                dwFlags = KEYEVENTF_KEYUP,
+                time = 0,
+                dwExtraInfo = IntPtr.Zero,
+            },
+        },
+    };
 
     private sealed class Node
     {
