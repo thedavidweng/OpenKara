@@ -1,0 +1,25 @@
+name: Windows installed app smoke test
+
+on:
+  push:
+    branches:
+      - fix/automation-assertions-and-workflows
+
+concurrency:
+  group: windows-installed-app-smoke-test-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installed-app:
+    name: Windows installed app smoke
+    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    with:
+      openkara_version: "0.0.0-test"
+      artifact_prefix: test-windows-installed-app
+      driver_scenario: clean-install
+      uia_scenario: keyboard-workflow
+      previous_version: none
+      retention_days: 1
