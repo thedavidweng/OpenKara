@@ -562,12 +562,10 @@ async function validateAudioOutputs(restart, result) {
     smoke.input_dir,
     songWithStems.source_path,
   );
-  const vocalsPath = resolveAudioPath(
-    smoke.output_dir,
-    songWithStems.vocals_path,
-  );
+  const libraryRoot = join(smoke.output_dir, "smoke-library");
+  const vocalsPath = resolveAudioPath(libraryRoot, songWithStems.vocals_path);
   const accompPath = resolveAudioPath(
-    smoke.output_dir,
+    libraryRoot,
     songWithStems.accompaniment_path,
   );
 
