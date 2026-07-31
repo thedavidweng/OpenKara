@@ -9,9 +9,57 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const targetRoot = path.join(projectRoot, "src-tauri", "target");
 
-if (process.platform !== "darwin") {
-  console.log("Skipping macOS bundle cleanup on non-darwin host");
-  process.exit(0);
+/**
+ * Remove CI-only automation driver binaries from cargo release outputs before
+ * Tauri packs Contents/MacOS (or equivalent). Cached or parallel builds can
+ * leave openkara_automation_driver next to openkara; nested unsigned Mach-O
+ * then breaks ad-hoc codesign on macOS 15 Intel.
+ */
+async function removeAutomationDriverBinaries() {
+  const removed = [];
+  const names = [
+    "openkara_automation_driver",
+    "openkara_automation_driver.exe",
+  ];
+
+  async function scrubDirectory(directory) {
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      try {
+        await rm(candidate, { force: true });
+        removed.push(candidate);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  await scrubDirectory(path.join(targetRoot, "release"));
+
+  let entries = [];
+  try {
+    entries = await readdir(targetRoot, { withFileTypes: true });
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return removed;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    // Only triple target dirs (e.g. aarch64-apple-darwin), not debug/tmp.
+    if (!entry.isDirectory() || !entry.name.includes("-")) {
+      continue;
+    }
+    await scrubDirectory(path.join(targetRoot, entry.name, "release"));
+  }
+
+  return removed;
 }
 
 /**
@@ -119,6 +167,23 @@ async function removeStrayDmgs(bundleDirectory) {
   }
 
   return removed;
+}
+
+const removedDrivers = await removeAutomationDriverBinaries();
+if (removedDrivers.length === 0) {
+  console.log("No automation driver binaries found in cargo release outputs");
+} else {
+  console.log(
+    `Removed ${removedDrivers.length} automation driver binary path(s):`,
+  );
+  for (const driverPath of removedDrivers) {
+    console.log(`- ${path.relative(projectRoot, driverPath)}`);
+  }
+}
+
+if (process.platform !== "darwin") {
+  console.log("Skipping macOS bundle DMG cleanup on non-darwin host");
+  process.exit(0);
 }
 
 const detached = detachLeftoverBundleMounts();

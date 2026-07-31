@@ -120,11 +120,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          # Build only the main binary. `--features automation-smoke` would
-          # otherwise also produce openkara_automation_driver, and Tauri packs
-          # every package bin into Contents/MacOS. Nested unsigned driver
-          # binaries break ad-hoc codesign on macOS 15 Intel runners.
-          # The driver is built as a separate CI artifact below.
+          # Build only the main binary. Cached openkara_automation_driver
+          # binaries are stripped in beforeBundleCommand (clean-macos-bundle.mjs)
+          # so nested unsigned Mach-O cannot break ad-hoc codesign on Intel.
+          # The driver is rebuilt as a separate CI artifact below.
+          rm -f "src-tauri/target/${TAURI_TARGET}/release/openkara_automation_driver" \
+            "src-tauri/target/release/openkara_automation_driver"
           if [ "${RELEASE_BUILD}" = "true" ]; then
             pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
