@@ -368,11 +368,14 @@ function Invoke-ProbeAction {
     )
 
     $argList = @(
-        "--process-id", $ProcessId,
         "--action", $Action,
         "--name", $Name,
         "--timeout", $TimeoutMs
     )
+    # process-id 0 means title-only lookup (system dialogs).
+    if ($ProcessId -gt 0) {
+        $argList = @("--process-id", $ProcessId) + $argList
+    }
     if (-not [string]::IsNullOrWhiteSpace($ControlType)) {
         $argList += @("--control-type", $ControlType)
     }
@@ -1014,15 +1017,23 @@ function Invoke-StepAction {
                         [void][OpenKaraWin32]::SetForegroundWindow($dialog)
                         Start-Sleep -Milliseconds 250
 
+                        # Dialog may be hosted outside OpenKara.exe (system picker).
+                        # Title-based lookup (any process) is required.
                         $dialogPid = [int]$script:process.Id
                         $pathSet = $false
                         foreach ($fieldName in @("File name:", "File name", "Filename", "Name")) {
                             try {
-                                Invoke-ProbeAction -ProcessId $dialogPid -Action "set-value" -Name $fieldName -ControlType "Edit" -Value $fixturePath -WindowTitle "Open" | Out-Null
+                                Invoke-ProbeAction -ProcessId 0 -Action "set-value" -Name $fieldName -ControlType "Edit" -Value $fixturePath -WindowTitle "Open" | Out-Null
                                 $pathSet = $true
                                 break
                             } catch {
-                                Write-Warning "set-value '$fieldName' failed: $_"
+                                try {
+                                    Invoke-ProbeAction -ProcessId $dialogPid -Action "set-value" -Name $fieldName -ControlType "Edit" -Value $fixturePath -WindowTitle "Open" | Out-Null
+                                    $pathSet = $true
+                                    break
+                                } catch {
+                                    Write-Warning "set-value '$fieldName' failed: $_"
+                                }
                             }
                         }
 
@@ -1046,10 +1057,16 @@ function Invoke-StepAction {
                         $opened = $false
                         foreach ($openName in @("Open", "OK")) {
                             try {
-                                Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $openName -ControlType "Button" -WindowTitle "Open" | Out-Null
+                                Invoke-ProbeAction -ProcessId 0 -Action "invoke" -Name $openName -ControlType "Button" -WindowTitle "Open" | Out-Null
                                 $opened = $true
                                 break
                             } catch {
+                                try {
+                                    Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $openName -ControlType "Button" -WindowTitle "Open" | Out-Null
+                                    $opened = $true
+                                    break
+                                } catch {
+                                }
                             }
                         }
                         if (-not $opened) {
@@ -1065,12 +1082,12 @@ function Invoke-StepAction {
                             $accepted = $false
                             foreach ($okName in @("Import", "OK", "Yes")) {
                                 try {
-                                    Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm import" | Out-Null
+                                    Invoke-ProbeAction -ProcessId 0 -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm import" | Out-Null
                                     $accepted = $true
                                     break
                                 } catch {
                                     try {
-                                        Invoke-ProbeAction -ProcessId $dialogPid -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm" | Out-Null
+                                        Invoke-ProbeAction -ProcessId 0 -Action "invoke" -Name $okName -ControlType "Button" -WindowTitle "Confirm" | Out-Null
                                         $accepted = $true
                                         break
                                     } catch {

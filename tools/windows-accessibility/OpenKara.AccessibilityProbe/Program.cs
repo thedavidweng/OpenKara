@@ -85,9 +85,10 @@ class Program
             }
         }
 
-        if (processId is null && string.IsNullOrWhiteSpace(processName))
+        if (processId is null && string.IsNullOrWhiteSpace(processName) &&
+            string.IsNullOrWhiteSpace(windowTitle))
         {
-            Console.Error.WriteLine("Specify --process-id or --process-name.");
+            Console.Error.WriteLine("Specify --process-id, --process-name, or --window-title.");
             return 1;
         }
 
@@ -112,7 +113,7 @@ class Program
             return 1;
         }
 
-        if (processId is null)
+        if (processId is null && !string.IsNullOrWhiteSpace(processName))
         {
             var matched = Process.GetProcessesByName(processName!);
             if (matched.Length == 0)
@@ -127,7 +128,8 @@ class Program
             }
         }
 
-        var root = FindWindow(processId.Value, timeoutMs, windowTitle);
+        // System file pickers may live outside the app process. Allow title-only lookup.
+        var root = FindWindow(processId, timeoutMs, windowTitle);
         if (root is null)
         {
             Console.Error.WriteLine("Top-level window not found.");
@@ -298,30 +300,14 @@ class Program
         }
     }
 
-    private static AutomationElement? FindWindow(int processId, int timeoutMs, string? windowTitle = null)
+    private static AutomationElement? FindWindow(int? processId, int timeoutMs, string? windowTitle = null)
     {
-        Condition condition;
-        if (string.IsNullOrWhiteSpace(windowTitle))
-        {
-            condition = new AndCondition(
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
-                new PropertyCondition(AutomationElement.ProcessIdProperty, processId));
-        }
-        else
-        {
-            condition = new AndCondition(
-                new AndCondition(
-                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
-                    new PropertyCondition(AutomationElement.ProcessIdProperty, processId)),
-                new PropertyCondition(AutomationElement.NameProperty, windowTitle));
-        }
-
         var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 0));
         do
         {
             try
             {
-                var window = AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
+                var window = FindWindowOnce(processId, windowTitle);
                 if (window is not null)
                 {
                     return window;
@@ -336,6 +322,90 @@ class Program
                 System.Threading.Thread.Sleep(100);
             }
         } while (DateTime.UtcNow < deadline);
+
+        return null;
+    }
+
+    private static AutomationElement? FindWindowOnce(int? processId, string? windowTitle)
+    {
+        // Prefer exact process match when provided.
+        if (processId is int pid && pid > 0)
+        {
+            Condition condition;
+            if (string.IsNullOrWhiteSpace(windowTitle))
+            {
+                condition = new AndCondition(
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
+                    new PropertyCondition(AutomationElement.ProcessIdProperty, pid));
+            }
+            else
+            {
+                condition = new AndCondition(
+                    new AndCondition(
+                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
+                        new PropertyCondition(AutomationElement.ProcessIdProperty, pid)),
+                    new PropertyCondition(AutomationElement.NameProperty, windowTitle));
+            }
+
+            var match = AutomationElement.RootElement.FindFirst(TreeScope.Children, condition);
+            if (match is not null)
+            {
+                return match;
+            }
+
+            // Title may be localized or partial; scan children by substring.
+            if (!string.IsNullOrWhiteSpace(windowTitle))
+            {
+                match = FindWindowByTitleSubstring(pid, windowTitle);
+                if (match is not null)
+                {
+                    return match;
+                }
+            }
+        }
+
+        // Cross-process title lookup (Windows common file dialog host).
+        if (!string.IsNullOrWhiteSpace(windowTitle))
+        {
+            return FindWindowByTitleSubstring(null, windowTitle);
+        }
+
+        return null;
+    }
+
+    private static AutomationElement? FindWindowByTitleSubstring(int? processId, string windowTitle)
+    {
+        var windows = AutomationElement.RootElement.FindAll(
+            TreeScope.Children,
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window));
+
+        for (int i = 0; i < windows.Count; i++)
+        {
+            var window = windows[i];
+            if (window is null || IsStale(window))
+            {
+                continue;
+            }
+
+            try
+            {
+                var current = window.Current;
+                if (processId is int pid && pid > 0 && current.ProcessId != pid)
+                {
+                    continue;
+                }
+
+                string name = current.Name ?? string.Empty;
+                if (name.Equals(windowTitle, StringComparison.OrdinalIgnoreCase) ||
+                    name.IndexOf(windowTitle, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return window;
+                }
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+        }
 
         return null;
     }
