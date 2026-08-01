@@ -108,10 +108,15 @@ jobs:
             exit 1
           fi
 
-          target_sha="${RELEASE_SHA}"
-          if [ -z "${target_sha}" ]; then
-            target_sha="$(git rev-parse HEAD)"
-            echo "release-please sha empty; falling back to main HEAD ${target_sha}"
+          # Annotated tags require a committer identity (same as the sync job).
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Prefer main HEAD after native-manifest sync so the tag tree matches
+          # package.json + Cargo.toml. Fall back to release-please's SHA.
+          target_sha="$(git rev-parse HEAD)"
+          if [ -n "${RELEASE_SHA}" ] && [ "${target_sha}" != "${RELEASE_SHA}" ]; then
+            echo "Tagging post-sync main HEAD ${target_sha} (release-please sha was ${RELEASE_SHA})"
           fi
 
           if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
@@ -148,6 +153,22 @@ jobs:
             version="${TAG_NAME#v}"
           fi
 
+          # Prefer an existing in-flight Release run for this tag (tag push or
+          # a prior dispatch). A second dispatch doubles builds and races on
+          # latest.json / asset uploads.
+          existing_run="$(gh run list \
+            --repo "${GH_REPO}" \
+            --workflow release.yml \
+            --branch "${TAG_NAME}" \
+            --limit 5 \
+            --json databaseId,status,event,url \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "pending" or .status == "waiting")] | .[0].url // empty')"
+          if [ -n "${existing_run}" ]; then
+            echo "Release workflow already running for ${TAG_NAME}: ${existing_run}"
+            echo "Skipping duplicate workflow_dispatch"
+            exit 0
+          fi
+
           # workflow_dispatch is started by the API and is not blocked the way
           # push/tag events from GITHUB_TOKEN are. Checkout the tag so package.json
           # matches the release version gate.
@@ -157,3 +178,72 @@ jobs:
             -f "version=${version}"
 
           echo "Dispatched Release workflow for ${TAG_NAME} (version ${version})"
+
+  # sync-native-versions advances main with GITHUB_TOKEN. That push does not
+  # re-run full CI, so main HEAD can look green while this cut failed on the
+  # previous commit. Open an issue so the failure cannot stay silent.
+  report-release-cut-failure:
+    name: Report release cut failure
+    needs:
+      [release-please, sync-native-versions, ensure-tag-and-dispatch-release]
+    if: >-
+      always()
+      && needs.release-please.outputs.release_created == 'true'
+      && (
+        needs.sync-native-versions.result == 'failure'
+        || needs.ensure-tag-and-dispatch-release.result == 'failure'
+        || needs.ensure-tag-and-dispatch-release.result == 'cancelled'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # open a tracking issue when the release cut fails after merge
+    steps:
+      - name: Open tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SYNC_RESULT: ${{ needs.sync-native-versions.result }}
+          ENSURE_RESULT: ${{ needs.ensure-tag-and-dispatch-release.result }}
+        run: |
+          set -euo pipefail
+
+          tag="${TAG_NAME:-unknown}"
+          title="Release cut failed for ${tag}"
+          body="$(cat <<EOF
+          The post-merge release cut for \`${tag}\` failed.
+
+          - Workflow run: ${RUN_URL}
+          - Sync native manifests: \`${SYNC_RESULT}\`
+          - Ensure tag and dispatch Release: \`${ENSURE_RESULT}\`
+
+          Main HEAD can still show green checks after this fails. The sync job
+          may push a follow-up commit with \`GITHUB_TOKEN\`, and that push does
+          not re-run full CI. Check the Release Please run on the release merge
+          commit, not only the latest commit status on \`main\`.
+
+          Repair steps are in \`docs/RELEASING.md\` (create the tag and dispatch
+          \`release.yml\` if either is missing).
+          EOF
+          )"
+
+          existing_issue="$(gh issue list \
+            --repo "${GH_REPO}" \
+            --state open \
+            --search "in:title ${title}" \
+            --json number,title \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${existing_issue}" ]; then
+            gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+            echo "Commented on existing issue #${existing_issue}"
+          else
+            issue_url="$(gh issue create \
+              --repo "${GH_REPO}" \
+              --title "${title}" \
+              --body "${body}" \
+              --label "bug")"
+            echo "Opened issue: ${issue_url}"
+          fi

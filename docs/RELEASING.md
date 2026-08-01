@@ -34,10 +34,15 @@ starts auto-updating existing installs.
    automatically as conventional commits land on `main`. Merge it when you
    are ready to ship. release-please bumps `package.json` and
    `CHANGELOG.md` and creates a draft GitHub Release with changelog notes.
-2. **Confirm the tag and Release run.** After merge, the Release Please
+2. **Confirm the tag and Release run.** After merge, open the **Release
+   Please** workflow run on the release merge commit (not only the latest
+   commit on `main`). The sync job may push a follow-up commit with
+   `GITHUB_TOKEN`. That push does not re-run full CI, so `main` HEAD can
+   look green while the release cut failed on the previous commit. The
    workflow must create (or repair) `vX.Y.Z` and start a Release run. If
    either is missing, create the tag on the release commit and run
-   `gh workflow run release.yml --ref vX.Y.Z -f version=X.Y.Z`.
+   `gh workflow run release.yml --ref vX.Y.Z -f version=X.Y.Z`. A failed
+   cut also opens a GitHub issue titled `Release cut failed for vX.Y.Z`.
 3. **Watch the Release workflow.** It runs the separation smoke on every
    target, builds the bundles, and uploads assets to the draft release.
 4. **Verify the asset names** on the draft release match the tag, e.g.
