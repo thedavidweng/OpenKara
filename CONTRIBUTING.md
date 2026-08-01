@@ -62,9 +62,9 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 
 ## Releasing
 
-Maintainers: see [docs/RELEASING.md](docs/RELEASING.md) for the tag-driven
-release process (bump `package.json`, `pnpm version:sync`, tag, verify the draft
-release assets, publish).
+Maintainers: see [docs/RELEASING.md](docs/RELEASING.md) for the release-please
+process (merge the release PR; the Release workflow builds, smokes, publishes,
+and submits distribution PRs).
 
 ## License
 

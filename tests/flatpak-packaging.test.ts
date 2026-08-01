@@ -545,7 +545,13 @@ describe("Flatpak packaging", () => {
     expect(releaseWorkflow).toContain(
       "Initial Flathub submissions must be opened or updated manually",
     );
-    expect(releaseWorkflow).not.toContain("--draft");
+    // Assets upload as draft (tauri-action releaseDraft); the workflow then
+    // undrafts after required assets land, before WinGet/Flatpak submit.
+    expect(releaseWorkflow).toContain("releaseDraft: true");
+    expect(releaseWorkflow).toContain("Publish GitHub Release");
+    expect(releaseWorkflow).toContain("gh release edit");
+    expect(releaseWorkflow).toContain("--draft=false");
+    expect(releaseWorkflow).toContain("publish-github-release");
     expect(releaseWorkflow).not.toContain(
       "Open this prefilled GitHub URL to create the Flathub submission PR",
     );
