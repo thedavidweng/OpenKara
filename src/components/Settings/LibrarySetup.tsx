@@ -403,6 +403,15 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 return (
                   <button
                     key={choice.kind}
+                    type="button"
+                    aria-label={t(choice.title, {
+                      defaultValue:
+                        choice.kind === "create_local"
+                          ? "Create new local library"
+                          : choice.kind === "open_local"
+                            ? "Open existing local library"
+                            : "Use remote repository",
+                    })}
                     onClick={
                       choice.kind === "create_local"
                         ? handleCreate

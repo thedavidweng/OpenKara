@@ -1,5 +1,13 @@
 # OpenKara Smoke Tests
 
+This document is for local debugging and exploratory testing. It is not a
+release acceptance gate. Product release acceptance comes only from required
+GitHub Actions checks and retained artifacts: Windows/macOS/Linux installed-app
+smoke (clean install, upgrade, uninstall, keyboard UI Automation), separation
+smoke, Playwright accessibility matrix, runtime/model fault recovery
+(`fault-injection`), report schema and workflow contract tests, and the release
+publish job graph that cannot start when any of those gates fail.
+
 ## Automated (Playwright UI smoke)
 
 Run the browser-based UI smoke suite against the Vite dev server:
@@ -161,3 +169,19 @@ This approach is more complex and platform-dependent. The Playwright
 UI smoke suite provides focused coverage for the React UI layer. It is not
 the full desktop E2E path; release-only separation smoke covers runtime/model
 bootstrap and real stem separation before publishing.
+
+## Release acceptance
+
+A release is accepted only when the required GitHub Actions jobs pass and the
+retained artifacts are available. The required jobs include:
+
+- cross-platform installed-app smoke
+- Windows desktop E2E and UI Automation tree validation
+- accessibility gates across the application surface
+- runtime and model fault recovery
+- workflow contract tests
+
+The retained artifacts include the automation reports, UI Automation snapshots,
+Playwright reports, and separation output metadata. axe alone does not prove
+complete accessibility; the release gate combines DOM, native UI Automation,
+keyboard, display, and installed-app validation.

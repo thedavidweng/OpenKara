@@ -6,11 +6,20 @@ every push to `main` and maintains a running release PR that bumps
 `package.json`, updates `CHANGELOG.md`, and bumps
 `.release-please-manifest.json`.
 
-When the release PR is merged, release-please tags `vX.Y.Z` and opens a
-**draft** GitHub Release with changelog notes. The
-[`Release` workflow](../.github/workflows/release.yml) then builds every
-platform bundle, runs the release-only separation and installed-app smoke
-tests, attaches `SHA256SUMS`, and uploads assets to the draft release.
+When the release PR is merged, release-please opens a **draft** GitHub
+Release with changelog notes. The same workflow then:
+
+1. Syncs native manifests (`Cargo.toml`, `tauri.conf.json`, …) via
+   `scripts/sync-version.mjs`.
+2. Ensures the git tag `vX.Y.Z` exists (draft releases can land untagged
+   when only `GITHUB_TOKEN` is used).
+3. Dispatches the [`Release` workflow](../.github/workflows/release.yml)
+   with `workflow_dispatch`. Tag pushes from `GITHUB_TOKEN` do not start
+   other workflows, so this explicit dispatch is required.
+
+The Release workflow builds every platform bundle, runs the release-only
+separation and installed-app smoke tests, attaches `SHA256SUMS`, and uploads
+assets to the draft release.
 
 The release stays a draft until a human verifies the asset names and clicks
 **Publish** in the GitHub UI. This last manual step is intentional: the
@@ -24,15 +33,32 @@ starts auto-updating existing installs.
 1. **Merge the release PR.** release-please opens and updates the PR
    automatically as conventional commits land on `main`. Merge it when you
    are ready to ship. release-please bumps `package.json` and
-   `CHANGELOG.md`, tags `vX.Y.Z`, and creates a draft GitHub Release with
-   changelog notes.
-2. **Watch the Release workflow.** It runs the separation smoke on every
+   `CHANGELOG.md` and creates a draft GitHub Release with changelog notes.
+2. **Confirm the tag and Release run.** After merge, the Release Please
+   workflow must create (or repair) `vX.Y.Z` and start a Release run. If
+   either is missing, create the tag on the release commit and run
+   `gh workflow run release.yml --ref vX.Y.Z -f version=X.Y.Z`.
+3. **Watch the Release workflow.** It runs the separation smoke on every
    target, builds the bundles, and uploads assets to the draft release.
-3. **Verify the asset names** on the draft release match the tag, e.g.
-   `OpenKara_0.9.2_x64-setup.exe`. Confirm `SHA256SUMS` is attached.
-4. **Publish** the draft release from the GitHub UI. Publishing (or the
+4. **Verify the asset names** on the draft release match the tag, e.g.
+   `OpenKara_0.10.0_x64-setup.exe`. Confirm `SHA256SUMS` and `latest.json`
+   are attached.
+5. **Publish** the draft release from the GitHub UI. Publishing (or the
    workflow, when configured) drives the Homebrew tap, WinGet, and Flathub
    submissions.
+
+## Current version truth
+
+| Source                                                     | Meaning                                                          |
+| ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| Highest published GitHub Release                           | What `/releases/latest` and the in-app updater see after Publish |
+| Highest git tag `v*`                                       | What Release can check out; required for a complete ship         |
+| `package.json` / `.release-please-manifest.json` on `main` | What release-please already bumped when a release PR merged      |
+
+If those three disagree, stop and repair before cutting the next release.
+A common failure is: release PR merged → draft Release exists → **no git
+tag** → Release workflow never runs → users still see the previous
+published version.
 
 ## Native manifest sync
 

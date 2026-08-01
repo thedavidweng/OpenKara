@@ -70,6 +70,8 @@ export function AirPlayRouteButton({
     return (
       <Tooltip label={t("player.airPlayOutput")}>
         <div
+          role="button"
+          tabIndex={0}
           className={`relative text-[var(--color-text-dim)] ${className}`}
           data-airplay-route-button="true"
           data-airplay-preview="true"
@@ -84,6 +86,8 @@ export function AirPlayRouteButton({
   return (
     <Tooltip label={t("player.airPlayOutput")}>
       <div
+        role="button"
+        tabIndex={0}
         className={`relative ${className}`}
         data-airplay-route-button="true"
         aria-label={t("player.airPlayOutput")}

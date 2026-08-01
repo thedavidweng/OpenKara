@@ -1,0 +1,150 @@
+[
+  {
+    "id": "keyboard-workflow",
+    "name": "Keyboard-only desktop end-to-end workflow",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "The main window is visible and accessible."
+      },
+      {
+        "action": "navigate-sidebar",
+        "target": "Sidebar",
+        "assertion": "Focus moves through each sidebar item with keyboard navigation."
+      },
+      {
+        "action": "select-library",
+        "target": "All Tracks",
+        "assertion": "The library view becomes active."
+      },
+      {
+        "action": "import-fixture",
+        "target": "src-tauri/tests/fixtures/audio/fixture.wav",
+        "assertion": "The imported fixture track appears in the library."
+      },
+      {
+        "action": "select-track",
+        "target": "fixture",
+        "assertion": "The track is selected and the details view loads."
+      },
+      {
+        "action": "start-playback",
+        "target": "Play button",
+        "assertion": "Playback state is playing."
+      },
+      {
+        "action": "pause-resume",
+        "target": "Pause/Play button",
+        "assertion": "Playback toggles between paused and playing."
+      },
+      {
+        "action": "seek",
+        "target": "Progress bar",
+        "assertion": "The playback position updates to the seek target."
+      },
+      {
+        "action": "start-separation",
+        "target": "Vocal/instrumental separation",
+        "assertion": "The separation process starts and the stem mixer becomes enabled."
+      },
+      {
+        "action": "adjust-stems",
+        "target": "Stem volume sliders",
+        "assertion": "The stem mix levels change."
+      },
+      {
+        "action": "mute",
+        "target": "Mute toggle",
+        "assertion": "Audio output is muted."
+      },
+      {
+        "action": "queue",
+        "target": "Queue",
+        "assertion": "The selected track is added to the queue."
+      },
+      {
+        "action": "open-settings",
+        "target": "Settings",
+        "assertion": "The settings panel opens."
+      },
+      {
+        "action": "open-appearance",
+        "target": "Appearance",
+        "assertion": "Appearance settings are visible."
+      },
+      {
+        "action": "verify-model-runtime-status",
+        "target": "Model and runtime status panel",
+        "assertion": "The active model and runtime are reported."
+      },
+      {
+        "action": "toggle-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "The main window enters fullscreen and returns."
+      },
+      {
+        "action": "stop-playback",
+        "target": "Stop",
+        "assertion": "Playback stops and the position resets."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The application process exits cleanly."
+      }
+    ]
+  },
+  {
+    "id": "installed-workflow",
+    "name": "Installed application launch and exit smoke",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "The installed application launches and the main window appears with a non-empty accessible name."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The installed application exits cleanly."
+      }
+    ]
+  },
+  {
+    "id": "multi-window-and-dialogs",
+    "name": "Multi-window and native dialog focus transfer",
+    "steps": [
+      {
+        "action": "launch",
+        "target": "OpenKara.exe",
+        "assertion": "One primary application window appears with a non-empty accessible name."
+      },
+      {
+        "action": "open-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "Main window to fullscreen player focus transfer is recorded."
+      },
+      {
+        "action": "close-fullscreen",
+        "target": "Fullscreen",
+        "assertion": "Focus is restored to the main window."
+      },
+      {
+        "action": "open-settings",
+        "target": "Settings",
+        "assertion": "Settings modal appears in the same accessibility tree with modal state."
+      },
+      {
+        "action": "cancel-file-picker",
+        "target": "Library import",
+        "assertion": "The file picker can be cancelled without losing main window focus."
+      },
+      {
+        "action": "close",
+        "target": "OpenKara.exe",
+        "assertion": "The application exits cleanly."
+      }
+    ]
+  }
+]

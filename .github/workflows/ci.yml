@@ -737,7 +737,9 @@ jobs:
             # phase5_perf asserts fixed latency thresholds for fixture audio. GitHub's
             # macOS runners have noisy cold metadata probes; Linux remains the CI
             # baseline, while macOS still runs the functional Rust suite.
-            cargo nextest run --no-fail-fast -E '!test(phase5_perf)'
+            # Filter by binary name — test(phase5_perf) does not match the binary
+            # and still runs backend_performance_report_stays_within_phase5_thresholds.
+            cargo nextest run --no-fail-fast -E '!binary(phase5_perf)'
           fi
         shell: bash
 

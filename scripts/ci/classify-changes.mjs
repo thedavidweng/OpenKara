@@ -88,9 +88,15 @@ const CATEGORY_PATTERNS = {
     "scripts/generate-mock-songs.mjs",
     "scripts/prepare-bundled-oauth-client.mjs",
     "tests/contract/**",
+    "tools/windows-accessibility/**",
   ],
 
-  e2e: ["tests/e2e/**", "playwright.config.ts", "playwright.webkit.config.ts"],
+  e2e: [
+    "tests/e2e/**",
+    "tests/support/**",
+    "playwright.config.ts",
+    "playwright.webkit.config.ts",
+  ],
 
   rust: [
     "src-tauri/src/**",
@@ -119,7 +125,7 @@ const CATEGORY_PATTERNS = {
   ci_workflow: [
     ".github/workflows/ci.yml",
     ".github/labeler.yml",
-    "scripts/ci/**",
+    "scripts/ci/**/*.mjs",
     "scripts/check-standards.mjs",
     "tests/ci/**",
     "tests/workflow-security.test.ts",
@@ -129,7 +135,10 @@ const CATEGORY_PATTERNS = {
   release_workflow: [
     ".github/workflows/release.yml",
     ".github/workflows/release-please.yml",
+    ".github/workflows/reusable-windows-installed-app.yml",
     "tests/release-workflow.test.ts",
+    "tests/desktop/windows/**",
+    "scripts/ci/run-windows-desktop-e2e.ps1",
     "scripts/setup.sh",
     "scripts/run-local-smoke.sh",
     "scripts/validate-installed-app-smoke.mjs",

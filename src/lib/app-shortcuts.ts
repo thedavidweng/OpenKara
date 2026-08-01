@@ -72,6 +72,56 @@ export const APP_SHORTCUTS = {
     displayKey: "PageDown",
     requiresPrimaryModifier: false,
   },
+  toggleQueue: {
+    id: "queue.toggle",
+    code: "KeyQ",
+    key: "q",
+    displayKey: "Q",
+    requiresPrimaryModifier: false,
+  },
+  toggleMute: {
+    id: "player.mute",
+    code: "KeyM",
+    key: "m",
+    displayKey: "M",
+    requiresPrimaryModifier: false,
+  },
+  toggleFullscreen: {
+    id: "player.fullscreen",
+    code: "KeyF",
+    key: "f",
+    displayKey: "F",
+    requiresPrimaryModifier: false,
+  },
+  stopPlayback: {
+    id: "player.stop",
+    code: "Period",
+    key: ".",
+    displayKey: ".",
+    requiresPrimaryModifier: true,
+  },
+  separateCurrent: {
+    id: "player.separate",
+    code: "KeyS",
+    key: "s",
+    displayKey: "S",
+    requiresPrimaryModifier: true,
+    allowShift: true,
+  },
+  seekBackward: {
+    id: "player.seekBackward",
+    displayKey: "Left",
+    acceptedCodes: ["ArrowLeft"],
+    acceptedKeys: ["ArrowLeft"],
+    requiresPrimaryModifier: true,
+  },
+  seekForward: {
+    id: "player.seekForward",
+    displayKey: "Right",
+    acceptedCodes: ["ArrowRight"],
+    acceptedKeys: ["ArrowRight"],
+    requiresPrimaryModifier: true,
+  },
 } satisfies Record<string, ShortcutDefinition>;
 
 export function getShortcutPlatform(): ShortcutPlatform {

@@ -460,6 +460,8 @@ export function QueuePanel() {
 
   return (
     <div
+      id="queue-panel"
+      aria-label={t("queue.title")}
       className="app-panel-surface flex h-full w-[280px] shrink-0 flex-col border-l border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-toolbar)_94%,transparent)] shadow-[-1px_0_0_var(--color-border)]"
       data-testid="queue-panel"
     >

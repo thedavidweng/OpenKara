@@ -1,0 +1,1064 @@
+name: Reusable Windows installed app smoke
+
+on:
+  workflow_call:
+    inputs:
+      openkara_version:
+        description: "Version label reported in the validation summary"
+        required: true
+        type: string
+      artifact_prefix:
+        description: "Prefix for all uploaded artifacts"
+        required: true
+        type: string
+      driver_scenario:
+        description: "Automation driver scenario name for clean/upgrade install"
+        required: false
+        type: string
+        default: "clean-install"
+      uia_scenario:
+        description: "UI Automation E2E scenario name"
+        required: false
+        type: string
+        default: "keyboard-workflow"
+      run_keyboard_uia:
+        description: "Run Windows keyboard/UIA desktop E2E after clean install (enable on release/nightly/full PR)"
+        required: false
+        type: boolean
+        # Default off so callers that only need clean-install stay fast. Release
+        # and nightly pass true explicitly for the full #303 gate.
+        default: false
+      run_fault_injection:
+        description: "Run the fault-injection automation driver scenario after a clean install"
+        required: false
+        type: boolean
+        default: false
+      run_display_matrix:
+        description: "Run Windows display scaling matrix (100/125/150/200%) after UIA"
+        required: false
+        type: boolean
+        default: false
+      previous_version:
+        description: "Previous release to install before the candidate (empty = latest stable, none = skip upgrade)"
+        required: false
+        type: string
+        default: ""
+      retention_days:
+        description: "Artifact retention in days"
+        required: false
+        type: number
+        default: 14
+      release_build:
+        description: "Build a signed release with updater artifacts"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        description: "Minisign private key for updater artifacts"
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: "Password for the minisign private key"
+        required: false
+    outputs:
+      validation_passed:
+        description: "Whether the installed app validation passed"
+        value: ${{ jobs.generate-report.outputs.validation_passed }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-installer:
+    name: Build installer and driver
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Stable across commits so adjacent pushes hit the cache. Do not key
+          # on github.sha — that forced a cold cache on every push.
+          shared-key: openkara-windows-installed-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          # save even when later jobs fail so the next push still warms.
+          save-if: true
+          prefix-key: v2-windows-smoke
+          # Profile shape is part of the key: fat (release) vs thin+O1 (smoke).
+          key: ${{ inputs.release_build && 'fat-lto' || 'thin-lto-o1' }}
+
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-x86_64-pc-windows-msvc-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+
+      - name: Prepare bundled ONNX Runtime
+        shell: bash
+        run: node scripts/prepare-onnx-runtime.mjs --target x86_64-pc-windows-msvc
+
+      - name: Restore NuGet cache for UIA probe
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-uia-probe-${{ hashFiles('tools/windows-accessibility/**/*.csproj') }}
+          restore-keys: |
+            nuget-uia-probe-
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Product Cargo.toml uses fat LTO + opt-level=s + codegen-units=1. That is
+      # correct for shipped builds, but linking the app *and* the automation
+      # driver as two separate fat-LTO bins costs ~15 minutes. Non-release smoke
+      # builds use thin LTO, opt-level=1, and higher codegen-units so one cargo
+      # graph + one NSIS package finishes much faster. release_build=true keeps
+      # the Cargo.toml fat-LTO settings for publish.
+      - name: Build automation driver, NSIS candidate, and UIA probe
+        env:
+          CI: true
+          RELEASE_BUILD: ${{ inputs.release_build }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Smoke profile overrides (ignored when RELEASE_BUILD=true below).
+          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.release_build && 'fat' || 'thin' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.release_build && '1' || '16' }}
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ inputs.release_build && 's' || '1' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # UIA probe is independent of Rust; start it in parallel with cargo.
+          $probeOut = Join-Path $env:RUNNER_TEMP "uia-probe-build.out.log"
+          $probeErr = Join-Path $env:RUNNER_TEMP "uia-probe-build.err.log"
+          $probe = Start-Process -FilePath "dotnet" `
+            -ArgumentList @(
+              "build",
+              "tools/windows-accessibility/OpenKara.AccessibilityProbe/OpenKara.AccessibilityProbe.csproj",
+              "-c", "Release",
+              "--verbosity", "minimal"
+            ) `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput $probeOut `
+            -RedirectStandardError $probeErr
+
+          # Product installers use automation-smoke only. The driver binary is
+          # built with automation-driver after tauri so it is not packed into NSIS.
+          if ($env:RELEASE_BUILD -eq "true") {
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+          } else {
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign -- --bin openkara
+          }
+          if ($LASTEXITCODE -ne 0) {
+            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            throw "tauri build failed with exit code $LASTEXITCODE"
+          }
+
+          Push-Location src-tauri
+          cargo build --release --features automation-driver --bin openkara_automation_driver
+          if ($LASTEXITCODE -ne 0) {
+            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            throw "automation driver build failed with exit code $LASTEXITCODE"
+          }
+          Pop-Location
+
+          if (-not (Test-Path -Path "src-tauri/target/release/openkara_automation_driver.exe" -PathType Leaf)) {
+            throw "automation driver binary missing after build"
+          }
+
+          # Probe often finishes well before the Rust/NSIS link; Wait-Process
+          # errors if the PID is already gone, so only wait when still alive.
+          if (-not $probe.HasExited) {
+            Wait-Process -Id $probe.Id
+          }
+          $probe.Refresh()
+          Get-Content -Path $probeOut, $probeErr -ErrorAction SilentlyContinue | Write-Host
+          if ($probe.ExitCode -ne 0) {
+            throw "UIA probe build failed with exit code $($probe.ExitCode)"
+          }
+
+      - name: Upload UIA probe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-uia-probe
+          path: tools/windows-accessibility/OpenKara.AccessibilityProbe/bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.*
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload installer
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: src-tauri/target/release/bundle/nsis/*setup.exe
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload automation driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: src-tauri/target/release/openkara_automation_driver.exe
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload Windows updater artifacts
+        if: ${{ inputs.release_build }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-updater
+          path: |
+            src-tauri/target/release/bundle/**/latest.json
+            src-tauri/target/release/bundle/**/*.sig
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  clean-install:
+    name: Clean install and smoke
+    runs-on: windows-latest
+    timeout-minutes: 90
+    needs: build-installer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download candidate installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: Download automation driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: ${{ runner.temp }}/driver
+
+      - name: Install candidate (clean)
+        shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install
+          CANDIDATE_DIR: ${{ runner.temp }}/installer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $candidateInstaller = Get-ChildItem -Path $env:CANDIDATE_DIR -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $candidateInstaller) {
+            throw "The candidate NSIS installer was not produced."
+          }
+
+          New-Item -ItemType Directory -Force -Path $env:INSTALL_DIR | Out-Null
+          $installDir = ($env:INSTALL_DIR -replace '/','\\')
+          $installProcess = Start-Process -FilePath $candidateInstaller.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Candidate installer failed with exit code $($installProcess.ExitCode)" }
+
+          $installedApp = Get-ChildItem -Path $env:INSTALL_DIR -Recurse -File |
+            Where-Object { $_.Name -ieq "OpenKara.exe" } |
+            Select-Object -First 1
+          if ($null -eq $installedApp) {
+            throw "OpenKara.exe was not found after the candidate install."
+          }
+          "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "OPENKARA_INSTALL_DIR=$($env:INSTALL_DIR)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Seed user-library marker outside install dir
+        shell: pwsh
+        env:
+          USER_LIBRARY_DIR: ${{ runner.temp }}/openkara-user-library
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path $env:USER_LIBRARY_DIR | Out-Null
+          $marker = Join-Path $env:USER_LIBRARY_DIR "library-marker.txt"
+          Set-Content -Path $marker -Value "openkara-user-library-must-survive-uninstall" -Encoding utf8
+          "OPENKARA_USER_LIBRARY_MARKER=$marker" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run installed-app scenario
+        shell: pwsh
+        env:
+          OPENKARA_SMOKE_EP: cpu
+          OPENKARA_SCENARIO: ${{ inputs.driver_scenario }}
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:SMOKE_ROOT
+          $appData = Join-Path $root "app-data"
+          $inputDir = Join-Path $root "input"
+          New-Item -ItemType Directory -Force -Path $appData, $inputDir | Out-Null
+          Copy-Item "src-tauri/tests/fixtures/audio/fixture.wav" (Join-Path $inputDir "fixture.wav")
+
+          $driver = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "driver") -Filter "openkara_automation_driver.exe" -File | Select-Object -First 1
+          if ($null -eq $driver) { throw "Automation driver executable was not found." }
+
+          & $driver.FullName --scenario $env:OPENKARA_SCENARIO --installed-exe $env:OPENKARA_INSTALLED_APP --app-data-dir $appData --input-dir $inputDir --output-dir $root
+          if ($LASTEXITCODE -ne 0) { throw "Installed app scenario failed with exit code $LASTEXITCODE" }
+
+          "OPENKARA_SMOKE_APP_DATA=$appData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download UIA probe
+        if: ${{ inputs.run_keyboard_uia }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-uia-probe
+          path: ${{ runner.temp }}/uia-probe
+
+      - name: Seed UIA app-data from smoke runtimes/models
+        if: ${{ inputs.run_keyboard_uia }}
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+          USER_LIBRARY_DIR: ${{ runner.temp }}/openkara-user-library
+        run: |
+          $ErrorActionPreference = "Stop"
+          $smokeAppData = Join-Path $env:SMOKE_ROOT "app-data"
+          $uiaAppData = Join-Path $env:SMOKE_ROOT "uia-app-data"
+          if (-not (Test-Path -Path $smokeAppData -PathType Container)) {
+            throw "Smoke app-data directory was not created at $smokeAppData"
+          }
+          if (Test-Path -Path $uiaAppData) {
+            Remove-Item -Recurse -Force $uiaAppData
+          }
+          Copy-Item -Recurse -Force $smokeAppData $uiaAppData
+
+          # Keyboard UIA must land in the main shell, not first-run LibrarySetup.
+          # libraryReady is active_library_id !== null, and the root must be a
+          # real LibraryRoot (has .openkara-library). Prefer the driver's
+          # restart smoke-library (has fixture media + stems); else create one.
+          $fallbackLibrary = $env:USER_LIBRARY_DIR
+          if ([string]::IsNullOrWhiteSpace($fallbackLibrary)) {
+            $fallbackLibrary = Join-Path $env:RUNNER_TEMP "openkara-user-library"
+          }
+          $libraryCandidates = @(
+            (Join-Path $env:SMOKE_ROOT "restart\smoke-library"),
+            (Join-Path $env:SMOKE_ROOT "smoke-library"),
+            $fallbackLibrary
+          )
+          $libraryDir = $null
+          foreach ($candidate in $libraryCandidates) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $marker = Join-Path $candidate ".openkara-library"
+            if (Test-Path -Path $marker -PathType Leaf) {
+              $libraryDir = (Resolve-Path -Path $candidate).Path
+              Write-Host "Reusing existing library root at $libraryDir"
+              break
+            }
+          }
+          if ($null -eq $libraryDir) {
+            $libraryDir = $fallbackLibrary
+            New-Item -ItemType Directory -Force -Path $libraryDir | Out-Null
+            $libraryDir = (Resolve-Path -Path $libraryDir).Path
+            $markerPath = Join-Path $libraryDir ".openkara-library"
+            $marker = @{
+              version    = 1
+              created_at = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+              identifier = "com.openkara.library"
+            }
+            $marker | ConvertTo-Json -Depth 4 | Set-Content -Path $markerPath -Encoding utf8
+            foreach ($sub in @("media", "media-g", "stems", "artwork")) {
+              New-Item -ItemType Directory -Force -Path (Join-Path $libraryDir $sub) | Out-Null
+            }
+            Write-Host "Created UIA library root at $libraryDir"
+          }
+
+          # Local-audio smoke indexes songs in restart/local-audio-smoke.sqlite3 while
+          # media/stems live under smoke-library/. The GUI only opens openkara.db in
+          # the library root — copy the smoke index so keyboard UIA sees tracks.
+          $smokeDb = Join-Path $env:SMOKE_ROOT "restart\local-audio-smoke.sqlite3"
+          $libraryDb = Join-Path $libraryDir "openkara.db"
+          if (Test-Path -Path $smokeDb -PathType Leaf) {
+            Copy-Item -Force $smokeDb $libraryDb
+            Write-Host "Seeded library database from $smokeDb -> $libraryDb"
+          } else {
+            Write-Warning "Smoke database not found at $smokeDb; UIA library may be empty"
+          }
+
+          $sha = [System.Security.Cryptography.SHA256]::Create()
+          $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($libraryDir))
+          $libraryId = "library-" + (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
+          $displayName = Split-Path -Path $libraryDir -Leaf
+          if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = "OpenKara Library" }
+
+          $configPath = Join-Path $uiaAppData "config.json"
+          $config = [ordered]@{}
+          if (Test-Path -Path $configPath -PathType Leaf) {
+            try {
+              $existing = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+              if ($null -ne $existing) {
+                $existing | Get-Member -MemberType NoteProperty | ForEach-Object {
+                  $config[$_.Name] = $existing.($_.Name)
+                }
+              }
+            } catch {
+              Write-Warning "Existing UIA config.json was unreadable; writing a fresh library seed"
+            }
+          }
+
+          # Registry form is authoritative; clear legacy library_path so migrate
+          # cannot overwrite libraries with the old single-path field.
+          $config["language"] = "en"
+          $config["library_path"] = $null
+          $config["libraries"] = @(
+            [ordered]@{
+              kind         = "local"
+              id           = $libraryId
+              display_name = $displayName
+              root_path    = $libraryDir
+            }
+          )
+          $config["active_library_id"] = $libraryId
+
+          $config | ConvertTo-Json -Depth 8 | Set-Content -Path $configPath -Encoding utf8
+          Write-Host "Seeded UIA active_library_id=$libraryId root=$libraryDir into $configPath"
+
+          "OPENKARA_APP_DATA_DIR=$uiaAppData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run Windows desktop UIA E2E
+        if: ${{ inputs.run_keyboard_uia }}
+        shell: pwsh
+        env:
+          OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install
+          UIA_SCENARIO: ${{ inputs.uia_scenario }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:OPENKARA_APP_DATA_DIR)) {
+            throw "OPENKARA_APP_DATA_DIR was not set by the UIA app-data seed step"
+          }
+          $probe = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "uia-probe") -Filter "OpenKara.AccessibilityProbe.exe" -File | Select-Object -First 1
+          if ($null -eq $probe) { throw "UIA probe executable was not found." }
+
+          $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
+          # 60s per step is enough once Wait-For-UiReady has already proven the
+          # WebView tree is live; keep headroom above the old 30s default.
+          & scripts/ci/run-windows-desktop-e2e.ps1 `
+            -InstallDir $installDir `
+            -Scenario $env:UIA_SCENARIO `
+            -OutputDir (Join-Path $env:RUNNER_TEMP "desktop-e2e") `
+            -ProbePath $probe.FullName `
+            -StepTimeoutMs 60000
+          if ($LASTEXITCODE -ne 0) { throw "Windows desktop UIA E2E failed with exit code $LASTEXITCODE" }
+
+      - name: Validate desktop E2E report
+        if: ${{ always() && inputs.run_keyboard_uia }}
+        shell: bash
+        env:
+          UIA_SCENARIO: ${{ inputs.uia_scenario }}
+        run: |
+          node scripts/validate-desktop-e2e-report.mjs \
+            "${RUNNER_TEMP}/desktop-e2e/desktop-e2e-report.json" \
+            "${UIA_SCENARIO}"
+
+      - name: Run Windows display scaling matrix
+        if: ${{ inputs.run_display_matrix }}
+        shell: pwsh
+        env:
+          OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install
+        run: |
+          $ErrorActionPreference = "Stop"
+          $probe = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "uia-probe") -Filter "OpenKara.AccessibilityProbe.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          $args = @{
+            InstallDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
+            OutputDir  = (Join-Path $env:RUNNER_TEMP "display-matrix")
+          }
+          if ($null -ne $probe) { $args.ProbePath = $probe.FullName }
+          & scripts/ci/run-windows-display-matrix.ps1 @args
+          if ($LASTEXITCODE -ne 0) { throw "Display scaling matrix failed with exit code $LASTEXITCODE" }
+
+      - name: Validate installed app smoke
+        if: always()
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/validate-installed-app-smoke.mjs `
+            (Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json") `
+            (Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json") `
+            $env:SMOKE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw "Installed app smoke validation failed with exit code $LASTEXITCODE" }
+
+      - name: Silent uninstall and assert cleanup
+        if: always()
+        shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Get-Process -Name "OpenKara" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Milliseconds 500
+
+          $installDir = $env:INSTALL_DIR
+          if (-not (Test-Path -Path $installDir -PathType Container)) {
+            Write-Warning "Install directory already absent at $installDir"
+          } else {
+            $uninstaller = Get-ChildItem -Path $installDir -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match '^(Uninstall|uninstall).*\.exe$' } |
+              Select-Object -First 1
+            if ($null -eq $uninstaller) {
+              $uninstaller = Get-ChildItem -Path $installDir -Filter "uninstall.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($null -eq $uninstaller) {
+              throw "NSIS uninstaller was not found under $installDir"
+            }
+
+            $uninstallProcess = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+            if ($uninstallProcess.ExitCode -ne 0) {
+              throw "Silent uninstall failed with exit code $($uninstallProcess.ExitCode)"
+            }
+
+            # NSIS may leave an empty directory briefly; wait for OpenKara.exe removal.
+            $deadline = [DateTime]::UtcNow.AddSeconds(60)
+            while ([DateTime]::UtcNow -lt $deadline) {
+              $exe = Get-ChildItem -Path $installDir -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -ieq "OpenKara.exe" } |
+                Select-Object -First 1
+              if ($null -eq $exe) { break }
+              Start-Sleep -Milliseconds 500
+            }
+
+            $remainingExe = Get-ChildItem -Path $installDir -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ieq "OpenKara.exe" } |
+              Select-Object -First 1
+            if ($null -ne $remainingExe) {
+              throw "OpenKara.exe still present after uninstall: $($remainingExe.FullName)"
+            }
+          }
+
+          $marker = $env:OPENKARA_USER_LIBRARY_MARKER
+          if ([string]::IsNullOrWhiteSpace($marker)) {
+            $marker = Join-Path $env:RUNNER_TEMP "openkara-user-library/library-marker.txt"
+          }
+          if (-not (Test-Path -Path $marker -PathType Leaf)) {
+            throw "User-library marker was deleted by uninstall: $marker"
+          }
+          Write-Host "Uninstall removed OpenKara.exe; user-library marker preserved at $marker"
+
+      - name: Upload clean-install smoke reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-smoke-reports
+          path: |
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/installed-app-smoke-validation.json
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/local-audio-smoke-report.*
+            ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
+            ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
+            ${{ runner.temp }}/desktop-e2e/uia-tree-*.json
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  upgrade-install:
+    name: Upgrade install and smoke
+    runs-on: windows-latest
+    timeout-minutes: 90
+    needs: build-installer
+    if: ${{ inputs.previous_version != 'none' || inputs.release_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download candidate installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: Download automation driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: ${{ runner.temp }}/driver
+
+      - name: Install previous release, seed library marker, upgrade to candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-upgrade-install
+          CANDIDATE_DIR: ${{ runner.temp }}/installer
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          RELEASE_BUILD: ${{ inputs.release_build }}
+          UPGRADE_APP_DATA: ${{ runner.temp }}/openkara-upgrade-app-data
+          USER_LIBRARY_DIR: ${{ runner.temp }}/openkara-upgrade-user-library
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $candidateInstaller = Get-ChildItem -Path $env:CANDIDATE_DIR -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $candidateInstaller) {
+            throw "The candidate NSIS installer was not produced."
+          }
+
+          New-Item -ItemType Directory -Force -Path $env:INSTALL_DIR, $env:UPGRADE_APP_DATA, $env:USER_LIBRARY_DIR | Out-Null
+
+          $previousVersion = $env:PREVIOUS_VERSION
+          $release = $null
+          if ([string]::IsNullOrWhiteSpace($previousVersion) -or $previousVersion -eq "") {
+            $release = gh api "repos/$env:GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name'
+          } else {
+            $release = $previousVersion
+          }
+
+          if ([string]::IsNullOrWhiteSpace($release) -or $release -eq "null") {
+            $message = "No previous stable Windows release resolved for upgrade install."
+            if ($env:RELEASE_BUILD -eq "true") {
+              throw $message
+            }
+            Write-Warning "$message Soft-skipping upgrade install for non-release runs."
+            "UPGRADE_SKIPPED=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            exit 0
+          }
+
+          $previousDir = Join-Path $env:RUNNER_TEMP "openkara-previous-release"
+          New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
+          gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
+          $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $previousInstaller) {
+            $message = "Release $release did not include a Windows NSIS installer."
+            if ($env:RELEASE_BUILD -eq "true") {
+              throw $message
+            }
+            Write-Warning "$message Soft-skipping upgrade install for non-release runs."
+            "UPGRADE_SKIPPED=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            exit 0
+          }
+
+          $installDir = ($env:INSTALL_DIR -replace '/','\\')
+          $previousInstallProcess = Start-Process -FilePath $previousInstaller.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($previousInstallProcess.ExitCode -ne 0) {
+            throw "Previous installer failed with exit code $($previousInstallProcess.ExitCode)"
+          }
+
+          # Seed config and a user-library marker that must survive the upgrade.
+          $marker = Join-Path $env:USER_LIBRARY_DIR "upgrade-library-marker.txt"
+          Set-Content -Path $marker -Value "upgrade-marker-$release" -Encoding utf8
+          $seedConfig = Join-Path $env:UPGRADE_APP_DATA "config.json"
+          Set-Content -Path $seedConfig -Value (@{ library_path = $env:USER_LIBRARY_DIR } | ConvertTo-Json) -Encoding utf8
+          "OPENKARA_UPGRADE_MARKER=$marker" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $candidateInstallProcess = Start-Process -FilePath $candidateInstaller.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($candidateInstallProcess.ExitCode -ne 0) {
+            throw "Candidate upgrade installer failed with exit code $($candidateInstallProcess.ExitCode)"
+          }
+
+          $installedApp = Get-ChildItem -Path $env:INSTALL_DIR -Recurse -File |
+            Where-Object { $_.Name -ieq "OpenKara.exe" } |
+            Select-Object -First 1
+          if ($null -eq $installedApp) {
+            throw "OpenKara.exe was not found after the upgrade install."
+          }
+          if (-not (Test-Path -Path $marker -PathType Leaf)) {
+            throw "User-library marker was lost during upgrade: $marker"
+          }
+
+          "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "UPGRADE_PREVIOUS_TAG=$release" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Upgraded from $release to candidate in $installDir"
+
+      - name: Run upgrade installed-app scenario
+        if: ${{ env.UPGRADE_SKIPPED != 'true' }}
+        shell: pwsh
+        env:
+          OPENKARA_SMOKE_EP: cpu
+          OPENKARA_SCENARIO: ${{ inputs.driver_scenario }}
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-upgrade-install-smoke
+          UPGRADE_APP_DATA: ${{ runner.temp }}/openkara-upgrade-app-data
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:SMOKE_ROOT
+          $appData = $env:UPGRADE_APP_DATA
+          $inputDir = Join-Path $root "input"
+          New-Item -ItemType Directory -Force -Path $appData, $inputDir | Out-Null
+          Copy-Item "src-tauri/tests/fixtures/audio/fixture.wav" (Join-Path $inputDir "fixture.wav")
+
+          $driver = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "driver") -Filter "openkara_automation_driver.exe" -File | Select-Object -First 1
+          if ($null -eq $driver) { throw "Automation driver executable was not found." }
+
+          & $driver.FullName --scenario $env:OPENKARA_SCENARIO --installed-exe $env:OPENKARA_INSTALLED_APP --app-data-dir $appData --input-dir $inputDir --output-dir $root
+          if ($LASTEXITCODE -ne 0) { throw "Upgrade installed app scenario failed with exit code $LASTEXITCODE" }
+
+          $marker = $env:OPENKARA_UPGRADE_MARKER
+          if (-not [string]::IsNullOrWhiteSpace($marker) -and -not (Test-Path -Path $marker -PathType Leaf)) {
+            throw "User-library marker disappeared after upgrade smoke: $marker"
+          }
+
+      - name: Validate upgrade installed app smoke
+        if: ${{ always() && env.UPGRADE_SKIPPED != 'true' }}
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-upgrade-install-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/validate-installed-app-smoke.mjs `
+            (Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json") `
+            (Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json") `
+            $env:SMOKE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw "Upgrade installed app smoke validation failed with exit code $LASTEXITCODE" }
+
+      - name: Silent uninstall after upgrade
+        if: ${{ always() && env.UPGRADE_SKIPPED != 'true' }}
+        shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-upgrade-install
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Process -Name "OpenKara" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Milliseconds 500
+
+          $installDir = $env:INSTALL_DIR
+          if (Test-Path -Path $installDir -PathType Container) {
+            $uninstaller = Get-ChildItem -Path $installDir -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match '^(Uninstall|uninstall).*\.exe$' } |
+              Select-Object -First 1
+            if ($null -eq $uninstaller) {
+              throw "NSIS uninstaller was not found under $installDir"
+            }
+            $uninstallProcess = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+            if ($uninstallProcess.ExitCode -ne 0) {
+              throw "Silent uninstall after upgrade failed with exit code $($uninstallProcess.ExitCode)"
+            }
+          }
+
+          $marker = $env:OPENKARA_UPGRADE_MARKER
+          if (-not [string]::IsNullOrWhiteSpace($marker) -and -not (Test-Path -Path $marker -PathType Leaf)) {
+            throw "User-library marker was deleted by uninstall after upgrade: $marker"
+          }
+
+      - name: Upload upgrade-install smoke reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-upgrade-reports
+          path: |
+            ${{ runner.temp }}/openkara-upgrade-install-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-upgrade-install-smoke/**/installed-app-smoke-validation.json
+            ${{ runner.temp }}/openkara-upgrade-install-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-upgrade-install-smoke/**/local-audio-smoke-report.*
+            ${{ runner.temp }}/OpenKara-upgrade-install/**/OpenKara.exe
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  fault-injection:
+    name: Fault injection
+    runs-on: windows-latest
+    timeout-minutes: 90
+    needs: build-installer
+    if: ${{ inputs.run_fault_injection }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download candidate installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: Download automation driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: ${{ runner.temp }}/driver
+
+      - name: Install candidate for fault injection
+        shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-fault-install
+          CANDIDATE_DIR: ${{ runner.temp }}/installer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $candidateInstaller = Get-ChildItem -Path $env:CANDIDATE_DIR -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $candidateInstaller) {
+            throw "The candidate NSIS installer was not produced."
+          }
+
+          New-Item -ItemType Directory -Force -Path $env:INSTALL_DIR | Out-Null
+          $installDir = ($env:INSTALL_DIR -replace '/','\\')
+          $installProcess = Start-Process -FilePath $candidateInstaller.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Candidate installer failed with exit code $($installProcess.ExitCode)" }
+
+          $installedApp = Get-ChildItem -Path $env:INSTALL_DIR -Recurse -File |
+            Where-Object { $_.Name -ieq "OpenKara.exe" } |
+            Select-Object -First 1
+          if ($null -eq $installedApp) {
+            throw "OpenKara.exe was not found after the candidate install."
+          }
+          "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run fault-injection scenario
+        shell: pwsh
+        env:
+          OPENKARA_SMOKE_EP: cpu
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-fault-injection-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:SMOKE_ROOT
+          $appData = Join-Path $root "app-data"
+          $inputDir = Join-Path $root "input"
+          New-Item -ItemType Directory -Force -Path $appData, $inputDir | Out-Null
+          Copy-Item "src-tauri/tests/fixtures/audio/fixture.wav" (Join-Path $inputDir "fixture.wav")
+
+          $driver = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "driver") -Filter "openkara_automation_driver.exe" -File | Select-Object -First 1
+          if ($null -eq $driver) { throw "Automation driver executable was not found." }
+
+          & $driver.FullName `
+            --scenario fault-injection `
+            --inject-faults `
+            --installed-exe $env:OPENKARA_INSTALLED_APP `
+            --app-data-dir $appData `
+            --input-dir $inputDir `
+            --output-dir $root
+          if ($LASTEXITCODE -ne 0) { throw "Fault-injection scenario failed with exit code $LASTEXITCODE" }
+
+      - name: Validate fault-injection smoke reports
+        if: always()
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-fault-injection-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          $prepare = Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json"
+          $restart = Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json"
+          if ((Test-Path $prepare) -and (Test-Path $restart)) {
+            node scripts/validate-installed-app-smoke.mjs $prepare $restart $env:SMOKE_ROOT
+            if ($LASTEXITCODE -ne 0) { throw "Fault-injection smoke validation failed with exit code $LASTEXITCODE" }
+          } else {
+            Write-Warning "Prepare/restart smoke reports not both present; relying on automation-report.json status."
+          }
+
+          $automationReport = Join-Path $env:SMOKE_ROOT "automation-report.json"
+          if (-not (Test-Path $automationReport)) {
+            throw "Fault-injection automation report was not written at $automationReport"
+          }
+          $report = Get-Content $automationReport -Raw | ConvertFrom-Json
+          if ($report.status -ne "passed") {
+            throw "Fault-injection automation report status is '$($report.status)' (expected passed)"
+          }
+
+      - name: Upload fault-injection reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-fault-reports
+          path: |
+            ${{ runner.temp }}/openkara-fault-injection-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-fault-injection-smoke/**/installed-app-smoke-validation.json
+            ${{ runner.temp }}/openkara-fault-injection-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-fault-injection-smoke/**/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  generate-report:
+    name: Generate validation report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - build-installer
+      - clean-install
+      - upgrade-install
+      - fault-injection
+    if: always()
+    outputs:
+      validation_passed: ${{ steps.summarize.outputs.passed }}
+    steps:
+      - name: Require all enabled Windows installed-app gates
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build-installer.result }}
+          CLEAN_RESULT: ${{ needs.clean-install.result }}
+          UPGRADE_RESULT: ${{ needs.upgrade-install.result }}
+          FAULT_RESULT: ${{ needs.fault-injection.result }}
+          RUN_FAULT: ${{ inputs.run_fault_injection }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          RELEASE_BUILD: ${{ inputs.release_build }}
+        run: |
+          set -euo pipefail
+          failed=0
+
+          if [ "${BUILD_RESULT}" != "success" ]; then
+            echo "::error::build-installer finished as ${BUILD_RESULT}"
+            failed=1
+          fi
+          if [ "${CLEAN_RESULT}" != "success" ]; then
+            echo "::error::clean-install finished as ${CLEAN_RESULT}"
+            failed=1
+          fi
+
+          upgrade_required=false
+          if [ "${PREVIOUS_VERSION}" != "none" ] || [ "${RELEASE_BUILD}" = "true" ]; then
+            upgrade_required=true
+          fi
+          if [ "${upgrade_required}" = "true" ]; then
+            case "${UPGRADE_RESULT}" in
+              success) ;;
+              skipped)
+                echo "::error::upgrade-install was skipped but is required"
+                failed=1
+                ;;
+              *)
+                echo "::error::upgrade-install finished as ${UPGRADE_RESULT}"
+                failed=1
+                ;;
+            esac
+          else
+            case "${UPGRADE_RESULT}" in
+              success|skipped) ;;
+              *)
+                echo "::error::upgrade-install finished as ${UPGRADE_RESULT}"
+                failed=1
+                ;;
+            esac
+          fi
+
+          if [ "${RUN_FAULT}" = "true" ]; then
+            case "${FAULT_RESULT}" in
+              success) ;;
+              skipped)
+                echo "::error::fault-injection was skipped but run_fault_injection is true"
+                failed=1
+                ;;
+              *)
+                echo "::error::fault-injection finished as ${FAULT_RESULT}"
+                failed=1
+                ;;
+            esac
+          else
+            case "${FAULT_RESULT}" in
+              success|skipped) ;;
+              *)
+                echo "::error::fault-injection finished as ${FAULT_RESULT}"
+                failed=1
+                ;;
+            esac
+          fi
+
+          if [ "${failed}" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All required Windows installed-app gates succeeded."
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download smoke reports
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/smoke-reports
+          pattern: ${{ inputs.artifact_prefix }}-*-reports
+
+      - name: Summarize validation
+        id: summarize
+        shell: pwsh
+        env:
+          SMOKE_REPORTS_DIR: ${{ runner.temp }}/smoke-reports
+          CLEAN_RESULT: ${{ needs.clean-install.result }}
+          UPGRADE_RESULT: ${{ needs.upgrade-install.result }}
+          FAULT_RESULT: ${{ needs.fault-injection.result }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $validationFiles = @()
+          if (Test-Path $env:SMOKE_REPORTS_DIR) {
+            $validationFiles = @(Get-ChildItem -Path $env:SMOKE_REPORTS_DIR -Recurse -Filter "installed-app-smoke-validation.json" -ErrorAction SilentlyContinue)
+          }
+
+          $totalPass = 0
+          $totalFail = 0
+          $failures = @()
+          foreach ($file in $validationFiles) {
+            $validation = Get-Content $file.FullName | ConvertFrom-Json
+            $totalPass += [int]$validation.pass_count
+            $totalFail += [int]$validation.fail_count
+            foreach ($assertion in @($validation.assertions | Where-Object { $_.result -eq "fail" })) {
+              $failures += "- ``$($assertion.id)`` ($($file.FullName)): expected ``$($assertion.expected)``; observed ``$($assertion.observed)``"
+            }
+          }
+
+          $gatesOk = ($env:CLEAN_RESULT -eq "success") -and (
+            $env:UPGRADE_RESULT -eq "success" -or $env:UPGRADE_RESULT -eq "skipped"
+          ) -and (
+            $env:FAULT_RESULT -eq "success" -or $env:FAULT_RESULT -eq "skipped"
+          )
+          $pass = if ($gatesOk -and $totalFail -eq 0) { "true" } else { "false" }
+          "passed=$pass" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Installed-app smoke validation"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Gate | Result |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | --- |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| clean-install | $($env:CLEAN_RESULT) |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| upgrade-install | $($env:UPGRADE_RESULT) |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| fault-injection | $($env:FAULT_RESULT) |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Assertions: $totalPass passed, $totalFail failed across $($validationFiles.Count) validation report(s)."
+          if ($failures.Count -gt 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Failures"
+            foreach ($line in $failures) {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line
+            }
+          }
+
+          if ($pass -ne "true") {
+            throw "Installed-app validation did not pass (gatesOk=$gatesOk, totalFail=$totalFail)"
+          }

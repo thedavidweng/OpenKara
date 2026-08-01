@@ -15,9 +15,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
 [features]
-# Enables a release-CI-only command line on the packaged desktop executable.
-# Normal user builds do not contain this test entry point.
+# CI-only CLI on the packaged openkara binary (--automation-smoke prepare/...).
+# Safe to enable for installed-app product builds: does not add extra bins.
 automation-smoke = []
+# Separate openkara_automation_driver binary for CI. Must NOT be enabled on
+# `tauri build`: Tauri packs every package bin whose features are enabled, and
+# a nested driver breaks macOS codesign / pollutes installers.
+automation-driver = ["automation-smoke"]
 
 [[bin]]
 name = "openkara"
@@ -26,7 +30,7 @@ path = "src/main.rs"
 [[bin]]
 name = "openkara_automation_driver"
 path = "src/bin/openkara_automation_driver.rs"
-required-features = ["automation-smoke"]
+required-features = ["automation-driver"]
 
 [build-dependencies]
 cc = "1.2.61"

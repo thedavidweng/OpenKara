@@ -1,0 +1,380 @@
+name: Reusable Linux installed app smoke
+
+on:
+  workflow_call:
+    inputs:
+      openkara_version:
+        description: "Version label reported in the validation summary"
+        required: true
+        type: string
+      artifact_prefix:
+        description: "Prefix for all uploaded artifacts"
+        required: true
+        type: string
+      os:
+        description: "Linux runner label"
+        required: true
+        type: string
+      rust_target:
+        description: "Rust target triple"
+        required: true
+        type: string
+      tauri_target:
+        description: "Tauri bundle target triple"
+        required: true
+        type: string
+      scenario:
+        description: "Automation scenario name"
+        required: false
+        type: string
+        default: "clean-install"
+      previous_version:
+        description: "Previous release to install before the candidate (empty = latest stable, none = clean install only)"
+        required: false
+        type: string
+        default: ""
+      retention_days:
+        description: "Artifact retention in days"
+        required: false
+        type: number
+        default: 14
+      release_build:
+        description: "Build a signed release with updater artifacts"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        description: "Minisign private key for updater artifacts"
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: "Password for the minisign private key"
+        required: false
+    outputs:
+      validation_passed:
+        description: "Whether the installed app validation passed"
+        value: ${{ jobs.generate-report.outputs.validation_passed }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-installer:
+    name: Build AppImage and driver
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: ${{ inputs.rust_target }}
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: openkara-linux-release-${{ inputs.tauri_target }}
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: ${{ github.sha }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget \
+            xvfb
+
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-${{ inputs.tauri_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+
+      - name: Prepare bundled ONNX Runtime
+        env:
+          ORT_TARGET: ${{ inputs.tauri_target }}
+        run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build AppImage release candidate with automation smoke entry point
+        env:
+          CI: true
+          RELEASE_BUILD: ${{ inputs.release_build }}
+          TAURI_TARGET: ${{ inputs.tauri_target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # automation-smoke only: packs the openkara CLI entry point, not the
+          # separate automation-driver binary (see Cargo.toml features).
+          if [ "${RELEASE_BUILD}" = "true" ]; then
+            pnpm tauri build --ci --bundles appimage --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+          else
+            pnpm tauri build --ci --bundles appimage --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
+          fi
+
+      - name: Build automation driver
+        working-directory: src-tauri
+        env:
+          RUST_TARGET: ${{ inputs.rust_target }}
+        run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver
+
+      - name: Upload AppImage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload automation driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: src-tauri/target/${{ inputs.rust_target }}/release/openkara_automation_driver
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload Linux updater artifacts
+        if: ${{ inputs.release_build }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-updater
+          path: |
+            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
+            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
+            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/latest.json
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  clean-install:
+    name: Clean install and smoke
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 90
+    needs: build-installer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install smoke runtime dependencies
+        run: |
+          sudo apt-get update
+          # Runtime packages for the extracted AppImage (WebView2-class WebKit needs
+          # EGL + webkit2gtk at run time; -dev packages alone do not provide them).
+          sudo apt-get install -y \
+            xvfb \
+            libasound2 \
+            libasound2-dev \
+            libegl1 \
+            libgl1 \
+            libgtk-3-0 \
+            libwebkit2gtk-4.1-0 \
+            libayatana-appindicator3-1 \
+            librsvg2-2
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Download candidate AppImage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: Download automation driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-driver
+          path: ${{ runner.temp }}/driver
+
+      - name: Make driver executable
+        env:
+          DRIVER_DIR: ${{ runner.temp }}/driver
+        run: chmod +x "$DRIVER_DIR/openkara_automation_driver"
+
+      - name: Install previous stable then upgrade to candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INSTALL_DIR: ${{ runner.temp }}/OpenKara-installed-smoke
+          CANDIDATE_DIR: ${{ runner.temp }}/installer
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$INSTALL_DIR"
+
+          candidate_appimage=$(find "$CANDIDATE_DIR" -name "*.AppImage" -type f | head -n 1)
+          if [ -z "$candidate_appimage" ]; then
+            echo "::error::The candidate AppImage was not produced."
+            exit 1
+          fi
+
+          chmod +x "$candidate_appimage"
+          "$candidate_appimage" --appimage-extract >/dev/null
+          mv squashfs-root "$INSTALL_DIR/candidate"
+
+          previous_version="$PREVIOUS_VERSION"
+          if [ "$previous_version" != "none" ]; then
+            if [ -z "$previous_version" ]; then
+              release=$(gh api "repos/$GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name')
+            else
+              release="$previous_version"
+            fi
+
+            if [ -n "$release" ] && [ "$release" != "null" ]; then
+              previous_dir="${RUNNER_TEMP}/openkara-previous-release"
+              mkdir -p "$previous_dir"
+              gh release download "$release" --repo "$GH_REPO" --pattern "*.AppImage" --dir "$previous_dir" || true
+              previous_appimage=$(find "$previous_dir" -name "*.AppImage" -type f | head -n 1)
+              if [ -n "$previous_appimage" ]; then
+                chmod +x "$previous_appimage"
+                (cd "$previous_dir" && "$previous_appimage" --appimage-extract >/dev/null)
+                mv "$previous_dir/squashfs-root" "$INSTALL_DIR/previous"
+                previous_binary=$(find "$INSTALL_DIR/previous" -type f -name "openkara" | head -n 1)
+                if [ -n "$previous_binary" ]; then
+                  # Run a prepare with the previous install if the build also has the automation-smoke feature.
+                  "$previous_binary" --automation-smoke prepare --app-data-dir "$INSTALL_DIR/app-data" --input-dir "$INSTALL_DIR/input" --output-dir "$INSTALL_DIR/previous-output" || echo "::warning::Previous release did not support automation smoke; continuing with clean candidate install."
+                fi
+              else
+                echo "::warning::Release $release did not include a Linux AppImage; continuing with clean candidate install."
+              fi
+            else
+              echo "::warning::No previous version resolved; continuing with clean candidate install."
+            fi
+          fi
+
+          installed_app=$(find "$INSTALL_DIR/candidate" -type f -name "openkara" | head -n 1)
+          if [ -z "$installed_app" ]; then
+            echo "::error::openkara binary was not found inside the extracted AppImage."
+            exit 1
+          fi
+          echo "OPENKARA_INSTALLED_APP=$installed_app" >> "$GITHUB_ENV"
+
+      - name: Run installed-app scenario
+        env:
+          OPENKARA_SMOKE_EP: cpu
+          OPENKARA_SCENARIO: ${{ inputs.scenario }}
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE_ROOT"/{app-data,input,prepare,restart}
+          cp src-tauri/tests/fixtures/audio/fixture.wav "$SMOKE_ROOT/input/fixture.wav"
+
+          driver="${RUNNER_TEMP}/driver/openkara_automation_driver"
+          "$driver" --scenario "$OPENKARA_SCENARIO" --installed-exe "$OPENKARA_INSTALLED_APP" --app-data-dir "$SMOKE_ROOT/app-data" --input-dir "$SMOKE_ROOT/input" --output-dir "$SMOKE_ROOT"
+
+      - name: Validate installed app smoke
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
+        run: |
+          set -euo pipefail
+          node scripts/validate-installed-app-smoke.mjs \
+            "$SMOKE_ROOT/prepare/installed-app-smoke-report.json" \
+            "$SMOKE_ROOT/restart/installed-app-smoke-report.json" \
+            "$SMOKE_ROOT"
+
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-smoke-reports
+          path: |
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-validation.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+  generate-report:
+    name: Generate validation report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: clean-install
+    outputs:
+      validation_passed: ${{ steps.summarize.outputs.passed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download smoke reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-smoke-reports
+          path: ${{ runner.temp }}/smoke-reports
+
+      - name: Summarize validation
+        id: summarize
+        env:
+          SMOKE_REPORTS_DIR: ${{ runner.temp }}/smoke-reports
+        run: |
+          set -euo pipefail
+          validation_path=$(find "$SMOKE_REPORTS_DIR" -name "installed-app-smoke-validation.json" -type f | head -n 1)
+          if [ -z "$validation_path" ]; then
+            echo "::error::Validation report not found"
+            exit 1
+          fi
+
+          export VALIDATION_PATH="$validation_path"
+          pass=$(node -p "require(process.env.VALIDATION_PATH).fail_count === 0")
+          echo "passed=$pass" >> "$GITHUB_OUTPUT"
+
+          echo "# Linux installed-app smoke validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          node -e "
+            const fs = require('fs');
+            const v = JSON.parse(fs.readFileSync(process.env.VALIDATION_PATH, 'utf8'));
+            console.log(\`Pass: \${v.pass_count}, Fail: \${v.fail_count}, Total: \${v.assertions.length}\`);
+          " >> "$GITHUB_STEP_SUMMARY"

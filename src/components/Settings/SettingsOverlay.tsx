@@ -34,6 +34,7 @@ export function SettingsOverlay() {
   return (
     <div
       ref={dialogRef}
+      id="settings-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}

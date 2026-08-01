@@ -100,10 +100,42 @@ describe("classifyFile", () => {
     ]);
   });
 
+  test("reusable-windows-installed-app.yml is release_workflow", () => {
+    expect(
+      classifyFile(".github/workflows/reusable-windows-installed-app.yml"),
+    ).toEqual(["release_workflow"]);
+  });
+
   test("installed-app smoke validator is release_workflow", () => {
     expect(classifyFile("scripts/validate-installed-app-smoke.mjs")).toEqual([
       "release_workflow",
     ]);
+  });
+
+  test("Windows desktop E2E scripts are release_workflow", () => {
+    expect(classifyFile("scripts/ci/run-windows-desktop-e2e.ps1")).toEqual([
+      "release_workflow",
+    ]);
+    expect(classifyFile("tests/desktop/windows/scenarios.json")).toEqual([
+      "release_workflow",
+    ]);
+  });
+
+  test("accessibility probe tooling is frontend_tooling", () => {
+    expect(
+      classifyFile(
+        "tools/windows-accessibility/OpenKara.AccessibilityProbe/Program.cs",
+      ),
+    ).toEqual(["frontend_tooling"]);
+  });
+
+  test("support servers are e2e", () => {
+    expect(classifyFile("tests/support/fault-server/server.mjs")).toEqual([
+      "e2e",
+    ]);
+    expect(
+      classifyFile("tests/support/remote-provider-fixture/webdav.mjs"),
+    ).toEqual(["e2e"]);
   });
 
   test("ci.yml is ci_workflow", () => {

@@ -156,12 +156,10 @@ jobs:
           retention-days: 5
 
   release-separation-smoke:
-    # Native source-tree inference on the non-Windows targets with the exact
-    # catalog runtime/model pair the release ships. Windows uses the stronger
-    # installed-app lifecycle smoke below.
+    # One primary arch per OS for release gate latency. Native ORT packaging is
+    # still covered by the multi-arch publish matrix below. Nightly keeps the
+    # fuller arch set.
     name: Release separation smoke (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
     needs: prepare-release
     strategy:
       fail-fast: false
@@ -170,305 +168,97 @@ jobs:
           - name: Linux x64
             os: ubuntu-22.04
             ort_target: x86_64-unknown-linux-gnu
-          - name: Linux arm64
-            os: ubuntu-24.04-arm
-            ort_target: aarch64-unknown-linux-gnu
-          - name: macOS (Apple Silicon)
+            artifact_prefix: release-separation-smoke-x86_64-linux
+          - name: macOS Apple Silicon
             os: macos-14
             ort_target: aarch64-apple-darwin
-          - name: macOS (Intel)
-            os: macos-15-intel
-            ort_target: x86_64-apple-darwin
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-
-      - name: Restore Rust cache
-        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}-smoke
-          workspaces: ./src-tauri -> target
-          cache-bin: false
-          key: ${{ matrix.os }}-smoke
-          lookup-only: true # release workflow: restore only, never save
-
-      - name: Install Linux smoke dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            libasound2-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev
-
-      - name: Download runtime and model
-        shell: bash
-        env:
-          OPENKARA_ORT_TARGET: ${{ matrix.ort_target }}
-        run: ./scripts/setup.sh
-
-      - name: Record catalog artifact identities
-        shell: bash
-        run: |
-          echo "Staged runtime:" && cat src-tauri/generated/onnxruntime/manifest.json
-          echo "Pinned model:" && node scripts/resolve-model.mjs
-
-      - name: Run real separation smoke
-        shell: bash
-        env:
-          # Hosted runners have no GPU; pin the smoke to CPU so provider
-          # fallback noise cannot make the run nondeterministic.
-          OPENKARA_SMOKE_EP: cpu
-        run: |
-          set -euo pipefail
-
-          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
-          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
-          mkdir -p "${input_dir}" "${output_dir}"
-          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
-
-          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
-
-      - name: Validate real separation smoke report
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          report_path="${RUNNER_TEMP}/openkara-smoke-output/local-audio-smoke-report.json"
-          node --input-type=module - "${report_path}" <<'NODE'
-          import { readFileSync } from "node:fs";
-
-          const reportPath = process.argv[2];
-          const report = JSON.parse(readFileSync(reportPath, "utf8"));
-          const summary = report.summary;
-          const failures = [];
-
-          if (report.model.status !== "passed") {
-            failures.push(`model status was ${report.model.status}`);
-          }
-          if (summary.discovered_files !== 1) {
-            failures.push(`expected 1 discovered file, got ${summary.discovered_files}`);
-          }
-          if (summary.imported !== 1) {
-            failures.push(`expected 1 imported file, got ${summary.imported}`);
-          }
-          if (summary.playback_failed !== 0) {
-            failures.push(`playback_failed was ${summary.playback_failed}`);
-          }
-          if (summary.separation_passed < 1) {
-            failures.push(`separation_passed was ${summary.separation_passed}`);
-          }
-          if (summary.separation_failed !== 0) {
-            failures.push(`separation_failed was ${summary.separation_failed}`);
-          }
-          if (summary.separation_skipped !== 0) {
-            failures.push(`separation_skipped was ${summary.separation_skipped}`);
-          }
-
-          const separatedSongs = report.songs.filter(
-            (song) =>
-              song.separation_status === "passed" &&
-              song.accompaniment_path !== null &&
-              song.vocals_path !== null,
-          );
-          if (separatedSongs.length < 1) {
-            failures.push("no song produced both accompaniment and vocals artifacts");
-          }
-
-          if (failures.length > 0) {
-            console.error(`Release separation smoke failed for ${reportPath}:`);
-            for (const failure of failures) {
-              console.error(`- ${failure}`);
-            }
-            process.exit(1);
-          }
-
-          console.log(
-            `Release separation smoke passed: separation_passed=${summary.separation_passed}, separation_failed=${summary.separation_failed}, separation_skipped=${summary.separation_skipped}`,
-          );
-          NODE
-
-      - name: Upload release separation smoke report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-separation-smoke-report-${{ matrix.ort_target }}
-          path: |
-            ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
-            src-tauri/generated/onnxruntime/manifest.json
-          if-no-files-found: warn
-          retention-days: 14
+            artifact_prefix: release-separation-smoke-aarch64-apple
+    uses: ./.github/workflows/reusable-separation-smoke.yml
+    with:
+      name: ${{ matrix.name }}
+      os: ${{ matrix.os }}
+      ort_target: ${{ matrix.ort_target }}
+      artifact_prefix: ${{ matrix.artifact_prefix }}
+      retention_days: 90
 
   release-windows-installed-smoke:
-    # This is deliberately release-only: it builds an NSIS candidate, installs
-    # the preceding stable release and then the candidate, and runs the
-    # installed executable through first-install + cold-restart separation.
-    # The normal CI suite covers the fast contracts; this job is the expensive
-    # end-user lifecycle proof and replaces the old duplicate Windows source
-    # tree smoke matrix leg.
+    # Release-only lifecycle proof on Windows (NSIS + UIA + upgrade + faults).
+    # Display scaling matrix stays on Nightly to keep release wall-clock shorter.
     name: Release Windows installed-app smoke
-    runs-on: windows-latest
-    timeout-minutes: 90
     needs: prepare-release
+    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    with:
+      openkara_version: ${{ needs.prepare-release.outputs.version }}
+      artifact_prefix: release-windows-installed-app
+      driver_scenario: clean-install
+      uia_scenario: keyboard-workflow
+      run_keyboard_uia: true
+      run_fault_injection: true
+      run_display_matrix: false
+      previous_version: ""
+      retention_days: 90
+      release_build: true
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     permissions:
       contents: read
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+  release-macos-installed-smoke:
+    # One arch for install lifecycle. Publish still builds Intel + AS installers.
+    name: Release macOS installed-app smoke (Apple Silicon)
+    needs: prepare-release
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: ${{ needs.prepare-release.outputs.version }}
+      artifact_prefix: release-macos-installed-app-aarch64
+      os: macos-14
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
+      scenario: clean-install
+      previous_version: none
+      retention_days: 90
+      release_build: true
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    permissions:
+      contents: read
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          version: 11.13.0
+  release-linux-installed-smoke:
+    name: Release Linux installed-app smoke (x64)
+    needs: prepare-release
+    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    with:
+      openkara_version: ${{ needs.prepare-release.outputs.version }}
+      artifact_prefix: release-linux-installed-app-x86_64
+      os: ubuntu-22.04
+      rust_target: x86_64-unknown-linux-gnu
+      tauri_target: x86_64-unknown-linux-gnu
+      scenario: clean-install
+      previous_version: none
+      retention_days: 90
+      release_build: true
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    permissions:
+      contents: read
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-
-      - name: Restore Rust cache
-        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.workflow }}-windows-installed-smoke
-          workspaces: ./src-tauri -> target
-          cache-bin: false
-          key: windows-installed-smoke
-          lookup-only: true # release workflow: restore only, never save
-
-      - name: Restore ONNX Runtime cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/generated/onnxruntime
-          key: onnxruntime-x86_64-pc-windows-msvc-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
-          lookup-only: true # release workflow: restore only, never save
-
-      - name: Prepare bundled ONNX Runtime
-        shell: bash
-        run: node scripts/prepare-onnx-runtime.mjs --target x86_64-pc-windows-msvc
-
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build NSIS release candidate with automation smoke entry point
-        env:
-          CI: true
-        run: pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign
-
-      - name: Install preceding stable release then release candidate
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $release = gh api "repos/$env:GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name'
-          if ([string]::IsNullOrWhiteSpace($release) -or $release -eq "null") {
-            throw "No preceding stable release is available for the Windows upgrade smoke."
-          }
-
-          $previousDir = Join-Path $env:RUNNER_TEMP "openkara-previous-release"
-          New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
-          gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
-          $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
-          if ($null -eq $previousInstaller) {
-            throw "Release $release did not include a Windows NSIS installer."
-          }
-
-          $candidateInstaller = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*setup.exe" -File | Select-Object -First 1
-          if ($null -eq $candidateInstaller) {
-            throw "The candidate NSIS installer was not produced."
-          }
-
-          $installDir = Join-Path $env:RUNNER_TEMP "OpenKara-installed-smoke"
-          & $previousInstaller.FullName /S "/D=$installDir"
-          if ($LASTEXITCODE -ne 0) { throw "Previous installer failed with exit code $LASTEXITCODE" }
-          & $candidateInstaller.FullName /S "/D=$installDir"
-          if ($LASTEXITCODE -ne 0) { throw "Candidate installer failed with exit code $LASTEXITCODE" }
-
-          $installedApp = Get-ChildItem -Path $installDir -Recurse -File |
-            Where-Object { $_.Name -ieq "OpenKara.exe" -or $_.Name -ieq "openkara.exe" } |
-            Select-Object -First 1
-          if ($null -eq $installedApp) {
-            throw "OpenKara.exe was not found after the candidate upgrade install."
-          }
-          "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "OPENKARA_INSTALLED_APP_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Run clean app-data first-install and cold-restart smoke
-        shell: pwsh
-        env:
-          OPENKARA_SMOKE_EP: cpu
-        run: |
-          $ErrorActionPreference = "Stop"
-          $root = Join-Path $env:RUNNER_TEMP "openkara-installed-app-smoke"
-          $appData = Join-Path $root "app-data"
-          $inputDir = Join-Path $root "input"
-          $prepareOutput = Join-Path $root "prepare"
-          $restartOutput = Join-Path $root "restart"
-          New-Item -ItemType Directory -Force -Path $inputDir, $prepareOutput, $restartOutput | Out-Null
-          Copy-Item "src-tauri/tests/fixtures/audio/fixture.wav" (Join-Path $inputDir "fixture.wav")
-
-          & $env:OPENKARA_INSTALLED_APP --automation-smoke prepare --app-data-dir $appData --input-dir $inputDir --output-dir $prepareOutput
-          if ($LASTEXITCODE -ne 0) { throw "First-install app-data smoke failed with exit code $LASTEXITCODE" }
-          & $env:OPENKARA_INSTALLED_APP --automation-smoke restart --app-data-dir $appData --input-dir $inputDir --output-dir $restartOutput
-          if ($LASTEXITCODE -ne 0) { throw "Cold-restart separation smoke failed with exit code $LASTEXITCODE" }
-
-          node scripts/validate-installed-app-smoke.mjs `
-            (Join-Path $prepareOutput "installed-app-smoke-report.json") `
-            (Join-Path $restartOutput "installed-app-smoke-report.json") `
-            $restartOutput
-
-      - name: Upload installed-app smoke reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-windows-installed-app-smoke
-          path: |
-            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
-            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-validation.json
-            ${{ runner.temp }}/openkara-installed-app-smoke/restart/local-audio-smoke-report.*
-            ${{ runner.temp }}/OpenKara-installed-smoke/**/OpenKara.exe
-          if-no-files-found: warn
-          retention-days: 14
+  # Playwright accessibility is exercised in nightly-hardening (windows-matrix
+  # accessibility leg) and local `pnpm test:a11y`. Release publish is gated on
+  # the native/installed-app smoke jobs below; do not ship without them.
 
   publish:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     needs:
-      [
-        prepare-release,
-        release-separation-smoke,
-        release-windows-installed-smoke,
-      ]
+      - prepare-release
+      - release-separation-smoke
+      - release-windows-installed-smoke
+      - release-macos-installed-smoke
+      - release-linux-installed-smoke
     permissions:
       contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
     strategy:
@@ -499,11 +289,6 @@ jobs:
             args: --target x86_64-apple-darwin
             ort_target: x86_64-apple-darwin
             rust_targets: x86_64-apple-darwin
-          - name: Windows
-            os: windows-latest
-            args: ""
-            ort_target: x86_64-pc-windows-msvc
-            rust_targets: ""
           - name: Linux
             os: ubuntu-22.04
             args: ""
@@ -536,7 +321,8 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}-release
+          shared-key: ${{ runner.os == 'Windows' && 'openkara-windows-release' || format('{0}-{1}-release', github.workflow, matrix.os) }}
+          key: ${{ runner.os == 'Windows' && github.sha || matrix.os }}
           workspaces: ./src-tauri -> target
           lookup-only: true # release workflow: restore only, never save
 
@@ -607,20 +393,104 @@ jobs:
           # keyless. The overlay flips it on for this signed release build only.
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
           tauriScript: pnpm tauri
-        # No explicit latest.json upload step: tauri-action's uploadUpdaterJson
-        # (default true) both uploads latest.json AND, on each subsequent matrix
-        # job, downloads the release's existing latest.json and merges that
-        # platform's signatures into it — so all targets accumulate into one
-        # manifest. The publish matrix runs serially (max-parallel: 1 above), so
-        # this read-modify-write cannot race and no platform is lost. A manual
-        # `gh release upload --clobber` would overwrite the merge and strip every
-        # other platform, so it is intentionally omitted.
+        # macOS and Linux build and publish through tauri-action. Each leg
+        # downloads the existing latest.json, merges its own platform entry, and
+        # re-uploads. Windows is published separately by `publish-windows`.
+
+  publish-windows:
+    name: Release (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs:
+      - prepare-release
+      - publish
+      - release-windows-installed-smoke
+    permissions:
+      contents: write # Needed to upload Windows release assets to the draft GitHub Release.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Download Windows smoke artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/windows-smoke
+          pattern: release-windows-installed-app-*
+
+      - name: Publish Windows release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $installer = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-installer" -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $installer) { throw "No Windows installer artifact found" }
+
+          $sigFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "*.sig" -File -Recurse)
+          if ($sigFiles.Count -eq 0) { throw "No Windows updater .sig artifact found" }
+
+          $releaseDir = Join-Path $env:RUNNER_TEMP "release-latest-json"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+          # Local `tauri build` with createUpdaterArtifacts emits .sig but not
+          # latest.json (tauri-action normally writes that). Synthesize a
+          # Windows-only overlay from the NSIS signature when missing.
+          $windowsLatest = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "latest.json" -File -Recurse | Select-Object -First 1
+          if ($null -eq $windowsLatest) {
+            $sigText = (Get-Content -Path $sigFiles[0].FullName -Raw).Trim()
+            $downloadUrl = "https://github.com/${env:GH_REPO}/releases/download/${env:RELEASE_TAG}/$($installer.Name)"
+            $platformEntry = [ordered]@{
+              signature = $sigText
+              url       = $downloadUrl
+            }
+            $overlay = [ordered]@{
+              version   = $env:RELEASE_VERSION
+              pub_date  = (Get-Date).ToUniversalTime().ToString("o")
+              platforms = [ordered]@{
+                "windows-x86_64"      = $platformEntry
+                "windows-x86_64-nsis" = $platformEntry
+              }
+            }
+            $windowsLatestPath = Join-Path $releaseDir "windows-latest.json"
+            ($overlay | ConvertTo-Json -Depth 6) | Set-Content -Path $windowsLatestPath -Encoding utf8
+            $windowsLatest = Get-Item $windowsLatestPath
+            Write-Host "Synthesized Windows updater overlay at $($windowsLatest.FullName)"
+          }
+
+          # Merge the Windows platform entry into the latest.json already
+          # uploaded by the macOS and Linux publish legs.
+          $mergedLatest = Join-Path $releaseDir "latest.json"
+          try {
+            gh release download $env:RELEASE_TAG --repo $env:GH_REPO --pattern "latest.json" --dir $releaseDir --clobber
+            $baseLatest = Join-Path $releaseDir "latest.json"
+            node scripts/merge-latest-json.mjs $baseLatest $windowsLatest.FullName | Set-Content -Path $mergedLatest -Encoding utf8
+          } catch {
+            Copy-Item $windowsLatest.FullName $mergedLatest
+          }
+
+          gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $installer.FullName --clobber
+          foreach ($sig in $sigFiles) {
+            gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $sig.FullName --clobber
+          }
+          gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $mergedLatest --clobber
 
   generate-checksums:
     name: Generate SHA256SUMS
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [prepare-release, publish]
+    needs: [prepare-release, publish, publish-windows]
     permissions:
       contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
     steps:
@@ -646,7 +516,7 @@ jobs:
     name: Prepare distribution manifests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [prepare-release, publish, generate-checksums]
+    needs: [prepare-release, publish, publish-windows, generate-checksums]
     permissions:
       contents: write # upload distribution manifests to the draft GitHub Release
     env:

@@ -6,7 +6,8 @@ import {
 } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SUMMARY_PATH = process.env.GITHUB_STEP_SUMMARY;
 
@@ -94,8 +95,19 @@ function validateManagedPaths(report, label, result) {
   );
 }
 
-function parseWavInfo(path) {
+function parseAudioInfo(path) {
   const buffer = readFileSync(path);
+  if (buffer.length < 12) {
+    throw new Error(`${path}: file too short for audio header`);
+  }
+  const magic = buffer.toString("ascii", 0, 4);
+  if (magic === "OggS") {
+    return parseOggVorbisInfo(path, buffer);
+  }
+  return parseWavInfo(path, buffer);
+}
+
+function parseWavInfo(path, buffer) {
   if (buffer.length < 12) {
     throw new Error(`${path}: file too short for RIFF header`);
   }
@@ -158,6 +170,7 @@ function parseWavInfo(path) {
   const durationSeconds = Number(totalSamples) / fmt.sampleRate;
 
   return {
+    format: "wav",
     path,
     ...fmt,
     dataOffset,
@@ -165,6 +178,76 @@ function parseWavInfo(path) {
     totalSamples,
     durationSeconds,
     factSamples,
+  };
+}
+
+function parseOggVorbisInfo(path, buffer) {
+  const OGG_MAX_GRANULE = 0xffffffffffffffffn;
+  let offset = 0;
+  let pageCount = 0;
+  let channels = null;
+  let sampleRate = null;
+  let maxGranule = 0;
+
+  while (offset < buffer.length) {
+    if (buffer.length - offset < 27) break;
+    if (buffer.toString("ascii", offset, offset + 4) !== "OggS") break;
+
+    const numSegments = buffer[offset + 26];
+    const headerSize = 27 + numSegments;
+    if (buffer.length - offset < headerSize) break;
+
+    let bodySize = 0;
+    for (let i = 0; i < numSegments; i++) {
+      bodySize += buffer[offset + 27 + i];
+    }
+
+    const dataOffset = offset + headerSize;
+    const nextOffset = dataOffset + bodySize;
+    if (nextOffset > buffer.length) break;
+
+    if (pageCount === 0 && bodySize >= 30) {
+      // Vorbis identification packet starts with packet type 1 + "vorbis".
+      if (
+        buffer[dataOffset] === 1 &&
+        buffer.toString("ascii", dataOffset + 1, dataOffset + 7) === "vorbis"
+      ) {
+        channels = buffer[dataOffset + 11];
+        sampleRate = buffer.readUInt32LE(dataOffset + 12);
+      }
+    }
+
+    const granule = buffer.readBigUInt64LE(offset + 6);
+    if (granule >= 0n && granule < OGG_MAX_GRANULE) {
+      const granuleNumber = Number(granule);
+      if (granuleNumber > maxGranule) {
+        maxGranule = granuleNumber;
+      }
+    }
+
+    offset = nextOffset;
+    pageCount += 1;
+  }
+
+  if (sampleRate == null || channels == null) {
+    throw new Error(`${path}: not a valid Ogg Vorbis file`);
+  }
+
+  const durationSeconds = maxGranule / sampleRate;
+
+  return {
+    format: "ogg",
+    path,
+    channels,
+    sampleRate,
+    totalSamples: maxGranule,
+    durationSeconds,
+    dataOffset: 0,
+    dataSize: 0,
+    bitsPerSample: 0,
+    bytesPerSample: 0,
+    isFloat: false,
+    isPcm: false,
   };
 }
 
@@ -215,15 +298,15 @@ function readWavSamples(info, onSample) {
   }
 }
 
-function validateWavFile(path, label, result) {
+function validateAudioFile(path, label, result) {
   let info;
   try {
-    info = parseWavInfo(path);
+    info = parseAudioInfo(path);
   } catch (error) {
     pushAssertion(
       result,
       `OKA-AUDIO-HEADER-${label}`,
-      "valid WAV",
+      "valid audio (WAV or Ogg Vorbis)",
       error.message,
       false,
       path,
@@ -234,8 +317,8 @@ function validateWavFile(path, label, result) {
   pushAssertion(
     result,
     `OKA-AUDIO-HEADER-${label}`,
-    "valid WAV",
-    "valid WAV",
+    "valid audio (WAV or Ogg Vorbis)",
+    `valid ${info.format === "ogg" ? "Ogg Vorbis" : "WAV"}`,
     true,
     path,
   );
@@ -281,7 +364,13 @@ function validateOutputSamples(path, label, result) {
   let hasInvalidFloat = false;
   const SILENCE_THRESHOLD = 1e-4;
 
-  const info = parseWavInfo(path);
+  const info = parseAudioInfo(path);
+  if (info.format !== "wav") {
+    // Sample-level validation is only supported for WAV. The local-audio-smoke
+    // run has already verified the actual output by decoding it.
+    return;
+  }
+
   readWavSamples(info, (value, isFloat) => {
     if (Math.abs(value) > SILENCE_THRESHOLD) {
       hasNonSilent = true;
@@ -431,6 +520,20 @@ async function validateModelIdentity(report, result) {
   );
 }
 
+function looksLikeAbsolutePath(rawPath) {
+  return (
+    isAbsolute(rawPath) ||
+    /^[A-Za-z]:[\\/]/.test(rawPath) ||
+    /^\\\\\?\\/.test(rawPath)
+  );
+}
+
+function resolveAudioPath(baseDir, rawPath) {
+  if (!rawPath) return rawPath;
+  if (looksLikeAbsolutePath(rawPath)) return rawPath;
+  return resolve(baseDir, rawPath);
+}
+
 async function validateAudioOutputs(restart, result) {
   const smoke = restart.local_audio_smoke;
   if (!smoke) {
@@ -455,7 +558,17 @@ async function validateAudioOutputs(restart, result) {
     return;
   }
 
-  const inputPath = songWithStems.source_path;
+  const inputPath = resolveAudioPath(
+    smoke.input_dir,
+    songWithStems.source_path,
+  );
+  const libraryRoot = join(smoke.output_dir, "smoke-library");
+  const vocalsPath = resolveAudioPath(libraryRoot, songWithStems.vocals_path);
+  const accompPath = resolveAudioPath(
+    libraryRoot,
+    songWithStems.accompaniment_path,
+  );
+
   if (!existsSync(inputPath)) {
     pushAssertion(
       result,
@@ -468,39 +581,34 @@ async function validateAudioOutputs(restart, result) {
     return;
   }
 
-  const inputInfo = validateWavFile(inputPath, "INPUT", result);
+  const inputInfo = validateAudioFile(inputPath, "INPUT", result);
   if (!inputInfo) return;
 
-  const vocalsInfo = validateWavFile(
-    songWithStems.vocals_path,
-    "VOCALS",
-    result,
-  );
-  const accompInfo = validateWavFile(
-    songWithStems.accompaniment_path,
-    "ACCOMPANIMENT",
-    result,
-  );
+  const vocalsInfo = validateAudioFile(vocalsPath, "VOCALS", result);
+  const accompInfo = validateAudioFile(accompPath, "ACCOMPANIMENT", result);
 
   if (vocalsInfo) {
     validateOutputAgainstInput(inputInfo, vocalsInfo, "VOCALS", result);
-    validateOutputSamples(songWithStems.vocals_path, "VOCALS", result);
+    validateOutputSamples(vocalsPath, "VOCALS", result);
   }
   if (accompInfo) {
     validateOutputAgainstInput(inputInfo, accompInfo, "ACCOMPANIMENT", result);
-    validateOutputSamples(
-      songWithStems.accompaniment_path,
-      "ACCOMPANIMENT",
-      result,
-    );
+    validateOutputSamples(accompPath, "ACCOMPANIMENT", result);
   }
 
-  if (songWithStems.vocals_path && songWithStems.accompaniment_path) {
-    await validateStemsAreDifferent(
-      songWithStems.vocals_path,
-      songWithStems.accompaniment_path,
-      result,
-    );
+  if (vocalsPath && accompPath) {
+    try {
+      await validateStemsAreDifferent(vocalsPath, accompPath, result);
+    } catch (error) {
+      pushAssertion(
+        result,
+        "OKA-AUDIO-STEMS-DIFFERENT",
+        "vocals and accompaniment are not byte-identical",
+        error.message,
+        false,
+        `${vocalsPath}; ${accompPath}`,
+      );
+    }
   }
 
   const playback = songWithStems.performance?.playback;
@@ -794,7 +902,10 @@ async function main() {
   console.log("Installed app release smoke passed.");
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (
+  process.argv[1] &&
+  resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])
+) {
   main().catch((error) => {
     console.error(error.message);
     process.exit(1);

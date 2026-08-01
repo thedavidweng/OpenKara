@@ -75,17 +75,15 @@ interface SingerTagProps {
 
 function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
   return (
-    <span
-      className={`flex items-center overflow-hidden rounded-full text-[11px] ${
-        isSelected
-          ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
-          : "bg-[var(--color-hover)] text-[var(--color-text)]"
-      }`}
-    >
+    <span className="inline-flex items-center gap-1">
       <button
         type="button"
         onClick={onSelect}
-        className={`px-2 py-0.5 text-left ${isSelected ? "font-medium" : ""}`}
+        className={`inline-flex min-h-6 min-w-6 items-center rounded-full px-2.5 py-1 text-left text-[11px] ${
+          isSelected
+            ? "bg-[var(--color-accent)] font-medium text-[var(--color-on-accent)]"
+            : "bg-[var(--color-hover)] text-[var(--color-text)]"
+        }`}
         aria-pressed={isSelected}
       >
         {name}
@@ -93,10 +91,10 @@ function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
       <button
         type="button"
         onClick={onRemove}
-        className="mr-1 flex items-center rounded-full p-0.5 hover:opacity-70"
+        className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-[var(--color-hover)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
         aria-label={`Remove ${name}`}
       >
-        <X size={10} />
+        <X size={12} />
       </button>
     </span>
   );

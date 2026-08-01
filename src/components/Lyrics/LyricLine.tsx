@@ -509,10 +509,22 @@ export const LyricLine = memo(function LyricLine({
   );
 
   if (isSeekable) {
+    const wordText = hasWords
+      ? words!
+          .map((word) => word.text)
+          .join(" ")
+          .trim()
+      : "";
+    const visibleName = line.text.trim() || wordText;
+    // Only set an explicit label when the button would otherwise expose no name
+    // (for example empty/bg-only lines). Named lines keep their text content.
+    const ariaLabel = visibleName ? undefined : `Seek to line ${lineIndex + 1}`;
+
     return (
       <button
         type="button"
         onClick={handleClick}
+        aria-label={ariaLabel}
         className={`${lineClassName} w-full appearance-none border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
         style={lineStyle}
       >
