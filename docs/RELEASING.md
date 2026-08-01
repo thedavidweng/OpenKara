@@ -17,14 +17,19 @@ Release with changelog notes. The same workflow then:
    with `workflow_dispatch`. Tag pushes from `GITHUB_TOKEN` do not start
    other workflows, so this explicit dispatch is required.
 
-The Release workflow builds every platform bundle, runs the release-only
-separation and installed-app smoke tests, attaches `SHA256SUMS`, and uploads
-assets to the draft release.
+The Release workflow:
 
-The release stays a draft until a human verifies the asset names and clicks
-**Publish** in the GitHub UI. This last manual step is intentional: the
-in-app updater polls `/releases/latest`, so a published release immediately
-starts auto-updating existing installs.
+1. Builds every platform bundle.
+2. Runs the release-only separation and installed-app smoke tests.
+3. Uploads signed assets and `SHA256SUMS` to the draft release.
+4. **Publishes** the release automatically once the required assets are
+   present (`gh release edit --draft=false`).
+5. Renders WinGet and Flatpak manifests from the published tag URLs and
+   opens or updates the external PRs when fork automation is configured.
+
+**Merge of the release PR is the human ship decision.** Release smoke and
+asset gates are the automated quality gate. There is no separate manual
+Publish click on the GitHub Release page for plain version tags.
 
 [release-please]: https://github.com/googleapis/release-please
 
@@ -43,14 +48,15 @@ starts auto-updating existing installs.
    either is missing, create the tag on the release commit and run
    `gh workflow run release.yml --ref vX.Y.Z -f version=X.Y.Z`. A failed
    cut also opens a GitHub issue titled `Release cut failed for vX.Y.Z`.
-3. **Watch the Release workflow.** It runs the separation smoke on every
-   target, builds the bundles, and uploads assets to the draft release.
-4. **Verify the asset names** on the draft release match the tag, e.g.
-   `OpenKara_0.10.0_x64-setup.exe`. Confirm `SHA256SUMS` and `latest.json`
-   are attached.
-5. **Publish** the draft release from the GitHub UI. Publishing (or the
-   workflow, when configured) drives the Homebrew tap, WinGet, and Flathub
-   submissions.
+3. **Watch the Release workflow.** It runs smoke tests, uploads assets,
+   publishes the GitHub Release, then submits WinGet and Flatpak when
+   configured.
+4. **Confirm the published release.** Asset names match the tag, e.g.
+   `OpenKara_0.11.0_x64-setup.exe`. `SHA256SUMS` and `latest.json` are
+   attached. `/releases/latest` points at the new plain tag.
+5. **Confirm distribution PRs.** WinGet and Flathub automation open or
+   update PRs after publish. Review and merge those external PRs when
+   their bots pass.
 
 ## Current version truth
 
@@ -148,6 +154,15 @@ GitHub's `/releases/latest` — the URL the in-app updater polls — resolves on
 the newest release that is neither a draft nor a prerelease. The workflow
 therefore derives the prerelease flag from the tag: suffixed tags (`v1.0.0-rc.1`,
 `v1.0.0-beta.1`) publish as prereleases the updater ignores; plain tags
-(`v1.0.0`) publish as full releases the updater picks up **once the draft is
-published**. Existing installs only start auto-updating after the first plain
-tag ships as a published, non-prerelease release.
+(`v1.0.0`) undraft as full releases the updater picks up as soon as the Release
+workflow publishes. Existing installs start auto-updating after that plain tag
+ships as a published, non-prerelease release.
+
+## WinGet installer URLs
+
+WinGet manifests always use the stable public form:
+
+`https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>`
+
+Do not use GitHub draft `untagged-*` download paths. Those URLs 404 for
+anonymous clients, and WinGet URL validation fails.

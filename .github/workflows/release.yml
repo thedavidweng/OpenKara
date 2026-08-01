@@ -515,13 +515,61 @@ jobs:
           cat SHA256SUMS
           gh release upload "${RELEASE_TAG}" SHA256SUMS --clobber
 
+  # Ship gate: merge of the release-please PR is the human decision. After
+  # platform smoke, signed assets, and SHA256SUMS land, undraft so
+  # /releases/latest and distribution submits see a public release.
+  publish-github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [prepare-release, publish, publish-windows, generate-checksums]
+    permissions:
+      contents: write # undraft the GitHub Release after assets are complete
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          required_assets=(
+            "OpenKara_${RELEASE_VERSION}_x64-setup.exe"
+            "OpenKara_${RELEASE_VERSION}_aarch64.dmg"
+            "OpenKara_${RELEASE_VERSION}_x64.dmg"
+            "OpenKara_${RELEASE_VERSION}_amd64.AppImage"
+            "OpenKara_${RELEASE_VERSION}_amd64.deb"
+            "latest.json"
+            "SHA256SUMS"
+          )
+
+          asset_names="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json assets --jq '[.assets[].name] | join("\n")')"
+          missing=0
+          for name in "${required_assets[@]}"; do
+            if ! printf '%s\n' "${asset_names}" | grep -Fxq "${name}"; then
+              echo "::error::Release ${RELEASE_TAG} is missing required asset ${name}"
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+          # releaseDraft stayed true while legs uploaded; undraft only after
+          # the full asset set is present. Prerelease stays set from the tag
+          # (vX.Y.Z-rc.1) so /releases/latest still ignores those tags.
+          gh release edit "${RELEASE_TAG}" --repo "${GH_REPO}" --draft=false
+          echo "Published ${RELEASE_TAG} (assets verified)"
+
   prepare-distribution-manifests:
     name: Prepare distribution manifests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [prepare-release, publish, publish-windows, generate-checksums]
+    needs: [prepare-release, publish-github-release]
     permissions:
-      contents: write # upload distribution manifests to the draft GitHub Release
+      contents: write # upload distribution manifests to the published GitHub Release
     env:
       GITHUB_TOKEN: ${{ github.token }}
 

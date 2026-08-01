@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  canonicalReleaseAssetUrl,
   fetchReleaseByTag,
   parseArgs,
   requireArg,
@@ -27,9 +28,15 @@ const installerName =
 
 const release = await fetchReleaseByTag({ owner, repo, tag });
 const installer = requireReleaseAsset(release, installerName);
+const installerUrl = canonicalReleaseAssetUrl({
+  owner,
+  repo,
+  tag,
+  assetName: installer.name,
+});
 const installerSha256 =
   installer.digest?.replace(/^sha256:/, "") ??
-  (await sha256ForUrl(installer.browser_download_url));
+  (await sha256ForUrl(installerUrl));
 
 const manifestDir = join(outputDir, "t", "thedavidweng", "OpenKara", version);
 const templateRoot = "packaging/winget/templates";
@@ -42,10 +49,9 @@ const replacements = new Map([
   ["@@PUBLISHER_URL@@", publisherUrl],
   ["@@SUPPORT_URL@@", supportUrl],
   ["@@PACKAGE_URL@@", packageUrl],
-  ["@@INSTALLER_URL@@", installer.browser_download_url],
+  ["@@INSTALLER_URL@@", installerUrl],
   ["@@INSTALLER_SHA256@@", installerSha256],
 ]);
-
 function renderTemplate(fileName) {
   let output = readFileSync(join(templateRoot, fileName), "utf8");
   for (const [token, value] of replacements.entries()) {

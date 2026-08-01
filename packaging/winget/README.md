@@ -11,6 +11,10 @@ Why templates instead of checked-in release manifests:
 - `scripts/render-winget-manifests.mjs` fetches the release metadata from GitHub
   and emits the versioned `manifests/<first-letter>/<publisher>/<package>/<version>/`
   tree used for PRs against `microsoft/winget-pkgs`.
+- Installer URLs always use
+  `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>`.
+  Do not use draft `untagged-*` download paths; WinGet URL validation returns
+  NotFound for those.
 
 Bootstrap requirements for PR automation:
 
