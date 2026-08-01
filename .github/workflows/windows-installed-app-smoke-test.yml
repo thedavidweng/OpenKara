@@ -1,8 +1,12 @@
-name: Windows installed app smoke test
+name: Branch Windows installed-app gate
 
-# Branch-local gate for #303 work. Use workflow_dispatch suite=fast for a
-# quicker clean-install-only loop; suite=full (default on push) keeps the
-# keyboard UIA + fault-injection proof.
+# PR/branch-only Windows lifecycle proof for automation work. Multi-platform
+# installed-app smoke lives on Release and Nightly under per-OS job names:
+#   - Release Windows installed-app smoke
+#   - Release macOS installed-app smoke (Apple Silicon)
+#   - Release Linux installed-app smoke (x64)
+# Use workflow_dispatch suite=fast for a quicker clean-install-only loop;
+# suite=full (default on push) keeps keyboard UIA + fault-injection proof.
 on:
   push:
     branches:
@@ -26,14 +30,14 @@ permissions:
 
 jobs:
   windows-installed-app:
-    name: Windows installed app smoke
+    name: Windows installed-app (branch)
     uses: ./.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-test"
       artifact_prefix: test-windows-installed-app
       driver_scenario: clean-install
       uia_scenario: keyboard-workflow
-      # push always runs full #303 proof; workflow_dispatch can pick fast.
+      # push always runs full proof; workflow_dispatch can pick fast.
       run_keyboard_uia: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
       run_fault_injection: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
       run_display_matrix: false

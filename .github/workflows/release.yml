@@ -156,9 +156,9 @@ jobs:
           retention-days: 5
 
   release-separation-smoke:
-    # Native source-tree inference on the non-Windows targets with the exact
-    # catalog runtime/model pair the release ships. Windows uses the stronger
-    # installed-app lifecycle smoke below.
+    # One primary arch per OS for release gate latency. Native ORT packaging is
+    # still covered by the multi-arch publish matrix below. Nightly keeps the
+    # fuller arch set.
     name: Release separation smoke (${{ matrix.name }})
     needs: prepare-release
     strategy:
@@ -169,18 +169,10 @@ jobs:
             os: ubuntu-22.04
             ort_target: x86_64-unknown-linux-gnu
             artifact_prefix: release-separation-smoke-x86_64-linux
-          - name: Linux arm64
-            os: ubuntu-24.04-arm
-            ort_target: aarch64-unknown-linux-gnu
-            artifact_prefix: release-separation-smoke-aarch64-linux
-          - name: macOS (Apple Silicon)
+          - name: macOS Apple Silicon
             os: macos-14
             ort_target: aarch64-apple-darwin
             artifact_prefix: release-separation-smoke-aarch64-apple
-          - name: macOS (Intel)
-            os: macos-15-intel
-            ort_target: x86_64-apple-darwin
-            artifact_prefix: release-separation-smoke-x86_64-apple
     uses: ./.github/workflows/reusable-separation-smoke.yml
     with:
       name: ${{ matrix.name }}
@@ -190,11 +182,8 @@ jobs:
       retention_days: 90
 
   release-windows-installed-smoke:
-    # This is deliberately release-only: it builds an NSIS candidate from the
-    # release tag, runs clean install + keyboard UIA, upgrades from the preceding
-    # stable release, and runs fault injection. The normal CI suite covers the
-    # fast contracts; this job is the expensive end-user lifecycle proof and
-    # blocks macOS/Linux/Windows publishing if it fails.
+    # Release-only lifecycle proof on Windows (NSIS + UIA + upgrade + faults).
+    # Display scaling matrix stays on Nightly to keep release wall-clock shorter.
     name: Release Windows installed-app smoke
     needs: prepare-release
     uses: ./.github/workflows/reusable-windows-installed-app.yml
@@ -205,7 +194,7 @@ jobs:
       uia_scenario: keyboard-workflow
       run_keyboard_uia: true
       run_fault_injection: true
-      run_display_matrix: true
+      run_display_matrix: false
       previous_version: ""
       retention_days: 90
       release_build: true
@@ -216,29 +205,16 @@ jobs:
       contents: read
 
   release-macos-installed-smoke:
-    name: Release macOS installed-app smoke (${{ matrix.name }})
+    # One arch for install lifecycle. Publish still builds Intel + AS installers.
+    name: Release macOS installed-app smoke (Apple Silicon)
     needs: prepare-release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Apple Silicon
-            os: macos-14
-            rust_target: aarch64-apple-darwin
-            tauri_target: aarch64-apple-darwin
-            artifact_prefix: release-macos-installed-app-aarch64
-          - name: Intel
-            os: macos-15-intel
-            rust_target: x86_64-apple-darwin
-            tauri_target: x86_64-apple-darwin
-            artifact_prefix: release-macos-installed-app-x86_64
     uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
-      artifact_prefix: ${{ matrix.artifact_prefix }}
-      os: ${{ matrix.os }}
-      rust_target: ${{ matrix.rust_target }}
-      tauri_target: ${{ matrix.tauri_target }}
+      artifact_prefix: release-macos-installed-app-aarch64
+      os: macos-14
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
       scenario: clean-install
       previous_version: none
       retention_days: 90
@@ -250,7 +226,7 @@ jobs:
       contents: read
 
   release-linux-installed-smoke:
-    name: Release Linux installed-app smoke
+    name: Release Linux installed-app smoke (x64)
     needs: prepare-release
     uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
     with:

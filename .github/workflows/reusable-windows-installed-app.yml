@@ -167,19 +167,8 @@ jobs:
             -RedirectStandardOutput $probeOut `
             -RedirectStandardError $probeErr
 
-          # Build the driver first so the subsequent tauri link reuses the same
-          # release unit graph instead of starting a second cold compile.
-          Push-Location src-tauri
-          cargo build --release --features automation-smoke --bin openkara_automation_driver
-          if ($LASTEXITCODE -ne 0) {
-            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
-            throw "automation driver build failed with exit code $LASTEXITCODE"
-          }
-          Pop-Location
-
-          # Build only the main binary so the CI driver is not packaged into
-          # the NSIS installer. The driver is already built above as a separate
-          # artifact (and must stay outside the product installer).
+          # Product installers use automation-smoke only. The driver binary is
+          # built with automation-driver after tauri so it is not packed into NSIS.
           if ($env:RELEASE_BUILD -eq "true") {
             pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           } else {
@@ -189,6 +178,14 @@ jobs:
             if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
             throw "tauri build failed with exit code $LASTEXITCODE"
           }
+
+          Push-Location src-tauri
+          cargo build --release --features automation-driver --bin openkara_automation_driver
+          if ($LASTEXITCODE -ne 0) {
+            if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            throw "automation driver build failed with exit code $LASTEXITCODE"
+          }
+          Pop-Location
 
           if (-not (Test-Path -Path "src-tauri/target/release/openkara_automation_driver.exe" -PathType Leaf)) {
             throw "automation driver binary missing after build"

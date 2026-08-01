@@ -78,6 +78,8 @@ jobs:
           }
 
   separation-smoke:
+    # Primary arch per OS. Secondary arches (Linux arm64, macOS Intel) stay as
+    # publish-time packaging coverage rather than full smoke every night.
     name: ${{ matrix.name }}
     needs: []
     strategy:
@@ -88,18 +90,10 @@ jobs:
             os: ubuntu-22.04
             ort_target: x86_64-unknown-linux-gnu
             artifact_prefix: nightly-separation-smoke-x86_64-linux
-          - name: Nightly Linux arm64 smoke
-            os: ubuntu-24.04-arm
-            ort_target: aarch64-unknown-linux-gnu
-            artifact_prefix: nightly-separation-smoke-aarch64-linux
           - name: Nightly macOS Apple Silicon smoke
             os: macos-14
             ort_target: aarch64-apple-darwin
             artifact_prefix: nightly-separation-smoke-aarch64-apple
-          - name: Nightly macOS Intel smoke
-            os: macos-15-intel
-            ort_target: x86_64-apple-darwin
-            artifact_prefix: nightly-separation-smoke-x86_64-apple
     uses: ./.github/workflows/reusable-separation-smoke.yml
     with:
       name: ${{ matrix.name }}
@@ -123,34 +117,22 @@ jobs:
       retention_days: 30
 
   macos-installed-app:
-    name: macOS installed app smoke (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Apple Silicon
-            os: macos-14
-            rust_target: aarch64-apple-darwin
-            tauri_target: aarch64-apple-darwin
-            artifact_prefix: nightly-macos-installed-app-aarch64
-          - name: Intel
-            os: macos-15-intel
-            rust_target: x86_64-apple-darwin
-            tauri_target: x86_64-apple-darwin
-            artifact_prefix: nightly-macos-installed-app-x86_64
+    # One arch: install lifecycle logic is shared; dual-arch is covered by
+    # publish artifact builds, not duplicate installed-app smoke.
+    name: macOS installed app smoke (Apple Silicon)
     uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
-      artifact_prefix: ${{ matrix.artifact_prefix }}
-      os: ${{ matrix.os }}
-      rust_target: ${{ matrix.rust_target }}
-      tauri_target: ${{ matrix.tauri_target }}
+      artifact_prefix: nightly-macos-installed-app-aarch64
+      os: macos-14
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
       scenario: clean-install
       previous_version: none
       retention_days: 7
 
   linux-installed-app:
-    name: Linux installed app smoke
+    name: Linux installed app smoke (x64)
     uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"

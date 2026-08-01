@@ -112,7 +112,14 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("thin");
     expect(reusableWorkflow).toContain("thin-lto-o1");
     expect(reusableWorkflow).toContain(
-      "cargo build --release --features automation-smoke --bin openkara_automation_driver",
+      "cargo build --release --features automation-driver --bin openkara_automation_driver",
+    );
+    expect(reusableWorkflow).toMatch(
+      /tauri build --ci --bundles nsis --features automation-smoke/,
+    );
+    // Product tauri build must not enable automation-driver (packs the extra bin).
+    expect(reusableWorkflow).not.toMatch(
+      /tauri build[^\n]*--features automation-driver/,
     );
     expect(reusableWorkflow).toMatch(/cache:\s*pnpm/);
     // UIA probe builds in parallel with cargo, not as a serial follow-up step.
@@ -129,8 +136,25 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?run_keyboard_uia:\s*true/,
     );
+    // Display scaling matrix stays on Nightly; release keeps the shorter path.
     expect(releaseWorkflow).toMatch(
-      /release-windows-installed-smoke:[\s\S]*?run_display_matrix:\s*true/,
+      /release-windows-installed-smoke:[\s\S]*?run_display_matrix:\s*false/,
+    );
+    // One primary arch for install/separation smokes; publish still multi-arch.
+    expect(releaseWorkflow).toContain(
+      "name: Release macOS installed-app smoke (Apple Silicon)",
+    );
+    expect(releaseWorkflow).toContain(
+      "name: Release Linux installed-app smoke (x64)",
+    );
+    expect(releaseWorkflow).not.toMatch(
+      /release-macos-installed-smoke:[\s\S]*?name:\s*Intel/,
+    );
+    expect(releaseWorkflow).not.toContain(
+      "release-separation-smoke-x86_64-apple",
+    );
+    expect(releaseWorkflow).not.toContain(
+      "release-separation-smoke-aarch64-linux",
     );
     expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?retention_days:\s*90/,

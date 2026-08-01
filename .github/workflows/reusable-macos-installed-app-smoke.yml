@@ -120,12 +120,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          # Build only the main binary. Cached openkara_automation_driver
-          # binaries are stripped in beforeBundleCommand (clean-macos-bundle.mjs)
-          # so nested unsigned Mach-O cannot break ad-hoc codesign on Intel.
-          # The driver is rebuilt as a separate CI artifact below.
-          rm -f "src-tauri/target/${TAURI_TARGET}/release/openkara_automation_driver" \
-            "src-tauri/target/release/openkara_automation_driver"
+          # Product build uses automation-smoke only (CLI on openkara). Do not
+          # enable automation-driver: Tauri would pack that second binary into
+          # the DMG. Driver is a separate CI artifact in the next step.
           if [ "${RELEASE_BUILD}" = "true" ]; then
             pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
@@ -136,7 +133,7 @@ jobs:
         working-directory: src-tauri
         env:
           RUST_TARGET: ${{ inputs.rust_target }}
-        run: cargo build --release --target "${RUST_TARGET}" --features automation-smoke --bin openkara_automation_driver
+        run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver
 
       - name: Upload DMG
         if: always()

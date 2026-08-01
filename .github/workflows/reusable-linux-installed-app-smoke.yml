@@ -137,8 +137,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          # Build only the main binary so the CI driver is not packaged into
-          # the AppImage. The driver is produced as a separate artifact below.
+          # automation-smoke only: packs the openkara CLI entry point, not the
+          # separate automation-driver binary (see Cargo.toml features).
           if [ "${RELEASE_BUILD}" = "true" ]; then
             pnpm tauri build --ci --bundles appimage --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
@@ -149,7 +149,7 @@ jobs:
         working-directory: src-tauri
         env:
           RUST_TARGET: ${{ inputs.rust_target }}
-        run: cargo build --release --target "${RUST_TARGET}" --features automation-smoke --bin openkara_automation_driver
+        run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver
 
       - name: Upload AppImage
         if: always()
