@@ -1,10 +1,35 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { fetchReleaseByTag } from "../scripts/release-metadata.mjs";
+import {
+  canonicalReleaseAssetUrl,
+  fetchReleaseByTag,
+} from "../scripts/release-metadata.mjs";
 
 describe("release metadata helpers", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  test("builds a tag-based public asset URL instead of draft untagged paths", () => {
+    expect(
+      canonicalReleaseAssetUrl({
+        owner: "thedavidweng",
+        repo: "OpenKara",
+        tag: "v0.11.0",
+        assetName: "OpenKara_0.11.0_x64-setup.exe",
+      }),
+    ).toBe(
+      "https://github.com/thedavidweng/OpenKara/releases/download/v0.11.0/OpenKara_0.11.0_x64-setup.exe",
+    );
+
+    expect(() =>
+      canonicalReleaseAssetUrl({
+        owner: "thedavidweng",
+        repo: "OpenKara",
+        tag: "untagged-1e0dfafd347c46933dba",
+        assetName: "OpenKara_0.11.0_x64-setup.exe",
+      }),
+    ).toThrow(/unstable tag/);
   });
 
   test("falls back to the releases list when a draft release is hidden from the tag endpoint", async () => {

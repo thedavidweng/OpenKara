@@ -82,6 +82,20 @@ export function requireReleaseAsset(release, name) {
   return asset;
 }
 
+// Prefer over asset.browser_download_url: draft releases can report
+// /download/untagged-*/ paths that 404 for anonymous WinGet validation.
+export function canonicalReleaseAssetUrl({ owner, repo, tag, assetName }) {
+  if (!tag || tag.includes("untagged-")) {
+    throw new Error(
+      `refusing release asset URL for unstable tag ${JSON.stringify(tag)}`,
+    );
+  }
+  if (!assetName) {
+    throw new Error("assetName is required for canonicalReleaseAssetUrl");
+  }
+  return `https://github.com/${owner}/${repo}/releases/download/${tag}/${assetName}`;
+}
+
 export function releaseDateISO(release) {
   const published = release.published_at ?? release.created_at;
   if (!published) {
