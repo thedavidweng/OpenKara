@@ -492,11 +492,13 @@ describe("synthetic fixtures", () => {
 // ── Event type behavior ───────────────────────────────────────────────
 
 describe("event type behavior", () => {
-  test("push to main always runs full CI regardless of files", () => {
+  test("push to main is path-aware (docs-only skips heavy jobs)", () => {
     const result = classifyChanges(["docs/guide.md"], "push");
-    // Even docs-only changes on push trigger full CI
+    expect(result.expectedJobs).toContain("triage");
+    expect(result.expectedJobs).toContain("ci-gate");
+    expect(result.expectedJobs).toContain("standards-reference");
     for (const job of FULL_CI_HEAVY) {
-      expect(result.expectedJobs).toContain(job);
+      expect(result.expectedJobs).not.toContain(job);
     }
   });
 
@@ -513,10 +515,15 @@ describe("event type behavior", () => {
     expect(
       result.categoriesByFile["packaging/com.openkara.OpenKara.yml"],
     ).toContain("packaging_inputs");
-    // expectedJobs is still full CI (safety path).
-    for (const job of FULL_CI_HEAVY) {
-      expect(result.expectedJobs).toContain(job);
-    }
+    // Path-aware: packaging-only + docs does not force full Tauri build.
+    expect(result.expectedJobs).not.toContain("tauri-build");
+  });
+
+  test("push with Rust sources runs the rust heavy set", () => {
+    const result = classifyChanges(["src-tauri/src/lib.rs"], "push");
+    expect(result.expectedJobs).toContain("rust-test");
+    expect(result.expectedJobs).toContain("tauri-build");
+    expect(result.expectedJobs).not.toContain("conventional-commits");
   });
 
   test("workflow_dispatch always runs full CI", () => {
