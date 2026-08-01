@@ -7,17 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.11.0](https://github.com/thedavidweng/OpenKara/compare/v0.10.0...v0.11.0) (2026-08-01)
 
-
 ### Features
 
-* **automation:** add canonical report schema and contract test for release gate ([6f12a2e](https://github.com/thedavidweng/OpenKara/commit/6f12a2e60b80522faffa48afd0256f3d48b2f15a))
-* **automation:** add openkara_automation_driver and canonical report builder ([8156c88](https://github.com/thedavidweng/OpenKara/commit/8156c885940160d3bd7420ea328539e8be759252))
-* **automation:** validate audio outputs, runtime/model digests, and [#284](https://github.com/thedavidweng/OpenKara/issues/284) assertions ([3b52513](https://github.com/thedavidweng/OpenKara/commit/3b525131d714c347c0ad7cf2b05e677ad1b4b09d))
-
+- **automation:** add canonical report schema and contract test for release gate ([6f12a2e](https://github.com/thedavidweng/OpenKara/commit/6f12a2e60b80522faffa48afd0256f3d48b2f15a))
+- **automation:** add openkara_automation_driver and canonical report builder ([8156c88](https://github.com/thedavidweng/OpenKara/commit/8156c885940160d3bd7420ea328539e8be759252))
+- **automation:** validate audio outputs, runtime/model digests, and [#284](https://github.com/thedavidweng/OpenKara/issues/284) assertions ([3b52513](https://github.com/thedavidweng/OpenKara/commit/3b525131d714c347c0ad7cf2b05e677ad1b4b09d))
 
 ### Bug Fixes
 
-* **automation:** 1.0 desktop and accessibility release gate ([#305](https://github.com/thedavidweng/OpenKara/issues/305)) ([a072087](https://github.com/thedavidweng/OpenKara/commit/a0720879f2777a245f2341fa0435acf595e2d23c))
+- **automation:** 1.0 desktop and accessibility release gate ([#305](https://github.com/thedavidweng/OpenKara/issues/305)) ([a072087](https://github.com/thedavidweng/OpenKara/commit/a0720879f2777a245f2341fa0435acf595e2d23c))
 
 ## [0.10.0](https://github.com/thedavidweng/OpenKara/compare/v0.9.1...v0.10.0) (2026-07-29)
 
