@@ -431,25 +431,49 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
 
           $installer = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-installer" -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
           if ($null -eq $installer) { throw "No Windows installer artifact found" }
 
-          $windowsLatest = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "latest.json" -File -Recurse | Select-Object -First 1
-          if ($null -eq $windowsLatest) { throw "No Windows latest.json updater manifest found" }
-
-          $sigFiles = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "*.sig" -File -Recurse
+          $sigFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "*.sig" -File -Recurse)
+          if ($sigFiles.Count -eq 0) { throw "No Windows updater .sig artifact found" }
 
           $releaseDir = Join-Path $env:RUNNER_TEMP "release-latest-json"
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+          # Local `tauri build` with createUpdaterArtifacts emits .sig but not
+          # latest.json (tauri-action normally writes that). Synthesize a
+          # Windows-only overlay from the NSIS signature when missing.
+          $windowsLatest = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "latest.json" -File -Recurse | Select-Object -First 1
+          if ($null -eq $windowsLatest) {
+            $sigText = (Get-Content -Path $sigFiles[0].FullName -Raw).Trim()
+            $downloadUrl = "https://github.com/${env:GH_REPO}/releases/download/${env:RELEASE_TAG}/$($installer.Name)"
+            $platformEntry = [ordered]@{
+              signature = $sigText
+              url       = $downloadUrl
+            }
+            $overlay = [ordered]@{
+              version   = $env:RELEASE_VERSION
+              pub_date  = (Get-Date).ToUniversalTime().ToString("o")
+              platforms = [ordered]@{
+                "windows-x86_64"      = $platformEntry
+                "windows-x86_64-nsis" = $platformEntry
+              }
+            }
+            $windowsLatestPath = Join-Path $releaseDir "windows-latest.json"
+            ($overlay | ConvertTo-Json -Depth 6) | Set-Content -Path $windowsLatestPath -Encoding utf8
+            $windowsLatest = Get-Item $windowsLatestPath
+            Write-Host "Synthesized Windows updater overlay at $($windowsLatest.FullName)"
+          }
 
           # Merge the Windows platform entry into the latest.json already
           # uploaded by the macOS and Linux publish legs.
           $mergedLatest = Join-Path $releaseDir "latest.json"
           try {
-            gh release download $env:RELEASE_TAG --repo $env:GH_REPO --pattern "latest.json" --dir $releaseDir
+            gh release download $env:RELEASE_TAG --repo $env:GH_REPO --pattern "latest.json" --dir $releaseDir --clobber
             $baseLatest = Join-Path $releaseDir "latest.json"
             node scripts/merge-latest-json.mjs $baseLatest $windowsLatest.FullName | Set-Content -Path $mergedLatest -Encoding utf8
           } catch {

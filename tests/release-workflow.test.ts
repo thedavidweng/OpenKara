@@ -68,6 +68,10 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain("merge-latest-json.mjs");
     expect(releaseWorkflow).toContain("gh release upload");
     expect(releaseWorkflow).toContain("--clobber");
+    // Windows smoke only ships .sig from local tauri build; publish synthesizes
+    // a windows-x86_64 overlay when latest.json is absent.
+    expect(releaseWorkflow).toContain("windows-x86_64-nsis");
+    expect(releaseWorkflow).toContain("Synthesized Windows updater overlay");
 
     expect(releaseWorkflow).not.toMatch(
       /name: Windows\n\s+os: windows-latest\n\s+ort_target: x86_64-pc-windows-msvc/,
