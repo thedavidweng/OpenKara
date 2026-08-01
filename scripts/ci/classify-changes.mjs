@@ -347,9 +347,11 @@ const HEAVY_JOBS = new Set([
 /**
  * Classify changed files and derive expected jobs.
  *
- * For `push` (to main) and `workflow_dispatch`, returns full CI (all jobs)
- * as a deliberate safety path — the integration branch always gets full
- * validation regardless of what changed.
+ * - `pull_request` and `push` (main): path-aware job set from categories.
+ * - `workflow_dispatch`: full CI (manual force / safety path).
+ *
+ * Full multi-platform and accessibility matrices live on Nightly, not on
+ * every main push. Release owns product packaging + Windows #284 core.
  *
  * @param {string[]} files - changed file paths
  * @param {string} event - "pull_request" | "push" | "workflow_dispatch"
@@ -389,11 +391,10 @@ export function classifyChanges(files, event) {
     }
   }
 
-  // Push to main and workflow_dispatch always run full CI as a deliberate
-  // safety path — the integration branch always gets full validation
-  // regardless of what changed. Categories are still populated above so
-  // downstream consumers (e.g. packaging triage) can inspect them.
-  if (event === "push" || event === "workflow_dispatch") {
+  // Manual dispatch is the only event that always forces full CI. Main push
+  // and PRs share path-aware gating so a docs-only merge does not rebuild
+  // every platform again after PR green.
+  if (event === "workflow_dispatch") {
     const allJobs = ALL_JOBS.filter((job) =>
       JOB_RULES[job](new Set(["unknown"]), event),
     );
@@ -408,7 +409,7 @@ export function classifyChanges(files, event) {
     };
   }
 
-  // PR: derive expected jobs from the category union.
+  // PR and main push: derive expected jobs from the category union.
   const expectedJobs = ALL_JOBS.filter((job) =>
     JOB_RULES[job](categorySet, event),
   );

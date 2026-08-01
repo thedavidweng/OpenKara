@@ -30,9 +30,10 @@ jobs:
   #   unknown-files       JSON array of unmapped filenames
   #   categories          JSON array of detected categories
   #
-  # For push (to main) and workflow_dispatch, the classifier returns full CI
-  # as a deliberate safety path — the integration branch always gets full
-  # validation regardless of what changed.
+  # PR and main push: path-aware jobs via classify-changes.mjs.
+  # workflow_dispatch: full CI (manual force). Full multi-platform and
+  # accessibility matrices run on Nightly; Release owns signed packages and
+  # Windows #284 core. See docs/CI_LAYERS.md.
   triage:
     name: Triage
     runs-on: ubuntu-24.04

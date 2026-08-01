@@ -155,10 +155,13 @@ jobs:
           path: RELEASE_NOTES.md
           retention-days: 5
 
+  # Release gate profile (docs/CI_LAYERS.md):
+  # - Windows: full clean/upgrade + #284 fault recovery + separation after heal
+  # - macOS/Linux installed-app: install lifecycle on primary arch only
+  # - separation: one primary arch sanity (Linux x64 + macOS AS); full 4-arch
+  #   lives on Nightly and may be reused for the same SHA within 24h
+  # - publish: multi-arch signed packages + updater + checksums
   release-separation-smoke:
-    # One primary arch per OS for release gate latency. Native ORT packaging is
-    # still covered by the multi-arch publish matrix below. Nightly keeps the
-    # fuller arch set.
     name: Release separation smoke (${{ matrix.name }})
     needs: prepare-release
     strategy:
