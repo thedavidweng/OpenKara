@@ -59,11 +59,20 @@ pub(crate) fn load_playback_source(
     if song.is_remote_stems() {
         // Remote stems must be fully materialized before synchronous decode.
         RemoteContent::new(app_data_dir)
-            .ensure_stem_files_cached(library_root, connection, song, 0)
-            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-        return RemoteContent::new(app_data_dir)
+            .ensure_stem_files_cached(library_root, connection, song, 0, || true)
+            .map_err(|e| {
+                PlaybackError::Internal(
+                    e.detail
+                        .expect("current stem materialization errors include detail"),
+                )
+            })?;
+        let (decoded_audio, stems) = RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
-            .map_err(|e| PlaybackError::Internal(e.to_string()));
+            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+        return Ok(PlaybackSourceLoad {
+            decoded_audio,
+            stems: Some(stems),
+        });
     }
 
     if song.is_remote() {
@@ -88,17 +97,17 @@ pub(crate) fn load_cached_stems_for_song(
 ) -> Result<LoadedStems, PlaybackError> {
     if song.is_remote_stems() {
         RemoteContent::new(app_data_dir)
-            .ensure_stem_files_cached(library_root, connection, song, request_id)
-            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+            .ensure_stem_files_cached(library_root, connection, song, request_id, || true)
+            .map_err(|e| {
+                PlaybackError::Internal(
+                    e.detail
+                        .expect("current stem materialization errors include detail"),
+                )
+            })?;
         return RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
-            .map_err(|e| PlaybackError::Internal(e.to_string()))?
-            .stems
-            .ok_or_else(|| {
-                PlaybackError::KaraokeNotReady(
-                    "remote stems song did not yield attached stems".to_owned(),
-                )
-            });
+            .map(|(_, stems)| stems)
+            .map_err(|e| PlaybackError::Internal(e.to_string()));
     }
 
     let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
@@ -499,8 +508,14 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav.clone());
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(
             result.is_ok(),
@@ -541,8 +556,14 @@ mod tests {
         files.insert(entry.other_path.clone().unwrap(), wav.clone());
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(
             result.is_ok(),
@@ -569,8 +590,14 @@ mod tests {
         // accomp is missing from the provider — download will fail.
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(result.is_err(), "set with missing stem should fail");
 
@@ -597,8 +624,14 @@ mod tests {
         files.insert(entry.accomp_path.clone(), truncated);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(result.is_err(), "set with truncated stem should fail");
 
@@ -624,8 +657,14 @@ mod tests {
         files.insert(entry.accomp_path.clone(), corrupt);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(result.is_err(), "set with corrupt stem should fail");
         assert!(!lib.resolve(&entry.vocals_path).exists());
@@ -648,13 +687,23 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav_48000);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         let err = result.expect_err("mismatched sample rate should reject set");
         assert!(
-            err.to_string().contains("sample rate"),
-            "error should mention sample rate: {err}"
+            err.detail
+                .as_deref()
+                .expect("materialization failure includes detail")
+                .contains("sample rate"),
+            "error should mention sample rate: {:?}",
+            err
         );
 
         // Neither file should be installed.
@@ -682,8 +731,14 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result =
-            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result = crate::remote::content::ensure_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
 
         assert!(
             result.is_ok(),
@@ -730,6 +785,7 @@ mod tests {
             &connection,
             &song_a,
             99, // different request_id
+            || true,
         );
 
         assert!(
@@ -850,7 +906,7 @@ mod tests {
         let provider = CountingFakeProvider::with_files(files);
 
         // Guard is always stale — aborts before any download/rename.
-        let result = crate::remote::content::ensure_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached(
             &provider,
             &lib,
             &connection,
@@ -903,7 +959,7 @@ mod tests {
         // orchestrator checks the guard before EACH stem download, so only
         // stem 1 (vocals) is downloaded before the abort.
         let guard = move || download_count.load(std::sync::atomic::Ordering::SeqCst) < 1;
-        let result = crate::remote::content::ensure_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached(
             &provider,
             &lib,
             &connection,
@@ -948,7 +1004,7 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = crate::remote::content::ensure_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached(
             &provider,
             &lib,
             &connection,
@@ -964,5 +1020,31 @@ mod tests {
         );
         assert!(lib.resolve(&entry.vocals_path).exists());
         assert!(lib.resolve(&entry.accomp_path).exists());
+    }
+
+    #[test]
+    fn remote_stem_loader_returns_required_stems() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-required-stems");
+        let entry = two_stem_entry("song-required-stems");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let vocals = lib.resolve(&entry.vocals_path);
+        let accompaniment = lib.resolve(&entry.accomp_path);
+        std::fs::create_dir_all(vocals.parent().expect("stem directory")).unwrap();
+        std::fs::write(vocals, &wav).unwrap();
+        std::fs::write(accompaniment, wav).unwrap();
+
+        let (decoded_audio, stems) = crate::remote::content::RemoteContent::new(None)
+            .load_stems_playback_source(&connection, &lib, &song)
+            .expect("remote stems should decode");
+
+        assert!(!decoded_audio.samples.is_empty());
+        assert!(matches!(
+            stems,
+            crate::audio::playback::LoadedStems::TwoStem { .. }
+        ));
     }
 }

@@ -64,33 +64,6 @@ impl<'a> RemoteContent<'a> {
         connection: &Connection,
         song: &Song,
         request_id: u64,
-    ) -> Result<()> {
-        let Some(app_data_dir) = self.app_data_dir else {
-            return Ok(());
-        };
-        let Some(library) = remote::active_remote_library(app_data_dir)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?
-        else {
-            return Ok(());
-        };
-        let provider = create_repository_storage(app_data_dir, &library)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-        ensure_stem_set_cached(
-            provider.as_ref(),
-            library_root,
-            connection,
-            song,
-            request_id,
-        )
-        .map_err(|error| anyhow::anyhow!(error.to_string()))
-    }
-
-    pub(crate) fn ensure_stem_files_cached_guarded(
-        &self,
-        library_root: &LibraryRoot,
-        connection: &Connection,
-        song: &Song,
-        request_id: u64,
         is_current: impl Fn() -> bool,
     ) -> std::result::Result<(), remote::errors::RemoteError> {
         let Some(app_data_dir) = self.app_data_dir else {
@@ -111,7 +84,7 @@ impl<'a> RemoteContent<'a> {
                 error.message.clone(),
             )
         })?;
-        ensure_stem_set_cached_guarded(
+        ensure_stem_set_cached(
             provider.as_ref(),
             library_root,
             connection,
@@ -126,7 +99,7 @@ impl<'a> RemoteContent<'a> {
         connection: &Connection,
         library_root: &LibraryRoot,
         song: &Song,
-    ) -> Result<PlaybackSourceLoad> {
+    ) -> Result<(decode::DecodedAudio, LoadedStems)> {
         let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
             .context("failed to load cached stems")?
             .with_context(|| format!("no cached stems for song {}", song.hash))?;
@@ -141,15 +114,14 @@ impl<'a> RemoteContent<'a> {
             else {
                 unreachable!("individual stem cache entries decode to four stems");
             };
-            Ok(PlaybackSourceLoad {
-                decoded_audio: vocals.clone(),
-                stems: Some(LoadedStems::FourStem(StemSet {
-                    vocals,
-                    drums,
-                    bass,
-                    other,
-                })),
-            })
+            let decoded_audio = vocals.clone();
+            let stems = LoadedStems::FourStem(StemSet {
+                vocals,
+                drums,
+                bass,
+                other,
+            });
+            Ok((decoded_audio, stems))
         } else {
             let LoadedStems::TwoStem {
                 vocals,
@@ -158,13 +130,12 @@ impl<'a> RemoteContent<'a> {
             else {
                 unreachable!("two stem cache entries decode to two stems");
             };
-            Ok(PlaybackSourceLoad {
-                decoded_audio: accompaniment.clone(),
-                stems: Some(LoadedStems::TwoStem {
-                    vocals,
-                    accompaniment,
-                }),
-            })
+            let decoded_audio = accompaniment.clone();
+            let stems = LoadedStems::TwoStem {
+                vocals,
+                accompaniment,
+            };
+            Ok((decoded_audio, stems))
         }
     }
 
@@ -329,29 +300,6 @@ fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
 }
 
 pub(crate) fn ensure_stem_set_cached(
-    provider: &dyn RepositoryStorage,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-) -> Result<()> {
-    ensure_stem_set_cached_inner(
-        provider,
-        library_root,
-        connection,
-        song,
-        request_id,
-        &|| true,
-    )
-    .map_err(|error| match error {
-        StemMaterializationError::StaleRequest => {
-            unreachable!("unguarded stem materialization cannot become stale")
-        }
-        StemMaterializationError::Failed(error) => error,
-    })
-}
-
-pub(crate) fn ensure_stem_set_cached_guarded(
     provider: &dyn RepositoryStorage,
     library_root: &LibraryRoot,
     connection: &Connection,

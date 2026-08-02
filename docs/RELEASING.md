@@ -28,14 +28,16 @@ The Release Please workflow:
 The Release workflow then:
 
 1. Verifies that the draft release is bound to the requested tag.
-2. Builds every platform bundle.
-3. Runs the release-only separation and installed-app smoke tests.
-4. Uploads the tested signed assets and canonical `release-evidence.json` to
+2. Verifies green Nightly evidence for the candidate commit from the last 24
+   hours.
+3. Builds every platform bundle.
+4. Runs the release-only separation and installed-app smoke tests.
+5. Uploads the tested signed assets and canonical `release-evidence.json` to
    the draft release.
-5. Generates `latest.json` and `SHA256SUMS` from that evidence.
-6. **Publishes** the release automatically once the required assets are
+6. Generates `latest.json` and `SHA256SUMS` from that evidence.
+7. **Publishes** the release automatically once the required assets are
    present (`gh release edit --draft=false`).
-7. Renders WinGet and Flatpak manifests from the published tag URLs and
+8. Renders WinGet and Flatpak manifests from the published tag URLs and
    opens or updates the external PRs when fork automation is configured.
 
 **A human decides when to merge the release PR.** Release smoke and asset

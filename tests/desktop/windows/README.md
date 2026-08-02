@@ -1,15 +1,9 @@
 # Windows desktop end-to-end tests
 
-This directory defines Windows desktop E2E scenarios for the installed
-`OpenKara.exe`. CI drives them with Windows UI Automation through
+This directory describes Windows desktop E2E for the installed `OpenKara.exe`.
+CI drives the scenarios with Windows UI Automation through
 `scripts/ci/run-windows-desktop-e2e.ps1` and
 `tools/windows-accessibility/OpenKara.AccessibilityProbe`.
-
-## Files
-
-- `scenarios.json` — scenario definitions (`keyboard-workflow`,
-  `installed-workflow`, `multi-window-and-dialogs`)
-- `README.md` — this file
 
 ## CI usage
 

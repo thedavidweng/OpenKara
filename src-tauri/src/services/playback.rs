@@ -306,13 +306,7 @@ fn play_track_background<R: Runtime>(
             let request_id_atom = Arc::clone(&state.playback.playback_request_id);
             let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
             let _ = crate::remote::content::RemoteContent::new(Some(app_data_dir))
-                .ensure_stem_files_cached_guarded(
-                    library_root,
-                    &connection,
-                    song,
-                    request_id,
-                    is_current,
-                );
+                .ensure_stem_files_cached(library_root, &connection, song, request_id, is_current);
         }
         let stems_track = match playback_source::load_cached_stems_for_song_streaming(
             Some(app_data_dir),
