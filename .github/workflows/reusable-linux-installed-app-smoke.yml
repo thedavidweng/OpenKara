@@ -207,11 +207,12 @@ jobs:
           BUNDLE_DIR: src-tauri/target/${{ inputs.rust_target }}/release/bundle
         run: |
           set -euo pipefail
-          appimage="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
-          if [ -z "$appimage" ]; then
-            echo "::error::No Linux updater AppImage was produced."
+          mapfile -d '' appimages < <(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name "*.AppImage" -print0)
+          if ((${#appimages[@]} != 1)); then
+            echo "::error::Expected exactly one Linux updater AppImage, found ${#appimages[@]}."
             exit 1
           fi
+          appimage="${appimages[0]}"
           signature="${appimage}.sig"
           if [ ! -f "$signature" ]; then
             echo "::error::No Linux updater signature was produced for $(basename "$appimage")."
