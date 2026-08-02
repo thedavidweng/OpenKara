@@ -298,14 +298,20 @@ describe("release workflow", () => {
   });
 
   test("requires a matching signature for each Windows installer", () => {
-    const installer = "OpenKara_0.12.0_x64-setup.exe";
-    const installers = [installer];
-    const matchingSignatures = [`${installer}.sig`];
-    const mismatchedSignatures = ["OpenKara_0.12.0_arm64-setup.exe.sig"];
+    const installers = [
+      "OpenKara_0.12.0_x64-setup.exe",
+      "OpenKara_0.12.0_arm64-setup.exe",
+    ];
+    const matchingSignatures = installers.map((name) => `${name}.sig`);
+    const partialSignatures = [`${installers[0]}.sig`];
+    const mismatchedSignatures = ["OpenKara_0.12.0_x86-setup.exe.sig"];
 
     expect(
       installers.every((name) => matchingSignatures.includes(`${name}.sig`)),
     ).toBe(true);
+    expect(
+      installers.every((name) => partialSignatures.includes(`${name}.sig`)),
+    ).toBe(false);
     expect(
       installers.every((name) => mismatchedSignatures.includes(`${name}.sig`)),
     ).toBe(false);
