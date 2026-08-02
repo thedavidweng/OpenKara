@@ -289,10 +289,10 @@ describe("release workflow", () => {
       "Upload Windows updater artifacts",
     );
     expect(windowsUpdaterStep).toContain(
-      "src-tauri/target/release/bundle/**/*setup.exe",
-    );
-    expect(windowsUpdaterStep).toContain(
       "src-tauri/target/release/bundle/**/*setup.exe.sig",
+    );
+    expect(windowsUpdaterStep).not.toContain(
+      "src-tauri/target/release/bundle/**/*setup.exe\n",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
   });

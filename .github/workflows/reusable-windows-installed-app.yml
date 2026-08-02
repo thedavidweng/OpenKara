@@ -268,9 +268,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_prefix }}-updater
-          path: |
-            src-tauri/target/release/bundle/**/*setup.exe
-            src-tauri/target/release/bundle/**/*setup.exe.sig
+          path: src-tauri/target/release/bundle/**/*setup.exe.sig
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
