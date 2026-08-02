@@ -241,7 +241,7 @@ jobs:
 
       - name: Upload release evidence driver
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_prefix }}-evidence-driver
           path: src-tauri/target/release/openkara_release_evidence.exe

@@ -498,17 +498,14 @@ mod tests {
 
     #[test]
     fn reauthorize_requires_the_same_location() {
-        assert_eq!(
-            validate_recovery_request(
-                &repository(),
-                RemoteLibraryProvider::GoogleDrive,
-                "account-id",
-                "root-id",
-                &RepositoryRecoveryAction::Reauthorize,
-            )
-            .unwrap(),
-            false
-        );
+        assert!(!validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::GoogleDrive,
+            "account-id",
+            "root-id",
+            &RepositoryRecoveryAction::Reauthorize,
+        )
+        .unwrap());
         assert!(validate_recovery_request(
             &repository(),
             RemoteLibraryProvider::GoogleDrive,
@@ -521,17 +518,14 @@ mod tests {
 
     #[test]
     fn relocate_requires_a_different_location() {
-        assert_eq!(
-            validate_recovery_request(
-                &repository(),
-                RemoteLibraryProvider::GoogleDrive,
-                "account-id",
-                "new-root",
-                &RepositoryRecoveryAction::Relocate,
-            )
-            .unwrap(),
-            true
-        );
+        assert!(validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::GoogleDrive,
+            "account-id",
+            "new-root",
+            &RepositoryRecoveryAction::Relocate,
+        )
+        .unwrap());
         assert!(validate_recovery_request(
             &repository(),
             RemoteLibraryProvider::GoogleDrive,

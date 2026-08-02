@@ -125,14 +125,15 @@ Created by `011_waveforms.sql`.
 
 Created by `013_remote_publish_outbox.sql`.
 
-| Column                | Type      | Notes       |
-| --------------------- | --------- | ----------- |
-| `operation_id`        | `TEXT`    | Primary key |
-| `song_ids_json`       | `TEXT`    | NOT NULL    |
-| `expected_generation` | `INTEGER` |             |
-| `source_db_digest`    | `TEXT`    |             |
-| `created_at_ms`       | `INTEGER` | NOT NULL    |
-| `projected_at_ms`     | `INTEGER` |             |
+| Column                | Type      | Notes               |
+| --------------------- | --------- | ------------------- |
+| `operation_id`        | `TEXT`    | Primary key         |
+| `song_ids_json`       | `TEXT`    | NOT NULL            |
+| `whole_repository`    | `INTEGER` | NOT NULL, default 0 |
+| `expected_generation` | `INTEGER` |                     |
+| `source_db_digest`    | `TEXT`    |                     |
+| `created_at_ms`       | `INTEGER` | NOT NULL            |
+| `projected_at_ms`     | `INTEGER` |                     |
 
 ## Migration History
 

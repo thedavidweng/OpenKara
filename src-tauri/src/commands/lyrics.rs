@@ -122,7 +122,7 @@ fn set_lyrics_offset_on_thread(
         |_: &()| remote::ChangeScope::Songs(vec![song_id.to_owned()]),
     ))?;
     publication.publish(&applied.scope)?;
-    Ok(applied.value)
+    Ok(())
 }
 
 pub fn set_lyrics_offset_in_connection(

@@ -34,6 +34,7 @@ pub fn unique_temp_path(prefix: &str) -> PathBuf {
     ))
 }
 
+#[allow(dead_code)]
 pub fn acquire_and_persist_lyrics(
     connection: &Connection,
     library_root: &LibraryRoot,

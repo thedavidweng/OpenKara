@@ -289,15 +289,14 @@ impl ReleaseEvidence {
                     artifact.target
                 );
             }
-            if artifact.target == "windows-x86_64" {
-                if platforms
+            if artifact.target == "windows-x86_64"
+                && platforms
                     .insert("windows-x86_64-nsis".to_owned(), entry)
                     .is_some()
-                {
-                    bail!(
-                        "release evidence has multiple updater payloads for target windows-x86_64-nsis"
-                    );
-                }
+            {
+                bail!(
+                    "release evidence has multiple updater payloads for target windows-x86_64-nsis"
+                );
             }
         }
         if platforms.is_empty() {

@@ -556,7 +556,6 @@ mod tests {
     use crate::remote::control_db::{
         open_control_db, upsert_operation, OperationKind, OperationRow, OperationState,
     };
-    use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
     fn test_state_with_control_db() -> (AppState, TempDir) {

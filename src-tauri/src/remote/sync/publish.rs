@@ -1488,7 +1488,6 @@ mod merge_tests {
         OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
     };
     use crate::AppState;
-    use std::sync::{Arc, Mutex};
 
     fn op(id: &str, library_id: &str, songs: &[&str], state: OperationState) -> OperationRow {
         let payload = OperationPayload {
