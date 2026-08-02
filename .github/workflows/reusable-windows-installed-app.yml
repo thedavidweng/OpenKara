@@ -248,6 +248,17 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
+      - name: Validate Windows updater artifacts
+        if: ${{ inputs.release_build }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundleDir = "src-tauri/target/release/bundle"
+          $archive = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip" -File -Recurse | Select-Object -First 1
+          $signature = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip.sig" -File -Recurse | Select-Object -First 1
+          if ($null -eq $archive) { throw "No Windows updater archive was produced." }
+          if ($null -eq $signature) { throw "No Windows updater signature was produced." }
+
       - name: Upload Windows updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
