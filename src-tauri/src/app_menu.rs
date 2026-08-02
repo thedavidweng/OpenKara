@@ -1,11 +1,11 @@
 use serde::Deserialize;
 use tauri::{
-    menu::{AboutMetadata, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
+    menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Emitter, Runtime,
 };
 
 #[cfg(target_os = "macos")]
-use tauri::Manager;
+use tauri::{menu::MenuItemKind, Manager};
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const MENU_ACTION_EVENT: &str = "openkara://menu-action";
