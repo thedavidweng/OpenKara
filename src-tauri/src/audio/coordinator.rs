@@ -774,6 +774,10 @@ fn handle_attach_stems<R: Runtime>(
             let _ = reply.send(Ok(playback.snapshot()));
             return;
         }
+        if !is_latest_request(runtime, request_id) {
+            let _ = reply.send(Ok(playback.snapshot()));
+            return;
+        }
         if let Err(e) = playback.attach_stems(song_id, stems) {
             let _ = reply.send(Err(e));
             return;

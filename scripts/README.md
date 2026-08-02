@@ -16,7 +16,7 @@ and Linux.
 
 - **Run the matrix:** `pnpm test:a11y:matrix`
 - **Write the reports:** Playwright console, HTML, JSON, trace, and screenshot reports
-- **Keep the tests in:** `tests/e2e/accessibility/`
+- **Test path:** `tests/e2e/accessibility/`
 
 ## `openkara_release_evidence`
 
