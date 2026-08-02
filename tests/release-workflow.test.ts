@@ -130,7 +130,10 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(reusableWorkflow).toContain("src-tauri/tauri.release.conf.json");
     expect(reusableWorkflow).toContain("${{ inputs.artifact_prefix }}-updater");
-    expect(reusableWorkflow).toContain("*.nsis.zip.sig");
+    expect(reusableWorkflow).toContain("*setup.exe.sig");
+    expect(releaseWorkflow).toContain(
+      '$_.Name -like "*setup.exe" -or $_.Name -like "*setup.exe.sig"',
+    );
 
     // Build-path speed: non-release smoke must not re-key the rust cache per
     // commit, and must thin-LTO + opt-level=1 the release profile so driver+app
@@ -247,10 +250,10 @@ describe("release workflow", () => {
       "Validate Windows updater artifacts",
     );
     expect(windowsValidationStep).toContain("if: ${{ inputs.release_build }}");
-    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip"');
-    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip.sig"');
+    expect(windowsValidationStep).toContain('-Filter "*setup.exe"');
+    expect(windowsValidationStep).toContain('-Filter "*setup.exe.sig"');
     expect(windowsValidationStep).toContain(
-      "No Windows updater archive was produced.",
+      "No Windows updater installer was produced.",
     );
     expect(windowsValidationStep).toContain(
       "No Windows updater signature was produced.",
@@ -285,10 +288,10 @@ describe("release workflow", () => {
       "Upload Windows updater artifacts",
     );
     expect(windowsUpdaterStep).toContain(
-      "src-tauri/target/release/bundle/**/*.nsis.zip",
+      "src-tauri/target/release/bundle/**/*setup.exe",
     );
     expect(windowsUpdaterStep).toContain(
-      "src-tauri/target/release/bundle/**/*.nsis.zip.sig",
+      "src-tauri/target/release/bundle/**/*setup.exe.sig",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
   });

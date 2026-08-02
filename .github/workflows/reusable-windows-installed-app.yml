@@ -254,9 +254,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $bundleDir = "src-tauri/target/release/bundle"
-          $archive = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip" -File -Recurse | Select-Object -First 1
-          $signature = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip.sig" -File -Recurse | Select-Object -First 1
-          if ($null -eq $archive) { throw "No Windows updater archive was produced." }
+          $installer = Get-ChildItem -Path $bundleDir -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
+          $signature = Get-ChildItem -Path $bundleDir -Filter "*setup.exe.sig" -File -Recurse | Select-Object -First 1
+          if ($null -eq $installer) { throw "No Windows updater installer was produced." }
           if ($null -eq $signature) { throw "No Windows updater signature was produced." }
 
       - name: Upload Windows updater artifacts
@@ -265,8 +265,8 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-updater
           path: |
-            src-tauri/target/release/bundle/**/*.nsis.zip
-            src-tauri/target/release/bundle/**/*.nsis.zip.sig
+            src-tauri/target/release/bundle/**/*setup.exe
+            src-tauri/target/release/bundle/**/*setup.exe.sig
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
@@ -398,7 +398,7 @@ jobs:
             "--scenario", $env:RELEASE_SCENARIO,
             "--artifact", "installer:$($env:RELEASE_PLATFORM):$($installer.FullName)"
           )
-          $updaterFiles = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "updater") -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*.nsis.zip" -or $_.Name -like "*.nsis.zip.sig" })
+          $updaterFiles = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "updater") -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*setup.exe" -or $_.Name -like "*setup.exe.sig" })
           foreach ($file in $updaterFiles) {
             $arguments += @("--artifact", "updater-$($file.Name):$($env:RELEASE_PLATFORM):$($file.FullName)")
           }
