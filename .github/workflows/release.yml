@@ -35,7 +35,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
-      release_body: ${{ steps.notes.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,7 +74,6 @@ jobs:
           echo "package.json version ${package_version} matches release ${RELEASE_TAG}."
 
       - name: Build release notes
-        id: notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -91,7 +89,7 @@ jobs:
             echo "Found release for ${RELEASE_TAG} via tag endpoint"
           else
             release_body="$(gh api "repos/${GH_REPO}/releases" --paginate \
-              --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].body // empty" 2>/dev/null || true)"
+              --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].body // empty")"
             if [ -n "${release_body}" ]; then
               echo "${release_body}" > RELEASE_NOTES.md
               echo "Found draft release for ${RELEASE_TAG} via releases list"
@@ -103,50 +101,37 @@ jobs:
 
           # Append installation section. Mirrors README "Install from Release"
           # so users can install straight from the GitHub Release page.
-          cat >> RELEASE_NOTES.md <<'INSTALL_EOF'
+          if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
+            cat .github/release-notes-installation.md >> RELEASE_NOTES.md
+          fi
 
-          ---
-
-          ## Installation
-
-          Download the latest build for your platform from the assets below:
-
-          | Platform              | Format                  |
-          | --------------------- | ----------------------- |
-          | macOS (Apple Silicon) | `.dmg`                  |
-          | macOS (Intel)         | `.dmg`                  |
-          | Windows               | `.exe` (NSIS installer) |
-          | Linux                 | `.AppImage` / `.deb`    |
-
-          **macOS (Homebrew):**
-
-          ```bash
-          brew install thedavidweng/tap/openkara
-          ```
-
-          **Windows (winget):**
-
-          ```bash
-          winget install thedavidweng.OpenKara
-          ```
-
-          **macOS Gatekeeper note:** If macOS says the app is damaged or can't be opened, run:
-
-          ```bash
-          xattr -rd com.apple.quarantine /Applications/OpenKara.app
-          ```
-          INSTALL_EOF
-
-          {
-            echo 'body<<RELEASE_NOTES_EOF'
-            cat RELEASE_NOTES.md
-            if [ -n "${INPUT_NOTES}" ]; then
+          if [ -n "${INPUT_NOTES}" ]; then
+            {
               echo ""
               echo "---"
               echo "${INPUT_NOTES}"
+            } >> RELEASE_NOTES.md
+          fi
+
+          release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].id // empty")"
+          if [ -n "${release_id}" ]; then
+            gh api --method PATCH "repos/${GH_REPO}/releases/${release_id}" \
+              -F "body=@RELEASE_NOTES.md" >/dev/null
+            echo "Updated release notes for ${RELEASE_TAG}"
+          else
+            prerelease_args=()
+            if [[ "${RELEASE_TAG}" == *-* ]]; then
+              prerelease_args+=(--prerelease)
             fi
-            echo 'RELEASE_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GH_REPO}" \
+              --draft \
+              --title "OpenKara v${RELEASE_TAG#v}" \
+              --notes-file RELEASE_NOTES.md \
+              "${prerelease_args[@]}"
+            echo "Created draft release for ${RELEASE_TAG}"
+          fi
 
       - name: Upload release notes
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -345,28 +330,13 @@ jobs:
           name: release-evidence
           path: ${{ runner.temp }}/release-evidence
 
-      - name: Create draft release and upload evidence
+      - name: Upload release evidence
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-          RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}
-          RELEASE_PRERELEASE: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
         run: |
           set -euo pipefail
-          if ! gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            prerelease_args=()
-            if [ "$RELEASE_PRERELEASE" = "true" ]; then
-              prerelease_args+=(--prerelease)
-            fi
-            gh release create "$RELEASE_TAG" \
-              --repo "$GH_REPO" \
-              --draft \
-              --title "OpenKara v${RELEASE_VERSION}" \
-              --notes "$RELEASE_BODY" \
-              "${prerelease_args[@]}"
-          fi
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" \
             "${RUNNER_TEMP}/release-evidence/release-evidence.json" --clobber
 
@@ -527,26 +497,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-          RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}
-          RELEASE_PRERELEASE: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
           CANDIDATE_ROOT: ${{ runner.temp }}/release-candidate
         run: |
           set -euo pipefail
-
-          if ! gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            if [ "$RELEASE_PRERELEASE" = "true" ]; then
-              prerelease_flag="--prerelease"
-            else
-              prerelease_flag=""
-            fi
-            gh release create "$RELEASE_TAG" \
-              --repo "$GH_REPO" \
-              --draft \
-              --title "OpenKara v${RELEASE_VERSION}" \
-              --notes "$RELEASE_BODY" \
-              $prerelease_flag
-          fi
 
           files=()
           while IFS= read -r -d '' file; do

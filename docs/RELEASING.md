@@ -7,7 +7,8 @@ every push to `main` and maintains a running release PR that bumps
 `.release-please-manifest.json`.
 
 When the release PR is merged, release-please opens a **draft** GitHub
-Release with changelog notes. The same workflow then:
+Release with changelog notes. The Release workflow also supports manual
+dispatch and creates the draft when it is missing. The same workflow then:
 
 1. Syncs native manifests (`Cargo.toml`, `tauri.conf.json`, …) via
    `scripts/sync-version.mjs`.
@@ -19,19 +20,27 @@ Release with changelog notes. The same workflow then:
 
 The Release workflow:
 
-1. Builds every platform bundle.
-2. Runs the release-only separation and installed-app smoke tests.
-3. Uploads the tested signed assets and canonical `release-evidence.json` to
+1. Creates or updates the draft release and applies
+   `.github/release-notes-installation.md`. The template includes Homebrew and
+   WinGet install commands.
+2. Builds every platform bundle.
+3. Runs the release-only separation and installed-app smoke tests.
+4. Uploads the tested signed assets and canonical `release-evidence.json` to
    the draft release.
-4. Generates `latest.json` and `SHA256SUMS` from that evidence.
-5. **Publishes** the release automatically once the required assets are
+5. Generates `latest.json` and `SHA256SUMS` from that evidence.
+6. **Publishes** the release automatically once the required assets are
    present (`gh release edit --draft=false`).
-6. Renders WinGet and Flatpak manifests from the published tag URLs and
+7. Renders WinGet and Flatpak manifests from the published tag URLs and
    opens or updates the external PRs when fork automation is configured.
 
 **Merge of the release PR is the human ship decision.** Release smoke and
 asset gates are the automated quality gate. There is no separate manual
 Publish click on the GitHub Release page for plain version tags.
+
+Release Please owns the version and changelog text. The Release workflow owns
+the final GitHub Release body because it also creates and publishes release
+assets. Keep the installation section in the checked-in template file instead
+of adding it to `release-please-config.json`.
 
 [release-please]: https://github.com/googleapis/release-please
 
