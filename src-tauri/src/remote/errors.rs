@@ -19,9 +19,7 @@ use crate::commands::error::CommandError;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RemoteProviderCapabilities {
     pub conditional_replace: bool,
-    // used by PR#5: resumable uploads
     pub resumable_upload: bool,
-    pub range_download: bool,
     pub revision_metadata: bool,
     /// The provider can move objects server-side (rename without re-upload).
     pub server_side_move: bool,
@@ -53,7 +51,7 @@ pub(crate) enum RemoteErrorKind {
     /// The playback request that initiated this operation is no longer
     /// current — the user skipped to a different song (or a newer request
     /// superseded this one) while the operation was in flight. Used by the
-    /// async stale-guard in `ensure_remote_stem_set_cached_guarded` (PR #7)
+    /// async stale-guard in `ensure_remote_stem_set_cached_guarded`
     /// so a late stem-set completion does not install files for a song the
     /// user has already moved past. Never retried: a stale request must
     /// abort, not retry.
@@ -113,7 +111,6 @@ pub(crate) struct RemoteError {
     pub code: String,
     pub detail: Option<String>,
     pub retryable: bool,
-    // used by PR#5: shared network retry policy
     pub retry_after: Option<std::time::Duration>,
 }
 

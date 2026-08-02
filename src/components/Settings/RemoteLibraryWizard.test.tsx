@@ -18,7 +18,8 @@ const {
   mockResolveRemoteLibraryCandidate,
   mockOpenExternalUrl,
   mockRegisterRemoteLibrary,
-  mockReauthorizeRemoteLibrary,
+  mockReauthorizeRemoteRepository,
+  mockRelocateRemoteRepository,
 } = vi.hoisted(() => ({
   mockBeginRemoteAuth: vi.fn(),
   mockCancelRemoteAuth: vi.fn(),
@@ -27,7 +28,8 @@ const {
   mockResolveRemoteLibraryCandidate: vi.fn(),
   mockOpenExternalUrl: vi.fn(),
   mockRegisterRemoteLibrary: vi.fn(),
-  mockReauthorizeRemoteLibrary: vi.fn(),
+  mockReauthorizeRemoteRepository: vi.fn(),
+  mockRelocateRemoteRepository: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -54,7 +56,8 @@ vi.mock("@/lib/tauri", () => ({
   resolveRemoteLibraryCandidate: mockResolveRemoteLibraryCandidate,
   openExternalUrl: mockOpenExternalUrl,
   registerRemoteLibrary: mockRegisterRemoteLibrary,
-  reauthorizeRemoteLibrary: mockReauthorizeRemoteLibrary,
+  reauthorizeRemoteRepository: mockReauthorizeRemoteRepository,
+  relocateRemoteRepository: mockRelocateRemoteRepository,
 }));
 
 async function flushEffects() {
@@ -83,7 +86,8 @@ describe("RemoteLibraryWizard", () => {
     mockResolveRemoteLibraryCandidate.mockReset();
     mockOpenExternalUrl.mockReset();
     mockRegisterRemoteLibrary.mockReset();
-    mockReauthorizeRemoteLibrary.mockReset();
+    mockReauthorizeRemoteRepository.mockReset();
+    mockRelocateRemoteRepository.mockReset();
     vi.restoreAllMocks();
 
     (
@@ -164,7 +168,7 @@ describe("RemoteLibraryWizard", () => {
       display_name: "Drive",
       account_id: "user@dav.example.com",
     });
-    mockReauthorizeRemoteLibrary.mockResolvedValue({
+    mockReauthorizeRemoteRepository.mockResolvedValue({
       active_library_id: "remote:existing",
       libraries: [],
     });
@@ -237,12 +241,11 @@ describe("RemoteLibraryWizard", () => {
     });
     await flushEffects();
 
-    expect(mockReauthorizeRemoteLibrary).toHaveBeenCalledWith(
+    expect(mockReauthorizeRemoteRepository).toHaveBeenCalledWith(
       "remote:existing",
       "session-1",
       "https://dav.example.com/OpenKara/",
       "Drive",
-      false,
     );
     expect(mockRegisterRemoteLibrary).not.toHaveBeenCalled();
     expect(switchLibrary).toHaveBeenCalledWith("remote:existing");
@@ -268,7 +271,11 @@ describe("RemoteLibraryWizard", () => {
       display_name: "Drive",
       account_id: "user@dav.example.com",
     });
-    mockReauthorizeRemoteLibrary.mockResolvedValue({
+    mockReauthorizeRemoteRepository.mockResolvedValue({
+      active_library_id: "remote:existing",
+      libraries: [],
+    });
+    mockRelocateRemoteRepository.mockResolvedValue({
       active_library_id: "remote:existing",
       libraries: [],
     });
@@ -321,12 +328,17 @@ describe("RemoteLibraryWizard", () => {
         "settings.library.confirmRemoteRepositoryRelocation",
       ),
     );
-    expect(mockReauthorizeRemoteLibrary).toHaveBeenCalledWith(
+    expect(mockReauthorizeRemoteRepository).toHaveBeenCalledWith(
       "remote:existing",
       "session-1",
       "https://dav.example.com/MovedOpenKara/",
       "Drive",
-      true,
+    );
+    expect(mockRelocateRemoteRepository).toHaveBeenCalledWith(
+      "remote:existing",
+      "session-1",
+      "https://dav.example.com/MovedOpenKara/",
+      "Drive",
     );
 
     await act(async () => {

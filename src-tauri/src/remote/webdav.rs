@@ -371,7 +371,7 @@ pub(crate) fn webdav_conditional_put(
 }
 
 // ---------------------------------------------------------------------------
-// Staged upload + server-side MOVE (PR#5)
+// Staged upload + server-side MOVE
 //
 // WebDAV servers vary in their support for partial PUT / Content-Range, so we
 // do NOT claim `resumable_upload = true`. Instead, large uploads use a safe
@@ -883,18 +883,18 @@ impl<'a> WebDAVProvider<'a> {
     }
 }
 
-impl RemoteProvider for WebDAVProvider<'_> {
+impl RepositoryStorage for WebDAVProvider<'_> {
+    fn media_source(&self) -> &dyn RemoteMediaSource {
+        self
+    }
+
     fn capabilities(&self) -> RemoteProviderCapabilities {
         RemoteProviderCapabilities {
             conditional_replace: true,
-            // PR#5: WebDAV servers vary in partial-PUT / Content-Range
-            // support, so we do NOT claim resumable_upload. Large uploads
-            // use a safe staging path + server-side MOVE instead.
-            // WebDAV servers generally support Range requests (RFC 7233),
-            // and `download_range` is implemented below, so we advertise
-            // `range_download` to enable the resumable download path.
+            // WebDAV servers vary in partial-PUT / Content-Range support, so
+            // do not claim resumable_upload. Large uploads use a safe staging
+            // path and server-side MOVE instead.
             resumable_upload: false,
-            range_download: true,
             revision_metadata: true,
             server_side_move: true,
         }
@@ -976,6 +976,109 @@ impl RemoteProvider for WebDAVProvider<'_> {
             )))
         })?;
         Ok(())
+    }
+
+    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
+        let local_root = self.library.working_copy_root().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a cached working copy".to_string(),
+            ))
+        })?;
+        let source = local_root.join(relative_path);
+        let bytes = fs::read(&source).map_err(|error| {
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to read {}: {error}",
+                source.display()
+            )))
+        })?;
+
+        let client = webdav_client()?;
+        let server_url = crate::remote::types::stored_webdav_server_url(self.library)?;
+
+        // Ensure the parent collection of the final path exists so the MOVE
+        // (or fallback PUT) lands in an existing collection.
+        if let Some(parent) = Path::new(relative_path).parent() {
+            let parent_path = parent.to_string_lossy().replace('\\', "/");
+            if !parent_path.is_empty() {
+                let parent_url = join_url(&self.secret.root_url, &format!("{parent_path}/"))?;
+                ensure_webdav_collection_chain(
+                    &client,
+                    &server_url,
+                    &parent_url,
+                    &self.secret.username,
+                    &self.secret.password,
+                )?;
+            }
+        }
+
+        let final_url = join_url(&self.secret.root_url, relative_path)?;
+
+        // Staged upload: PUT to `.openkara/staging/<op-id>/<filename>.part`,
+        // then server-side MOVE to the final path. The operation id is derived
+        // from the final path so concurrent uploads of different files do not
+        // collide.
+        let operation_id = uuid::Uuid::new_v4().to_string();
+        let staging_url = webdav_staged_upload(
+            &client,
+            &self.secret.root_url,
+            &operation_id,
+            relative_path,
+            bytes,
+            &self.secret.username,
+            &self.secret.password,
+        )?;
+
+        match webdav_move_staged_to_final(
+            &client,
+            &staging_url,
+            &final_url,
+            &self.secret.username,
+            &self.secret.password,
+        ) {
+            Ok(_) => Ok(()),
+            Err(move_error) => {
+                // Some WebDAV servers do not support MOVE. Fall back to a
+                // direct PUT of the original file bytes.
+                tracing::trace!(
+                    "WebDAV MOVE failed ({}); falling back to direct PUT for {relative_path}",
+                    move_error.message
+                );
+                let bytes = fs::read(&source).map_err(|error| {
+                    CommandError::from(LibraryError::Internal(format!(
+                        "failed to re-read {}: {error}",
+                        source.display()
+                    )))
+                })?;
+                upload_webdav_bytes(
+                    &client,
+                    &final_url,
+                    bytes,
+                    &self.secret.username,
+                    &self.secret.password,
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        delete_relative_path_from_remote(&self.secret, relative_path)
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        initialize_or_sync_webdav_library(self.app_data_dir, self.library, &self.secret)
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        refresh_existing_webdav_library(self.app_data_dir, self.library, &self.secret)
+    }
+}
+
+impl RemoteMediaSource for WebDAVProvider<'_> {
+    fn capabilities(&self) -> RemoteMediaSourceCapabilities {
+        RemoteMediaSourceCapabilities {
+            range_download: true,
+        }
     }
 
     fn download_range(
@@ -1133,97 +1236,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
         Ok(written)
     }
 
-    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
-        let local_root = self.library.working_copy_root().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a cached working copy".to_string(),
-            ))
-        })?;
-        let source = local_root.join(relative_path);
-        let bytes = fs::read(&source).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!(
-                "failed to read {}: {error}",
-                source.display()
-            )))
-        })?;
-
-        let client = webdav_client()?;
-        let server_url = crate::remote::types::stored_webdav_server_url(self.library)?;
-
-        // Ensure the parent collection of the final path exists so the MOVE
-        // (or fallback PUT) lands in an existing collection.
-        if let Some(parent) = Path::new(relative_path).parent() {
-            let parent_path = parent.to_string_lossy().replace('\\', "/");
-            if !parent_path.is_empty() {
-                let parent_url = join_url(&self.secret.root_url, &format!("{parent_path}/"))?;
-                ensure_webdav_collection_chain(
-                    &client,
-                    &server_url,
-                    &parent_url,
-                    &self.secret.username,
-                    &self.secret.password,
-                )?;
-            }
-        }
-
-        let final_url = join_url(&self.secret.root_url, relative_path)?;
-
-        // Staged upload: PUT to `.openkara/staging/<op-id>/<filename>.part`,
-        // then server-side MOVE to the final path. The operation id is derived
-        // from the final path so concurrent uploads of different files do not
-        // collide.
-        let operation_id = uuid::Uuid::new_v4().to_string();
-        let staging_url = webdav_staged_upload(
-            &client,
-            &self.secret.root_url,
-            &operation_id,
-            relative_path,
-            bytes,
-            &self.secret.username,
-            &self.secret.password,
-        )?;
-
-        match webdav_move_staged_to_final(
-            &client,
-            &staging_url,
-            &final_url,
-            &self.secret.username,
-            &self.secret.password,
-        ) {
-            Ok(_) => Ok(()),
-            Err(move_error) => {
-                // Some WebDAV servers do not support MOVE. Fall back to a
-                // direct PUT of the original file bytes.
-                tracing::trace!(
-                    "WebDAV MOVE failed ({}); falling back to direct PUT for {relative_path}",
-                    move_error.message
-                );
-                let bytes = fs::read(&source).map_err(|error| {
-                    CommandError::from(LibraryError::Internal(format!(
-                        "failed to re-read {}: {error}",
-                        source.display()
-                    )))
-                })?;
-                upload_webdav_bytes(
-                    &client,
-                    &final_url,
-                    bytes,
-                    &self.secret.username,
-                    &self.secret.password,
-                )?;
-                Ok(())
-            }
-        }
-    }
-
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
-        delete_relative_path_from_remote(&self.secret, relative_path)
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        initialize_or_sync_webdav_library(self.app_data_dir, self.library, &self.secret)
-    }
-
     fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
         let client = webdav_client()?;
         let url = join_url(&self.secret.root_url, relative_path)?;
@@ -1263,13 +1275,9 @@ impl RemoteProvider for WebDAVProvider<'_> {
             crate::audio::remote_source::ProviderFetcher::new(url, headers),
         )))
     }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        refresh_existing_webdav_library(self.app_data_dir, self.library, &self.secret)
-    }
 }
 
-use super::provider::RemoteProvider;
+use super::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage};
 
 #[cfg(test)]
 mod tests {
@@ -1606,6 +1614,48 @@ mod tests {
             std::fs::read(&dest_path).unwrap(),
             body,
             "streamed file matches"
+        );
+    }
+
+    #[test]
+    fn webdav_provider_uses_the_shared_storage_and_media_seam() {
+        use crate::config::{RemoteLibraryConnectionConfig, RemoteLibraryProvider};
+
+        let directory = tempdir().expect("temp directory should create");
+        let library = RegisteredLibrary::remote(
+            "webdav-library".to_owned(),
+            "WebDAV".to_owned(),
+            RemoteLibraryProvider::WebDav,
+            "openkara".to_owned(),
+            "https://example.invalid/OpenKara/".to_owned(),
+            "example.invalid/OpenKara".to_owned(),
+            Some(RemoteLibraryConnectionConfig::WebDav {
+                server_url: "https://example.invalid/".to_owned(),
+            }),
+            None,
+            None,
+        );
+        let provider = WebDAVProvider::new(
+            directory.path(),
+            WebDavSecret {
+                root_url: "https://example.invalid/OpenKara/".to_owned(),
+                username: "openkara".to_owned(),
+                password: "secret".to_owned(),
+            },
+            &library,
+        );
+
+        crate::remote::provider_conformance::assert_provider_capabilities(
+            &provider,
+            RemoteProviderCapabilities {
+                conditional_replace: true,
+                resumable_upload: false,
+                revision_metadata: true,
+                server_side_move: true,
+            },
+            RemoteMediaSourceCapabilities {
+                range_download: true,
+            },
         );
     }
 }

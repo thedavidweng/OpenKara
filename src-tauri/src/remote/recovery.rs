@@ -6,8 +6,8 @@ use crate::remote::control_db::{
 use rusqlite::Connection;
 
 /// Near-future offset (ms) applied to `next_attempt_at_ms` for operations
-/// transitioned to `retry_wait` during recovery. PR#4's executor will pick
-/// these up once credentials and the active library are available.
+/// transitioned to `retry_wait` during recovery. The executor retries them
+/// when the repository is available.
 const RECOVERY_RETRY_OFFSET_MS: i64 = 5_000;
 
 /// Clock abstraction so tests can use deterministic timestamps.
@@ -36,8 +36,8 @@ pub struct RecoveryReport {
 
 /// Run the startup recovery pass.
 ///
-/// This transitions interrupted operations to safe states but does NOT
-/// re-execute them. PR#4 will drive retry via the operation executor.
+/// This transitions interrupted operations to safe states. The publication
+/// executor performs retries in a separate pass.
 ///
 /// `digest_resolver` provides the current working DB digest for `prepared`
 /// operations. `clock` provides the current time in milliseconds.
@@ -89,10 +89,8 @@ pub fn run_recovery(
     // and no non-terminal publish intent remains.
     repair_completed_repository_state(connection, digest_resolver, clock)?;
 
-    // PR#4: After recovery transitions, the caller (startup hook) invokes
-    // `retry_pending_operations` to drive pending/retry_wait operations
-    // through the executor. This is done in a separate call so the recovery
-    // pass itself remains fast and testable without a provider.
+    // Keep provider work out of this pass. The publication executor consumes
+    // pending and retry_wait operations after the state transition completes.
     Ok(report)
 }
 
@@ -233,13 +231,12 @@ fn force_dirty_for_active_publish_ops(connection: &Connection, clock: &Clock) ->
 /// limiting). `Gc` operations are replayed through the GC executor.
 pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_in_states, OperationKind};
-    use crate::remote::executor::{
-        execute_gc, execute_publish, generate_repository_id, generate_writer_id, PublishContext,
-    };
-    use crate::remote::provider::create_provider;
+    use crate::remote::executor::{execute_gc, generate_repository_id, generate_writer_id};
+    use crate::remote::provider::create_repository_storage;
     use crate::remote::sync::{
         load_registered_remote_library, may_have_crossed_cas_boundary,
-        merge_pending_ops_for_publish, reconcile_cas_boundary_ops, select_library_publish_primary,
+        merge_pending_ops_for_publish, reconcile_cas_boundary_ops, run_publication_driver,
+        select_library_publish_primary,
     };
     use crate::remote::types::load_app_config;
     use std::collections::HashMap;
@@ -258,7 +255,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     }
 
     let pending = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         list_operations_in_states(&conn, &[OperationState::Pending, OperationState::RetryWait])?
@@ -303,7 +300,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 Ok(lib) => lib,
                 Err(_) => continue,
             };
-        let provider = match create_provider(&state.shell.app_data_dir, &remote_library) {
+        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
             Ok(p) => p,
             Err(_) => continue,
         };
@@ -326,7 +323,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 Ok(lib) => lib,
                 Err(_) => continue,
             };
-        let provider = match create_provider(&state.shell.app_data_dir, &remote_library) {
+        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
             Ok(p) => p,
             Err(_) => continue,
         };
@@ -352,7 +349,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
         // Phase 2: merge remaining Pending/RetryWait (including future backoff).
         let primary = {
-            let conn = match state.remote.control_db.lock() {
+            let conn = match state.remote.control_db()?.lock() {
                 Ok(c) => c,
                 Err(_) => continue,
             };
@@ -388,7 +385,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
         // Shared-DB survivor inherits max Retry-After — wait, do not freeze.
         {
-            let conn = state.remote.control_db.lock().map_err(|_| {
+            let conn = state.remote.control_db()?.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             if let Ok(Some(op)) = crate::remote::control_db::get_operation(&conn, &operation_id) {
@@ -400,12 +397,24 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             }
         }
 
-        if song_ids.is_empty() {
+        let whole_repository = {
+            let conn = state.remote.control_db()?.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })?;
+            crate::remote::control_db::get_operation(&conn, &operation_id)?
+                .and_then(|operation| {
+                    crate::remote::control_db::OperationPayload::from_json(&operation.payload_json)
+                        .ok()
+                })
+                .is_some_and(|payload| payload.whole_repository)
+        };
+
+        if song_ids.is_empty() && !whole_repository {
             tracing::warn!(
                 "cancelling publish recovery for {} — empty song_ids after coalesce",
                 operation_id
             );
-            if let Ok(conn) = state.remote.control_db.lock() {
+            if let Ok(conn) = state.remote.control_db()?.lock() {
                 if let Ok(Some(mut updated)) =
                     crate::remote::control_db::get_operation(&conn, &operation_id)
                 {
@@ -423,7 +432,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         }
 
         let (repository_id, writer_id) = {
-            let conn = state.remote.control_db.lock().map_err(|_| {
+            let conn = state.remote.control_db()?.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             let repo_state = get_repository_state(&conn, &library_id)?;
@@ -468,7 +477,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             }
         }
         if let Some(error) = asset_error {
-            if let Ok(conn) = state.remote.control_db.lock() {
+            if let Ok(conn) = state.remote.control_db()?.lock() {
                 let now = crate::remote::types::current_unix_time_ms();
                 if let Ok(Some(mut updated)) =
                     crate::remote::control_db::get_operation(&conn, &operation_id)
@@ -507,16 +516,15 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             Err(_) => continue,
         };
 
-        let ctx = PublishContext {
-            control_db: &exec_conn,
-            provider: provider.as_ref(),
-            working_copy_root: remote_root.root(),
-            library_id: &library_id,
-            writer_id: &writer_id,
-            repository_id: &repository_id,
-        };
-
-        let _ = execute_publish(&ctx, &operation_id);
+        let _ = run_publication_driver(
+            &exec_conn,
+            provider.as_ref(),
+            remote_root.root(),
+            &library_id,
+            &writer_id,
+            &repository_id,
+            &operation_id,
+        );
     }
 
     Ok(())
@@ -637,8 +645,10 @@ fn resolve_prepared_operation(
         // Empty song_ids placeholders (pre-bind crash window or legacy) must
         // not become permanent pending zombies that recovery skips forever.
         let payload = crate::remote::control_db::OperationPayload::from_json(&op.payload_json).ok();
-        let has_song_ids = payload.as_ref().is_some_and(|p| !p.song_ids.is_empty());
-        if !has_song_ids {
+        let has_recoverable_scope = payload
+            .as_ref()
+            .is_some_and(|p| p.whole_repository || !p.song_ids.is_empty());
+        if !has_recoverable_scope {
             let mut updated = op.clone();
             updated.state = OperationState::Cancelled;
             updated.error_code = Some("empty_song_ids".to_owned());
@@ -767,10 +777,8 @@ where
 /// concurrent commit attempts for the same library. Different libraries proceed
 /// concurrently.
 ///
-/// This is a no-op placeholder seam for PR#2 — the actual lock map lives in
-/// `RemoteState`. This function is provided so PR#4/#5 can call it with a
-/// resolved lock without reaching into `RemoteState` internals.
-// used by PR#4/#5: operation executor
+/// Acquire a per-library commit lock for recovery tests.
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn acquire_commit_lock<'a>(
     locks: &'a std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<()>>>,

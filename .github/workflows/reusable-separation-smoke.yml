@@ -112,58 +112,12 @@ jobs:
           set -euo pipefail
 
           report_path="${RUNNER_TEMP}/openkara-smoke-output/local-audio-smoke-report.json"
-          node --input-type=module - "${report_path}" <<'NODE'
-          import { readFileSync } from "node:fs";
-
-          const reportPath = process.argv[2];
-          const report = JSON.parse(readFileSync(reportPath, "utf8"));
-          const summary = report.summary;
-          const failures = [];
-
-          if (report.model.status !== "passed") {
-            failures.push(`model status was ${report.model.status}`);
-          }
-          if (summary.discovered_files !== 1) {
-            failures.push(`expected 1 discovered file, got ${summary.discovered_files}`);
-          }
-          if (summary.imported !== 1) {
-            failures.push(`expected 1 imported file, got ${summary.imported}`);
-          }
-          if (summary.playback_failed !== 0) {
-            failures.push(`playback_failed was ${summary.playback_failed}`);
-          }
-          if (summary.separation_passed < 1) {
-            failures.push(`separation_passed was ${summary.separation_passed}`);
-          }
-          if (summary.separation_failed !== 0) {
-            failures.push(`separation_failed was ${summary.separation_failed}`);
-          }
-          if (summary.separation_skipped !== 0) {
-            failures.push(`separation_skipped was ${summary.separation_skipped}`);
-          }
-
-          const separatedSongs = report.songs.filter(
-            (song) =>
-              song.separation_status === "passed" &&
-              song.accompaniment_path !== null &&
-              song.vocals_path !== null,
-          );
-          if (separatedSongs.length < 1) {
-            failures.push("no song produced both accompaniment and vocals artifacts");
-          }
-
-          if (failures.length > 0) {
-            console.error(`Release separation smoke failed for ${reportPath}:`);
-            for (const failure of failures) {
-              console.error(`- ${failure}`);
-            }
-            process.exit(1);
-          }
-
-          console.log(
-            `Separation smoke passed: separation_passed=${summary.separation_passed}, separation_failed=${summary.separation_failed}, separation_skipped=${summary.separation_skipped}`,
-          );
-          NODE
+          cargo run --quiet \
+            --manifest-path src-tauri/Cargo.toml \
+            --features automation-driver \
+            --bin openkara_release_evidence -- \
+            validate-local-audio-smoke \
+            --input "${report_path}"
 
       - name: Upload separation smoke report
         if: always()

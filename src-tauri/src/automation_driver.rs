@@ -519,11 +519,76 @@ fn record_smoke_assertions(
             &smoke.report_json_path.display().to_string(),
         );
         builder.add_assertion(
+            "OKA-SMOKE-MODEL-VERIFIED",
+            "passed",
+            &state_string(&smoke.model.status),
+            smoke.model.status == crate::smoke::SmokeStepStatus::Passed,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SMOKE-DISCOVERED-FILES",
+            "1",
+            &smoke.summary.discovered_files.to_string(),
+            smoke.summary.discovered_files == 1,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SMOKE-IMPORTED",
+            "1",
+            &smoke.summary.imported.to_string(),
+            smoke.summary.imported == 1,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SMOKE-PLAYBACK-FAILURES",
+            "0",
+            &smoke.summary.playback_failed.to_string(),
+            smoke.summary.playback_failed == 0,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
             "OKA-SMOKE-SEPARATION-PASSED",
             ">= 1",
             &smoke.summary.separation_passed.to_string(),
             smoke.summary.separation_passed >= 1,
             &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SMOKE-SEPARATION-FAILURES",
+            "0",
+            &smoke.summary.separation_failed.to_string(),
+            smoke.summary.separation_failed == 0,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SMOKE-SEPARATION-SKIPPED",
+            "0",
+            &smoke.summary.separation_skipped.to_string(),
+            smoke.summary.separation_skipped == 0,
+            &smoke.report_json_path.display().to_string(),
+        );
+        let has_stems = smoke.songs.iter().any(|song| {
+            song.separation_status == crate::smoke::SmokeStepStatus::Passed
+                && song.vocals_path.is_some()
+                && song.accompaniment_path.is_some()
+        });
+        builder.add_assertion(
+            "OKA-SMOKE-STEMS-PRODUCED",
+            "one song with both stems",
+            if has_stems { "found" } else { "not found" },
+            has_stems,
+            &smoke.report_json_path.display().to_string(),
+        );
+        if matches!(report.phase, AutomationSmokePhase::Restart) {
+            record_audio_assertions(builder, smoke);
+        }
+    } else if matches!(report.phase, AutomationSmokePhase::Restart) {
+        builder.add_assertion(
+            "OKA-LOCAL-AUDIO-SMOKE-restart",
+            "present",
+            "missing",
+            false,
+            &report.app_data_dir,
         );
     }
 
@@ -557,13 +622,224 @@ fn record_smoke_assertions(
     }
 }
 
+fn record_audio_assertions(
+    builder: &mut ReportBuilder,
+    smoke: &crate::smoke::LocalAudioSmokeReport,
+) {
+    let Some(song) = smoke.songs.iter().find(|song| {
+        song.separation_status == crate::smoke::SmokeStepStatus::Passed
+            && song.vocals_path.is_some()
+            && song.accompaniment_path.is_some()
+    }) else {
+        builder.add_assertion(
+            "OKA-AUDIO-STEMS-EXIST",
+            "one song with both stems",
+            "no song with both stems",
+            false,
+            &smoke.report_json_path.display().to_string(),
+        );
+        return;
+    };
+
+    let input_path = PathBuf::from(&song.source_path);
+    let vocals_path = resolve_smoke_stem_path_buf(
+        Path::new(&smoke.output_dir),
+        song.vocals_path
+            .as_deref()
+            .expect("stem presence was checked"),
+    );
+    let accompaniment_path = resolve_smoke_stem_path_buf(
+        Path::new(&smoke.output_dir),
+        song.accompaniment_path
+            .as_deref()
+            .expect("stem presence was checked"),
+    );
+
+    let input_exists = input_path.is_file();
+    builder.add_assertion(
+        "OKA-AUDIO-INPUT-EXISTS",
+        "input file exists",
+        &input_path.display().to_string(),
+        input_exists,
+        &input_path.display().to_string(),
+    );
+    if !input_exists {
+        builder.add_assertion(
+            "OKA-AUDIO-STEMS-EXIST",
+            "vocals and accompaniment exist",
+            "input file is missing",
+            false,
+            &input_path.display().to_string(),
+        );
+        return;
+    }
+
+    let input_audio = record_audio_file(builder, "INPUT", &input_path);
+    let vocals_audio = record_audio_file(builder, "VOCALS", &vocals_path);
+    let accompaniment_audio = record_audio_file(builder, "ACCOMPANIMENT", &accompaniment_path);
+    let stems_exist = vocals_audio.is_some() && accompaniment_audio.is_some();
+    builder.add_assertion(
+        "OKA-AUDIO-STEMS-EXIST",
+        "vocals and accompaniment exist",
+        if stems_exist { "present" } else { "missing" },
+        stems_exist,
+        &format!(
+            "{}; {}",
+            vocals_path.display(),
+            accompaniment_path.display()
+        ),
+    );
+
+    let Some(input_audio) = input_audio else {
+        return;
+    };
+    for (label, output_path, output_audio) in [
+        ("VOCALS", &vocals_path, vocals_audio),
+        ("ACCOMPANIMENT", &accompaniment_path, accompaniment_audio),
+    ] {
+        let Some(output_audio) = output_audio else {
+            continue;
+        };
+        builder.add_assertion(
+            &format!("OKA-AUDIO-SAMPLE-RATE-{label}"),
+            &input_audio.sample_rate_hz.to_string(),
+            &output_audio.sample_rate_hz.to_string(),
+            output_audio.sample_rate_hz == input_audio.sample_rate_hz,
+            &output_path.display().to_string(),
+        );
+        builder.add_assertion(
+            &format!("OKA-AUDIO-CHANNELS-{label}"),
+            &input_audio.channels.to_string(),
+            &output_audio.channels.to_string(),
+            output_audio.channels == input_audio.channels,
+            &output_path.display().to_string(),
+        );
+        let duration_delta = (output_audio.duration_seconds - input_audio.duration_seconds).abs();
+        builder.add_assertion(
+            &format!("OKA-AUDIO-DURATION-{label}"),
+            "<= 1s delta",
+            &format!("{duration_delta:.4}s"),
+            duration_delta <= 1.0,
+            &output_path.display().to_string(),
+        );
+        builder.add_assertion(
+            &format!("OKA-AUDIO-NON-SILENT-{label}"),
+            "contains non-silent samples",
+            if output_audio.has_non_silent {
+                "non-silent samples found"
+            } else {
+                "all samples silent"
+            },
+            output_audio.has_non_silent,
+            &output_path.display().to_string(),
+        );
+    }
+
+    let stems_differ = match (
+        crate::separator::artifacts::sha256_file(&vocals_path),
+        crate::separator::artifacts::sha256_file(&accompaniment_path),
+    ) {
+        (Ok(vocals), Ok(accompaniment)) => vocals != accompaniment,
+        _ => false,
+    };
+    builder.add_assertion(
+        "OKA-AUDIO-STEMS-DIFFERENT",
+        "vocals and accompaniment are not byte-identical",
+        if stems_differ {
+            "stems differ"
+        } else {
+            "stems are byte-identical or unreadable"
+        },
+        stems_differ,
+        &format!(
+            "{}; {}",
+            vocals_path.display(),
+            accompaniment_path.display()
+        ),
+    );
+
+    if let Some(playback) = song.performance.as_ref() {
+        builder.add_assertion(
+            "OKA-SEEK-COUNT",
+            "32",
+            &playback.seek_samples.to_string(),
+            playback.seek_samples == 32,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SEEK-LATENCY-MAX",
+            "< 500ms",
+            &format!("{:.2}ms", playback.seek_latency_max_ms),
+            playback.seek_latency_max_ms < 500.0,
+            &smoke.report_json_path.display().to_string(),
+        );
+        builder.add_assertion(
+            "OKA-SEEK-LATENCY-P95",
+            "< 300ms",
+            &format!("{:.2}ms", playback.seek_latency_p95_ms),
+            playback.seek_latency_p95_ms < 300.0,
+            &smoke.report_json_path.display().to_string(),
+        );
+    }
+}
+
+fn record_audio_file(
+    builder: &mut ReportBuilder,
+    label: &str,
+    path: &Path,
+) -> Option<AudioFileInfo> {
+    match crate::audio::decode::decode_file(path) {
+        Ok(decoded) => {
+            builder.add_assertion(
+                &format!("OKA-AUDIO-HEADER-{label}"),
+                "valid audio",
+                "decoded audio",
+                true,
+                &path.display().to_string(),
+            );
+            Some(AudioFileInfo {
+                sample_rate_hz: decoded.sample_rate_hz,
+                channels: decoded.channels,
+                duration_seconds: decoded.duration_ms as f64 / 1000.0,
+                has_non_silent: decoded.samples.iter().any(|sample| sample.abs() > 1e-4),
+            })
+        }
+        Err(error) => {
+            builder.add_assertion(
+                &format!("OKA-AUDIO-HEADER-{label}"),
+                "valid audio",
+                &error.to_string(),
+                false,
+                &path.display().to_string(),
+            );
+            None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AudioFileInfo {
+    sample_rate_hz: u32,
+    channels: usize,
+    duration_seconds: f64,
+    has_non_silent: bool,
+}
+
+fn resolve_smoke_stem_path_buf(output_dir: &Path, relative_or_absolute: &str) -> PathBuf {
+    let path = Path::new(relative_or_absolute);
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    output_dir.join("smoke-library").join(path)
+}
+
 fn has_event<T>(events: &[crate::automation_smoke::BootstrapEvent<T>], name: &str) -> bool {
     events.iter().any(|event| event.event == name)
 }
 
 fn state_string<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value)
-        .unwrap_or_default()
+        .expect("automation state serialization should not fail")
         .trim_matches('"')
         .to_owned()
 }

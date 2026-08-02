@@ -25,7 +25,8 @@ function createRemoteApiMock(): RemoteLibraryFlowApi {
     createRemoteLibrary: vi.fn(),
     resolveRemoteLibraryCandidate: vi.fn(),
     registerRemoteLibrary: vi.fn(),
-    reauthorizeRemoteLibrary: vi.fn(),
+    reauthorizeRemoteRepository: vi.fn(),
+    relocateRemoteRepository: vi.fn(),
     cancelRemoteAuth: vi.fn(),
   };
 }

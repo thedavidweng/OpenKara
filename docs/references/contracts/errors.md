@@ -32,6 +32,7 @@
 ## Shared enum: `ErrorCode`
 
 - `database_unavailable`
+- `remote_repository_unavailable`
 - `media_read_failed`
 - `song_not_found`
 - `model_unavailable`
@@ -64,6 +65,10 @@
 2. 资料库相关的 SQLite 打开或查询失败：
    - `code = database_unavailable`
    - `fallback = retry`
+3. Remote Repository control DB or cache catalog cannot open:
+   - `code = remote_repository_unavailable`
+   - `fallback = retry`
+   - Local library commands continue to use the local SQLite database.
 
 ### Playback
 

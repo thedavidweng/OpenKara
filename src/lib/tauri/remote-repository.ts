@@ -77,19 +77,31 @@ export function registerRemoteLibrary(
   });
 }
 
-export function reauthorizeRemoteLibrary(
+export function reauthorizeRemoteRepository(
   libraryId: string,
   sessionId: string,
   remoteRootLocator: string,
   displayName: string,
-  allowRelocation: boolean,
 ): Promise<LibraryRegistrySnapshot> {
-  return invoke<LibraryRegistrySnapshot>("reauthorize_remote_library", {
+  return invoke<LibraryRegistrySnapshot>("reauthorize_remote_repository", {
     libraryId,
     sessionId,
     remoteRootLocator,
     displayName,
-    allowRelocation,
+  });
+}
+
+export function relocateRemoteRepository(
+  libraryId: string,
+  sessionId: string,
+  remoteRootLocator: string,
+  displayName: string,
+): Promise<LibraryRegistrySnapshot> {
+  return invoke<LibraryRegistrySnapshot>("relocate_remote_repository", {
+    libraryId,
+    sessionId,
+    remoteRootLocator,
+    displayName,
   });
 }
 
@@ -103,8 +115,8 @@ export function mirrorLocalLibraryToRemote(
   });
 }
 
-export function refreshRemoteRepository(): Promise<unknown> {
-  return invoke<unknown>("sync_active_remote_library");
+export function refreshRemoteRepository(): Promise<void> {
+  return invoke<void>("refresh_remote_repository");
 }
 
 export function publishSongToRemote(songId: string): Promise<unknown> {

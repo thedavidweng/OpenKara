@@ -11,12 +11,12 @@ mod support;
 
 use openkara_lib::{
     cache,
-    commands::lyrics::fetch_lyrics_from_connection,
     library::Song,
     library_root::LibraryRoot,
     lyrics::{
         fetch::{
-            fetch_lyrics_for_song, read_embedded_lyrics, LyricsFetchResult, LyricsSource,
+            fetch_lyrics_for_song_local, fetch_online_timed_lyrics, lookup_query_from_song,
+            read_embedded_lyrics, LyricsFetchResult, LyricsSource, OnlineLyricsResult,
             TimedLyricsProvider,
         },
         lrcapi::LrcApiClient,
@@ -74,34 +74,7 @@ fn fetch_chain_prefers_sidecar_without_calling_online_sources() {
     fs::write(audio_path.with_extension("lrc"), "[00:10.00] from sidecar")
         .expect("sidecar should write");
 
-    let mut server = mockito::Server::new();
-    let mock = server
-        .mock("GET", "/api/get")
-        .match_query(mockito::Matcher::Any)
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-                "id": 1,
-                "trackName": "Yellow",
-                "artistName": "Coldplay",
-                "albumName": "Parachutes",
-                "duration": 267.0,
-                "instrumental": false,
-                "syncedLyrics": "[00:35.66] from lrclib"
-            }"#,
-        )
-        .expect_at_most(0)
-        .create();
-
-    let lrclib_client = LrcLibClient::new(server.url());
-    let lrcapi = LrcApiClient::new("http://127.0.0.1:9");
-    let providers = [
-        TimedLyricsProvider::LrcLib(&lrclib_client),
-        TimedLyricsProvider::LrcApi(&lrcapi),
-    ];
-
-    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
+    let fetched = fetch_lyrics_for_song_local(&fixture_song(&audio_path), &audio_path)
         .expect("fetch chain should succeed")
         .expect("lyrics should be returned");
 
@@ -113,7 +86,6 @@ fn fetch_chain_prefers_sidecar_without_calling_online_sources() {
         }
     );
 
-    mock.assert();
     cleanup_dir(&fixture_dir);
 }
 
@@ -166,9 +138,12 @@ fn fetch_chain_uses_lrcapi_when_no_local_lyrics_exist() {
         TimedLyricsProvider::LrcApi(&lrcapi),
     ];
 
-    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
-        .expect("fetch chain should succeed")
-        .expect("LrcApi lyrics should be returned");
+    let song = fixture_song(&audio_path);
+    let query = lookup_query_from_song(&song).expect("fixture song should have a lookup query");
+    let fetched = match fetch_online_timed_lyrics(&providers, &query) {
+        OnlineLyricsResult::Found(fetched) => fetched,
+        result => panic!("LrcApi lyrics should be returned, got {result:?}"),
+    };
 
     assert_eq!(
         fetched,
@@ -215,10 +190,12 @@ fn fetch_chain_returns_none_when_online_sources_miss_and_no_local_lyrics() {
         TimedLyricsProvider::LrcApi(&lrcapi),
     ];
 
-    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
-        .expect("fetch chain should succeed");
-
-    assert!(fetched.is_none());
+    let song = fixture_song(&audio_path);
+    let query = lookup_query_from_song(&song).expect("fixture song should have a lookup query");
+    assert!(matches!(
+        fetch_online_timed_lyrics(&providers, &query),
+        OnlineLyricsResult::DefiniteMissing
+    ));
 
     lrclib_mock.assert();
     lrcapi_mock.assert();
@@ -252,12 +229,10 @@ fn reads_embedded_lyrics_from_mp4_audio_even_when_extension_is_aac() {
 }
 
 /// Regression test for the `[offset:]` metadata tag being propagated through
-/// `fetch_lyrics_from_connection`. Before the fix, all four caching paths
-/// hardcoded `offset_ms: 0` even when the LRC contained an `[offset:]` tag.
-/// This test exercises the sidecar path end-to-end: a sidecar `.lrc` with an
-/// `[offset:-250]` tag should produce a `LyricsPayload` with `offset_ms: -250`.
+/// `LyricsAcquisition`. A sidecar `.lrc` with an `[offset:-250]` tag must
+/// persist the parsed offset in the lyrics cache.
 #[test]
-fn fetch_lyrics_from_connection_propagates_lrc_offset_tag() {
+fn acquisition_persists_lrc_offset_tag() {
     let lib_dir = support::unique_temp_path("phase4-offset");
     cleanup_dir(&lib_dir);
     let library = LibraryRoot::create(&lib_dir).expect("library should create");
@@ -302,34 +277,30 @@ fn fetch_lyrics_from_connection_propagates_lrc_offset_tag() {
     let lrclib_client = LrcLibClient::new("http://127.0.0.1:9");
     let lrcapi_client = LrcApiClient::new("http://127.0.0.1:9");
 
-    let payload = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &lrclib_client,
         &lrcapi_client,
         "offset-test-song",
     )
-    .expect("fetch_lyrics_from_connection should succeed");
+    .expect("lyrics acquisition should succeed");
 
-    assert_eq!(
-        payload.offset_ms, -250,
-        "offset_ms should be extracted from the [offset:] tag, not hardcoded to 0"
-    );
-    assert_eq!(payload.source, Some(LyricsSource::Sidecar));
+    assert!(persisted.changed);
 
     // Verify the offset was also persisted to the cache.
     let cached = cache::lyrics::get_lyrics_cache_entry(&connection, "offset-test-song")
         .expect("cache lookup should succeed")
         .expect("cache entry should exist");
     assert_eq!(cached.offset_ms, -250);
+    assert_eq!(cached.source, LyricsSource::Sidecar);
 
     cleanup_dir(&lib_dir);
 }
 
-/// When the LRC has no `[offset:]` tag, `offset_ms` should default to 0
-/// (via `unwrap_or(0)`), matching the pre-fix behavior for tagless LRC.
+/// When the LRC has no `[offset:]` tag, `offset_ms` must default to 0.
 #[test]
-fn fetch_lyrics_from_connection_defaults_offset_to_zero_without_tag() {
+fn acquisition_defaults_offset_to_zero_without_tag() {
     let lib_dir = support::unique_temp_path("phase4-offset-none");
     cleanup_dir(&lib_dir);
     let library = LibraryRoot::create(&lib_dir).expect("library should create");
@@ -370,19 +341,20 @@ fn fetch_lyrics_from_connection_defaults_offset_to_zero_without_tag() {
     let lrclib_client = LrcLibClient::new("http://127.0.0.1:9");
     let lrcapi_client = LrcApiClient::new("http://127.0.0.1:9");
 
-    let payload = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &lrclib_client,
         &lrcapi_client,
         "no-offset-test-song",
     )
-    .expect("fetch_lyrics_from_connection should succeed");
+    .expect("lyrics acquisition should succeed");
 
-    assert_eq!(
-        payload.offset_ms, 0,
-        "offset_ms should default to 0 when no [offset:] tag is present"
-    );
+    assert!(persisted.changed);
+    let cached = cache::lyrics::get_lyrics_cache_entry(&connection, "no-offset-test-song")
+        .expect("cache lookup should succeed")
+        .expect("lyrics cache should exist");
+    assert_eq!(cached.offset_ms, 0);
 
     cleanup_dir(&lib_dir);
 }

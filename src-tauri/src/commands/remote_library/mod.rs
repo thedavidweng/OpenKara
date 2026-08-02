@@ -119,24 +119,38 @@ pub fn register_remote_library(
 }
 
 #[tauri::command]
-pub fn reauthorize_remote_library(
+pub fn reauthorize_remote_repository(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     library_id: String,
     session_id: String,
     remote_root_locator: String,
     display_name: String,
-    allow_relocation: bool,
 ) -> CommandResult<crate::commands::library_setup::LibraryRegistrySnapshot> {
     let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
-    remote::reauthorize_remote_library(
-        &state,
-        &app_data_dir,
+    remote::RemoteRepositoryLifecycle::new(&state, &app_data_dir).reauthorize(
         library_id,
         session_id,
         remote_root_locator,
         display_name,
-        allow_relocation,
+    )
+}
+
+#[tauri::command]
+pub fn relocate_remote_repository(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    library_id: String,
+    session_id: String,
+    remote_root_locator: String,
+    display_name: String,
+) -> CommandResult<crate::commands::library_setup::LibraryRegistrySnapshot> {
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
+    remote::RemoteRepositoryLifecycle::new(&state, &app_data_dir).relocate(
+        library_id,
+        session_id,
+        remote_root_locator,
+        display_name,
     )
 }
 
@@ -156,8 +170,8 @@ pub fn mirror_local_library_to_remote(
 }
 
 #[tauri::command]
-pub fn sync_active_remote_library(state: State<'_, AppState>) -> CommandResult<()> {
-    remote::sync_active_remote_library(&state)
+pub fn refresh_remote_repository(state: State<'_, AppState>) -> CommandResult<()> {
+    remote::RemoteRepositoryLifecycle::new(&state, &state.shell.app_data_dir).refresh()
 }
 
 #[tauri::command]
@@ -197,7 +211,7 @@ pub fn get_all_upload_statuses(
 pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<CacheUsage> {
     let manager = state
         .remote
-        .remote_chunk_cache
+        .remote_chunk_cache()?
         .lock()
         .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
     manager.usage()
@@ -207,7 +221,7 @@ pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<Cache
 pub fn clear_remote_cache(state: State<'_, AppState>) -> CommandResult<usize> {
     let mut manager = state
         .remote
-        .remote_chunk_cache
+        .remote_chunk_cache()?
         .lock()
         .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
     manager.clear_unpinned()
@@ -251,7 +265,7 @@ pub fn get_remote_diagnostics(
 
     let conn = state
         .remote
-        .control_db
+        .control_db()?
         .lock()
         .map_err(|_| internal_error("control DB lock was poisoned"))?;
 

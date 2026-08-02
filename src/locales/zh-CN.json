@@ -655,6 +655,7 @@
     "invalid_playback_state": "播放错误",
     "separation_failed": "分离失败",
     "internal": "内部错误",
+    "remote_repository_unavailable": "远程仓库不可用",
     "somethingWentWrong": "出了点问题"
   },
   "updater": {

@@ -655,6 +655,7 @@
     "invalid_playback_state": "Afspeelfout",
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",
+    "remote_repository_unavailable": "Externe opslagplaats niet beschikbaar",
     "somethingWentWrong": "Er is iets misgegaan"
   },
   "updater": {

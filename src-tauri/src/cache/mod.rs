@@ -125,6 +125,11 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(include_str!(
         "../../migrations/013_remote_publish_outbox.sql"
     ))?;
+    if !column_exists(connection, "remote_publish_outbox", "whole_repository")? {
+        connection.execute_batch(
+            "ALTER TABLE remote_publish_outbox ADD COLUMN whole_repository INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
 
     Ok(())
 }

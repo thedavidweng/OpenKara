@@ -1,5 +1,14 @@
 use anyhow::{bail, Context, Result};
-use openkara_lib::separator::verified_manifest::{sha256_hex, write_verified_manifest};
+use openkara_lib::{
+    library_root::LibraryRoot,
+    lyrics::{
+        acquisition::{LyricsAcquisition, LyricsPersistenceResult},
+        lrcapi::LrcApiClient,
+        lrclib::LrcLibClient,
+    },
+    separator::verified_manifest::{sha256_hex, write_verified_manifest},
+};
+use rusqlite::Connection;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -23,6 +32,20 @@ pub fn unique_temp_path(prefix: &str) -> PathBuf {
         "openkara-{prefix}-{pid}-{timestamp}-{sequence}",
         pid = std::process::id()
     ))
+}
+
+pub fn acquire_and_persist_lyrics(
+    connection: &Connection,
+    library_root: &LibraryRoot,
+    lrclib_client: &LrcLibClient,
+    lrcapi_client: &LrcApiClient,
+    song_id: &str,
+) -> Result<LyricsPersistenceResult> {
+    let acquisition = LyricsAcquisition::new(lrclib_client, lrcapi_client);
+    let result = acquisition.acquire(connection, library_root, song_id)?;
+    Ok(LyricsAcquisition::persist_acquisition(
+        connection, song_id, &result,
+    )?)
 }
 
 /// Materialize a verified managed install from an in-memory payload: verify the

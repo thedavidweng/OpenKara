@@ -18,8 +18,7 @@ use crate::{
     services::{
         cdg::{load_cdg_packets_for_song, CdgLoadResult},
         playback_source::{
-            self, ensure_remote_stem_files_cached_guarded, load_cached_stems_for_song,
-            load_playback_source, PlaybackSourceLoad,
+            self, load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad,
         },
         reconnect::{
             reconnect_production, ReconnectConfig, ReconnectError, ReconnectEvent,
@@ -283,7 +282,10 @@ fn play_track_background<R: Runtime>(
     }
     if let Some(streaming_source) = playback_source::load_playback_source_streaming(
         Some(app_data_dir),
-        &state.remote.remote_chunk_cache,
+        state
+            .remote
+            .remote_chunk_cache()
+            .map_err(|error| PlaybackError::Internal(error.message))?,
         library_root,
         song,
     )? {
@@ -303,14 +305,14 @@ fn play_track_background<R: Runtime>(
             let request_id_for_guard = request_id;
             let request_id_atom = Arc::clone(&state.playback.playback_request_id);
             let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
-            let _ = ensure_remote_stem_files_cached_guarded(
-                Some(app_data_dir),
-                library_root,
-                &connection,
-                song,
-                request_id,
-                is_current,
-            );
+            let _ = crate::remote::content::RemoteContent::new(Some(app_data_dir))
+                .ensure_stem_files_cached_guarded(
+                    library_root,
+                    &connection,
+                    song,
+                    request_id,
+                    is_current,
+                );
         }
         let stems_track = match playback_source::load_cached_stems_for_song_streaming(
             Some(app_data_dir),
@@ -602,7 +604,10 @@ fn attempt_remote_reconnect<R: Runtime>(
     let request_id_atom_for_pin = Arc::clone(&state.playback.playback_request_id);
     let is_current_for_pin =
         move || request_id_atom_for_pin.load(Ordering::SeqCst) == request_id_for_guard;
-    let cache = Arc::clone(&state.remote.remote_chunk_cache);
+    let Ok(cache_catalog) = state.remote.remote_chunk_cache() else {
+        return;
+    };
+    let cache = Arc::clone(cache_catalog);
     let library_root_clone = library_root.clone();
     let app_data_dir_clone = app_data_dir.to_path_buf();
     let song_id_clone = song_id.to_owned();

@@ -654,6 +654,7 @@
     "invalid_playback_state": "재생 오류",
     "separation_failed": "분리 실패",
     "internal": "내부 오류",
+    "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",
     "somethingWentWrong": "문제가 발생했어요"
   },
   "updater": {

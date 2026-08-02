@@ -41,9 +41,8 @@ describe("release workflow", () => {
     expect(separationWorkflow).toContain(
       "src-tauri/tests/fixtures/audio/fixture.wav",
     );
-    expect(separationWorkflow).toContain("separation_passed");
-    expect(separationWorkflow).toContain("separation_failed");
-    expect(separationWorkflow).toContain("separation_skipped");
+    expect(separationWorkflow).toContain("validate-local-audio-smoke");
+    expect(separationWorkflow).not.toContain("node - <<'NODE'");
 
     const publishSection = releaseWorkflow.match(
       /  publish:[\s\S]*?\n  publish-windows:/,
@@ -65,13 +64,18 @@ describe("release workflow", () => {
       "release-windows-installed-app-installer",
     );
     expect(releaseWorkflow).toContain("release-windows-installed-app-updater");
-    expect(releaseWorkflow).toContain("merge-latest-json.mjs");
+    expect(releaseWorkflow).toContain("generate-release-metadata:");
+    expect(releaseWorkflow).toContain("openkara_release_evidence");
+    expect(releaseWorkflow).toContain("verify-assets");
+    expect(releaseWorkflow).toContain("--output latest.json");
+    expect(releaseWorkflow).toContain("--output SHA256SUMS");
     expect(releaseWorkflow).toContain("gh release upload");
     expect(releaseWorkflow).toContain("--clobber");
-    // Windows smoke only ships .sig from local tauri build; publish synthesizes
-    // a windows-x86_64 overlay when latest.json is absent.
-    expect(releaseWorkflow).toContain("windows-x86_64-nsis");
-    expect(releaseWorkflow).toContain("Synthesized Windows updater overlay");
+    expect(releaseWorkflow).toContain("updater_target: windows-x86_64");
+    expect(releaseWorkflow).not.toContain("merge-latest-json.mjs");
+    expect(releaseWorkflow).not.toContain(
+      "Synthesized Windows updater overlay",
+    );
 
     expect(releaseWorkflow).not.toMatch(
       /name: Windows\n\s+os: windows-latest\n\s+ort_target: x86_64-pc-windows-msvc/,
@@ -89,7 +93,10 @@ describe("release workflow", () => {
     const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
 
     expect(reusableWorkflow).toContain("openkara_automation_driver.exe");
-    expect(reusableWorkflow).toContain("validate-installed-app-smoke.mjs");
+    expect(reusableWorkflow).toContain("validate-automation-report");
+    expect(reusableWorkflow).toContain("validate-desktop-e2e");
+    expect(reusableWorkflow).not.toContain("validate-installed-app-smoke.mjs");
+    expect(reusableWorkflow).not.toContain("validate-desktop-e2e-report.mjs");
     expect(reusableWorkflow).toContain("clean-install:");
     expect(reusableWorkflow).toContain("upgrade-install:");
     expect(reusableWorkflow).toContain("fault-injection:");
@@ -104,8 +111,7 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(reusableWorkflow).toContain("src-tauri/tauri.release.conf.json");
     expect(reusableWorkflow).toContain("${{ inputs.artifact_prefix }}-updater");
-    expect(reusableWorkflow).toContain("latest.json");
-    expect(reusableWorkflow).toContain("*.sig");
+    expect(reusableWorkflow).toContain("*.nsis.zip.sig");
 
     // Build-path speed: non-release smoke must not re-key the rust cache per
     // commit, and must thin-LTO + opt-level=1 the release profile so driver+app

@@ -21,10 +21,12 @@ The Release workflow:
 
 1. Builds every platform bundle.
 2. Runs the release-only separation and installed-app smoke tests.
-3. Uploads signed assets and `SHA256SUMS` to the draft release.
-4. **Publishes** the release automatically once the required assets are
+3. Uploads the tested signed assets and canonical `release-evidence.json` to
+   the draft release.
+4. Generates `latest.json` and `SHA256SUMS` from that evidence.
+5. **Publishes** the release automatically once the required assets are
    present (`gh release edit --draft=false`).
-5. Renders WinGet and Flatpak manifests from the published tag URLs and
+6. Renders WinGet and Flatpak manifests from the published tag URLs and
    opens or updates the external PRs when fork automation is configured.
 
 **Merge of the release PR is the human ship decision.** Release smoke and
@@ -119,8 +121,8 @@ payload and only fail at install time — so the banner is gated on a
 `.app`/DMG, and NSIS bundles. On a `.deb`, Flatpak, or dev build it returns
 `false` and the in-app banner simply never appears.
 
-The release build signs the updater artifacts (`*.sig` files and `latest.json`)
-using two repository secrets, referenced by name in
+The release build signs the updater payloads (`*.sig` files) using two
+repository secrets, referenced by name in
 [`release.yml`](../.github/workflows/release.yml):
 
 - `TAURI_SIGNING_PRIVATE_KEY` — the minisign private key matching the pubkey.
@@ -143,10 +145,11 @@ base config that demanded a signing key would break both. Instead,
 emits updater artifacts; every keyless build (local `pnpm tauri build`, PR CI)
 is unaffected.
 
-`tauri-action` uploads `latest.json` itself (`uploadUpdaterJson` defaults to
-true) and, across the build matrix, merges each platform's signatures into the
-one manifest on the release — so no manual upload step is needed or wanted (a
-manual clobbering upload would strip the other platforms' entries).
+The installed-app smoke jobs produce the exact signed payloads and their
+signatures. The Rust release evidence driver pairs each signature with its
+payload. The metadata job generates one deterministic `latest.json` and one
+`SHA256SUMS` from `release-evidence.json`. No workflow job merges mutable
+platform manifests or rebuilds a release candidate.
 
 ## Prerelease semantics and the updater
 

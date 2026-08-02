@@ -43,7 +43,7 @@ use crate::remote::manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
-use crate::remote::provider::{ConditionalSource, RemoteProvider};
+use crate::remote::provider::{ConditionalSource, RepositoryStorage};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
@@ -54,7 +54,7 @@ use uuid::Uuid;
 
 pub(crate) struct PublishContext<'a> {
     pub control_db: &'a Connection,
-    pub provider: &'a dyn RemoteProvider,
+    pub provider: &'a dyn RepositoryStorage,
     pub working_copy_root: &'a Path,
     pub library_id: &'a str,
     pub writer_id: &'a str,
@@ -73,7 +73,7 @@ pub(crate) struct PublishOutcome {
 /// Execute the transactional publish protocol for a single operation row.
 ///
 /// The operation row must already exist in `remote_operations` (created by the
-/// mutation outbox in PR#2). This function drives it through the state machine:
+/// mutation outbox). This function drives it through the state machine:
 /// `pending → running → committing → verifying → completed` (or a failure
 /// state).
 ///
@@ -771,7 +771,7 @@ fn validate_asset_path(path: &str) -> Result<(), RemoteError> {
 /// Remote path, size, and revision are fingerprinted in both modes, allowing a
 /// retry to detect a missing, truncated, or replaced remote object.
 fn verify_referenced_assets(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     working_copy_root: &Path,
     database_path: &Path,
     compare_local_size: bool,
@@ -900,7 +900,7 @@ fn verify_referenced_assets(
 /// large enough, progress is bound to `expected_digest` so a restart cannot
 /// append a different candidate's bytes into the same session.
 fn upload_candidate_database(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     working_copy_root: &Path,
     remote_relative_path: &str,
     bytes: &[u8],
@@ -976,7 +976,7 @@ fn upload_candidate_database(
 }
 
 fn verify_remote_candidate_digest(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     remote_relative_path: &str,
     expected_size: u64,
     expected_digest: &str,
@@ -1057,7 +1057,9 @@ fn is_accepted_commit_for_operation(
     if !manifest.operation_id.is_empty() && manifest.operation_id != op.operation_id {
         return false;
     }
-    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let Ok(payload) = OperationPayload::from_json(&op.payload_json) else {
+        return false;
+    };
     let candidate_sha = payload
         .candidate_sha256
         .as_deref()
@@ -1085,7 +1087,15 @@ fn transition_state(
     percent: u8,
     detail: &str,
 ) -> Result<(), RemoteError> {
-    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let mut payload = OperationPayload::from_json(&op.payload_json).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "operation {} has invalid payload JSON: {}",
+                op.operation_id, error.message
+            ),
+        )
+    })?;
     payload.percent = percent;
     payload.detail = Some(detail.to_owned());
     let mut updated = op.clone();
@@ -1388,7 +1398,7 @@ fn schedule_gc_on_conn(
 /// removed only when a future generation's database no longer references them
 /// (a future reference-counting GC pass).
 pub(crate) fn execute_gc(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     control_db: &Connection,
     library_id: &str,
     operation_id: &str,
@@ -1552,7 +1562,7 @@ pub(crate) fn generate_repository_id() -> String {
 /// disjoint-song check compares the set of song hashes that differ between
 /// the local working DB and the remote conflict-candidate DB.
 ///
-/// For PR#4, "repository-global settings unchanged" is approximated by
+/// "Repository-global settings unchanged" is approximated by
 /// checking that the non-song tables (settings) have identical row counts
 /// and content hashes between the two DBs. A full row-by-row merge is NOT
 /// attempted.
@@ -1692,7 +1702,7 @@ pub(crate) fn conflict_use_remote(
 /// Pull the winning remote manifest + database to a conflict candidate path
 /// (NOT the active working DB). Uses the provider's download_file.
 pub(crate) fn pull_conflict_candidate(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     destination: &Path,
 ) -> CommandResult<RepositoryManifest> {
     let manifest = read_manifest(provider)?
@@ -1782,7 +1792,7 @@ mod tests {
         RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
     };
     use crate::remote::manifest::MANIFEST_PATH;
-    use crate::remote::provider::{ConditionalSource, RemoteProvider};
+    use crate::remote::provider::{ConditionalSource, RepositoryStorage};
     use rusqlite::Connection;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -1843,12 +1853,15 @@ mod tests {
         }
     }
 
-    impl RemoteProvider for FakeProvider {
+    impl RepositoryStorage for FakeProvider {
+        fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
+            self
+        }
+
         fn capabilities(&self) -> RemoteProviderCapabilities {
             RemoteProviderCapabilities {
                 conditional_replace: !self.no_cas,
                 resumable_upload: false,
-                range_download: true,
                 revision_metadata: true,
                 server_side_move: false,
             }
@@ -1982,12 +1995,20 @@ mod tests {
             Ok(None)
         }
 
-        fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
-            Ok(self.files.lock().unwrap().get(path).map(|b| b.len() as u64))
-        }
-
         fn refresh_existing(&self) -> CommandResult<Option<String>> {
             Ok(None)
+        }
+    }
+
+    impl crate::remote::provider::RemoteMediaSource for FakeProvider {
+        fn capabilities(&self) -> crate::remote::provider::RemoteMediaSourceCapabilities {
+            crate::remote::provider::RemoteMediaSourceCapabilities {
+                range_download: false,
+            }
+        }
+
+        fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
+            Ok(self.files.lock().unwrap().get(path).map(|b| b.len() as u64))
         }
     }
 
@@ -2024,7 +2045,7 @@ mod tests {
 
     fn make_context<'a>(
         control_db: &'a Connection,
-        provider: &'a dyn RemoteProvider,
+        provider: &'a dyn RepositoryStorage,
         working_copy_root: &'a Path,
         library_id: &'a str,
         repository_id: &'a str,
@@ -2072,7 +2093,7 @@ mod tests {
 
     fn persist_test_candidate(
         conn: &Connection,
-        provider: &dyn RemoteProvider,
+        provider: &dyn RepositoryStorage,
         working_root: &Path,
         operation_id: &str,
     ) -> PathBuf {

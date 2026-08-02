@@ -654,6 +654,7 @@
     "invalid_playback_state": "ข้อผิดพลาดการเล่น",
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",
+    "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
     "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง"
   },
   "updater": {

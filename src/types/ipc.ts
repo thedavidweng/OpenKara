@@ -1,5 +1,6 @@
 export type ErrorCode =
   | "database_unavailable"
+  | "remote_repository_unavailable"
   | "media_read_failed"
   | "song_not_found"
   | "model_unavailable"
@@ -531,6 +532,8 @@ export type LyricsSource =
   | "manual"
   | "manual_ttml"
   | "manual_lys";
+
+export type LyricsOnlineFetchIntent = "automatic_upgrade" | "user_replace";
 
 export interface WordToken {
   time_ms: number;

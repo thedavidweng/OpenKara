@@ -654,6 +654,7 @@
     "invalid_playback_state": "Kesalahan Pemutaran",
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
+    "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",
     "somethingWentWrong": "Terjadi kesalahan"
   },
   "updater": {

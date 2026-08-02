@@ -271,10 +271,10 @@
 
 | User model                     | Command surface                                                                       | Semantics                                                                                                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Refresh Repository             | `sync_active_remote_library`                                                          | 只把远端 `openkara.db` 和需要的文件刷新到本地 working copy；不发布本地修改。                                                                                             |
+| Refresh Repository             | `refresh_remote_repository`                                                           | 只把远端 `openkara.db` 和需要的文件刷新到本地 working copy；不发布本地修改。                                                                                             |
 | Publish Changes / Publish Song | `mirror_local_library_to_remote`, `publish_song_to_remote`, `publish_songs_to_remote` | 将本地 portable library 数据库和相关媒体文件写入远程资料库。发布前若 remote revision 已变化，必须停止并要求刷新后重试。                                                  |
-| Reauthorize Repository         | `reauthorize_remote_library`                                                          | 更新 OAuth token 或 WebDAV 凭据。OAuth provider 必须保持同一账号；WebDAV 用户名/密码可变，因为它们属于凭据。                                                             |
-| Relocate Repository            | `reauthorize_remote_library(..., allow_relocation=true)`                              | 用户重新授权时选中了不同远端位置。UI 必须先询问是否替换已保存的位置，并保留取消路径。后端只接受已有 OpenKara 资料库位置，不能把空目录初始化成新资料库。                  |
+| Reauthorize Repository         | `reauthorize_remote_repository`                                                       | 更新 OAuth token 或 WebDAV 凭据。位置必须保持不变。OAuth provider 必须保持同一账号；WebDAV 用户名/密码可变，因为它们属于凭据。                                           |
+| Relocate Repository            | `relocate_remote_repository`                                                          | 用户确认替换已保存的远端位置。UI 必须保留取消路径。后端只接受已有 OpenKara 资料库位置，不能把空目录初始化成新资料库。                                                    |
 | Disconnect Repository          | `remove_library`                                                                      | 只移除本地注册和本机凭据，不删除 provider-hosted 内容。                                                                                                                  |
 | Delete Repository              | `delete_library`                                                                      | 删除 provider-hosted 远程资料库内容和本地 working copy；UI 必须把它表达为永久删除远程资料库。                                                                            |
 | Pre-Publish Conflict 出口      | `resolve_remote_conflict`                                                             | 仓库进入 `conflicted` 后的两条出路。`keep_local` 把本地 pending 变更 rebase 到胜出的远端 generation 之后重新发布；`use_remote` 丢弃 pending operation 并采用远端数据库。 |
@@ -290,10 +290,12 @@
 1. `resolve_remote_library_candidate(session_id: String, display_name: String) -> RemoteLibraryCandidate`
    - 用当前授权会话和用户输入解析候选远端位置，不注册、不写配置。
    - WebDAV 用于在重新授权时比较新旧 repository location。
-2. `reauthorize_remote_library(library_id: String, session_id: String, remote_root_locator: String, display_name: String, allow_relocation: bool) -> LibraryRegistrySnapshot`
+2. `reauthorize_remote_repository(library_id: String, session_id: String, remote_root_locator: String, display_name: String) -> LibraryRegistrySnapshot`
+3. `relocate_remote_repository(library_id: String, session_id: String, remote_root_locator: String, display_name: String) -> LibraryRegistrySnapshot`
    - 必须先验证目标位置已经包含 `.openkara-library` 和 `openkara.db`。
    - 验证成功后才写入新凭据、保存新的 remote root locator，并刷新本地 working copy。
-   - 若位置变化且 `allow_relocation=false`，返回错误，等待 UI 进行用户确认。
+   - `reauthorize_remote_repository` 在位置变化时返回错误。
+   - `relocate_remote_repository` 只接受已存在的 OpenKara 资料库位置。
 
 ### Command: `begin_remote_auth`
 

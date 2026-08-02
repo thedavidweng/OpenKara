@@ -3,6 +3,7 @@ mod auth;
 mod auth_binding;
 mod bootstrap;
 pub(crate) mod cache_catalog;
+pub(crate) mod content;
 pub(crate) mod control_db;
 mod dropbox;
 pub(crate) mod errors;
@@ -11,10 +12,13 @@ pub(crate) mod executor;
 mod fault_injection;
 mod google_drive;
 pub(crate) mod library_outbox;
+mod lifecycle;
 pub(crate) mod manifest;
 mod mutation;
 pub(crate) mod net_policy;
 pub(crate) mod provider;
+#[cfg(test)]
+mod provider_conformance;
 pub(crate) mod recovery;
 mod registry;
 mod sync;
@@ -108,20 +112,16 @@ where
 }
 
 pub(crate) use auth::{begin_remote_auth, cancel_remote_auth, open_external_url, poll_remote_auth};
-pub(crate) use mutation::{
-    publish_song_to_active_remote_if_ready, run_active_library_mirror_mutation,
-    run_database_then_library_mirror_mutation, run_imported_songs_mutation,
-    run_song_database_mutation, run_song_database_mutation_with_result,
-    run_songs_database_mutation, run_updated_songs_mutation, song_ids_from_songs,
-};
+pub(crate) use lifecycle::RemoteRepositoryLifecycle;
+pub(crate) use mutation::{song_ids_from_songs, Change, ChangeScope, PublishChanges};
 pub(crate) use registry::{
-    create_remote_library, list_remote_library_roots, reauthorize_remote_library,
-    register_remote_library, remove_remote_library_credentials, resolve_remote_library_candidate,
+    create_remote_library, list_remote_library_roots, register_remote_library,
+    remove_remote_library_credentials, resolve_remote_library_candidate,
 };
 pub(crate) use sync::{
     active_remote_library, ensure_remote_file_cached, get_all_upload_statuses,
     mirror_local_library_to_remote, publish_song_to_remote, publish_songs_to_remote,
-    resolve_active_remote_conflict, sync_active_remote_library, ConflictResolution,
+    resolve_active_remote_conflict, ConflictResolution,
 };
 pub use types::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
@@ -132,6 +132,6 @@ pub(crate) fn delete_remote_library_root(
     app_data_dir: &std::path::Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<()> {
-    let provider = provider::create_provider(app_data_dir, library)?;
+    let provider = provider::create_repository_storage(app_data_dir, library)?;
     provider.delete_path("")
 }

@@ -1,5 +1,4 @@
-//! Comprehensive fault-injection test suite for the remote reliability matrix
-//! (PR #8, issue #151).
+//! Comprehensive fault-injection test suite for the remote reliability matrix.
 
 #![cfg(test)]
 
@@ -21,7 +20,9 @@ use crate::remote::manifest::{read_manifest, RepositoryManifest, CURRENT_SCHEMA_
 use crate::remote::net_policy::{
     full_jitter_delay, AttemptOutcome, RetryDriver, RetryPolicy, SeededJitter,
 };
-use crate::remote::provider::{ConditionalSource, RemoteProvider};
+use crate::remote::provider::{
+    ConditionalSource, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+};
 use crate::services::reconnect::{
     run_reconnect, EventSink, ReconnectConfig, ReconnectError, ReconnectEvent,
     RemoteStreamingRuntime, ReresolvedSource, SeekOutcome,
@@ -157,7 +158,6 @@ impl FaultInjectionProvider {
         RemoteProviderCapabilities {
             conditional_replace: !self.no_cas,
             resumable_upload: false,
-            range_download: true,
             revision_metadata: true,
             server_side_move: false,
         }
@@ -168,7 +168,11 @@ fn command_error_from_kind(kind: RemoteErrorKind, detail: &str) -> CommandError 
     CommandError::from(LibraryError::Internal(format!("{}: {detail}", kind.code())))
 }
 
-impl RemoteProvider for FaultInjectionProvider {
+impl RepositoryStorage for FaultInjectionProvider {
+    fn media_source(&self) -> &dyn RemoteMediaSource {
+        self
+    }
+
     fn capabilities(&self) -> RemoteProviderCapabilities {
         self.capabilities()
     }
@@ -277,67 +281,6 @@ impl RemoteProvider for FaultInjectionProvider {
                 })
             }
         }
-    }
-
-    fn download_range(
-        &self,
-        relative_path: &str,
-        destination: &Path,
-        offset: u64,
-        length: u64,
-    ) -> RemoteResult<u64> {
-        let mut count = self.range_call_count.lock().unwrap();
-        let call_index = *count;
-        *count += 1;
-        drop(count);
-
-        if let Some(fail_idx) = *self.fail_on_range_index.lock().unwrap() {
-            if call_index == fail_idx {
-                return Err(RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    "simulated mid-transfer disconnect",
-                ));
-            }
-        }
-
-        let data = self
-            .files
-            .lock()
-            .unwrap()
-            .get(relative_path)
-            .cloned()
-            .ok_or_else(|| {
-                RemoteError::new(
-                    RemoteErrorKind::PermissionDenied,
-                    format!("file {relative_path} not found"),
-                )
-            })?;
-        let start = offset as usize;
-        let end = (offset + length) as usize;
-        if end > data.len() {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                "range beyond file size",
-            ));
-        }
-        let chunk = &data[start..end];
-        use std::io::{Seek, Write};
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(false)
-            .open(destination)
-            .map_err(|e| {
-                RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!("failed to open temp file: {e}"),
-                )
-            })?;
-        file.seek(std::io::SeekFrom::Start(offset))
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
-        file.write_all(chunk)
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
-        Ok(chunk.len() as u64)
     }
 
     fn upload_file(&self, path: &str) -> CommandResult<()> {
@@ -450,12 +393,81 @@ impl RemoteProvider for FaultInjectionProvider {
         Ok(None)
     }
 
-    fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
-        Ok(self.files.lock().unwrap().get(path).map(|b| b.len() as u64))
-    }
-
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         Ok(None)
+    }
+}
+
+impl RemoteMediaSource for FaultInjectionProvider {
+    fn capabilities(&self) -> RemoteMediaSourceCapabilities {
+        RemoteMediaSourceCapabilities {
+            range_download: true,
+        }
+    }
+
+    fn download_range(
+        &self,
+        relative_path: &str,
+        destination: &Path,
+        offset: u64,
+        length: u64,
+    ) -> RemoteResult<u64> {
+        let mut count = self.range_call_count.lock().unwrap();
+        let call_index = *count;
+        *count += 1;
+        drop(count);
+
+        if let Some(fail_idx) = *self.fail_on_range_index.lock().unwrap() {
+            if call_index == fail_idx {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated mid-transfer disconnect",
+                ));
+            }
+        }
+
+        let data = self
+            .files
+            .lock()
+            .unwrap()
+            .get(relative_path)
+            .cloned()
+            .ok_or_else(|| {
+                RemoteError::new(
+                    RemoteErrorKind::PermissionDenied,
+                    format!("file {relative_path} not found"),
+                )
+            })?;
+        let start = offset as usize;
+        let end = (offset + length) as usize;
+        if end > data.len() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                "range beyond file size",
+            ));
+        }
+        let chunk = &data[start..end];
+        use std::io::{Seek, Write};
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(destination)
+            .map_err(|e| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to open temp file: {e}"),
+                )
+            })?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
+        file.write_all(chunk)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
+        Ok(chunk.len() as u64)
+    }
+
+    fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
+        Ok(self.files.lock().unwrap().get(path).map(|b| b.len() as u64))
     }
 }
 
@@ -550,7 +562,7 @@ fn seed_repository_state(conn: &Connection, library_id: &str) {
 
 fn make_context<'a>(
     control_db: &'a Connection,
-    provider: &'a dyn RemoteProvider,
+    provider: &'a dyn RepositoryStorage,
     working_copy_root: &'a Path,
     library_id: &'a str,
     repository_id: &'a str,

@@ -657,6 +657,7 @@
     "invalid_playback_state": "Błąd odtwarzania",
     "separation_failed": "Rozdzielanie nie powiodło się",
     "internal": "Błąd wewnętrzny",
+    "remote_repository_unavailable": "Zdalne repozytorium jest niedostępne",
     "somethingWentWrong": "Coś poszło nie tak"
   },
   "updater": {

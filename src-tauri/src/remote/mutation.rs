@@ -7,6 +7,49 @@ use crate::{
 use rusqlite::Connection;
 use tauri::AppHandle;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChangeScope {
+    None,
+    Songs(Vec<String>),
+    WholeRepository,
+}
+
+impl ChangeScope {
+    fn song_ids(&self) -> &[String] {
+        match self {
+            Self::Songs(song_ids) => song_ids,
+            Self::None | Self::WholeRepository => &[],
+        }
+    }
+
+    fn is_whole_repository(&self) -> bool {
+        matches!(self, Self::WholeRepository)
+    }
+}
+
+pub(crate) struct ChangeResult<T> {
+    pub(crate) value: T,
+    pub(crate) scope: ChangeScope,
+}
+
+pub(crate) struct Change<T, F, S> {
+    prepare_scope: ChangeScope,
+    mutation: F,
+    scope: S,
+    _value: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T, F, S> Change<T, F, S> {
+    pub(crate) fn new(prepare_scope: ChangeScope, mutation: F, scope: S) -> Self {
+        Self {
+            prepare_scope,
+            mutation,
+            scope,
+            _value: std::marker::PhantomData,
+        }
+    }
+}
+
 pub struct PreparedOperation {
     pub operation_id: String,
     pub library_id: String,
@@ -14,14 +57,65 @@ pub struct PreparedOperation {
     pub source_db_digest: Option<String>,
 }
 
-#[cfg(not(test))]
+/// Deep publication interface for commands that change a Local Working Copy.
+///
+/// The implementation keeps pre-mutation refresh, the per-library lock,
+/// atomic outbox, control projection, publication, and recovery state behind
+/// this interface. Callers declare the affected scope and do not coordinate
+/// those steps themselves.
+pub(crate) struct PublishChanges<'a, R: tauri::Runtime> {
+    state: &'a AppState,
+    app_handle: &'a AppHandle<R>,
+}
+
+impl<'a, R: tauri::Runtime> PublishChanges<'a, R> {
+    pub(crate) fn new(state: &'a AppState, app_handle: &'a AppHandle<R>) -> Self {
+        Self { state, app_handle }
+    }
+
+    pub(crate) fn apply<T, F, S>(&self, change: Change<T, F, S>) -> CommandResult<ChangeResult<T>>
+    where
+        F: FnOnce(&Connection, &LibraryRoot) -> CommandResult<T>,
+        S: FnOnce(&T) -> ChangeScope,
+    {
+        let Change {
+            prepare_scope,
+            mutation,
+            scope,
+            _value: _,
+        } = change;
+        let ((value, scope), _) =
+            with_serialized_remote_mutation(self.state, &prepare_scope, |prepared| {
+                mutate_with_atomic_outbox(self.state, prepared, mutation, scope)
+            })?;
+        Ok(ChangeResult { value, scope })
+    }
+
+    pub(crate) fn publish(&self, scope: &ChangeScope) -> CommandResult<()> {
+        match scope {
+            ChangeScope::None => Ok(()),
+            ChangeScope::Songs(song_ids) => {
+                if song_ids.is_empty() {
+                    return Ok(());
+                }
+                sync_backend::publish_songs(self.state, self.app_handle, song_ids, None)
+            }
+            ChangeScope::WholeRepository => sync_backend::mirror(self.state, self.app_handle),
+        }
+    }
+
+    pub(crate) fn recover_pending(&self) -> CommandResult<()> {
+        crate::remote::recovery::retry_pending_operations(self.state)
+    }
+}
+
 mod sync_backend {
     use super::super::sync;
-    use super::PreparedOperation;
+    use super::{ChangeScope, PreparedOperation};
     use crate::commands::error::{internal_error, CommandResult};
     use crate::remote::control_db::{
-        self, get_repository_state, upsert_operation, OperationKind, OperationPayload,
-        OperationRow, OperationState,
+        self, bind_scope_mark_pending_and_dirty_tx, get_repository_state, upsert_operation,
+        OperationKind, OperationPayload, OperationRow, OperationState,
     };
     use crate::remote::sync::active_remote_library;
     use crate::AppState;
@@ -36,7 +130,7 @@ mod sync_backend {
 
     pub fn prepare_for_library(state: &AppState, library_id: &str) -> CommandResult<()> {
         let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
-        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+        let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let _ = sync::prepare_remote_database_for_mutation(
@@ -54,21 +148,54 @@ mod sync_backend {
         prepare_for_library(state, &library_id)
     }
 
-    pub fn publish_song<R: tauri::Runtime>(
-        state: &AppState,
-        app_handle: &AppHandle<R>,
-        song_id: &str,
-    ) -> CommandResult<()> {
-        sync::maybe_publish_song_to_bound_remote(state, app_handle, song_id)
-    }
-
     pub fn publish_songs<R: tauri::Runtime>(
         state: &AppState,
         app_handle: &AppHandle<R>,
         song_ids: &[String],
         operation_id: Option<&str>,
     ) -> CommandResult<()> {
-        sync::maybe_publish_songs_to_bound_remote(state, app_handle, song_ids, operation_id)
+        let operation_id = operation_id
+            .map(str::to_owned)
+            .or(find_matching_pending_operation(state, song_ids)?);
+        sync::maybe_publish_songs_to_bound_remote(
+            state,
+            app_handle,
+            song_ids,
+            operation_id.as_deref(),
+        )
+    }
+
+    fn find_matching_pending_operation(
+        state: &AppState,
+        song_ids: &[String],
+    ) -> CommandResult<Option<String>> {
+        if song_ids.is_empty() {
+            return Ok(None);
+        }
+        let connection = state.remote.control_db()?.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let mut expected = song_ids.to_vec();
+        expected.sort();
+        let mut candidates = control_db::list_operations(&connection)?
+            .into_iter()
+            .filter(|operation| {
+                operation.operation_kind == OperationKind::Publish
+                    && !operation.state.is_terminal()
+                    && OperationPayload::from_json(&operation.payload_json)
+                        .map(|payload| {
+                            let mut actual = payload.song_ids;
+                            actual.sort();
+                            actual == expected
+                        })
+                        .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|operation| std::cmp::Reverse(operation.updated_at_ms));
+        Ok(candidates
+            .into_iter()
+            .next()
+            .map(|operation| operation.operation_id))
     }
 
     pub fn mirror<R: tauri::Runtime>(
@@ -78,12 +205,12 @@ mod sync_backend {
         sync::sync_bound_remote_for_active_local_library(state, app_handle)
     }
 
-    // --- Durable outbox state recording (PR#2) ---
+    // --- Durable outbox state recording ---
 
     pub fn record_prepared_operation_for_library(
         state: &AppState,
         library_id: &str,
-        song_ids: &[String],
+        scope: &ChangeScope,
     ) -> CommandResult<Option<PreparedOperation>> {
         let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
 
@@ -109,7 +236,7 @@ mod sync_backend {
         };
 
         let expected_generation = {
-            let conn = state.remote.control_db.lock().map_err(|_| {
+            let conn = state.remote.control_db()?.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             get_repository_state(&conn, library_id)?
@@ -121,7 +248,8 @@ mod sync_backend {
         let now = crate::remote::types::current_unix_time_ms();
 
         let payload = OperationPayload {
-            song_ids: song_ids.to_vec(),
+            song_ids: scope.song_ids().to_vec(),
+            whole_repository: scope.is_whole_repository(),
             percent: 0,
             detail: None,
             ..Default::default()
@@ -147,7 +275,7 @@ mod sync_backend {
         };
 
         {
-            let conn = state.remote.control_db.lock().map_err(|_| {
+            let conn = state.remote.control_db()?.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             upsert_operation(&conn, &row)?;
@@ -163,12 +291,12 @@ mod sync_backend {
 
     pub fn record_prepared_operation(
         state: &AppState,
-        song_ids: &[String],
+        scope: &ChangeScope,
     ) -> CommandResult<Option<PreparedOperation>> {
         let Some(library_id) = active_remote_library_id(state)? else {
             return Ok(None);
         };
-        record_prepared_operation_for_library(state, &library_id, song_ids)
+        record_prepared_operation_for_library(state, &library_id, scope)
     }
 
     pub fn cancel_prepared_operation(
@@ -176,7 +304,7 @@ mod sync_backend {
         prepared: &PreparedOperation,
     ) -> CommandResult<()> {
         let now = crate::remote::types::current_unix_time_ms();
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
@@ -187,154 +315,36 @@ mod sync_backend {
         Ok(())
     }
 
-    pub fn bind_song_ids_mark_pending_and_dirty(
+    pub fn bind_scope_mark_pending_and_dirty(
         state: &AppState,
         prepared: &PreparedOperation,
         song_ids: &[String],
+        whole_repository: bool,
     ) -> CommandResult<()> {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-        control_db::bind_song_ids_mark_pending_and_dirty_tx(
+        bind_scope_mark_pending_and_dirty_tx(
             &conn,
             &prepared.operation_id,
             &prepared.library_id,
             song_ids,
+            whole_repository,
         )
-    }
-}
-
-#[cfg(test)]
-mod sync_backend {
-    use crate::commands::error::{CommandError, CommandResult};
-    use crate::AppState;
-    use std::cell::RefCell;
-    use tauri::AppHandle;
-
-    #[derive(Debug, Clone, PartialEq)]
-    pub(super) enum SyncCall {
-        Prepare,
-        PublishSong(String),
-        PublishSongs(Vec<String>),
-        Mirror,
-    }
-
-    thread_local! {
-        static CALLS: RefCell<Vec<SyncCall>> = const { RefCell::new(Vec::new()) };
-        static PREPARE_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
-        static PUBLISH_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
-        static MIRROR_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
-    }
-
-    pub fn reset() {
-        CALLS.with(|c| c.borrow_mut().clear());
-        PREPARE_RESULT.with(|r| *r.borrow_mut() = Ok(()));
-        PUBLISH_RESULT.with(|r| *r.borrow_mut() = Ok(()));
-        MIRROR_RESULT.with(|r| *r.borrow_mut() = Ok(()));
-    }
-
-    pub fn calls() -> Vec<SyncCall> {
-        CALLS.with(|c| c.borrow().clone())
-    }
-
-    pub fn set_prepare_result(result: Result<(), CommandError>) {
-        PREPARE_RESULT.with(|r| *r.borrow_mut() = result);
-    }
-
-    pub fn active_remote_library_id(_state: &AppState) -> CommandResult<Option<String>> {
-        Ok(None)
-    }
-
-    pub fn prepare_for_library(_state: &AppState, _library_id: &str) -> CommandResult<()> {
-        CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
-        PREPARE_RESULT.with(|r| r.borrow().clone())
-    }
-
-    pub fn prepare(_state: &AppState) -> CommandResult<()> {
-        CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
-        PREPARE_RESULT.with(|r| r.borrow().clone())
-    }
-
-    pub fn publish_song<R: tauri::Runtime>(
-        _state: &AppState,
-        _app_handle: &AppHandle<R>,
-        song_id: &str,
-    ) -> CommandResult<()> {
-        CALLS.with(|c| {
-            c.borrow_mut()
-                .push(SyncCall::PublishSong(song_id.to_owned()))
-        });
-        PUBLISH_RESULT.with(|r| r.borrow().clone())
-    }
-
-    pub fn publish_songs<R: tauri::Runtime>(
-        _state: &AppState,
-        _app_handle: &AppHandle<R>,
-        song_ids: &[String],
-        _operation_id: Option<&str>,
-    ) -> CommandResult<()> {
-        CALLS.with(|c| {
-            c.borrow_mut()
-                .push(SyncCall::PublishSongs(song_ids.to_vec()))
-        });
-        PUBLISH_RESULT.with(|r| r.borrow().clone())
-    }
-
-    pub fn mirror<R: tauri::Runtime>(
-        _state: &AppState,
-        _app_handle: &AppHandle<R>,
-    ) -> CommandResult<()> {
-        CALLS.with(|c| c.borrow_mut().push(SyncCall::Mirror));
-        MIRROR_RESULT.with(|r| r.borrow().clone())
-    }
-
-    // --- Durable outbox state recording (PR#2) ---
-
-    pub fn record_prepared_operation_for_library(
-        _state: &AppState,
-        _library_id: &str,
-        _song_ids: &[String],
-    ) -> CommandResult<Option<super::PreparedOperation>> {
-        Ok(None)
-    }
-
-    pub fn record_prepared_operation(
-        _state: &AppState,
-        _song_ids: &[String],
-    ) -> CommandResult<Option<super::PreparedOperation>> {
-        Ok(None)
-    }
-
-    pub fn cancel_prepared_operation(
-        _state: &AppState,
-        _prepared: &super::PreparedOperation,
-    ) -> CommandResult<()> {
-        Ok(())
-    }
-
-    pub fn bind_song_ids_mark_pending_and_dirty(
-        _state: &AppState,
-        _prepared: &super::PreparedOperation,
-        _song_ids: &[String],
-    ) -> CommandResult<()> {
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn mark_operation_pending_and_dirty(
-        _state: &AppState,
-        _prepared: &super::PreparedOperation,
-    ) -> CommandResult<()> {
-        Ok(())
     }
 }
 
 fn project_outbox_to_control_db(
     state: &AppState,
     prepared: &PreparedOperation,
-    song_ids: &[String],
+    scope: &ChangeScope,
 ) -> CommandResult<()> {
-    sync_backend::bind_song_ids_mark_pending_and_dirty(state, prepared, song_ids)?;
+    sync_backend::bind_scope_mark_pending_and_dirty(
+        state,
+        prepared,
+        scope.song_ids(),
+        scope.is_whole_repository(),
+    )?;
     // Control projection succeeded — remove machine-local outbox from the
     // operation's library working copy (not the currently active library).
     let remote_lib = crate::remote::sync::load_registered_remote_library(
@@ -361,7 +371,7 @@ fn peek_active_remote_library_id(state: &AppState) -> CommandResult<Option<Strin
 
 fn with_serialized_remote_mutation<T, F>(
     state: &AppState,
-    prepared_song_ids: &[String],
+    prepare_scope: &ChangeScope,
     body: F,
 ) -> CommandResult<(T, Option<PreparedOperation>)>
 where
@@ -375,11 +385,8 @@ where
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         // Explicit library_id end-to-end — no active-library re-resolve.
         sync_backend::prepare_for_library(state, &library_id)?;
-        let prepared = sync_backend::record_prepared_operation_for_library(
-            state,
-            &library_id,
-            prepared_song_ids,
-        )?;
+        let prepared =
+            sync_backend::record_prepared_operation_for_library(state, &library_id, prepare_scope)?;
         if let Some(ref p) = prepared {
             if p.library_id != library_id {
                 return Err(database_error(format!(
@@ -392,7 +399,7 @@ where
         Ok((result, prepared))
     } else {
         sync_backend::prepare(state)?;
-        let prepared = sync_backend::record_prepared_operation(state, prepared_song_ids)?;
+        let prepared = sync_backend::record_prepared_operation(state, prepare_scope)?;
         let result = body(prepared.as_ref())?;
         Ok((result, prepared))
     }
@@ -412,26 +419,26 @@ fn mutate_with_atomic_outbox<T, F, S>(
     state: &AppState,
     prepared: Option<&PreparedOperation>,
     mutation: F,
-    song_ids_of: S,
-) -> CommandResult<(T, Vec<String>)>
+    scope_of: S,
+) -> CommandResult<(T, ChangeScope)>
 where
-    F: FnOnce(&Connection) -> CommandResult<T>,
-    S: FnOnce(&T) -> Vec<String>,
+    F: FnOnce(&Connection, &LibraryRoot) -> CommandResult<T>,
+    S: FnOnce(&T) -> ChangeScope,
 {
     if prepared.is_none() {
-        if let Ok(library) = state.library_root() {
-            let conn = crate::cache::open_database(&library.database_path())
-                .map_err(|e| database_error(e.to_string()))?;
-            let result = mutation(&conn)?;
-            let song_ids = song_ids_of(&result);
-            return Ok((result, song_ids));
-        }
-        let conn = Connection::open_in_memory()
-            .map_err(|e| database_error(format!("in-memory library open failed: {e}")))?;
-        let _ = crate::cache::apply_migrations(&conn);
-        let result = mutation(&conn)?;
-        let song_ids = song_ids_of(&result);
-        return Ok((result, song_ids));
+        let library = state.library_root()?;
+        let conn = crate::cache::open_database(&library.database_path())
+            .map_err(|e| database_error(e.to_string()))?;
+        crate::cache::apply_migrations(&conn)
+            .map_err(|e| database_error(format!("library migrations failed: {e}")))?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| database_error(format!("failed to begin library transaction: {e}")))?;
+        let result = mutation(&tx, &library)?;
+        let scope = scope_of(&result);
+        tx.commit()
+            .map_err(|e| database_error(format!("failed to commit library transaction: {e}")))?;
+        return Ok((result, scope));
     }
 
     let prepared = prepared.expect("checked is_some above");
@@ -444,7 +451,6 @@ where
         database_error("remote repository is missing a working copy root".to_owned())
     })?;
     let library = crate::library_root::LibraryRoot::open(&root_path)
-        .or_else(|_| crate::library_root::LibraryRoot::create(&root_path))
         .map_err(|e| database_error(e.to_string()))?;
     let conn = crate::cache::open_database(&library.database_path())
         .map_err(|e| database_error(e.to_string()))?;
@@ -455,15 +461,28 @@ where
         .unchecked_transaction()
         .map_err(|e| database_error(format!("failed to begin library transaction: {e}")))?;
 
-    let result = mutation(&tx)?;
-    let song_ids = song_ids_of(&result);
+    let result = mutation(&tx, &library)?;
+    let scope = scope_of(&result);
+    let whole_repository = scope.is_whole_repository();
+    let song_ids = if whole_repository {
+        crate::cache::list_songs(&tx)
+            .map_err(|e| {
+                database_error(format!("failed to list songs for repository publish: {e}"))
+            })?
+            .into_iter()
+            .map(|song| song.hash)
+            .collect()
+    } else {
+        scope.song_ids().to_vec()
+    };
 
-    if !song_ids.is_empty() {
+    if !song_ids.is_empty() || whole_repository {
         // SAME transaction as the song mutation — fail closed.
         let now = crate::remote::types::current_unix_time_ms();
         let row = crate::remote::library_outbox::LibraryPublishOutboxRow {
             operation_id: prepared.operation_id.clone(),
             song_ids: song_ids.clone(),
+            whole_repository,
             expected_generation: prepared.expected_generation,
             source_db_digest: prepared.source_db_digest.clone(),
             created_at_ms: now,
@@ -475,267 +494,14 @@ where
     tx.commit()
         .map_err(|e| database_error(format!("failed to commit library transaction: {e}")))?;
 
-    if song_ids.is_empty() {
+    if song_ids.is_empty() && !whole_repository {
         sync_backend::cancel_prepared_operation(state, prepared)?;
     } else {
         // Fail closed: projection errors leave outbox unprojected.
-        project_outbox_to_control_db(state, prepared, &song_ids)?;
+        project_outbox_to_control_db(state, prepared, &scope)?;
     }
 
-    Ok((result, song_ids))
-}
-
-/// Import path: mutation returns `ImportSongsResult` (not `CommandResult`).
-///
-/// When a remote prepared operation exists, the working copy is resolved
-/// **only** from `prepared.library_id` — never from a caller-supplied
-/// `LibraryRoot` that may have drifted after an active-library switch.
-/// Caller must already hold the per-library commit lock.
-fn mutate_import_with_atomic_outbox<F>(
-    state: &AppState,
-    prepared: Option<&PreparedOperation>,
-    mutation: F,
-) -> CommandResult<(crate::library::ImportSongsResult, Vec<String>)>
-where
-    F: FnOnce(&Connection, &LibraryRoot) -> crate::library::ImportSongsResult,
-{
-    if prepared.is_none() {
-        let library = match state.library_root() {
-            Ok(lib) => lib,
-            Err(_) => {
-                let dummy = std::path::PathBuf::from("/tmp/openkara-test-library");
-                let _ = std::fs::create_dir_all(&dummy);
-                LibraryRoot::create(&dummy)
-                    .or_else(|_| LibraryRoot::open(&dummy))
-                    .map_err(|e| database_error(e.to_string()))?
-            }
-        };
-        let conn = match crate::cache::open_database(&library.database_path()) {
-            Ok(c) => c,
-            Err(_) => {
-                let c = Connection::open_in_memory()
-                    .map_err(|e| database_error(format!("in-memory library open failed: {e}")))?;
-                crate::cache::apply_migrations(&c)
-                    .map_err(|e| database_error(format!("library migrations failed: {e}")))?;
-                c
-            }
-        };
-        let result = mutation(&conn, &library);
-        let song_ids: Vec<String> = result
-            .imported
-            .iter()
-            .map(|song| song.hash.clone())
-            .collect();
-        return Ok((result, song_ids));
-    }
-
-    let prepared = prepared.expect("checked is_some above");
-    // Only prepared.library_id — never the currently active library root.
-    let remote_lib = crate::remote::sync::load_registered_remote_library(
-        &state.shell.app_data_dir,
-        &prepared.library_id,
-    )?;
-    let root_path = remote_lib.working_copy_root().ok_or_else(|| {
-        database_error("remote repository is missing a working copy root".to_owned())
-    })?;
-    let library = crate::library_root::LibraryRoot::open(&root_path)
-        .or_else(|_| crate::library_root::LibraryRoot::create(&root_path))
-        .map_err(|e| database_error(e.to_string()))?;
-
-    let conn = crate::cache::open_database(&library.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
-    crate::cache::apply_migrations(&conn)
-        .map_err(|e| database_error(format!("library migrations failed: {e}")))?;
-
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| database_error(format!("failed to begin library transaction: {e}")))?;
-
-    let result = mutation(&tx, &library);
-    let song_ids: Vec<String> = result
-        .imported
-        .iter()
-        .map(|song| song.hash.clone())
-        .collect();
-
-    if !song_ids.is_empty() {
-        let now = crate::remote::types::current_unix_time_ms();
-        let row = crate::remote::library_outbox::LibraryPublishOutboxRow {
-            operation_id: prepared.operation_id.clone(),
-            song_ids: song_ids.clone(),
-            expected_generation: prepared.expected_generation,
-            source_db_digest: prepared.source_db_digest.clone(),
-            created_at_ms: now,
-            projected_at_ms: None,
-        };
-        crate::remote::library_outbox::upsert_library_publish_outbox(&tx, &row)?;
-    }
-
-    tx.commit()
-        .map_err(|e| database_error(format!("failed to commit library transaction: {e}")))?;
-
-    if song_ids.is_empty() {
-        sync_backend::cancel_prepared_operation(state, prepared)?;
-    } else {
-        project_outbox_to_control_db(state, prepared, &song_ids)?;
-    }
-
-    Ok((result, song_ids))
-}
-
-pub(crate) fn run_imported_songs_mutation<R, F>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-) -> CommandResult<crate::library::ImportSongsResult>
-where
-    R: tauri::Runtime,
-    F: FnOnce(&Connection, &LibraryRoot) -> crate::library::ImportSongsResult,
-{
-    let ((result, song_ids), prepared) = with_serialized_remote_mutation(state, &[], |prepared| {
-        mutate_import_with_atomic_outbox(state, prepared, mutation)
-    })?;
-    if !song_ids.is_empty() {
-        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
-        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
-    }
-    Ok(result)
-}
-
-pub(crate) fn run_updated_songs_mutation<R, T, F, S>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-    updated_song_ids: S,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce(&Connection) -> CommandResult<T>,
-    S: FnOnce(&T) -> Vec<String>,
-{
-    let ((result, song_ids), prepared) = with_serialized_remote_mutation(state, &[], |prepared| {
-        mutate_with_atomic_outbox(state, prepared, mutation, updated_song_ids)
-    })?;
-    if !song_ids.is_empty() {
-        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
-        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
-    }
-    Ok(result)
-}
-
-pub(crate) fn publish_song_to_active_remote_if_ready<R: tauri::Runtime>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    song_id: &str,
-) -> CommandResult<()> {
-    sync_backend::publish_song(state, app_handle, song_id)
-}
-
-pub(crate) fn run_song_database_mutation<R, T, F>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    song_id: &str,
-    mutation: F,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce(&Connection) -> CommandResult<T>,
-{
-    let song_id_owned = song_id.to_owned();
-    let prepared_hint = [song_id.to_owned()];
-    let ((result, song_ids), prepared) =
-        with_serialized_remote_mutation(state, &prepared_hint, |prepared| {
-            let song_id_owned = song_id_owned.clone();
-            mutate_with_atomic_outbox(state, prepared, mutation, move |_| vec![song_id_owned])
-        })?;
-    if !song_ids.is_empty() {
-        if let Some(ref prepared) = prepared {
-            sync_backend::publish_songs(
-                state,
-                app_handle,
-                &song_ids,
-                Some(&prepared.operation_id),
-            )?;
-        } else {
-            sync_backend::publish_song(state, app_handle, song_id)?;
-        }
-    }
-    Ok(result)
-}
-
-pub(crate) fn run_song_database_mutation_with_result<R, T, F, S>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-    song_id: S,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce(&Connection) -> CommandResult<T>,
-    S: FnOnce(&T) -> Option<String>,
-{
-    let ((result, song_ids), prepared) = with_serialized_remote_mutation(state, &[], |prepared| {
-        mutate_with_atomic_outbox(state, prepared, mutation, |r| {
-            song_id(r).into_iter().collect()
-        })
-    })?;
-    if !song_ids.is_empty() {
-        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
-        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
-    }
-    Ok(result)
-}
-
-pub(crate) fn run_songs_database_mutation<R, T, F, S>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-    song_ids: S,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce(&Connection) -> CommandResult<T>,
-    S: FnOnce(&T) -> Vec<String>,
-{
-    let ((result, song_ids), prepared) = with_serialized_remote_mutation(state, &[], |prepared| {
-        mutate_with_atomic_outbox(state, prepared, mutation, song_ids)
-    })?;
-    if !song_ids.is_empty() {
-        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
-        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
-    }
-    Ok(result)
-}
-
-pub(crate) fn run_active_library_mirror_mutation<R, T, F>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce() -> CommandResult<T>,
-{
-    let result = mutation()?;
-    sync_backend::mirror(state, app_handle)?;
-    Ok(result)
-}
-
-pub(crate) fn run_database_then_library_mirror_mutation<R, T, F>(
-    state: &AppState,
-    app_handle: &AppHandle<R>,
-    mutation: F,
-) -> CommandResult<T>
-where
-    R: tauri::Runtime,
-    F: FnOnce() -> CommandResult<T>,
-{
-    let (result, prepared) = with_serialized_remote_mutation(state, &[], |_prepared| mutation())?;
-    if let Some(ref prepared) = prepared {
-        sync_backend::cancel_prepared_operation(state, prepared)?;
-    }
-    sync_backend::mirror(state, app_handle)?;
-    Ok(result)
+    Ok((result, scope))
 }
 
 pub(crate) fn song_ids_from_songs(songs: &[Song]) -> Vec<String> {
@@ -745,12 +511,38 @@ pub(crate) fn song_ids_from_songs(songs: &[Song]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::error::internal_error;
+    use crate::cache;
+    use crate::commands::error::database_error;
     use crate::library::{ImportSongsResult, Song};
-    use sync_backend::{calls, reset, SyncCall};
+    use crate::library_root::LibraryRoot;
+    use std::ops::Deref;
+    use tempfile::TempDir;
 
-    fn test_state() -> AppState {
-        AppState::test_fixture()
+    struct TestState {
+        state: AppState,
+        _directory: TempDir,
+    }
+
+    impl Deref for TestState {
+        type Target = AppState;
+
+        fn deref(&self) -> &Self::Target {
+            &self.state
+        }
+    }
+
+    fn test_state() -> TestState {
+        let directory = tempfile::tempdir().expect("test library directory");
+        let library = LibraryRoot::create(&directory.path().join("library"))
+            .expect("test library should be created");
+        cache::initialize_library_database(&library.database_path())
+            .expect("test library database should be initialized");
+        let state = AppState::test_fixture();
+        *state.shell.library.lock().expect("library lock") = Some(library);
+        TestState {
+            state,
+            _directory: directory,
+        }
     }
 
     fn test_app_handle() -> AppHandle<impl tauri::Runtime> {
@@ -779,178 +571,147 @@ mod tests {
     }
 
     #[test]
-    fn imported_songs_prepares_then_publishes_hashes() {
-        reset();
+    fn imported_songs_use_the_real_library_database() {
         let state = test_state();
         let handle = test_app_handle();
 
-        let result =
-            run_imported_songs_mutation(&state, &handle, |_conn, _lib| ImportSongsResult {
-                imported: vec![song("a"), song("b")],
-                failed: vec![],
-            });
-        if let Ok(result) = result {
-            assert_eq!(result.imported.len(), 2);
-            assert!(calls().contains(&SyncCall::Prepare));
-        }
-    }
-
-    #[test]
-    fn updated_songs_prepares_then_publishes() {
-        reset();
-        let state = test_state();
-        let handle = test_app_handle();
-
-        let result = run_updated_songs_mutation(
-            &state,
-            &handle,
-            |_conn| Ok(42u32),
-            |_| vec!["x".into(), "y".into()],
-        );
-        if let Ok(result) = result {
-            assert_eq!(result, 42);
-            assert!(calls().contains(&SyncCall::Prepare));
-        }
-    }
-
-    #[test]
-    fn publish_song_delegates_directly() {
-        reset();
-        let state = test_state();
-        let handle = test_app_handle();
-
-        publish_song_to_active_remote_if_ready(&state, &handle, "song-42").unwrap();
-
-        assert_eq!(calls(), vec![SyncCall::PublishSong("song-42".into())]);
-    }
-
-    #[test]
-    fn song_database_mutation_prepares_and_publishes() {
-        reset();
-        let state = test_state();
-        let handle = test_app_handle();
-
-        run_song_database_mutation(&state, &handle, "s1", |_conn| Ok("val")).unwrap();
-
+        let publication = PublishChanges::new(&state, &handle);
+        let applied = publication
+            .apply(Change::new(
+                ChangeScope::None,
+                |_: &Connection, library: &LibraryRoot| {
+                    assert!(library.database_path().exists());
+                    Ok(ImportSongsResult {
+                        imported: vec![song("a"), song("b")],
+                        failed: vec![],
+                    })
+                },
+                |result: &ImportSongsResult| {
+                    ChangeScope::Songs(song_ids_from_songs(&result.imported))
+                },
+            ))
+            .expect("local import should succeed");
+        assert_eq!(applied.value.imported.len(), 2);
         assert_eq!(
-            calls(),
-            vec![SyncCall::Prepare, SyncCall::PublishSong("s1".into()),]
+            applied.scope,
+            ChangeScope::Songs(vec!["a".to_owned(), "b".to_owned()])
         );
     }
 
     #[test]
-    fn mutation_with_result_some_id_publishes() {
-        reset();
+    fn apply_returns_business_value_and_scope() {
         let state = test_state();
         let handle = test_app_handle();
 
-        run_song_database_mutation_with_result(
-            &state,
-            &handle,
-            |_conn| Ok("out"),
-            |_| Some("resolved-id".into()),
-        )
-        .unwrap();
-
+        let publication = PublishChanges::new(&state, &handle);
+        let applied = publication
+            .apply(Change::new(
+                ChangeScope::Songs(vec!["x".to_owned(), "y".to_owned()]),
+                |_: &Connection, _: &LibraryRoot| Ok(42u32),
+                |_: &u32| ChangeScope::Songs(vec!["x".to_owned(), "y".to_owned()]),
+            ))
+            .expect("local mutation should succeed");
+        assert_eq!(applied.value, 42);
         assert_eq!(
-            calls(),
-            vec![
-                SyncCall::Prepare,
-                SyncCall::PublishSongs(vec!["resolved-id".into()]),
-            ]
+            applied.scope,
+            ChangeScope::Songs(vec!["x".to_owned(), "y".to_owned()])
         );
     }
 
     #[test]
-    fn mutation_with_result_none_skips_publish() {
-        reset();
+    fn publish_scope_is_a_noop_without_an_active_remote() {
         let state = test_state();
         let handle = test_app_handle();
 
-        run_song_database_mutation_with_result(&state, &handle, |_conn| Ok("out"), |_| None)
-            .unwrap();
-
-        assert_eq!(calls(), vec![SyncCall::Prepare]);
+        PublishChanges::new(&state, &handle)
+            .publish(&ChangeScope::Songs(vec!["song-42".to_owned()]))
+            .expect("publish without a remote should be skipped");
     }
 
     #[test]
-    fn songs_database_mutation_nonempty_publishes() {
-        reset();
+    fn apply_uses_the_real_database() {
         let state = test_state();
         let handle = test_app_handle();
 
-        run_songs_database_mutation(
-            &state,
-            &handle,
-            |_conn| Ok(()),
-            |_| vec!["a".into(), "b".into()],
-        )
-        .unwrap();
-
-        assert_eq!(
-            calls(),
-            vec![
-                SyncCall::Prepare,
-                SyncCall::PublishSongs(vec!["a".into(), "b".into()]),
-            ]
-        );
+        let applied = PublishChanges::new(&state, &handle)
+            .apply(Change::new(
+                ChangeScope::Songs(vec!["s1".to_owned()]),
+                |_: &Connection, _: &LibraryRoot| Ok("val"),
+                |_: &&str| ChangeScope::Songs(vec!["s1".to_owned()]),
+            ))
+            .expect("song mutation should succeed");
+        assert_eq!(applied.value, "val");
     }
 
     #[test]
-    fn songs_database_mutation_empty_skips_publish() {
-        reset();
+    fn apply_supports_none_scope() {
         let state = test_state();
         let handle = test_app_handle();
 
-        run_songs_database_mutation(&state, &handle, |_conn| Ok(()), |_| vec![]).unwrap();
-
-        assert_eq!(calls(), vec![SyncCall::Prepare]);
+        let applied = PublishChanges::new(&state, &handle)
+            .apply(Change::new(
+                ChangeScope::None,
+                |_: &Connection, _: &LibraryRoot| Ok("out"),
+                |_: &&str| ChangeScope::None,
+            ))
+            .expect("mutation should succeed");
+        assert_eq!(applied.value, "out");
+        assert_eq!(applied.scope, ChangeScope::None);
     }
 
     #[test]
-    fn active_library_mirror_just_mirrors() {
-        reset();
+    fn whole_repository_publish_is_a_noop_without_an_active_remote() {
         let state = test_state();
         let handle = test_app_handle();
 
-        run_active_library_mirror_mutation(&state, &handle, || Ok(99u32)).unwrap();
-
-        assert_eq!(calls(), vec![SyncCall::Mirror]);
+        PublishChanges::new(&state, &handle)
+            .publish(&ChangeScope::WholeRepository)
+            .expect("whole repository publish should be skipped");
     }
 
     #[test]
-    fn database_then_library_mirror_full_sequence() {
-        reset();
-        let state = test_state();
+    fn mutation_requires_a_configured_library() {
+        let state = AppState::test_fixture();
         let handle = test_app_handle();
 
-        run_database_then_library_mirror_mutation(&state, &handle, || Ok("done")).unwrap();
+        let err = PublishChanges::new(&state, &handle)
+            .apply(Change::new(
+                ChangeScope::None,
+                |_: &Connection, _: &LibraryRoot| Ok(()),
+                |_: &()| ChangeScope::None,
+            ))
+            .err()
+            .expect("missing library must fail");
 
-        assert_eq!(calls(), vec![SyncCall::Prepare, SyncCall::Mirror]);
+        assert!(err.message.contains("no library configured"));
     }
 
     #[test]
-    fn prepare_error_skips_mutation_and_publish() {
-        reset();
+    fn mutation_persists_changes_in_the_real_sqlite_database() {
         let state = test_state();
         let handle = test_app_handle();
-        let mutation_ran = std::cell::Cell::new(false);
 
-        sync_backend::set_prepare_result(Err(internal_error("prepare failed")));
+        PublishChanges::new(&state, &handle)
+            .apply(Change::new(
+                ChangeScope::None,
+                |connection: &Connection, _: &LibraryRoot| {
+                    connection
+                        .execute("CREATE TABLE mutation_probe (value INTEGER NOT NULL)", [])
+                        .map_err(|error| database_error(error.to_string()))?;
+                    connection
+                        .execute("INSERT INTO mutation_probe (value) VALUES (7)", [])
+                        .map_err(|error| database_error(error.to_string()))?;
+                    Ok(())
+                },
+                |_: &()| ChangeScope::None,
+            ))
+            .expect("SQLite mutation should succeed");
 
-        let err = run_updated_songs_mutation(
-            &state,
-            &handle,
-            |_conn| {
-                mutation_ran.set(true);
-                Ok(())
-            },
-            |_| vec!["never".into()],
-        )
-        .unwrap_err();
-
-        assert_eq!(err.message, "prepare failed");
-        assert!(!mutation_ran.get());
-        assert_eq!(calls(), vec![SyncCall::Prepare]);
+        let library = state.library_root().expect("test library");
+        let connection = cache::open_database(&library.database_path()).expect("open database");
+        let value: i64 = connection
+            .query_row("SELECT value FROM mutation_probe", [], |row| row.get(0))
+            .expect("persisted mutation");
+        assert_eq!(value, 7);
     }
 }

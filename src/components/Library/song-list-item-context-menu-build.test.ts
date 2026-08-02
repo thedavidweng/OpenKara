@@ -855,7 +855,10 @@ describe("buildSongListContextMenuForSong – action callbacks", () => {
     const args = mockBuildSongListContextMenuItems.mock.calls[0][0];
     await args.fetchLyricsOnline();
 
-    expect(mockFetchLyricsOnline).toHaveBeenCalledWith("song-abc", true);
+    expect(mockFetchLyricsOnline).toHaveBeenCalledWith(
+      "song-abc",
+      "user_replace",
+    );
     expect(mockClear).toHaveBeenCalled();
     expect(mockFetchLyrics).toHaveBeenCalledWith("song-abc");
   });

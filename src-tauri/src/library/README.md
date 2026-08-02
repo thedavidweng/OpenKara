@@ -14,7 +14,7 @@ Deep library module: song domain model plus local write path.
 
 - **Storage adapter:** `crate::cache` (SQL only)
 - **Portable paths:** all file I/O goes through `LibraryRoot` relative paths
-- **Remote mutations:** Pre-Mutation Refresh / Publish Song / mirror wrappers stay in
-  `commands::remote_library`; IPC adapters call `run_*_mutation` around these APIs
+- **Remote mutations:** `remote::PublishChanges` owns refresh, outbox, publish, and
+  recovery; IPC adapters declare the affected `ChangeScope`
 
 Keep command handlers thin: open connection, optionally wrap remote hooks, call into this module.

@@ -23,7 +23,7 @@ use crate::{
     remote::control_db::{
         get_repository_state, upsert_repository_state, LocalState, RepositoryStateRow,
     },
-    remote::provider::RemoteProvider,
+    remote::provider::RepositoryStorage,
 };
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
@@ -33,9 +33,7 @@ use std::{
 };
 
 /// Sanitized error code string used when a downloaded candidate fails
-/// integrity or schema compatibility checks. The full typed error enum is
-/// PR #4's job; PR #3 persists/returns this stable string so recovery and UI
-/// can branch on it without coupling to a not-yet-defined enum.
+/// integrity or schema compatibility checks.
 pub const REMOTE_INTEGRITY_FAILED: &str = "remote_integrity_failed";
 
 /// Options describing a single atomic download + validation + rename.
@@ -109,7 +107,7 @@ impl From<AtomicDownloadError> for CommandError {
 /// On ANY failure after the temp file is created, the temp file is removed
 /// (best-effort) so no partial file lingers at a final-adjacent path.
 pub(crate) fn atomic_download(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     opts: AtomicDownloadOptions,
 ) -> CommandResult<()> {
     let temp_path = part_path(opts.destination, opts.operation_id);
@@ -137,7 +135,7 @@ pub(crate) fn atomic_download(
 }
 
 fn run_atomic_download(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     opts: AtomicDownloadOptions,
     temp_path: &Path,
 ) -> CommandResult<()> {
@@ -247,7 +245,7 @@ pub(crate) struct ResumableDownloadOptions<'a> {
 /// resume against a non-existent partial.
 #[allow(dead_code)]
 pub(crate) fn resumable_atomic_download(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     opts: ResumableDownloadOptions,
 ) -> CommandResult<()> {
     let temp_path = part_path(opts.destination, opts.operation_id);
@@ -261,7 +259,7 @@ pub(crate) fn resumable_atomic_download(
         })?;
     }
 
-    let caps = provider.capabilities();
+    let caps = provider.media_source().capabilities();
     let existing_part =
         crate::remote::control_db::list_transfer_parts(opts.control_db, opts.operation_id)?
             .into_iter()
@@ -340,7 +338,7 @@ pub(crate) fn resumable_atomic_download(
 /// destination — callers that need SQLite integrity / LKG activation (database
 /// pulls) validate the part file themselves, then rename.
 fn download_to_part_resumable(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     control_db: &Connection,
     relative_path: &str,
     temp_path: &Path,
@@ -348,6 +346,7 @@ fn download_to_part_resumable(
     expected_digest: Option<&str>,
     operation_id: &str,
 ) -> CommandResult<()> {
+    let media_source = provider.media_source();
     if let Some(parent) = temp_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             internal_error(format!(
@@ -392,7 +391,7 @@ fn download_to_part_resumable(
 
     while offset < expected_size {
         let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(expected_size - offset);
-        let verified_bytes = provider
+        let verified_bytes = media_source
             .download_range(relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
                 // Persist progress before returning so a restart resumes.
@@ -451,11 +450,12 @@ fn download_to_part_resumable(
 
 #[allow(dead_code)]
 fn run_resumable_download(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     opts: &ResumableDownloadOptions,
     temp_path: &Path,
     existing: &crate::remote::control_db::TransferPartRow,
 ) -> CommandResult<()> {
+    let media_source = provider.media_source();
     let mut offset = existing.transferred_bytes.max(0) as u64;
     let total = opts.expected_size;
 
@@ -488,7 +488,7 @@ fn run_resumable_download(
     while offset < total {
         let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(total - offset);
         let chunk_start = offset;
-        let verified_bytes = provider
+        let verified_bytes = media_source
             .download_range(opts.relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
                 // Streaming providers leave durable bytes on a mid-chunk
@@ -706,7 +706,7 @@ pub(crate) struct DatabasePullResult {
 /// untouched and the last-known-good remains usable. A
 /// [`REMOTE_INTEGRITY_FAILED`] error code is returned.
 pub(crate) fn atomic_database_pull(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     control_db_conn: &Connection,
     library_root: &LibraryRoot,
     opts: DatabasePullOptions,
@@ -749,14 +749,14 @@ pub(crate) fn atomic_database_pull(
 }
 
 fn run_database_pull(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
     control_db_conn: &Connection,
     destination: &Path,
     temp_path: &Path,
     opts: &DatabasePullOptions,
 ) -> CommandResult<DatabasePullResult> {
     if let Some(expected_size) = opts.expected_size {
-        if provider.capabilities().range_download {
+        if provider.media_source().capabilities().range_download {
             download_to_part_resumable(
                 provider,
                 control_db_conn,
@@ -896,7 +896,6 @@ fn last_known_good_path(db_path: &Path) -> PathBuf {
 /// Open the candidate SQLite file read-only and run `PRAGMA quick_check` and
 /// `PRAGMA foreign_key_check`. Reject on any failure with a
 /// `remote_integrity_failed` error.
-// used by PR#4: executor integrity checks on the candidate DB
 pub(crate) fn verify_sqlite_integrity_pub(candidate: &Path) -> CommandResult<()> {
     verify_sqlite_integrity(candidate)
 }
@@ -978,8 +977,6 @@ fn verify_schema_compatibility(candidate: &Path) -> CommandResult<()> {
 }
 
 fn integrity_error(detail: impl std::fmt::Display) -> CommandError {
-    // The full typed error enum is PR #4's job. PR #3 uses this stable code
-    // string so recovery and UI can branch without coupling to a future enum.
     internal_error(format!("{REMOTE_INTEGRITY_FAILED}: {detail}"))
 }
 
@@ -1209,7 +1206,11 @@ mod tests {
         }
     }
 
-    impl crate::remote::provider::RemoteProvider for FakeProvider {
+    impl crate::remote::provider::RepositoryStorage for FakeProvider {
+        fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
+            self
+        }
+
         fn get_revision(&self, _relative_path: &str) -> CommandResult<Option<String>> {
             Ok(Some("rev-1".to_owned()))
         }
@@ -1297,6 +1298,18 @@ mod tests {
         fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
             Ok(None)
         }
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl crate::remote::provider::RemoteMediaSource for FakeProvider {
+        fn capabilities(&self) -> crate::remote::provider::RemoteMediaSourceCapabilities {
+            crate::remote::provider::RemoteMediaSourceCapabilities {
+                range_download: false,
+            }
+        }
+
         fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
             Ok(self
                 .sizes
@@ -1311,9 +1324,6 @@ mod tests {
                         .get(relative_path)
                         .map(|d| d.len() as u64)
                 }))
-        }
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -1929,15 +1939,18 @@ mod tests {
         }
     }
 
-    impl crate::remote::provider::RemoteProvider for ResumableFakeProvider {
+    impl crate::remote::provider::RepositoryStorage for ResumableFakeProvider {
         fn capabilities(&self) -> crate::remote::errors::RemoteProviderCapabilities {
             crate::remote::errors::RemoteProviderCapabilities {
                 conditional_replace: false,
                 resumable_upload: false,
-                range_download: true,
                 revision_metadata: true,
                 server_side_move: false,
             }
+        }
+
+        fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
+            self
         }
 
         fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
@@ -1961,6 +1974,27 @@ mod tests {
                     "fake provider write failed: {e}"
                 )))
             })
+        }
+
+        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl crate::remote::provider::RemoteMediaSource for ResumableFakeProvider {
+        fn capabilities(&self) -> crate::remote::provider::RemoteMediaSourceCapabilities {
+            crate::remote::provider::RemoteMediaSourceCapabilities {
+                range_download: true,
+            }
         }
 
         fn download_range(
@@ -2046,15 +2080,6 @@ mod tests {
             Ok(to_write.len() as u64)
         }
 
-        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
         fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
             Ok(self
                 .files
@@ -2062,9 +2087,6 @@ mod tests {
                 .unwrap()
                 .get(relative_path)
                 .map(|d| d.len() as u64))
-        }
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 

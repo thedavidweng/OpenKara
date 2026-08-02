@@ -31,7 +31,8 @@ export interface RemoteLibraryFlowApi {
   createRemoteLibrary: typeof api.createRemoteLibrary;
   resolveRemoteLibraryCandidate: typeof api.resolveRemoteLibraryCandidate;
   registerRemoteLibrary: typeof api.registerRemoteLibrary;
-  reauthorizeRemoteLibrary: typeof api.reauthorizeRemoteLibrary;
+  reauthorizeRemoteRepository: typeof api.reauthorizeRemoteRepository;
+  relocateRemoteRepository: typeof api.relocateRemoteRepository;
   cancelRemoteAuth: typeof api.cancelRemoteAuth;
 }
 
@@ -52,7 +53,7 @@ export interface RunRemoteLibraryRegistrationFlowOptions {
   libraryId?: string;
   existingRemoteRootLocator?: string;
   existingRemotePathDisplay?: string;
-  allowRelocation?: boolean;
+  relocate?: boolean;
   webdav?: WebDavRemoteLibraryFields;
   remoteApi?: RemoteLibraryFlowApi;
   isCancelled?: () => boolean;
@@ -74,7 +75,8 @@ const defaultRemoteLibraryFlowApi: RemoteLibraryFlowApi = {
   createRemoteLibrary: api.createRemoteLibrary,
   resolveRemoteLibraryCandidate: api.resolveRemoteLibraryCandidate,
   registerRemoteLibrary: api.registerRemoteLibrary,
-  reauthorizeRemoteLibrary: api.reauthorizeRemoteLibrary,
+  reauthorizeRemoteRepository: api.reauthorizeRemoteRepository,
+  relocateRemoteRepository: api.relocateRemoteRepository,
   cancelRemoteAuth: api.cancelRemoteAuth,
 };
 
@@ -159,7 +161,7 @@ export async function runRemoteLibraryRegistrationFlow({
   libraryId,
   existingRemoteRootLocator,
   existingRemotePathDisplay,
-  allowRelocation = false,
+  relocate = false,
   webdav,
   remoteApi = defaultRemoteLibraryFlowApi,
   isCancelled,
@@ -238,13 +240,19 @@ export async function runRemoteLibraryRegistrationFlow({
             );
     const nextDisplayName = displayName.trim() || candidate.display_name;
     const registry = libraryId
-      ? await remoteApi.reauthorizeRemoteLibrary(
-          libraryId,
-          start.session_id,
-          candidate.remote_root_locator,
-          nextDisplayName,
-          allowRelocation,
-        )
+      ? await (relocate
+          ? remoteApi.relocateRemoteRepository(
+              libraryId,
+              start.session_id,
+              candidate.remote_root_locator,
+              nextDisplayName,
+            )
+          : remoteApi.reauthorizeRemoteRepository(
+              libraryId,
+              start.session_id,
+              candidate.remote_root_locator,
+              nextDisplayName,
+            ))
       : await remoteApi.registerRemoteLibrary(
           start.session_id,
           candidate.remote_root_locator,

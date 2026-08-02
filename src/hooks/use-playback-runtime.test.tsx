@@ -3,34 +3,74 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
-import { useLibraryStore } from "@/stores/library-store";
+import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
+import { createRecordingRuntimeEventSource } from "@/runtime/event-source";
 import type {
+  CommandError,
   PlaybackPositionEvent,
   PlaybackStateSnapshot,
-  SeparationCompleteEvent,
-  SeparationErrorEvent,
   SeparationProgressEvent,
-  TrackTransitionedEvent,
+  SeparationStatusSnapshot,
 } from "@/types/ipc";
+import { useEventSubscriptions } from "./use-event-subscription";
+
+function commandError(message: string): CommandError {
+  return {
+    code: "internal",
+    message,
+    retryable: false,
+    fallback: "show_empty_state",
+  };
+}
+
+function playbackSnapshot(songId: string): PlaybackStateSnapshot {
+  return {
+    song_id: songId,
+    transport_generation: 1,
+    state: "idle",
+    is_playing: false,
+    position_ms: 0,
+    duration_ms: 10_000,
+    buffered_ms: 10_000,
+    volume: 1,
+    stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+    has_stems: false,
+    stem_mode: null,
+  };
+}
+
+function completedSeparationStatus(
+  songId: string,
+  cacheHit: boolean,
+): SeparationStatusSnapshot {
+  return {
+    song_id: songId,
+    state: "completed",
+    percent: 100,
+    cache_hit: cacheHit,
+    vocals_path: null,
+    accomp_path: null,
+    drums_path: null,
+    bass_path: null,
+    other_path: null,
+    model_variant: null,
+    error: null,
+  };
+}
 
 const {
-  mockListen,
   mockSetPreloadCandidate,
   mockNotifyError,
   mockNotifySuccess,
   mockNotifyWhenUnfocused,
 } = vi.hoisted(() => ({
-  mockListen: vi.fn(),
   mockSetPreloadCandidate: vi.fn(),
   mockNotifyError: vi.fn(),
   mockNotifySuccess: vi.fn(),
   mockNotifyWhenUnfocused: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: mockListen,
 }));
 
 vi.mock("@/lib/tauri", async (importOriginal) => {
@@ -50,14 +90,46 @@ vi.mock("@/lib/notifications", () => ({
   notifyWhenUnfocused: mockNotifyWhenUnfocused,
 }));
 
+const initialPlayerActions = usePlayerStore.getState();
+const initialLibraryActions = useLibraryStore.getState();
+type RecordingRuntimeEventSource = ReturnType<
+  typeof createRecordingRuntimeEventSource
+>;
+let runtimeSource: RecordingRuntimeEventSource =
+  createRecordingRuntimeEventSource();
 const unmountFns: Array<() => void> = [];
+
+beforeEach(() => {
+  runtimeSource = createRecordingRuntimeEventSource();
+  mockSetPreloadCandidate.mockReset();
+  mockSetPreloadCandidate.mockResolvedValue(undefined);
+  mockNotifyError.mockReset();
+  mockNotifySuccess.mockReset();
+  mockNotifyWhenUnfocused.mockReset();
+  mockNotifyWhenUnfocused.mockResolvedValue(undefined);
+
+  usePlayerStore.setState({
+    snapshot: null,
+    positionMs: 0,
+    loadStems: initialPlayerActions.loadStems,
+    applyPlaybackPositionEvent: initialPlayerActions.applyPlaybackPositionEvent,
+    onTrackTransitioned: initialPlayerActions.onTrackTransitioned,
+  });
+  useLibraryStore.setState({
+    songs: [],
+    batchSeparation: null,
+    updateSeparationStatus: initialLibraryActions.updateSeparationStatus,
+    updateUploadStatus: initialLibraryActions.updateUploadStatus,
+    clearUploadStatus: initialLibraryActions.clearUploadStatus,
+  });
+  useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
+  useRemotePlaybackStore.getState().reset();
+});
 
 afterEach(() => {
   while (unmountFns.length > 0) {
-    const unmount = unmountFns.pop()!;
-    act(() => {
-      unmount();
-    });
+    const unmount = unmountFns.pop();
+    unmount?.();
   }
 });
 
@@ -67,6 +139,7 @@ async function renderHook(fn: () => void) {
   const root = createRoot(container);
   await act(async () => {
     root.render(<HookHarness hookFn={fn} />);
+    await Promise.resolve();
   });
   const unmount = () => {
     act(() => {
@@ -85,746 +158,243 @@ function HookHarness({ hookFn }: { hookFn: () => void }) {
 
 describe("use-playback-runtime wiring", () => {
   test("routes upload events into the library store", async () => {
-    // useEventListeners mounts the whole runtime graph, including the preload
-    // scheduler, so its IPC stub has to resolve.
-    mockSetPreloadCandidate.mockResolvedValue(undefined);
     const updateUploadStatus = vi.fn();
     const clearUploadStatus = vi.fn();
-    useLibraryStore.setState({
-      updateUploadStatus,
-      clearUploadStatus,
-    } as never);
-
-    const listeners = new Map<string, (payload: unknown) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, (payload) => handler({ payload }));
-        return () => {};
-      },
-    );
+    useLibraryStore.setState({ updateUploadStatus, clearUploadStatus });
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
+    await renderHook(() => useEventListeners(true, runtimeSource));
 
-    listeners.get("upload-progress")!({ song_id: "song-a", percent: 40 });
-    expect(updateUploadStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ song_id: "song-a", state: "running" }),
-    );
-
-    updateUploadStatus.mockClear();
-    listeners.get("upload-error")!({
-      song_id: "song-a",
-      error: "upload failed",
+    await act(async () => {
+      runtimeSource.emit("upload-progress", { song_id: "song-a", percent: 40 });
+      runtimeSource.emit("upload-error", {
+        song_id: "song-a",
+        error: commandError("upload failed"),
+      });
     });
-    expect(updateUploadStatus).toHaveBeenCalledWith(
+
+    expect(updateUploadStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({ song_id: "song-a", state: "failed" }),
     );
-    expect(mockNotifyError).toHaveBeenCalledWith("upload failed");
+    expect(mockNotifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "upload failed" }),
+    );
   });
 });
 
-describe("playback-position listener cleanup when unmount races listen()", () => {
-  test("setup function checks cancelled flag after await listen (RED)", async () => {
-    const { default: src } = await import("./use-playback-runtime.ts?raw");
+describe("runtime event subscription cleanup", () => {
+  test("unlistens when registration resolves after unmount", async () => {
+    let resolveSubscription: ((unlisten: () => void) => void) | undefined;
+    const unlisten = vi.fn();
+    const subscription = {
+      subscribe: () =>
+        new Promise<() => void>((resolve) => {
+          resolveSubscription = resolve;
+        }),
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
 
-    const setupMatch = src.match(
-      /unlisten\s*=\s*await\s+listen[\s\S]*?\n\s*\}\s*\n/,
-    );
-    expect(setupMatch).not.toBeNull();
+    await act(async () => {
+      root.render(
+        <HookHarness
+          hookFn={() => useEventSubscriptions([subscription], true)}
+        />,
+      );
+    });
+    await act(async () => {
+      root.unmount();
+      resolveSubscription?.(unlisten);
+      await Promise.resolve();
+    });
 
-    const afterListen = src.slice(
-      src.indexOf("unlisten = await listen"),
-      src.indexOf("void setup()"),
-    );
-    expect(afterListen).toContain("if (cancelled)");
-    expect(afterListen).toContain("unlisten()");
+    expect(unlisten).toHaveBeenCalledOnce();
+    container.remove();
   });
 });
 
 describe("usePreloadCandidateEffect", () => {
-  beforeEach(() => {
-    mockListen.mockReset();
-    mockListen.mockImplementation(async () => () => {});
-    mockSetPreloadCandidate.mockReset();
-    mockSetPreloadCandidate.mockResolvedValue(undefined);
-    mockNotifyError.mockReset();
-    mockNotifySuccess.mockReset();
-    mockNotifyWhenUnfocused.mockReset();
-    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-    });
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
-  });
-
-  test("calls setPreloadCandidate with the queue head when no song is playing", async () => {
+  test("selects the next queue item for preload", async () => {
     useQueueStore.setState({ queue: ["song-a", "song-b"] });
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
+    usePlayerStore.setState({ snapshot: playbackSnapshot("song-a") });
 
-    expect(mockSetPreloadCandidate).toHaveBeenCalledWith("song-a");
-  });
-
-  test("skips the queue head when it is the currently playing song", async () => {
-    usePlayerStore.setState({
-      snapshot: { song_id: "song-a" } as never,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-    });
-    useQueueStore.setState({ queue: ["song-a", "song-b"] });
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
+    await renderHook(() => useEventListeners(true, runtimeSource));
 
     expect(mockSetPreloadCandidate).toHaveBeenCalledWith("song-b");
   });
 
-  test("calls setPreloadCandidate with null when the queue is empty", async () => {
+  test("selects the queue head when no song is playing", async () => {
+    useQueueStore.setState({ queue: ["song-a", "song-b"] });
+
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
+    await renderHook(() => useEventListeners(true, runtimeSource));
+
+    expect(mockSetPreloadCandidate).toHaveBeenCalledWith("song-a");
+  });
+
+  test("uses null when the queue is empty", async () => {
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true, runtimeSource));
 
     expect(mockSetPreloadCandidate).toHaveBeenCalledWith(null);
   });
 
-  test("does not call setPreloadCandidate when disabled", async () => {
+  test("does not run when the runtime is disabled", async () => {
     useQueueStore.setState({ queue: ["song-a"] });
-    mockListen.mockImplementation(async () => () => {});
     const { useEventListeners } = await import("./use-playback-runtime");
-    const unmount = await renderHook(() => useEventListeners(false));
-
-    await act(async () => {});
+    await renderHook(() => useEventListeners(false, runtimeSource));
 
     expect(mockSetPreloadCandidate).not.toHaveBeenCalled();
-    unmount();
   });
 });
 
-describe("useTrackTransitionedQueueReconcile", () => {
-  beforeEach(() => {
-    mockListen.mockReset();
-    mockListen.mockImplementation(async () => () => {});
-    mockSetPreloadCandidate.mockReset();
-    mockSetPreloadCandidate.mockResolvedValue(undefined);
-    mockNotifyError.mockReset();
-    mockNotifySuccess.mockReset();
-    mockNotifyWhenUnfocused.mockReset();
-    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-    });
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
-  });
-
-  test("forwards track-transitioned events to onTrackTransitioned", async () => {
+describe("playback event modules", () => {
+  test("routes track transitions to the player store", async () => {
     const onTrackTransitioned = vi.fn();
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-      onTrackTransitioned,
-    });
-
-    // Stub listen to capture handlers for all events
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+    usePlayerStore.setState({ onTrackTransitioned });
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("track-transitioned");
-    expect(handler).not.toBeUndefined();
-
-    const event: TrackTransitionedEvent = {
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("track-transitioned", {
       transition_serial: 1,
       from_song_id: "song-a",
       to_song_id: "song-b",
-    };
-    handler!({ payload: event });
+    });
 
     expect(onTrackTransitioned).toHaveBeenCalledWith("song-a", "song-b");
   });
-});
 
-describe("usePlaybackPositionSubscription", () => {
-  beforeEach(() => {
-    mockListen.mockReset();
-    mockListen.mockImplementation(async () => () => {});
-    mockSetPreloadCandidate.mockReset();
-    mockSetPreloadCandidate.mockResolvedValue(undefined);
-    mockNotifyError.mockReset();
-    mockNotifySuccess.mockReset();
-    mockNotifyWhenUnfocused.mockReset();
-    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-    });
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
-  });
-
-  test("forwards playback-position events to applyPlaybackPositionEvent", async () => {
+  test("routes playback positions to the player store", async () => {
     const applyPlaybackPositionEvent = vi.fn();
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-      applyPlaybackPositionEvent,
-    });
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+    usePlayerStore.setState({ applyPlaybackPositionEvent });
+    const snapshot = playbackSnapshot("song-a");
+    const event: PlaybackPositionEvent = {
+      ms: 5_000,
+      transport_generation: 1,
+      snapshot: { ...snapshot, is_playing: true, position_ms: 5_000 },
+    };
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("playback-position");
-    expect(handler).not.toBeUndefined();
-
-    const snapshot: PlaybackStateSnapshot = {
-      song_id: "song-a",
-      transport_generation: 1,
-      state: "playing",
-      is_playing: true,
-      position_ms: 5000,
-      duration_ms: 10000,
-      buffered_ms: 8000,
-      volume: 1,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false,
-      stem_mode: null,
-    };
-    const event: PlaybackPositionEvent = {
-      ms: 5000,
-      transport_generation: 1,
-      snapshot,
-    };
-    handler!({ payload: event });
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("playback-position", event);
 
     expect(applyPlaybackPositionEvent).toHaveBeenCalledWith(event);
   });
-
-  test("cleans up the listener when cancelled before listen resolves", async () => {
-    const unlisten = vi.fn();
-    let resolveListen: ((un: () => void) => void) | null = null;
-    mockListen.mockImplementation(async (eventName: string) => {
-      if (eventName === "playback-position") {
-        return new Promise((resolve) => {
-          resolveListen = resolve;
-        });
-      }
-      return () => {};
-    });
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    const unmount = await renderHook(() => useEventListeners(true));
-
-    // Unmount before listen resolves — the cancelled flag should be set
-    unmount();
-
-    await act(async () => {
-      resolveListen!(unlisten);
-    });
-
-    expect(unlisten).toHaveBeenCalled();
-  });
 });
 
-describe("useSeparationEvents", () => {
-  beforeEach(() => {
-    mockListen.mockReset();
-    mockListen.mockImplementation(async () => () => {});
-    mockSetPreloadCandidate.mockReset();
-    mockSetPreloadCandidate.mockResolvedValue(undefined);
-    mockNotifyError.mockReset();
-    mockNotifySuccess.mockReset();
-    mockNotifyWhenUnfocused.mockReset();
-    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
-    usePlayerStore.setState({
-      snapshot: null,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
-    });
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
-  });
-
-  test("loads stems when separation-complete matches the current song", async () => {
+describe("separation event modules", () => {
+  test("loads stems for the current song after separation", async () => {
     const loadStems = vi.fn().mockResolvedValue(undefined);
     const updateSeparationStatus = vi.fn();
     usePlayerStore.setState({
-      snapshot: { song_id: "song-a" } as never,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
+      snapshot: playbackSnapshot("song-a"),
       loadStems,
     });
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+    useLibraryStore.setState({ updateSeparationStatus });
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-complete");
-    expect(handler).not.toBeUndefined();
-
-    const event: SeparationCompleteEvent = {
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("separation-complete", {
       song_id: "song-a",
-      status: { state: "complete", progress: 1 },
-    } as never;
-    handler!({ payload: event });
+      status: completedSeparationStatus("song-a", true),
+    });
 
     expect(updateSeparationStatus).toHaveBeenCalled();
     expect(loadStems).toHaveBeenCalled();
+    expect(mockNotifySuccess).toHaveBeenCalledOnce();
   });
 
-  test("does not load stems when separation-complete is for a different song", async () => {
+  test("does not load stems for a different song", async () => {
     const loadStems = vi.fn().mockResolvedValue(undefined);
     const updateSeparationStatus = vi.fn();
     usePlayerStore.setState({
-      snapshot: { song_id: "song-a" } as never,
-      positionMs: 0,
-      localAudienceOutputActive: false,
-      airPlayPlainTextPagePending: false,
-      airPlayPlainTextPagePendingDirection: null,
-      airPlayOutput: {
-        active: false,
-        audioActive: false,
-        routeName: null,
-        mode: "idle",
-        phase: "idle",
-        detail: null,
-        displayedPositionMs: null,
-        streamGeneration: 0,
-        latencyMs: null,
-      },
+      snapshot: playbackSnapshot("song-a"),
       loadStems,
     });
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+    useLibraryStore.setState({ updateSeparationStatus });
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-complete");
-    const event: SeparationCompleteEvent = {
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("separation-complete", {
       song_id: "song-b",
-      status: { state: "complete", progress: 1 },
-    } as never;
-    handler!({ payload: event });
+      status: completedSeparationStatus("song-b", false),
+    });
 
     expect(updateSeparationStatus).toHaveBeenCalled();
     expect(loadStems).not.toHaveBeenCalled();
   });
 
-  test("notifies on separation-error events", async () => {
+  test("notifies on separation errors and records cancellation", async () => {
     const updateSeparationStatus = vi.fn();
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+    useLibraryStore.setState({ updateSeparationStatus });
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-error");
-    expect(handler).not.toBeUndefined();
-
-    const event: SeparationErrorEvent = {
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("separation-error", {
       song_id: "song-a",
-      error: "decode failed",
-    } as never;
-    handler!({ payload: event });
+      error: commandError("decode failed"),
+    });
+    runtimeSource.emit("separation-cancelled", { song_id: "song-a" });
 
-    expect(updateSeparationStatus).toHaveBeenCalled();
-    expect(mockNotifyError).toHaveBeenCalledWith("decode failed");
-    expect(mockNotifyWhenUnfocused).toHaveBeenCalledWith(
-      "Separation failed",
-      expect.any(String),
-    );
-  });
-
-  test("resets separation status to idle on separation-cancelled events", async () => {
-    const updateSeparationStatus = vi.fn();
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-cancelled");
-    expect(handler).not.toBeUndefined();
-
-    handler!({ payload: { song_id: "song-a" } });
-
-    expect(updateSeparationStatus).toHaveBeenCalledWith(
+    expect(updateSeparationStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({ song_id: "song-a", state: "idle" }),
     );
-    expect(mockNotifyError).not.toHaveBeenCalled();
-  });
-
-  test("surfaces a cache-hit toast when separation-complete reports cache_hit", async () => {
-    const updateSeparationStatus = vi.fn();
-    const loadStems = vi.fn().mockResolvedValue(undefined);
-    usePlayerStore.setState({ loadStems } as never);
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-complete");
-    expect(handler).not.toBeUndefined();
-
-    handler!({
-      payload: {
-        song_id: "song-a",
-        status: { state: "completed", cache_hit: true },
-      },
-    });
-
-    expect(mockNotifySuccess).toHaveBeenCalledOnce();
-    expect(mockNotifyWhenUnfocused).not.toHaveBeenCalled();
-  });
-
-  test("stays silent per song while a batch is running", async () => {
-    const updateSeparationStatus = vi.fn();
-    const loadStems = vi.fn().mockResolvedValue(undefined);
-    usePlayerStore.setState({ loadStems } as never);
-    useLibraryStore.setState({
-      updateSeparationStatus,
-      songs: [{ hash: "song-a", title: "Bohemian Rhapsody" }],
-      batchSeparation: { total: 30, completed: 4, skipped: 0, failed: 0 },
-    } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    listeners.get("separation-complete")!({
-      payload: {
-        song_id: "song-a",
-        status: { state: "completed", cache_hit: false },
-      },
-    });
-    listeners.get("separation-error")!({
-      payload: { song_id: "song-a", error: "decode failed" },
-    });
-
-    // The batch posts one summary of its own; per-song alerts would make that
-    // dozens of pop-ups.
-    expect(mockNotifyWhenUnfocused).not.toHaveBeenCalled();
-
-    useLibraryStore.setState({ batchSeparation: null } as never);
-  });
-
-  test("posts a native notification naming the song when a fresh separation completes", async () => {
-    const updateSeparationStatus = vi.fn();
-    const loadStems = vi.fn().mockResolvedValue(undefined);
-    usePlayerStore.setState({ loadStems } as never);
-    useLibraryStore.setState({
-      updateSeparationStatus,
-      songs: [{ hash: "song-a", title: "Bohemian Rhapsody" }],
-    } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    listeners.get("separation-complete")!({
-      payload: {
-        song_id: "song-a",
-        status: { state: "completed", cache_hit: false },
-      },
-    });
-
-    expect(mockNotifySuccess).not.toHaveBeenCalled();
-    expect(mockNotifyWhenUnfocused).toHaveBeenCalledWith(
-      "Separation complete",
-      "Bohemian Rhapsody",
+    expect(mockNotifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "decode failed" }),
     );
   });
 
-  test("updates separation status on separation-progress events", async () => {
+  test("updates separation progress without changing other domains", async () => {
     const updateSeparationStatus = vi.fn();
-    useLibraryStore.setState({ updateSeparationStatus } as never);
-
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("separation-progress");
-    expect(handler).not.toBeUndefined();
-
-    const event: SeparationProgressEvent = {
+    useLibraryStore.setState({ updateSeparationStatus });
+    const progress: SeparationProgressEvent = {
       song_id: "song-a",
-      progress: 0.5,
-    } as never;
-    handler!({ payload: event });
-
-    expect(updateSeparationStatus).toHaveBeenCalled();
-  });
-
-  test("forwards remote-playback-reconnect events to the remote playback store", async () => {
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
+      percent: 50,
+    };
 
     const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    runtimeSource.emit("separation-progress", progress);
 
-    const handler = listeners.get("remote-playback-reconnect");
-    expect(handler).not.toBeUndefined();
+    expect(updateSeparationStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ song_id: "song-a", state: "running" }),
+    );
+  });
+});
 
-    handler!({
-      payload: {
-        song_id: "song-x",
-        request_id: 1,
-        attempt: 1,
-        max_attempts: 3,
-        reason: "503",
-      },
+describe("remote playback event module", () => {
+  test("forwards reconnect, resync, and failure events", async () => {
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true, runtimeSource));
+
+    runtimeSource.emit("remote-playback-reconnect", {
+      song_id: "song-x",
+      request_id: 1,
+      attempt: 1,
+      max_attempts: 3,
+      reason: "503",
     });
-
-    const { useRemotePlaybackStore } =
-      await import("@/stores/remote-playback-store");
     expect(useRemotePlaybackStore.getState().reconnectState).toBe(
       "reconnecting",
     );
     expect(useRemotePlaybackStore.getState().songId).toBe("song-x");
-    useRemotePlaybackStore.getState().reset();
-  });
 
-  test("forwards remote-playback-resync events to the remote playback store", async () => {
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("remote-playback-resync");
-    expect(handler).not.toBeUndefined();
-
-    handler!({
-      payload: {
-        song_id: "song-y",
-        requested_position_ms: 5000,
-        actual_position_ms: 4000,
-      },
+    runtimeSource.emit("remote-playback-resync", {
+      song_id: "song-y",
+      requested_position_ms: 5_000,
+      actual_position_ms: 4_000,
     });
-
-    const { useRemotePlaybackStore } =
-      await import("@/stores/remote-playback-store");
     expect(useRemotePlaybackStore.getState().reconnectState).toBe("resync");
-    expect(useRemotePlaybackStore.getState().resyncDeltaMs).toBe(1000);
-    useRemotePlaybackStore.getState().reset();
-  });
+    expect(useRemotePlaybackStore.getState().resyncDeltaMs).toBe(1_000);
 
-  test("forwards remote-playback-failed events to the remote playback store", async () => {
-    const listeners = new Map<string, (e: { payload: unknown }) => void>();
-    mockListen.mockImplementation(
-      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
-        listeners.set(eventName, handler);
-        return () => {};
-      },
-    );
-
-    const { useEventListeners } = await import("./use-playback-runtime");
-    await renderHook(() => useEventListeners(true));
-
-    const handler = listeners.get("remote-playback-failed");
-    expect(handler).not.toBeUndefined();
-
-    handler!({
-      payload: {
-        song_id: "song-z",
-        request_id: 2,
-        reason: "permanent",
-      },
+    runtimeSource.emit("remote-playback-failed", {
+      song_id: "song-z",
+      request_id: 2,
+      reason: "permanent",
     });
-
-    const { useRemotePlaybackStore } =
-      await import("@/stores/remote-playback-store");
     expect(useRemotePlaybackStore.getState().reconnectState).toBe("failed");
     expect(useRemotePlaybackStore.getState().reason).toBe("permanent");
-    useRemotePlaybackStore.getState().reset();
   });
 });

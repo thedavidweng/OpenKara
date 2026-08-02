@@ -657,6 +657,7 @@
     "invalid_playback_state": "Ошибка воспроизведения",
     "separation_failed": "Ошибка разделения",
     "internal": "Внутренняя ошибка",
+    "remote_repository_unavailable": "Удалённый репозиторий недоступен",
     "somethingWentWrong": "Что-то пошло не так"
   },
   "updater": {

@@ -68,6 +68,19 @@ _Avoid_: Conflict merge, background sync
 A safety stop. It occurs when the remote revision changes after the local edit. This happens before OpenKara publishes the result.
 _Avoid_: Sync failure, upload error
 
+**Release Candidate**:
+The exact signed artifact set that OpenKara proposes to publish. A Release
+Candidate has one commit, version, target set, and byte identity.
+
+**Release Evidence**:
+The recorded proof that a Release Candidate passed its required installed-app
+scenarios. Release Evidence names the candidate subject and its artifact
+digests.
+
+**Lyrics Acquisition**:
+The action that finds, parses, and stores the best available lyrics for a
+song. It follows the fixed source order and records the winning source.
+
 ## Relationships
 
 - A **Remote Repository** belongs to exactly one **Remote Provider** account and one **Remote Repository Location**.

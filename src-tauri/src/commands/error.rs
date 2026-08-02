@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     DatabaseUnavailable,
+    RemoteRepositoryUnavailable,
     MediaReadFailed,
     SongNotFound,
     ModelUnavailable,
@@ -60,6 +61,15 @@ impl CommandError {
 pub fn database_error(message: impl ToString) -> CommandError {
     CommandError::new(
         ErrorCode::DatabaseUnavailable,
+        message.to_string(),
+        true,
+        FallbackAction::Retry,
+    )
+}
+
+pub fn remote_repository_unavailable(message: impl ToString) -> CommandError {
+    CommandError::new(
+        ErrorCode::RemoteRepositoryUnavailable,
         message.to_string(),
         true,
         FallbackAction::Retry,

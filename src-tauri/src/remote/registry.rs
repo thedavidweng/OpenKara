@@ -13,7 +13,7 @@ use std::{fs, path::Path};
 
 use super::{
     auth_binding::BindContext,
-    provider::{compute_remote_path_display, create_provider},
+    provider::{compute_remote_path_display, create_repository_storage},
     types::{
         current_unix_time_ms, delete_remote_credential, load_app_config, persist_app_config,
         remote_libraries_dir, remote_library_id, remote_library_root, ProviderSessionData,
@@ -128,12 +128,38 @@ pub(crate) fn resolve_remote_library_candidate(
     Ok(candidate_from_session(&session_id, session, &display_name))
 }
 
-fn take_ready_session_binding(
+fn ready_session_binding(
+    state: &AppState,
+    session_id: &str,
+) -> CommandResult<(String, RemoteLibraryProvider, ProviderSessionData)> {
+    let sessions = state
+        .remote
+        .remote_auth_sessions
+        .lock()
+        .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
+    let session = sessions.get(session_id).ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(format!(
+            "remote auth session {session_id} was not found"
+        )))
+    })?;
+    if session.state != RemoteAuthState::Ready {
+        return Err(CommandError::from(LibraryError::Internal(
+            "remote auth session is not ready".to_owned(),
+        )));
+    }
+    Ok((
+        session.account_id.clone(),
+        session.provider,
+        session.session.clone(),
+    ))
+}
+
+fn mark_session_binding(
     state: &AppState,
     session_id: &str,
     remote_root_locator: &str,
     display_name: &str,
-) -> CommandResult<(String, RemoteLibraryProvider, ProviderSessionData)> {
+) -> CommandResult<()> {
     let mut sessions = state
         .remote
         .remote_auth_sessions
@@ -144,15 +170,10 @@ fn take_ready_session_binding(
             "remote auth session {session_id} was not found"
         )))
     })?;
-    let account_id = session.account_id.clone();
-    let provider = session.provider;
-    // Clone session data: register/reauthorize may still need the stored session
-    // for display, and OAuth workers may have updated tokens in place.
-    let provider_session = session.session.clone();
     session.state = RemoteAuthState::Ready;
     session.remote_root_locator = Some(remote_root_locator.to_owned());
     session.display_name = Some(display_name.to_owned());
-    Ok((account_id, provider, provider_session))
+    Ok(())
 }
 
 pub(crate) fn register_remote_library(
@@ -181,8 +202,7 @@ pub(crate) fn register_remote_library(
         .or(default_display_name)
         .unwrap_or_else(|| "Remote Repository".to_owned());
 
-    let (account_id, provider, provider_session) =
-        take_ready_session_binding(state, &session_id, &remote_root_locator, &display_name)?;
+    let (account_id, provider, provider_session) = ready_session_binding(state, &session_id)?;
 
     fs::create_dir_all(remote_libraries_dir(app_data_dir)).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
@@ -219,7 +239,7 @@ pub(crate) fn register_remote_library(
         Some(library_root.database_path().display().to_string()),
         None,
     );
-    let remote_provider = create_provider(app_data_dir, &provisional_library)?;
+    let remote_provider = create_repository_storage(app_data_dir, &provisional_library)?;
     // CreateOrOpen: first attach may create marker/layout and seed openkara.db.
     let remote_revision = remote_provider.initialize_or_sync()?;
     let library = RegisteredLibrary::remote(
@@ -268,14 +288,53 @@ pub(crate) fn register_remote_library(
     })
 }
 
-pub(crate) fn reauthorize_remote_library(
+enum RepositoryRecoveryAction {
+    Reauthorize,
+    Relocate,
+}
+
+fn validate_recovery_request(
+    existing: &RegisteredLibrary,
+    provider: RemoteLibraryProvider,
+    account_id: &str,
+    remote_root_locator: &str,
+    action: &RepositoryRecoveryAction,
+) -> CommandResult<bool> {
+    if existing.provider() != Some(provider) {
+        return Err(CommandError::from(LibraryError::Internal(
+            "reauthorization provider does not match the remote repository".to_owned(),
+        )));
+    }
+    if provider != RemoteLibraryProvider::WebDav && existing.account_id() != Some(account_id) {
+        return Err(CommandError::from(LibraryError::Internal(
+            "reauthorization account does not match the remote repository".to_owned(),
+        )));
+    }
+
+    let is_relocation = existing.remote_root_locator() != Some(remote_root_locator);
+    match action {
+        RepositoryRecoveryAction::Reauthorize if is_relocation => {
+            Err(CommandError::from(LibraryError::Internal(
+                "Reauthorize Repository cannot change the Remote Repository Location.".to_owned(),
+            )))
+        }
+        RepositoryRecoveryAction::Relocate if !is_relocation => {
+            Err(CommandError::from(LibraryError::Internal(
+                "Relocate Repository requires a different Remote Repository Location.".to_owned(),
+            )))
+        }
+        _ => Ok(is_relocation),
+    }
+}
+
+fn update_remote_repository_credentials(
     state: &AppState,
     app_data_dir: &Path,
     library_id: String,
     session_id: String,
     remote_root_locator: String,
     display_name: String,
-    allow_relocation: bool,
+    action: RepositoryRecoveryAction,
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let config = load_app_config(app_data_dir)?;
     let existing = config
@@ -294,28 +353,15 @@ pub(crate) fn reauthorize_remote_library(
         ))));
     }
 
-    let (account_id, provider, provider_session) =
-        take_ready_session_binding(state, &session_id, &remote_root_locator, &display_name)?;
+    let (account_id, provider, provider_session) = ready_session_binding(state, &session_id)?;
 
-    if existing.provider() != Some(provider) {
-        return Err(CommandError::from(LibraryError::Internal(
-            "reauthorization provider does not match the remote repository".to_owned(),
-        )));
-    }
-    if provider != RemoteLibraryProvider::WebDav
-        && existing.account_id() != Some(account_id.as_str())
-    {
-        return Err(CommandError::from(LibraryError::Internal(
-            "reauthorization account does not match the remote repository".to_owned(),
-        )));
-    }
-    let is_relocation = existing.remote_root_locator() != Some(remote_root_locator.as_str());
-    if is_relocation && !allow_relocation {
-        return Err(CommandError::from(LibraryError::Internal(
-            "The selected location is different from the saved remote repository location."
-                .to_owned(),
-        )));
-    }
+    validate_recovery_request(
+        &existing,
+        provider,
+        &account_id,
+        &remote_root_locator,
+        &action,
+    )?;
 
     let root_path = existing.working_copy_root().ok_or_else(|| {
         CommandError::from(LibraryError::Internal(
@@ -341,10 +387,12 @@ pub(crate) fn reauthorize_remote_library(
         Some(root_path.join("openkara.db").display().to_string()),
         existing.remote_revision().map(str::to_owned),
     );
-    let remote_provider = create_provider(app_data_dir, &provisional_library)?;
+    let remote_provider = create_repository_storage(app_data_dir, &provisional_library)?;
     // RequireExisting: Reauthorize must open an already-initialized remote root
     // (marker + openkara.db), never silently create a new library layout.
     let remote_revision = remote_provider.refresh_existing()?;
+
+    mark_session_binding(state, &session_id, &remote_root_locator, &display_name)?;
 
     let mut config = load_app_config(app_data_dir)?;
     let updated_library = RegisteredLibrary::remote(
@@ -381,6 +429,44 @@ pub(crate) fn reauthorize_remote_library(
     })
 }
 
+pub(crate) fn reauthorize_remote_repository(
+    state: &AppState,
+    app_data_dir: &Path,
+    library_id: String,
+    session_id: String,
+    remote_root_locator: String,
+    display_name: String,
+) -> CommandResult<LibraryRegistrySnapshot> {
+    update_remote_repository_credentials(
+        state,
+        app_data_dir,
+        library_id,
+        session_id,
+        remote_root_locator,
+        display_name,
+        RepositoryRecoveryAction::Reauthorize,
+    )
+}
+
+pub(crate) fn relocate_remote_repository(
+    state: &AppState,
+    app_data_dir: &Path,
+    library_id: String,
+    session_id: String,
+    remote_root_locator: String,
+    display_name: String,
+) -> CommandResult<LibraryRegistrySnapshot> {
+    update_remote_repository_credentials(
+        state,
+        app_data_dir,
+        library_id,
+        session_id,
+        remote_root_locator,
+        display_name,
+        RepositoryRecoveryAction::Relocate,
+    )
+}
+
 pub(crate) fn remove_remote_library_credentials(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -390,4 +476,89 @@ pub(crate) fn remove_remote_library_credentials(
     }
     delete_remote_credential(app_data_dir, library.id())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repository() -> RegisteredLibrary {
+        RegisteredLibrary::remote(
+            "repository-id".to_owned(),
+            "Repository".to_owned(),
+            RemoteLibraryProvider::GoogleDrive,
+            "account-id".to_owned(),
+            "root-id".to_owned(),
+            "Repository".to_owned(),
+            None,
+            Some("/tmp/openkara-test-repository/openkara.db".to_owned()),
+            None,
+        )
+    }
+
+    #[test]
+    fn reauthorize_requires_the_same_location() {
+        assert_eq!(
+            validate_recovery_request(
+                &repository(),
+                RemoteLibraryProvider::GoogleDrive,
+                "account-id",
+                "root-id",
+                &RepositoryRecoveryAction::Reauthorize,
+            )
+            .unwrap(),
+            false
+        );
+        assert!(validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::GoogleDrive,
+            "account-id",
+            "new-root",
+            &RepositoryRecoveryAction::Reauthorize,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn relocate_requires_a_different_location() {
+        assert_eq!(
+            validate_recovery_request(
+                &repository(),
+                RemoteLibraryProvider::GoogleDrive,
+                "account-id",
+                "new-root",
+                &RepositoryRecoveryAction::Relocate,
+            )
+            .unwrap(),
+            true
+        );
+        assert!(validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::GoogleDrive,
+            "account-id",
+            "root-id",
+            &RepositoryRecoveryAction::Relocate,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn recovery_requires_matching_provider_and_account() {
+        assert!(validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::Dropbox,
+            "account-id",
+            "root-id",
+            &RepositoryRecoveryAction::Reauthorize,
+        )
+        .is_err());
+        assert!(validate_recovery_request(
+            &repository(),
+            RemoteLibraryProvider::GoogleDrive,
+            "other-account",
+            "root-id",
+            &RepositoryRecoveryAction::Reauthorize,
+        )
+        .is_err());
+    }
 }

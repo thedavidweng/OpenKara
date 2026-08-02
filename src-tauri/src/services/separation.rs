@@ -336,7 +336,8 @@ where
 /// can assert completion without remote I/O.
 pub fn publish_on_complete_default<R: Runtime>(app_handle: &AppHandle<R>, song_id: &str) {
     let state = app_handle.state::<AppState>();
-    let _ = remote::publish_song_to_active_remote_if_ready(&state, app_handle, song_id);
+    let _ = remote::PublishChanges::new(&state, app_handle)
+        .publish(&remote::ChangeScope::Songs(vec![song_id.to_owned()]));
 }
 
 pub fn get_separation_status_from_map(
@@ -1044,7 +1045,8 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
             status: completed.clone(),
         },
     );
-    remote::publish_song_to_active_remote_if_ready(state, app_handle, song_id)?;
+    let publication = remote::PublishChanges::new(state, app_handle);
+    publication.publish(&remote::ChangeScope::Songs(vec![song_id.to_owned()]))?;
 
     Ok(completed)
 }

@@ -8,7 +8,7 @@ use crate::remote::executor::{
     conflict_keep_local_as_new_generation, conflict_use_remote, pull_conflict_candidate,
     PublishContext,
 };
-use crate::remote::provider::create_provider;
+use crate::remote::provider::create_repository_storage;
 use crate::remote::types::load_app_config;
 use crate::AppState;
 
@@ -23,13 +23,7 @@ pub fn resolve_active_remote_conflict(
     state: &AppState,
     resolution: ConflictResolution,
 ) -> CommandResult<()> {
-    if state.remote.control_db_degraded {
-        return Err(CommandError::from(LibraryError::Internal(
-            "remote control database is unavailable; conflict resolution is \
-             disabled until the control plane is repaired"
-                .to_string(),
-        )));
-    }
+    state.remote.ensure_available()?;
 
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
@@ -50,7 +44,7 @@ pub fn resolve_active_remote_conflict(
     })?;
 
     let control_db =
-        state.remote.control_db.lock().map_err(|_| {
+        state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
 
@@ -74,7 +68,7 @@ pub fn resolve_active_remote_conflict(
         repo_state.writer_id.clone().unwrap_or_default(),
     );
 
-    let provider = create_provider(&state.shell.app_data_dir, active_library)?;
+    let provider = create_repository_storage(&state.shell.app_data_dir, active_library)?;
     let ctx = PublishContext {
         control_db: &control_db,
         provider: provider.as_ref(),

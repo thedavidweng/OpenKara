@@ -240,7 +240,7 @@ const LYRICS_COMMANDS: CommandContract[] = [
     frontendFile: "src/lib/tauri/lyrics.ts",
     frontendFn: "fetchLyricsOnline",
     hasArgs: true,
-    rustParams: ["song_id", "user_initiated"],
+    rustParams: ["song_id", "intent"],
   },
   {
     command: "save_manual_lyrics",
@@ -948,6 +948,7 @@ describe("CommandError shape matches Rust CommandError", () => {
   test("ErrorCode values match Rust ErrorCode enum", () => {
     const validCodes: CommandError["code"][] = [
       "database_unavailable",
+      "remote_repository_unavailable",
       "media_read_failed",
       "song_not_found",
       "model_unavailable",
@@ -960,8 +961,8 @@ describe("CommandError shape matches Rust CommandError", () => {
       "separation_failed",
       "internal",
     ];
-    // All 12 error codes from phase-5-error-contract.md
-    expect(validCodes).toHaveLength(12);
+    // All 13 error codes from the Rust ErrorCode enum.
+    expect(validCodes).toHaveLength(13);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }

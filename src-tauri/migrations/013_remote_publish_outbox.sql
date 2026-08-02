@@ -6,6 +6,7 @@
 CREATE TABLE IF NOT EXISTS remote_publish_outbox (
     operation_id TEXT PRIMARY KEY NOT NULL,
     song_ids_json TEXT NOT NULL,
+    whole_repository INTEGER NOT NULL DEFAULT 0,
     expected_generation INTEGER,
     source_db_digest TEXT,
     created_at_ms INTEGER NOT NULL,

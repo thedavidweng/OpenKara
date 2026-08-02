@@ -654,6 +654,7 @@
     "invalid_playback_state": "再生エラー",
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
+    "remote_repository_unavailable": "リモートリポジトリを利用できません",
     "somethingWentWrong": "問題が発生しました"
   },
   "updater": {

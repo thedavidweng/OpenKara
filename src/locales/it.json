@@ -656,6 +656,7 @@
     "invalid_playback_state": "Errore di riproduzione",
     "separation_failed": "Separazione non riuscita",
     "internal": "Errore interno",
+    "remote_repository_unavailable": "Repository remoto non disponibile",
     "somethingWentWrong": "Qualcosa è andato storto"
   },
   "updater": {

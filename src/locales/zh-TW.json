@@ -654,6 +654,7 @@
     "invalid_playback_state": "播放錯誤",
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
+    "remote_repository_unavailable": "遠端儲存庫無法使用",
     "somethingWentWrong": "發生錯誤"
   },
   "updater": {

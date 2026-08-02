@@ -426,11 +426,7 @@ pub(crate) fn load_remote_root(
             "remote repository is missing a cached working copy".to_string(),
         ))
     })?;
-    let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(internal_error)?
-    } else {
-        LibraryRoot::create(&root_path).map_err(internal_error)?
-    };
+    let root = LibraryRoot::open(&root_path).map_err(internal_error)?;
     cache::initialize_library_database(&root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 

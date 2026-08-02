@@ -1,10 +1,10 @@
 //! Versioned remote repository manifest.
 //!
 //! The manifest is the only visibility switch: a database file is not visible
-//! until the manifest references it. (PR #4 / issue #151)
+//! until the manifest references it.
 
 use crate::commands::error::{internal_error, CommandResult};
-use crate::remote::provider::RemoteProvider;
+use crate::remote::provider::RepositoryStorage;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -42,7 +42,7 @@ impl RepositoryManifest {
 }
 
 pub(crate) fn read_manifest(
-    provider: &dyn RemoteProvider,
+    provider: &dyn RepositoryStorage,
 ) -> CommandResult<Option<RepositoryManifest>> {
     // Use a unique temp path under the system temp dir. The manifest is small
     // (a few hundred bytes) so a full download is cheap. Include a UUID-like
@@ -131,7 +131,7 @@ pub(crate) fn database_directory_for_generation(generation: i64) -> String {
 }
 
 /// Two concurrent writers must never upload to the same object before
-/// manifest CAS. (PR #4)
+/// manifest CAS.
 pub(crate) fn database_path_for_operation(generation: i64, operation_id: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(operation_id.as_bytes());
@@ -194,6 +194,7 @@ pub(crate) fn staging_dir_for_operation(operation_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::remote::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -226,7 +227,11 @@ mod tests {
         }
     }
 
-    impl crate::remote::provider::RemoteProvider for FakeProvider {
+    impl crate::remote::provider::RepositoryStorage for FakeProvider {
+        fn media_source(&self) -> &dyn RemoteMediaSource {
+            self
+        }
+
         fn capabilities(&self) -> crate::remote::errors::RemoteProviderCapabilities {
             crate::remote::errors::RemoteProviderCapabilities::default()
         }
@@ -267,11 +272,20 @@ mod tests {
         fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
             Ok(None)
         }
-        fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
-            Ok(self.sizes.lock().unwrap().get(path).copied())
-        }
         fn refresh_existing(&self) -> CommandResult<Option<String>> {
             Ok(None)
+        }
+    }
+
+    impl RemoteMediaSource for FakeProvider {
+        fn capabilities(&self) -> RemoteMediaSourceCapabilities {
+            RemoteMediaSourceCapabilities {
+                range_download: false,
+            }
+        }
+
+        fn get_file_size(&self, path: &str) -> CommandResult<Option<u64>> {
+            Ok(self.sizes.lock().unwrap().get(path).copied())
         }
     }
 

@@ -655,6 +655,7 @@
     "invalid_playback_state": "Playback Error",
     "separation_failed": "Separation Failed",
     "internal": "Internal Error",
+    "remote_repository_unavailable": "Remote Repository Unavailable",
     "somethingWentWrong": "Something went wrong"
   },
   "updater": {

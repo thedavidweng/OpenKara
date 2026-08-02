@@ -655,6 +655,7 @@
     "invalid_playback_state": "Oynatma Hatası",
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
+    "remote_repository_unavailable": "Uzak depo kullanılamıyor",
     "somethingWentWrong": "Bir şeyler ters gitti"
   },
   "updater": {

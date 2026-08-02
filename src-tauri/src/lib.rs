@@ -24,6 +24,7 @@ pub mod lyrics;
 pub mod media_g;
 pub mod metadata;
 pub mod perf;
+pub mod release_evidence;
 pub mod remote;
 pub mod separator;
 pub mod services;
@@ -139,9 +140,10 @@ pub fn run() {
             commands::remote_library::create_remote_library,
             commands::remote_library::resolve_remote_library_candidate,
             commands::remote_library::register_remote_library,
-            commands::remote_library::reauthorize_remote_library,
+            commands::remote_library::reauthorize_remote_repository,
+            commands::remote_library::relocate_remote_repository,
             commands::remote_library::mirror_local_library_to_remote,
-            commands::remote_library::sync_active_remote_library,
+            commands::remote_library::refresh_remote_repository,
             commands::remote_library::resolve_remote_conflict,
             commands::remote_library::publish_song_to_remote,
             commands::remote_library::publish_songs_to_remote,

@@ -654,6 +654,7 @@
     "invalid_playback_state": "Lỗi phát",
     "separation_failed": "Tách thất bại",
     "internal": "Lỗi nội bộ",
+    "remote_repository_unavailable": "Kho lưu trữ từ xa không khả dụng",
     "somethingWentWrong": "Đã xảy ra lỗi"
   },
   "updater": {

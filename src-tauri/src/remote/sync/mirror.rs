@@ -9,10 +9,10 @@ use crate::{
 use std::collections::HashMap;
 use tauri::AppHandle;
 
-use super::super::provider::create_provider;
+use super::super::provider::create_repository_storage;
 use super::super::types::{load_app_config, load_remote_root, persist_app_config};
 
-use super::publish::{desired_remote_audio_source_kind, maybe_publish_songs_to_bound_remote};
+use super::publish::{desired_remote_audio_source_kind, publish_operation_internal};
 use super::revision::{
     load_registered_remote_library, prepare_remote_database_for_mutation, resolve_active_remote,
 };
@@ -22,7 +22,7 @@ pub(crate) fn remote_delete_relative_path(
     library: &RegisteredLibrary,
     relative_path: &str,
 ) -> CommandResult<()> {
-    let provider = create_provider(app_data_dir, library)?;
+    let provider = create_repository_storage(app_data_dir, library)?;
     provider.delete_path(relative_path)
 }
 
@@ -46,7 +46,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
     remote_library: &RegisteredLibrary,
 ) -> CommandResult<()> {
     let remote_library = {
-        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+        let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         prepare_remote_database_for_mutation(
@@ -173,33 +173,30 @@ fn sync_bound_remote<R: tauri::Runtime>(
         .into_iter()
         .filter_map(|song| desired_kinds.contains_key(&song.hash).then_some(song.hash))
         .collect();
-    maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids, None)?;
-
     let remote_library =
         load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
-    commit_mirror_via_executor(state, &remote_library)?;
+    commit_mirror_via_executor(state, app_handle, &remote_library, &desired_song_ids)?;
     Ok(())
 }
 
-fn commit_mirror_via_executor(
+fn commit_mirror_via_executor<R: tauri::Runtime>(
     state: &AppState,
+    app_handle: &AppHandle<R>,
     remote_library: &RegisteredLibrary,
+    desired_song_ids: &[String],
 ) -> CommandResult<()> {
     use crate::remote::control_db::{
-        get_operation, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
-        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+        get_operation, get_repository_state, list_operations_for_library, upsert_operation,
+        upsert_repository_state, LocalState, OperationKind, OperationPayload, OperationRow,
+        OperationState, RepositoryStateRow,
     };
-    use crate::remote::executor::{
-        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
-    };
+    use crate::remote::executor::{generate_repository_id, generate_writer_id};
 
-    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
-    let remote_root = load_remote_root(&state.shell.app_data_dir, remote_library)?;
     let library_id = remote_library.id();
     let now = crate::remote::types::current_unix_time_ms();
 
     let (repository_id, writer_id) = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let repo_state = get_repository_state(&conn, library_id)?;
@@ -239,10 +236,29 @@ fn commit_mirror_via_executor(
         (repository_id, writer_id)
     };
 
-    let operation_id = format!("mirror-{library_id}-{now}");
+    let operation_id = {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let mut pending_whole = list_operations_for_library(&conn, library_id)?
+            .into_iter()
+            .filter(|operation| {
+                operation.operation_kind == OperationKind::Publish
+                    && !operation.state.is_terminal()
+                    && OperationPayload::from_json(&operation.payload_json)
+                        .is_ok_and(|payload| payload.whole_repository)
+            })
+            .collect::<Vec<_>>();
+        pending_whole.sort_by_key(|operation| operation.created_at_ms);
+        pending_whole
+            .into_iter()
+            .next()
+            .map(|operation| operation.operation_id)
+            .unwrap_or_else(|| format!("mirror-{library_id}-{now}"))
+    };
 
     {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
 
@@ -255,6 +271,7 @@ fn commit_mirror_via_executor(
 
             let payload = OperationPayload {
                 song_ids: Vec::new(),
+                whole_repository: true,
                 percent: 0,
                 detail: Some("Mirror sync".to_owned()),
                 ..Default::default()
@@ -281,21 +298,8 @@ fn commit_mirror_via_executor(
         }
     }
 
-    let conn =
-        state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
-
-    let ctx = PublishContext {
-        control_db: &conn,
-        provider: provider.as_ref(),
-        working_copy_root: remote_root.root(),
-        library_id,
-        writer_id: &writer_id,
-        repository_id: &repository_id,
-    };
-
-    execute_publish(&ctx, &operation_id)
+    let _ = (writer_id, repository_id);
+    publish_operation_internal(state, app_handle, Some(&operation_id), desired_song_ids).map(|_| ())
 }
 
 pub fn mirror_local_library_to_remote<R: tauri::Runtime>(

@@ -53,7 +53,7 @@ function createControllerHarness() {
       removeLibrary: vi.fn(),
       deleteLibrary: vi.fn(),
       mirrorLocalLibraryToRemote: vi.fn(),
-      reauthorizeRemoteLibrary: vi.fn(),
+      reauthorizeRemoteRepository: vi.fn(),
       setExecutionProvider: vi.fn(),
       setHideBatchSeparate: vi.fn(),
       setCoverArtBackdrop: vi.fn(),
