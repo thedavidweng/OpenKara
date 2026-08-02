@@ -553,7 +553,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           gh release download "${RELEASE_TAG}" --pattern "release-evidence.json" --dir artifacts --clobber
-          gh release download "${RELEASE_TAG}" --pattern "OpenKara_*" --dir artifacts --clobber
+          gh release download "${RELEASE_TAG}" --pattern "OpenKara*" --dir artifacts --clobber
           driver="${RUNNER_TEMP}/evidence-driver/openkara_release_evidence"
           chmod +x "$driver"
           "$driver" latest \
