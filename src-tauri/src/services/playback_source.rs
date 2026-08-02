@@ -55,12 +55,14 @@ pub(crate) fn load_playback_source(
     connection: &Connection,
     library_root: &LibraryRoot,
     song: &Song,
+    request_id: u64,
+    is_current: impl Fn() -> bool,
 ) -> Result<PlaybackSourceLoad, PlaybackError> {
     if song.is_remote_stems() {
         // Remote stems must be fully materialized before synchronous decode.
         RemoteContent::new(app_data_dir)
-            .ensure_stem_files_cached(library_root, connection, song, 0, || true)
-            .map_err(|e| PlaybackError::Internal(e.detail.unwrap_or(e.code)))?;
+            .ensure_stem_files_cached(library_root, connection, song, request_id, is_current)
+            .map_err(map_stem_materialization_error)?;
         let (decoded_audio, stems) = RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
@@ -83,6 +85,14 @@ pub(crate) fn load_playback_source(
     })
 }
 
+fn map_stem_materialization_error(error: crate::remote::errors::RemoteError) -> PlaybackError {
+    if error.kind == crate::remote::errors::RemoteErrorKind::StaleRequest {
+        PlaybackError::StaleRequest
+    } else {
+        PlaybackError::Internal(error.detail.unwrap_or(error.code))
+    }
+}
+
 pub(crate) fn load_cached_stems_for_song(
     app_data_dir: Option<&Path>,
     connection: &Connection,
@@ -94,7 +104,7 @@ pub(crate) fn load_cached_stems_for_song(
     if song.is_remote_stems() {
         RemoteContent::new(app_data_dir)
             .ensure_stem_files_cached(library_root, connection, song, request_id, is_current)
-            .map_err(|e| PlaybackError::Internal(e.detail.unwrap_or(e.code)))?;
+            .map_err(map_stem_materialization_error)?;
         return RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
             .map(|(_, stems)| stems)
@@ -1028,7 +1038,7 @@ mod tests {
         std::fs::write(vocals, &wav).unwrap();
         std::fs::write(accompaniment, wav).unwrap();
 
-        let loaded = super::load_playback_source(None, &connection, &lib, &song)
+        let loaded = super::load_playback_source(None, &connection, &lib, &song, 0, || true)
             .expect("remote stems should decode");
 
         assert!(!loaded.decoded_audio.samples.is_empty());

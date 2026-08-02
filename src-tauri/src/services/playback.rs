@@ -468,10 +468,20 @@ fn play_track_background<R: Runtime>(
     // Fallback: full decode path (remote, Media+G, or streaming not available).
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+    let request_id_for_guard = request_id;
+    let request_id_atom = Arc::clone(&state.playback.playback_request_id);
+    let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
-    } = load_playback_source(Some(app_data_dir), &connection, library_root, song)?;
+    } = load_playback_source(
+        Some(app_data_dir),
+        &connection,
+        library_root,
+        song,
+        request_id,
+        is_current,
+    )?;
 
     if shutdown.load(Ordering::Relaxed) {
         return Ok(());
@@ -514,11 +524,21 @@ fn fallback_remote_playback_to_full_file(
     let song = cache::get_song_by_hash(&connection, song_id)
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
+    let request_id_for_guard = request_id;
+    let request_id_atom = Arc::clone(&state.playback.playback_request_id);
+    let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
 
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
-    } = load_playback_source(Some(app_data_dir), &connection, library_root, &song)?;
+    } = load_playback_source(
+        Some(app_data_dir),
+        &connection,
+        library_root,
+        &song,
+        request_id,
+        is_current,
+    )?;
 
     let (cdg, cdg_error) = load_cdg_packets_as_arc(library_root, &song);
 
@@ -901,14 +921,18 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
     let request_id_for_guard = request_id;
     let request_id_atom = Arc::clone(&state.playback.playback_request_id);
     let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
-    let loaded_stems = load_cached_stems_for_song(
+    let loaded_stems = match load_cached_stems_for_song(
         Some(&state.shell.app_data_dir),
         &connection,
         &library_root,
         &song,
         request_id,
         is_current,
-    )?;
+    ) {
+        Ok(stems) => stems,
+        Err(PlaybackError::StaleRequest) => return get_state(state),
+        Err(error) => return Err(error),
+    };
 
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     state
@@ -947,7 +971,7 @@ pub fn play_song_from_library(
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
-    } = load_playback_source(None, connection, library_root, &song)?;
+    } = load_playback_source(None, connection, library_root, &song, 0, || true)?;
     let snapshot = controller.start_track(song.hash.clone(), decoded_audio, now_ms);
     if let Some(stems) = stems {
         controller

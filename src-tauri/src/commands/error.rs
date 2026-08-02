@@ -193,6 +193,12 @@ impl From<crate::audio::error::PlaybackError> for CommandError {
                 false,
                 FallbackAction::KeepCurrentState,
             ),
+            StaleRequest => CommandError::new(
+                ErrorCode::Internal,
+                err.to_string(),
+                false,
+                FallbackAction::KeepCurrentState,
+            ),
             Internal(_) => CommandError::new(
                 ErrorCode::Internal,
                 err.to_string(),

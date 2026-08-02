@@ -160,8 +160,14 @@ fn prepare_next_track(
         ));
     }
 
-    let load =
-        playback_source::load_playback_source(Some(app_data_dir), connection, library_root, song)?;
+    let load = playback_source::load_playback_source(
+        Some(app_data_dir),
+        connection,
+        library_root,
+        song,
+        0,
+        || true,
+    )?;
 
     let normalized = normalize_to_output_format(
         load.decoded_audio,

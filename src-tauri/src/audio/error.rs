@@ -19,6 +19,9 @@ pub enum PlaybackError {
     #[error("invalid playback state: {0}")]
     InvalidPlaybackState(String),
 
+    #[error("playback request is stale")]
+    StaleRequest,
+
     #[error("playback failed: {0}")]
     Internal(String),
 }
