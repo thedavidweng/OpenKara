@@ -134,7 +134,7 @@ jobs:
           # enable automation-driver: Tauri would pack that second binary into
           # the DMG. Driver is a separate CI artifact in the next step.
           if [ "${RELEASE_BUILD}" = "true" ]; then
-            pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+            pnpm tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
             pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
           fi
@@ -180,7 +180,7 @@ jobs:
           path: |
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
   clean-install:

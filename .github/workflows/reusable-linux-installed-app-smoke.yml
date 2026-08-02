@@ -209,7 +209,7 @@ jobs:
           path: |
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
   clean-install:

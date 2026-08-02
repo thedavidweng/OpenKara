@@ -178,6 +178,34 @@ describe("release workflow", () => {
     );
   });
 
+  test("builds and requires macOS updater artifacts in release smoke", () => {
+    const macOSWorkflow = readProjectFile(
+      ".github/workflows/reusable-macos-installed-app-smoke.yml",
+    );
+    const linuxWorkflow = readProjectFile(
+      ".github/workflows/reusable-linux-installed-app-smoke.yml",
+    );
+    const windowsWorkflow = readProjectFile(
+      ".github/workflows/reusable-windows-installed-app.yml",
+    );
+
+    expect(macOSWorkflow).toContain(
+      'tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}"',
+    );
+    expect(macOSWorkflow).toContain(
+      "name: ${{ inputs.artifact_prefix }}-updater",
+    );
+    expect(macOSWorkflow).toMatch(
+      /- name: Upload macOS updater artifacts[\s\S]*?if-no-files-found: error/,
+    );
+    expect(linuxWorkflow).toMatch(
+      /- name: Upload Linux updater artifacts[\s\S]*?if-no-files-found: error/,
+    );
+    expect(windowsWorkflow).toMatch(
+      /- name: Upload Windows updater artifacts[\s\S]*?if-no-files-found: error/,
+    );
+  });
+
   test("fails fast when the release tag and package.json version disagree", () => {
     // The bundle version comes from package.json (scripts/sync-version.mjs),
     // while the tag drives asset naming and the winget/flatpak manifests. If

@@ -256,7 +256,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle/**/*.nsis.zip
             src-tauri/target/release/bundle/**/*.nsis.zip.sig
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
   clean-install:
