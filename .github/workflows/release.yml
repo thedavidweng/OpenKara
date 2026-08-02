@@ -102,6 +102,7 @@ jobs:
           # Append installation section. Mirrors README "Install from Release"
           # so users can install straight from the GitHub Release page.
           if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
+            printf '\n\n' >> RELEASE_NOTES.md
             cat .github/release-notes-installation.md >> RELEASE_NOTES.md
           fi
 

@@ -207,8 +207,12 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain(
       'grep -Fq "## Installation" RELEASE_NOTES.md',
     );
+    expect(releaseWorkflow).toContain("printf '\\n\\n' >> RELEASE_NOTES.md");
     expect(releaseWorkflow).toContain(
       "cat .github/release-notes-installation.md >> RELEASE_NOTES.md",
+    );
+    expect(installationTemplate).toMatch(
+      /^<!-- markdownlint-disable MD041 -->\n\n---\n/,
     );
     expect(installationTemplate).toContain(
       "brew install thedavidweng/tap/openkara",
@@ -225,6 +229,12 @@ describe("release workflow", () => {
     );
     expect(releaseWorkflow).not.toContain(
       "RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}",
+    );
+
+    const releaseBodyWithoutTrailingNewline = "## Release v0.12.0";
+    const composedNotes = `${releaseBodyWithoutTrailingNewline}\n\n${installationTemplate}`;
+    expect(composedNotes).toContain(
+      `${releaseBodyWithoutTrailingNewline}\n\n<!-- markdownlint-disable MD041 -->\n\n---`,
     );
   });
 

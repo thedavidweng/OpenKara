@@ -33,9 +33,9 @@ The Release workflow:
 7. Renders WinGet and Flatpak manifests from the published tag URLs and
    opens or updates the external PRs when fork automation is configured.
 
-**Merge of the release PR is the human ship decision.** Release smoke and
-asset gates are the automated quality gate. There is no separate manual
-Publish click on the GitHub Release page for plain version tags.
+**A human decides when to merge the release PR.** Release smoke and asset
+gates are the automated quality gate. There is no separate manual Publish
+click on the GitHub Release page for plain version tags.
 
 Release Please owns the version and changelog text. The Release workflow owns
 the final GitHub Release body because it also creates and publishes release
