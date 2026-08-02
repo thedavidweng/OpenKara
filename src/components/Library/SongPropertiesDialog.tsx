@@ -39,12 +39,12 @@ interface PropertyRowProps {
 
 function PropertyRow({ label, value, title, mono }: PropertyRowProps) {
   return (
-    <div className="flex items-baseline gap-3 py-1.5">
-      <span className="w-28 shrink-0 text-[12px] text-[var(--color-text-dim)]">
+    <div className="grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-baseline gap-x-3 py-1.5">
+      <span className="min-w-0 break-words text-[12px] text-[var(--color-text-dim)]">
         {label}
       </span>
       <span
-        className={`text-[12px] text-[var(--color-text)] ${mono ? "font-mono text-[11px]" : ""}`}
+        className={`min-w-0 break-words text-[12px] text-[var(--color-text)] ${mono ? "font-mono text-[11px]" : ""}`}
         title={title}
       >
         {value}
@@ -123,12 +123,12 @@ export function SongPropertiesDialog({
         aria-labelledby={headingId}
         aria-busy={loading}
         tabIndex={-1}
-        className="relative w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
+        className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-sm flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
       >
-        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3">
           <h3
             id={headingId}
-            className="text-[14px] font-semibold text-[var(--color-text)]"
+            className="min-w-0 truncate text-[14px] font-semibold text-[var(--color-text)]"
           >
             {t("songProperties.title")}
           </h3>
@@ -136,7 +136,7 @@ export function SongPropertiesDialog({
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded p-0.5 text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
+            className="min-h-6 min-w-6 shrink-0 rounded p-0.5 text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             aria-label={t("common.close")}
           >
             <svg
@@ -154,7 +154,7 @@ export function SongPropertiesDialog({
           </button>
         </div>
 
-        <div className="border-b border-[var(--color-border)] px-5 py-3">
+        <div className="shrink-0 border-b border-[var(--color-border)] px-5 py-3">
           <p className="truncate text-[13px] font-medium text-[var(--color-text)]">
             {displayTitle}
           </p>
@@ -165,7 +165,7 @@ export function SongPropertiesDialog({
           )}
         </div>
 
-        <div className="px-5 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {loading && (
             <p className="py-4 text-center text-[12px] text-[var(--color-text-dim)]">
               {t("common.loading")}
@@ -234,12 +234,12 @@ export function SongPropertiesDialog({
                 />
               )}
               {songSupportsInstrumentalFlag(currentSong) && (
-                <div className="flex items-center justify-between gap-3 py-1.5">
-                  <span className="w-28 shrink-0 text-[12px] text-[var(--color-text-dim)]">
+                <div className="grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-x-3 py-1.5">
+                  <span className="min-w-0 break-words text-[12px] text-[var(--color-text-dim)]">
                     {t("songProperties.instrumental")}
                   </span>
-                  <label className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
-                    <span className="flex min-h-[24px] min-w-[24px] items-center justify-center">
+                  <label className="flex min-h-6 min-w-0 items-center justify-self-end text-[12px] text-[var(--color-text)]">
+                    <span className="flex min-h-6 min-w-6 items-center justify-center">
                       <input
                         type="checkbox"
                         checked={currentSong.instrumental}
@@ -256,33 +256,36 @@ export function SongPropertiesDialog({
                   </label>
                 </div>
               )}
-              <div className="flex items-baseline gap-3 py-1.5">
-                <span className="w-28 shrink-0 text-[12px] text-[var(--color-text-dim)]">
+              <div className="grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-start gap-x-3 py-1.5">
+                <span className="min-w-0 break-words text-[12px] text-[var(--color-text-dim)]">
                   {t("songProperties.separation")}
                 </span>
-                <span className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
-                  {mediaGLabel
-                    ? t("songProperties.notApplicable")
-                    : !sepStatus || sepStatus.state === "idle"
-                      ? t("songProperties.notSeparated")
-                      : sepStatus.state === "running"
-                        ? t("songProperties.separating")
-                        : sepStatus.state === "failed"
-                          ? t("songProperties.separationFailed")
-                          : sepStatus.drums_path
-                            ? t("songProperties.fourStem")
-                            : t("songProperties.twoStem")}
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-[var(--color-text)]">
+                  <span className="min-w-0 break-words">
+                    {mediaGLabel
+                      ? t("songProperties.notApplicable")
+                      : !sepStatus || sepStatus.state === "idle"
+                        ? t("songProperties.notSeparated")
+                        : sepStatus.state === "running"
+                          ? t("songProperties.separating")
+                          : sepStatus.state === "failed"
+                            ? t("songProperties.separationFailed")
+                            : sepStatus.drums_path
+                              ? t("songProperties.fourStem")
+                              : t("songProperties.twoStem")}
+                  </span>
                   {sepStatus?.state === "completed" &&
                     canSeparateSong &&
                     !mediaGLabel &&
                     !sepStatus.drums_path && (
                       <button
+                        type="button"
                         onClick={() => {
                           api
                             .upgradeToFourStem(currentSong.hash)
                             .catch(() => {});
                         }}
-                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
+                        className="min-h-6 max-w-full rounded bg-[var(--color-border)] px-2 py-0.5 text-left text-[11px] text-[var(--color-text-dim)] whitespace-normal break-words transition-colors hover:text-[var(--color-text)]"
                       >
                         {t("songProperties.upgradeToFourStem")}
                       </button>
@@ -292,6 +295,7 @@ export function SongPropertiesDialog({
                     sepStatus.drums_path &&
                     !mediaGLabel && (
                       <button
+                        type="button"
                         onClick={() => {
                           api
                             .downgradeToTwoStem(currentSong.hash)
@@ -302,74 +306,83 @@ export function SongPropertiesDialog({
                             })
                             .catch(notifyError);
                         }}
-                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
+                        className="min-h-6 max-w-full rounded bg-[var(--color-border)] px-2 py-0.5 text-left text-[11px] text-[var(--color-text-dim)] whitespace-normal break-words transition-colors hover:text-[var(--color-text)]"
                       >
                         {t("songProperties.downgradeToTwoStem")}
                       </button>
                     )}
-                </span>
+                </div>
               </div>
               {sepStatus?.state === "completed" &&
                 canSeparateSong &&
                 !mediaGLabel && (
-                  <div className="py-1.5 pl-[calc(7rem+0.75rem)]">
-                    {!showReSeparate ? (
-                      <button
-                        onClick={() => {
-                          setReSeparateStemMode(
-                            sepStatus.drums_path ? "four_stem" : "two_stem",
-                          );
-                          setShowReSeparate(true);
-                        }}
-                        className="rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
-                      >
-                        {t("songProperties.reSeparate")}
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-[var(--color-text-dim)]">
-                          {t("songProperties.reSeparateAs")}
-                        </span>
+                  <div className="grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-3 py-1.5">
+                    <div className="col-start-2 min-w-0">
+                      {!showReSeparate ? (
                         <button
-                          onClick={() => setReSeparateStemMode("two_stem")}
-                          className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                            reSeparateStemMode === "two_stem"
-                              ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
-                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-                          }`}
-                        >
-                          {t("songProperties.twoStem")}
-                        </button>
-                        <button
-                          onClick={() => setReSeparateStemMode("four_stem")}
-                          className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                            reSeparateStemMode === "four_stem"
-                              ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
-                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-                          }`}
-                        >
-                          {t("songProperties.fourStem")}
-                        </button>
-                        <button
+                          type="button"
                           onClick={() => {
-                            setShowReSeparate(false);
-                            api
-                              .reSeparate(currentSong.hash, reSeparateStemMode)
-                              .catch(notifyError);
+                            setReSeparateStemMode(
+                              sepStatus.drums_path ? "four_stem" : "two_stem",
+                            );
+                            setShowReSeparate(true);
                           }}
-                          className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-[11px] text-[var(--color-on-accent)] transition-opacity hover:opacity-80"
+                          className="min-h-6 max-w-full rounded bg-[var(--color-border)] px-2 py-0.5 text-left text-[11px] text-[var(--color-text-dim)] whitespace-normal break-words transition-colors hover:text-[var(--color-text)]"
                         >
-                          {t("songProperties.confirm")}
+                          {t("songProperties.reSeparate")}
                         </button>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="w-full min-w-0 break-words text-[11px] text-[var(--color-text-dim)]">
+                            {t("songProperties.reSeparateAs")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setReSeparateStemMode("two_stem")}
+                            className={`min-h-6 max-w-full shrink-0 rounded px-2 py-0.5 text-[11px] whitespace-normal break-words transition-colors ${
+                              reSeparateStemMode === "two_stem"
+                                ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                                : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
+                            }`}
+                          >
+                            {t("songProperties.twoStem")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReSeparateStemMode("four_stem")}
+                            className={`min-h-6 max-w-full shrink-0 rounded px-2 py-0.5 text-[11px] whitespace-normal break-words transition-colors ${
+                              reSeparateStemMode === "four_stem"
+                                ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                                : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
+                            }`}
+                          >
+                            {t("songProperties.fourStem")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowReSeparate(false);
+                              api
+                                .reSeparate(
+                                  currentSong.hash,
+                                  reSeparateStemMode,
+                                )
+                                .catch(notifyError);
+                            }}
+                            className="min-h-6 max-w-full shrink-0 rounded bg-[var(--color-accent)] px-2 py-0.5 text-[11px] text-[var(--color-on-accent)] whitespace-normal break-words transition-opacity hover:opacity-80"
+                          >
+                            {t("songProperties.confirm")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end border-t border-[var(--color-border)] px-5 py-3">
+        <div className="flex shrink-0 justify-end border-t border-[var(--color-border)] px-5 py-3">
           <button
             type="button"
             onClick={onClose}

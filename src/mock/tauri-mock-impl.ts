@@ -350,6 +350,23 @@ export function createTauriMock(data: any): TauriMockResult {
           (s.artist ?? "").toLowerCase().includes(q),
       );
     },
+    get_song_properties: (args: any) => {
+      const song = mockSongs.find(
+        (candidate: any) => args?.songId === candidate.hash,
+      );
+      if (!song || !song.original_ext) {
+        throw new Error(`Song properties are missing for ${args?.songId}`);
+      }
+      return {
+        format: song.original_ext.toUpperCase(),
+        sample_rate_hz: 44_100,
+        channels: 2,
+        bit_rate_bps: 320_000,
+        file_size_bytes: 7_300_000,
+        duration_ms: song.duration_ms,
+        hash: song.hash,
+      };
+    },
     get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
     get_all_upload_statuses: {},
     get_remote_cache_usage: () => ({
