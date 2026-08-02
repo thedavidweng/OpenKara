@@ -26,6 +26,7 @@ export interface AppSettingsSnapshot {
   lyricsFontStep: number;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  compatibleExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
   crossfadeEnabled: boolean;
@@ -47,6 +48,7 @@ interface SettingsState {
   lyricsFontStep: AppSettingsSnapshot["lyricsFontStep"];
   executionProvider: AppSettingsSnapshot["executionProvider"];
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
+  compatibleExecutionProviders: AppSettingsSnapshot["compatibleExecutionProviders"];
   eqEnabled: AppSettingsSnapshot["eqEnabled"];
   eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
   crossfadeEnabled: AppSettingsSnapshot["crossfadeEnabled"];
@@ -91,6 +93,7 @@ export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   lyricsFontStep: 0,
   executionProvider: "cpu",
   availableExecutionProviders: ["cpu"],
+  compatibleExecutionProviders: ["cpu"],
   eqEnabled: false,
   eqGainsDb: [0, 0, 0, 0, 0],
   crossfadeEnabled: false,
@@ -112,6 +115,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
+    compatibleExecutionProviders: settings.compatible_execution_providers,
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
     crossfadeEnabled: settings.crossfade_enabled ?? false,
@@ -136,6 +140,7 @@ function selectAppSettingsSnapshot(
     lyricsFontStep: state.lyricsFontStep,
     executionProvider: state.executionProvider,
     availableExecutionProviders: state.availableExecutionProviders,
+    compatibleExecutionProviders: state.compatibleExecutionProviders,
     eqEnabled: state.eqEnabled,
     eqGainsDb: state.eqGainsDb,
     crossfadeEnabled: state.crossfadeEnabled,
@@ -173,6 +178,7 @@ function applySettingsSyncSnapshot(
     lyricsFontStep: snapshot.lyricsFontStep,
     executionProvider: snapshot.executionProvider,
     availableExecutionProviders: snapshot.availableExecutionProviders,
+    compatibleExecutionProviders: snapshot.compatibleExecutionProviders,
     eqEnabled: snapshot.eqEnabled,
     eqGainsDb: snapshot.eqGainsDb,
     crossfadeEnabled: snapshot.crossfadeEnabled,

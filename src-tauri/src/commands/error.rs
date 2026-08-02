@@ -16,6 +16,7 @@ pub enum ErrorCode {
     LyricsNotReady,
     NetworkUnavailable,
     InvalidPlaybackState,
+    ExecutionProviderUnavailable,
     SeparationFailed,
     Internal,
 }
@@ -109,6 +110,20 @@ pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
         message.to_string(),
         true,
         FallbackAction::Retry,
+    )
+}
+
+pub fn execution_provider_unavailable(
+    provider: crate::config::ExecutionProviderPreference,
+) -> CommandError {
+    CommandError::new(
+        ErrorCode::ExecutionProviderUnavailable,
+        format!(
+            "execution provider '{}' is not compatible with this device; switch to CPU in Settings",
+            provider.as_str()
+        ),
+        false,
+        FallbackAction::KeepCurrentState,
     )
 }
 
@@ -245,4 +260,21 @@ pub fn unix_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incompatible_execution_provider_error_points_to_cpu() {
+        let error =
+            execution_provider_unavailable(crate::config::ExecutionProviderPreference::DirectMl);
+
+        assert_eq!(error.code, ErrorCode::ExecutionProviderUnavailable);
+        assert!(!error.retryable);
+        assert_eq!(error.fallback, FallbackAction::KeepCurrentState);
+        assert!(error.message.contains("directml"));
+        assert!(error.message.contains("switch to CPU in Settings"));
+    }
 }

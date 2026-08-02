@@ -89,6 +89,7 @@ function createHarness(
       hideUpgradeAll: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      compatibleExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       crossfadeEnabled: false,

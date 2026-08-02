@@ -3095,7 +3095,6 @@ dependencies = [
  "httpdate",
  "image",
  "libc",
- "libloading 0.9.0",
  "lofty",
  "mockito",
  "ort",
@@ -3132,6 +3131,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "vorbis_rs",
+ "windows 0.61.3",
  "zip 8.6.0",
 ]
 

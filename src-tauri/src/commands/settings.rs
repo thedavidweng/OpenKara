@@ -22,6 +22,7 @@ pub struct AppSettings {
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
+    pub compatible_execution_providers: Vec<&'static str>,
     pub eq_enabled: bool,
     pub eq_gains_db: [f32; 5],
     pub crossfade_enabled: bool,
@@ -50,6 +51,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
         ),
+        compatible_execution_providers:
+            ExecutionProviderPreference::compatible_for_current_platform(),
         eq_enabled: config.effective_eq_enabled(),
         eq_gains_db: config.effective_eq_gains_db(),
         crossfade_enabled: config.effective_crossfade_enabled(),
@@ -598,8 +601,8 @@ mod tests {
 
     #[test]
     fn settings_selected_provider_is_always_in_available_list() {
-        // Stale directml on a non-Windows host is normalized to xnnpack and
-        // must still be a member of the available list.
+        // A stale provider is normalized to the platform default and must
+        // still be a member of the available list.
         let settings = settings_from_config(&AppConfig {
             execution_provider: Some(ExecutionProviderPreference::DirectMl),
             ..AppConfig::default()
@@ -615,6 +618,16 @@ mod tests {
     }
 
     #[test]
+    fn settings_reports_compatible_execution_providers() {
+        let settings = settings_from_config(&AppConfig::default());
+
+        assert!(settings.compatible_execution_providers.contains(&"cpu"));
+        assert!(settings
+            .compatible_execution_providers
+            .contains(&settings.execution_provider.as_str()));
+    }
+
+    #[test]
     fn parse_and_validate_accepts_every_current_platform_entry() {
         for &name in ExecutionProviderPreference::available_for_current_platform().as_slice() {
             let ep = parse_and_validate_execution_provider(name)
@@ -625,9 +638,11 @@ mod tests {
 
     #[test]
     fn parse_and_validate_rejects_unknown_provider() {
-        let error = parse_and_validate_execution_provider("coreml")
+        let error = parse_and_validate_execution_provider("unsupported")
             .expect_err("unknown provider should be rejected");
-        assert!(error.message.contains("invalid execution provider: coreml"));
+        assert!(error
+            .message
+            .contains("invalid execution provider: unsupported"));
     }
 
     #[test]
@@ -658,7 +673,7 @@ mod tests {
     #[test]
     fn rejected_set_execution_provider_does_not_create_config_file() {
         let temp_dir = tempfile::tempdir().expect("temp dir should create");
-        let _ = parse_and_validate_execution_provider("coreml")
+        let _ = parse_and_validate_execution_provider("unsupported")
             .expect_err("unknown provider should be rejected");
         assert!(
             config::load_config(temp_dir.path())

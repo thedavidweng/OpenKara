@@ -524,6 +524,10 @@
       "xnnpackDescription": "SIMD hızlandırmalı CPU — Apple Silicon ve modern x86'da daha hızlı",
       "directml": "DirectML",
       "directmlDescription": "Windows için DirectX 12 GPU hızlandırma",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Silicon için Neural Engine ve GPU hızlandırma",
+      "incompatible": "Uyumlu değil",
+      "incompatibleWarning": "Bu sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",
       "note": "Değişiklikler bir sonraki ayırmada geçerli olur."
     },
     "integrity": {
@@ -653,6 +657,8 @@
     "lyrics_not_ready": "Sözler Kullanılamıyor",
     "network_unavailable": "Ağ Hatası",
     "invalid_playback_state": "Oynatma Hatası",
+    "execution_provider_unavailable": "Yürütme sağlayıcısı kullanılamıyor",
+    "executionProviderUnavailableMessage": "Seçilen sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",

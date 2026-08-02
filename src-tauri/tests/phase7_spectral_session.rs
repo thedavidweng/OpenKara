@@ -301,9 +301,10 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
 
 /// The product's platform-default execution-provider preference must always
 /// yield a working session and a sane separation — on machines WITHOUT the
-/// accelerator (e.g. GPU-less Windows attempting DirectML) the provider
-/// chain has to fall back gracefully rather than fail or corrupt output.
-/// On accelerator-equipped machines the same test exercises the real EP.
+/// accelerator the default is CPU. If DirectML is explicitly requested on a
+/// host without the accelerator, the provider chain must fall back gracefully
+/// rather than fail or corrupt output. On accelerator-equipped machines the
+/// platform default exercises the real EP.
 #[test]
 fn spectral_separation_with_default_platform_preference_is_stable() {
     let Some(model_path) = spectral_model_path() else {

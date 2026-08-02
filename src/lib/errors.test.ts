@@ -36,6 +36,20 @@ describe("getErrorMessage", () => {
     expect(getErrorMessage(err)).toBe("db is down");
   });
 
+  test("localizes the incompatible provider recovery message", () => {
+    const err = commandError({
+      code: "execution_provider_unavailable",
+      message: "technical provider detail",
+    });
+
+    expect(getErrorMessage(err)).toBe(
+      "errors.executionProviderUnavailableMessage",
+    );
+    expect(mockT).toHaveBeenCalledWith(
+      "errors.executionProviderUnavailableMessage",
+    );
+  });
+
   test("returns message from Error instance", () => {
     expect(getErrorMessage(new Error("boom"))).toBe("boom");
   });
@@ -96,6 +110,23 @@ describe("notifyError", () => {
       expect.objectContaining({
         retryable: false,
         retryAction: undefined,
+      }),
+    );
+  });
+
+  test("incompatible provider errors show the localized CPU recovery message", () => {
+    const err = commandError({
+      code: "execution_provider_unavailable",
+      message: "technical provider detail",
+    });
+
+    notifyError(err);
+
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "errors.execution_provider_unavailable",
+        message: "errors.executionProviderUnavailableMessage",
+        retryable: false,
       }),
     );
   });

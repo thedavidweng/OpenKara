@@ -22,9 +22,16 @@ function isErrorWithMessage(err: unknown): err is { message: string } {
   return typeof obj.message === "string";
 }
 
+function getCommandErrorMessage(error: CommandError): string {
+  if (error.code === "execution_provider_unavailable") {
+    return i18next.t("errors.executionProviderUnavailableMessage");
+  }
+  return error.message;
+}
+
 export function getErrorMessage(error: unknown): string {
   if (isCommandError(error)) {
-    return error.message;
+    return getCommandErrorMessage(error);
   }
 
   if (error instanceof Error) {
@@ -45,7 +52,7 @@ export function notifyError(error: unknown, retryAction?: () => void) {
     store.addNotification({
       type: "error",
       title: getErrorTitle(error.code),
-      message: error.message,
+      message: getCommandErrorMessage(error),
       retryable: error.retryable,
       retryAction: error.retryable ? retryAction : undefined,
       dismissAfterMs: null,

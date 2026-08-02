@@ -149,49 +149,28 @@ pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static P
         .as_path())
 }
 
-/// ONNX Runtime resolves provider companions (DirectML.dll) with the
-/// standard Windows search order, which does not include the artifact
-/// directory the main library loads from. Pre-loading the companions makes
-/// LoadLibrary-by-name resolve the already-mapped modules instead of
-/// falling back to a missing or version-skewed System32 copy.
+/// Load the bundled DirectML companion only when a DirectML session is
+/// requested. ORT resolves provider libraries by module name, so the exact
+/// artifact path must be preloaded before provider registration.
 #[cfg(target_os = "windows")]
-fn preload_runtime_companions(runtime_path: &Path) {
-    let Some(runtime_dir) = runtime_path.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(runtime_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_companion_dll =
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.to_ascii_lowercase().ends_with(".dll")
-                        && !name.eq_ignore_ascii_case(ORT_RUNTIME_FILENAME)
-                });
-        if !is_companion_dll {
-            continue;
-        }
-        // SAFETY: loading a library runs its initialization code; these are
-        // the digest-verified companions installed next to the runtime.
-        match unsafe { libloading::Library::new(&path) } {
-            Ok(library) => std::mem::forget(library),
-            Err(error) => {
-                tracing::warn!(
-                    "failed to preload runtime companion {}: {error}",
-                    path.display()
-                );
-            }
-        }
-    }
+fn preload_directml_companion() -> Result<()> {
+    let runtime_path = ORT_RUNTIME_PATH
+        .get()
+        .context("ONNX Runtime path is not available for DirectML setup")?;
+    let runtime_dir = runtime_path
+        .parent()
+        .context("ONNX Runtime path has no parent directory")?;
+    let directml_path = runtime_dir.join("DirectML.dll");
+    ort::util::preload_dylib(&directml_path).with_context(|| {
+        format!(
+            "failed to preload bundled DirectML companion {}",
+            directml_path.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    preload_runtime_companions(runtime_path);
-
     let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
     anyhow::ensure!(
         committed,
@@ -420,6 +399,11 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         .with_optimization_level(graph_optimization_level_for(&runtime_metadata))
         .map_err(|e| anyhow::anyhow!("failed to set graph optimization level: {e}"))?;
 
+    #[cfg(target_os = "windows")]
+    if matches!(ep_preference, ExecutionProviderPreference::DirectMl) {
+        preload_directml_companion()?;
+    }
+
     // Register execution providers. ORT falls back to CPU automatically if the
     // requested EP is unavailable, but we log the attempt so users can diagnose
     // performance issues.
@@ -536,6 +520,7 @@ fn build_execution_provider_list(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
             )
             .build()],
+        ExecutionProviderPreference::CoreMl => vec![ep::CoreML::default().build()],
         ExecutionProviderPreference::DirectMl => vec![ep::DirectML::default().build()],
     }
 }
@@ -549,10 +534,14 @@ fn execution_provider_chain(
             ExecutionProviderPreference::Xnnpack,
             ExecutionProviderPreference::Cpu,
         ],
-        // If DirectML fails, retry with XNNPACK SIMD before bare CPU.
+        // The Windows runtime artifact contains DirectML and CPU only.
         ExecutionProviderPreference::DirectMl => vec![
             ExecutionProviderPreference::DirectMl,
-            ExecutionProviderPreference::Xnnpack,
+            ExecutionProviderPreference::Cpu,
+        ],
+        // The Apple Silicon runtime artifact contains CoreML and CPU only.
+        ExecutionProviderPreference::CoreMl => vec![
+            ExecutionProviderPreference::CoreMl,
             ExecutionProviderPreference::Cpu,
         ],
         resolved => vec![resolved],
@@ -740,12 +729,22 @@ mod tests {
     }
 
     #[test]
-    fn provider_chain_includes_xnnpack_between_directml_and_cpu() {
+    fn provider_chain_keeps_directml_cpu_fallback() {
         assert_eq!(
             execution_provider_chain(ExecutionProviderPreference::DirectMl),
             vec![
                 ExecutionProviderPreference::DirectMl,
-                ExecutionProviderPreference::Xnnpack,
+                ExecutionProviderPreference::Cpu,
+            ]
+        );
+    }
+
+    #[test]
+    fn provider_chain_keeps_coreml_cpu_fallback() {
+        assert_eq!(
+            execution_provider_chain(ExecutionProviderPreference::CoreMl),
+            vec![
+                ExecutionProviderPreference::CoreMl,
                 ExecutionProviderPreference::Cpu,
             ]
         );

@@ -1,7 +1,10 @@
 use crate::{
     cache,
     commands::bootstrap::{self, ModelBootstrapStatusSnapshot},
-    commands::error::{database_error, state_lock_error, CommandError, CommandResult},
+    commands::error::{
+        database_error, execution_provider_unavailable, state_lock_error, CommandError,
+        CommandResult,
+    },
     commands::runtime_bootstrap::{self, RuntimeBootstrapStatusSnapshot},
     config::{self, ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
@@ -216,6 +219,9 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
         .as_ref()
         .map(|c| c.effective_execution_provider())
         .unwrap_or_default();
+    if !ep_preference.is_compatible_for_current_platform() {
+        return Err(execution_provider_unavailable(ep_preference));
+    }
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())

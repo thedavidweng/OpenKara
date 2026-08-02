@@ -50,7 +50,7 @@ base64 = "0.22.1"
 cpal = "0.18.1"
 libc = "0.2.186"
 lofty = "0.24.0"
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "directml", "xnnpack"] }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "coreml", "directml", "xnnpack"] }
 rand = "0.10.2"
 rayon = "1.12.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "query", "rustls"] }
@@ -108,6 +108,8 @@ opt-level = "s"
 codegen-units = 1
 
 [target.'cfg(windows)'.dependencies]
-# Pre-loads digest-verified runtime companions (DirectML.dll) so ORT's
-# LoadLibrary-by-name resolves them from the artifact directory.
-libloading = "0.9"
+windows = { version = "0.61.3", features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+] }
