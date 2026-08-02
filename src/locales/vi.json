@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Hủy",
     "close": "Đóng",
@@ -14,7 +33,8 @@
     "loading": "Đang tải…",
     "deleting": "Đang xóa...",
     "unknownTitle": "Không rõ tiêu đề",
-    "unknownArtist": "Không rõ nghệ sĩ"
+    "unknownArtist": "Không rõ nghệ sĩ",
+    "coverArtAlt": "Ảnh bìa {{title}}"
   },
   "setup": {
     "welcome": "Thiết lập thư viện karaoke của bạn",
@@ -63,6 +83,8 @@
     "allTracks": "Tất cả bài hát",
     "separated": "Đã tách",
     "localMusic": "NHẠC CỤC BỘ",
+    "resize": "Đổi kích thước thanh bên",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Sắp xếp theo",
       "recently_imported": "Nhập gần đây",
@@ -94,6 +116,9 @@
     "settings": "Cài đặt"
   },
   "windowChrome": {
+    "view": "Xem",
+    "switchLibrary": "Chuyển thư viện…",
+    "copyDebugInfo": "Sao chép thông tin gỡ lỗi",
     "file": "Tệp",
     "edit": "Chỉnh sửa",
     "window": "Cửa sổ",
@@ -158,7 +183,8 @@
     "importPrompt": {
       "confirmTitle": "Xác nhận nhập",
       "confirmMessage": "Nhập {{songCount}} bài hát?",
-      "confirmOk": "Nhập"
+      "confirmOk": "Nhập",
+      "audioLyricsFilter": "Âm thanh & lời bài hát"
     },
     "modelPreparing": "Đang chuẩn bị mô hình tách…",
     "cancelSeparation": "Hủy tách",
@@ -176,9 +202,11 @@
     "seek": "Tua",
     "selectMonitor": "Chọn màn hình",
     "monitor": "Màn hình {{index}}",
+    "unnamedMonitor": "Màn hình chưa đặt tên {{index}}",
     "localDisplayOutput": "Xuất ra màn hình cục bộ",
     "airPlayOutput": "Xuất qua AirPlay",
     "noDisplaysFound": "Chưa tìm thấy màn hình nào.",
+    "seekToLine": "Chuyển đến dòng {{index}}",
     "reconnecting": "Đang kết nối lại… ({{attempt}}/{{max}})",
     "resync": "Đã đồng bộ lại −{{delta}} ms",
     "reconnectFailed": "Kết nối lại thất bại"
@@ -242,13 +270,22 @@
     "fontSizeIncrease": "Tăng cỡ chữ lời",
     "fontSizeReset": "Đặt lại cỡ chữ lời",
     "fontSizeResetShort": "Đặt lại",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Bám theo lời đang hát",
     "matchedToast": "Đã khớp lời với \"{{song}}\"",
     "unmatchedToast": "Không thể khớp tệp lời với bài hát nào: {{file}}",
     "offsetDecrease": "Chỉnh lời lùi lại 0.5 giây",
     "offsetIncrease": "Chỉnh lời tiến tới 0.5 giây",
     "offsetReset": "Đặt lại độ lệch lời",
-    "offsetResetShort": "Đặt lại"
+    "offsetResetShort": "Đặt lại",
+    "switchToCentered": "Chuyển lời sang căn giữa",
+    "switchToLeftAligned": "Chuyển lời sang căn trái"
   },
   "songEdit": {
     "title": "Sửa thông tin bài hát",
@@ -309,6 +346,11 @@
       "removeLibrary": "Ngắt kết nối kho lưu trữ",
       "deleteLibrary": "Xóa kho lưu trữ",
       "typeToConfirmDelete": "Nhập \"{{displayName}}\" để xác nhận xóa vĩnh viễn.",
+      "confirmDisconnectRemote": "Ngắt kết nối \"{{displayName}}\" khỏi {{appName}}? Nội dung kho lưu trữ từ xa sẽ vẫn ở {{provider}}.",
+      "confirmDisconnectLocal": "Ngắt kết nối thư viện này khỏi {{appName}}? Dữ liệu thư viện sẽ vẫn trên đĩa.",
+      "confirmDeleteRemote": "Xóa \"{{displayName}}\"? Nội dung kho lưu trữ từ xa tại {{provider}} ở {{path}} và bản sao làm việc cục bộ sẽ bị xóa.",
+      "confirmDeleteLocal": "Xóa \"{{displayName}}\" khỏi {{appName}}? Dữ liệu thư viện cục bộ sẽ bị xóa khỏi đĩa.",
+      "thisLibrary": "thư viện này",
       "refreshRemoteRepository": "Làm mới kho lưu trữ từ xa",
       "reauthorizeRemoteRepository": "Cấp lại quyền cho kho lưu trữ từ xa",
       "reauthorizeRemoteRepositoryDescription": "Gia hạn quyền truy cập vào kho lưu trữ từ xa này. Nếu kho đã bị di chuyển, OpenKara sẽ hỏi trước khi thay thế vị trí đã lưu.",
@@ -459,7 +501,11 @@
       "presetWarm": "Ấm",
       "presetBright": "Sáng",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Chuyển tiếp mờ dần",
@@ -564,6 +610,7 @@
       "entries": "Mục",
       "pinned": "đã ghim",
       "clearButton": "Xóa bộ nhớ đệm",
+      "clearing": "Đang xóa…",
       "evicted": "Đã xóa {{count}} mục."
     },
     "remoteDiagnostics": {
@@ -642,6 +689,7 @@
     "singer": "Ca sĩ",
     "singerName": "Tên ca sĩ",
     "removeSinger": "Xóa ca sĩ",
+    "removeSingerAriaLabel": "Xóa {{name}}",
     "confirmRemoveSinger": "Xóa ca sĩ",
     "confirmRemoveSingerMessage": "Ca sĩ này đang được gán cho các bài hát trong hàng chờ. Xóa họ cũng sẽ xóa những bài hát đó khỏi hàng chờ."
   },

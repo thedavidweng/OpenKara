@@ -10,6 +10,7 @@ interface AddSingerInputProps {
 }
 
 function AddSingerInput({ onAdd }: AddSingerInputProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -35,7 +36,7 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
         onClick={() => setOpen(true)}
         className="flex min-h-[24px] items-center gap-1 rounded border border-dashed border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
       >
-        + Add Singer
+        + {t("rotation.assignSinger")}
       </button>
     );
   }
@@ -59,8 +60,8 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
           setOpen(false);
         }
       }}
-      placeholder="Singer name"
-      aria-label="Singer name"
+      placeholder={t("rotation.singerName")}
+      aria-label={t("rotation.singerName")}
       className="min-w-[80px] rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
     />
   );
@@ -74,6 +75,7 @@ interface SingerTagProps {
 }
 
 function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
+  const { t } = useTranslation();
   return (
     <span className="inline-flex items-center gap-1">
       <button
@@ -92,7 +94,7 @@ function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
         type="button"
         onClick={onRemove}
         className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-[var(--color-hover)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-        aria-label={`Remove ${name}`}
+        aria-label={t("rotation.removeSingerAriaLabel", { name })}
       >
         <X size={12} />
       </button>

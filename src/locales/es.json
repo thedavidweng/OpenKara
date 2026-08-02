@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Cancelar",
     "close": "Cerrar",
@@ -14,7 +33,8 @@
     "loading": "Cargando…",
     "deleting": "Eliminando...",
     "unknownTitle": "Título desconocido",
-    "unknownArtist": "Artista desconocido"
+    "unknownArtist": "Artista desconocido",
+    "coverArtAlt": "Carátula de {{title}}"
   },
   "setup": {
     "welcome": "Configura tu biblioteca de karaoke",
@@ -63,6 +83,8 @@
     "allTracks": "Todas las canciones",
     "separated": "Separadas",
     "localMusic": "MÚSICA LOCAL",
+    "resize": "Cambiar el tamaño de la barra lateral",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Ordenar por",
       "recently_imported": "Importadas recientemente",
@@ -94,6 +116,9 @@
     "settings": "Ajustes"
   },
   "windowChrome": {
+    "view": "Ver",
+    "switchLibrary": "Cambiar de biblioteca…",
+    "copyDebugInfo": "Copiar información de depuración",
     "file": "Archivo",
     "edit": "Editar",
     "window": "Ventana",
@@ -160,7 +185,8 @@
     "importPrompt": {
       "confirmTitle": "Confirmar importación",
       "confirmMessage": "¿Importar {{songCount}} canciones?",
-      "confirmOk": "Importar"
+      "confirmOk": "Importar",
+      "audioLyricsFilter": "Audio y letras"
     },
     "modelPreparing": "Preparando el modelo de separación…",
     "cancelSeparation": "Cancelar separación",
@@ -178,9 +204,11 @@
     "seek": "Ir a posición",
     "selectMonitor": "Seleccionar monitor",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Monitor sin nombre {{index}}",
     "localDisplayOutput": "Salida de pantalla local",
     "airPlayOutput": "Salida AirPlay",
     "noDisplaysFound": "Aún no se encontraron pantallas.",
+    "seekToLine": "Ir a la línea {{index}}",
     "reconnecting": "Reconectando… ({{attempt}}/{{max}})",
     "resync": "Resincronizado −{{delta}} ms",
     "reconnectFailed": "Error al reconectar"
@@ -244,13 +272,22 @@
     "fontSizeIncrease": "Aumentar el tamaño de la letra",
     "fontSizeReset": "Restablecer el tamaño de la letra",
     "fontSizeResetShort": "Restablecer",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Seguir la letra en reproducción",
     "matchedToast": "Letra emparejada con «{{song}}»",
     "unmatchedToast": "No se pudo emparejar el archivo de letra con una canción: {{file}}",
     "offsetDecrease": "Atrasar la letra 0.5 segundos",
     "offsetIncrease": "Adelantar la letra 0.5 segundos",
     "offsetReset": "Restablecer el desfase de la letra",
-    "offsetResetShort": "Restablecer"
+    "offsetResetShort": "Restablecer",
+    "switchToCentered": "Cambiar a letras centradas",
+    "switchToLeftAligned": "Cambiar a letras alineadas a la izquierda"
   },
   "songEdit": {
     "title": "Editar información de la canción",
@@ -311,6 +348,11 @@
       "removeLibrary": "Desconectar repositorio",
       "deleteLibrary": "Eliminar repositorio",
       "typeToConfirmDelete": "Escribe «{{displayName}}» para confirmar la eliminación permanente.",
+      "confirmDisconnectRemote": "¿Desconectar «{{displayName}}» de {{appName}}? El contenido del repositorio remoto permanecerá en {{provider}}.",
+      "confirmDisconnectLocal": "¿Desconectar esta biblioteca de {{appName}}? Los datos de la biblioteca permanecerán en el disco.",
+      "confirmDeleteRemote": "¿Eliminar «{{displayName}}»? Se eliminará el contenido del repositorio remoto de {{provider}} en {{path}} y la copia de trabajo local.",
+      "confirmDeleteLocal": "¿Eliminar «{{displayName}}» de {{appName}}? Esto elimina del disco los datos de la biblioteca local.",
+      "thisLibrary": "esta biblioteca",
       "refreshRemoteRepository": "Actualizar repositorio remoto",
       "reauthorizeRemoteRepository": "Reautorizar repositorio remoto",
       "reauthorizeRemoteRepositoryDescription": "Renueva el acceso a este repositorio remoto. Si el repositorio se movió, OpenKara preguntará antes de reemplazar la ubicación guardada.",
@@ -461,7 +503,11 @@
       "presetWarm": "Cálido",
       "presetBright": "Brillante",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Fundido cruzado",
@@ -566,6 +612,7 @@
       "entries": "Entradas",
       "pinned": "fijadas",
       "clearButton": "Vaciar caché",
+      "clearing": "Borrando…",
       "evicted": "Se expulsaron {{count}} entradas."
     },
     "remoteDiagnostics": {
@@ -644,6 +691,7 @@
     "singer": "Cantante",
     "singerName": "Nombre del cantante",
     "removeSinger": "Quitar cantante",
+    "removeSingerAriaLabel": "Quitar {{name}}",
     "confirmRemoveSinger": "Quitar cantante",
     "confirmRemoveSingerMessage": "Este cantante está asignado a canciones de la cola. Al quitarlo, también se quitarán esas canciones de la cola."
   },

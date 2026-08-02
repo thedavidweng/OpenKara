@@ -1,4 +1,5 @@
 import { getErrorMessage } from "@/lib/errors";
+import i18next from "@/lib/i18n";
 import { useLibraryStore } from "@/stores/library-store";
 import type { LibraryRegistrySnapshot, RegisteredLibrary } from "@/types/ipc";
 import type {
@@ -40,14 +41,14 @@ export function describeLibrary(library: RegisteredLibrary): string {
 
 function remoteProviderDisplayName(library: RegisteredLibrary): string {
   if (library.kind !== "remote") {
-    return "the selected storage provider";
+    return i18next.t("settings.library.thisLibrary");
   }
 
   return library.provider === "google_drive"
-    ? "Google Drive"
+    ? i18next.t("setup.remoteProvider.googleDrive.title")
     : library.provider === "dropbox"
-      ? "Dropbox"
-      : "WebDAV";
+      ? i18next.t("setup.remoteProvider.dropbox.title")
+      : i18next.t("setup.remoteProvider.webdav.title");
 }
 
 export function createLibrarySettingsActions(
@@ -213,14 +214,17 @@ export function createLibrarySettingsActions(
       const currentLibrary = controls
         .getSnapshot()
         .state.libraries.find((library) => library.id === libraryId);
+      const appName = i18next.t("app.name");
+      const confirmationMessage =
+        currentLibrary?.kind === "remote"
+          ? i18next.t("settings.library.confirmDisconnectRemote", {
+              displayName: currentLibrary.display_name,
+              appName,
+              provider: remoteProviderDisplayName(currentLibrary),
+            })
+          : i18next.t("settings.library.confirmDisconnectLocal", { appName });
 
-      if (
-        !window.confirm(
-          currentLibrary?.kind === "remote"
-            ? `Disconnect "${currentLibrary.display_name}" from OpenKara? The remote repository contents will stay in ${remoteProviderDisplayName(currentLibrary)}.`
-            : "Disconnect this library from OpenKara? The library data will stay on disk.",
-        )
-      ) {
+      if (!window.confirm(confirmationMessage)) {
         return;
       }
 
@@ -241,15 +245,22 @@ export function createLibrarySettingsActions(
         .getSnapshot()
         .state.libraries.find((library) => library.id === libraryId);
       const isRemoteRepository = currentLibrary?.kind === "remote";
-      const displayName = currentLibrary?.display_name ?? "this library";
+      const displayName =
+        currentLibrary?.display_name ??
+        i18next.t("settings.library.thisLibrary");
+      const confirmationMessage =
+        isRemoteRepository && currentLibrary
+          ? i18next.t("settings.library.confirmDeleteRemote", {
+              displayName,
+              provider: remoteProviderDisplayName(currentLibrary),
+              path: describeLibrary(currentLibrary),
+            })
+          : i18next.t("settings.library.confirmDeleteLocal", {
+              displayName,
+              appName: i18next.t("app.name"),
+            });
 
-      if (
-        !window.confirm(
-          isRemoteRepository
-            ? `Delete "${displayName}"? This will delete the remote repository contents from ${remoteProviderDisplayName(currentLibrary)} at ${describeLibrary(currentLibrary)} and remove the local working copy.`
-            : `Delete "${displayName}" from OpenKara? This removes the local library data from disk.`,
-        )
-      ) {
+      if (!window.confirm(confirmationMessage)) {
         return;
       }
 

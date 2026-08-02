@@ -102,7 +102,7 @@ describe("SettingsAboutSection", () => {
       expect(writeText).toHaveBeenCalledOnce();
     });
     const copied = writeText.mock.calls[0][0] as string;
-    expect(copied).toContain("OpenKara debug info");
+    expect(copied).toContain("app.name · settings.about.label");
     expect(copied).toContain("0.9.1");
     expect(copied).toContain("v1.27.1");
   });

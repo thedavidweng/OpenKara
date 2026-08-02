@@ -12,7 +12,7 @@ test.describe("Singer rotation accessibility", () => {
     page,
   }) => {
     await page.getByRole("button", { name: "Queue" }).click();
-    await page.getByText("+ Add Singer").click();
+    await page.getByText("+ Assign Singer").click();
 
     const input = page.getByRole("textbox", { name: "Singer name" });
     await expect(input).toBeVisible();
@@ -29,7 +29,7 @@ test.describe("Singer rotation accessibility", () => {
     a11y,
   }) => {
     await page.getByRole("button", { name: "Queue" }).click();
-    await page.getByText("+ Add Singer").click();
+    await page.getByText("+ Assign Singer").click();
     const input = page.getByRole("textbox", { name: "Singer name" });
     await input.fill("Bob");
     await input.press("Enter");
@@ -48,7 +48,7 @@ test.describe("Singer rotation accessibility", () => {
     page,
   }) => {
     await page.getByRole("button", { name: "Queue" }).click();
-    await page.getByText("+ Add Singer").click();
+    await page.getByText("+ Assign Singer").click();
     await page.getByRole("textbox", { name: "Singer name" }).fill("Carol");
     await page.keyboard.press("Enter");
 

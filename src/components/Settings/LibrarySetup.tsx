@@ -27,20 +27,33 @@ import {
 
 type Step = "language" | "library" | "remoteProvider" | "stemMode";
 type LibraryChoiceKind = "create_local" | "open_local" | "open_remote";
+type SetupTranslationKey =
+  | "setup.createNew"
+  | "setup.createNewDescription"
+  | "setup.openExisting"
+  | "setup.openExistingDescription"
+  | "setup.useRemoteRepository"
+  | "setup.openRemoteLibraryDescription"
+  | "setup.remoteProvider.googleDrive.title"
+  | "setup.remoteProvider.googleDrive.description"
+  | "setup.remoteProvider.dropbox.title"
+  | "setup.remoteProvider.dropbox.description"
+  | "setup.remoteProvider.webdav.title"
+  | "setup.remoteProvider.webdav.description";
 
 interface RemoteProviderChoice {
   provider: RemoteLibraryProvider;
   icon: LucideIcon;
-  title: string;
-  description: string;
+  title: SetupTranslationKey;
+  description: SetupTranslationKey;
   availableNow: boolean;
 }
 
 interface LibraryChoice {
   kind: LibraryChoiceKind;
   icon: LucideIcon;
-  title: string;
-  description: string;
+  title: SetupTranslationKey;
+  description: SetupTranslationKey;
 }
 
 // oxlint-disable-next-line react/only-export-components
@@ -93,6 +106,11 @@ export const remoteLibraryProviders: RemoteProviderChoice[] = [
 interface LibrarySetupProps {
   onComplete: () => void;
 }
+
+const WEBDAV_SERVER_URL_ID = "library-setup-webdav-server-url";
+const WEBDAV_LIBRARY_PATH_ID = "library-setup-webdav-library-path";
+const WEBDAV_USERNAME_ID = "library-setup-webdav-username";
+const WEBDAV_PASSWORD_ID = "library-setup-webdav-password";
 
 function StepIndicator({ current }: { current: Step }) {
   const steps: Step[] = ["language", "library", "stemMode"];
@@ -342,9 +360,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="max-h-[60vh] space-y-3 overflow-y-auto [mask-image:linear-gradient(to_bottom,#000_calc(100%-2.5rem),transparent)]">
                 {SUPPORTED_LANGUAGES.filter((lang) => {
                   const q = languageFilter.trim().toLowerCase();
+                  const languageName = t(lang.nameKey);
                   if (!q) return true;
                   return (
-                    lang.name.toLowerCase().includes(q) ||
+                    languageName.toLowerCase().includes(q) ||
                     lang.code.toLowerCase().includes(q)
                   );
                 }).map((lang) => (
@@ -363,7 +382,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       </span>
                     </div>
                     <span className="text-[14px] font-medium text-[var(--color-text)]">
-                      {lang.name}
+                      {t(lang.nameKey)}
                     </span>
                     {selectedLanguage === lang.code && (
                       <Check
@@ -404,14 +423,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   <button
                     key={choice.kind}
                     type="button"
-                    aria-label={t(choice.title, {
-                      defaultValue:
-                        choice.kind === "create_local"
-                          ? "Create new local library"
-                          : choice.kind === "open_local"
-                            ? "Open existing local library"
-                            : "Use remote repository",
-                    })}
+                    aria-label={t(choice.title)}
                     onClick={
                       choice.kind === "create_local"
                         ? handleCreate
@@ -434,24 +446,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     />
                     <div>
                       <div className="text-[14px] font-medium text-[var(--color-text)]">
-                        {t(choice.title, {
-                          defaultValue:
-                            choice.kind === "create_local"
-                              ? "Create new local library"
-                              : choice.kind === "open_local"
-                                ? "Open existing local library"
-                                : "Use remote repository",
-                        })}
+                        {t(choice.title)}
                       </div>
                       <div className="text-[12px] text-[var(--color-text-dim)]">
-                        {t(choice.description, {
-                          defaultValue:
-                            choice.kind === "create_local"
-                              ? "Create a new local library folder on this machine."
-                              : choice.kind === "open_local"
-                                ? "Register an existing local library folder."
-                                : "Connect to a cloud-hosted library without copying the original files.",
-                        })}
+                        {t(choice.description)}
                       </div>
                     </div>
                   </button>
@@ -494,10 +492,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 {t("setup.openRemoteLibrary")}
               </h1>
               <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
-                {t("setup.openRemoteLibraryDescription", {
-                  defaultValue:
-                    "Connect Google Drive, Dropbox, or WebDAV to your remote repository.",
-                })}
+                {t("setup.openRemoteLibraryDescription")}
               </p>
             </div>
 
@@ -531,22 +526,15 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="text-[14px] font-medium text-[var(--color-text)]">
-                        {t(choice.title, { defaultValue: choice.title })}
+                        {t(choice.title)}
                       </div>
                       <div className="text-[12px] text-[var(--color-text-dim)]">
-                        {t(choice.description, {
-                          defaultValue: choice.description,
-                        })}
+                        {t(choice.description)}
                       </div>
                       <div className="mt-1 text-[11px] text-[var(--color-text-dimmer)]">
                         {choice.availableNow
-                          ? t("setup.remoteProvider.availableNow", {
-                              defaultValue: "Available in this build",
-                            })
-                          : t("setup.remoteProvider.plannedLater", {
-                              defaultValue:
-                                "Planned in the next provider phase",
-                            })}
+                          ? t("setup.remoteProvider.availableNow")
+                          : t("setup.remoteProvider.plannedLater")}
                       </div>
                     </div>
                     {isActive && (
@@ -564,9 +552,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
                   <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                    {t("settings.library.displayName", {
-                      defaultValue: "Display name",
-                    })}
+                    {t("settings.library.displayName")}
                   </label>
                   <input
                     value={remoteDisplayName}
@@ -581,10 +567,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   />
                 </div>
                 <p className="text-[11px] text-[var(--color-text-dimmer)]">
-                  {t("settings.library.googleDriveBundledDescription", {
-                    defaultValue:
-                      "OpenKara uses its bundled Google Drive app registration and will create or reuse a folder with this display name in My Drive.",
-                  })}
+                  {t("settings.library.googleDriveBundledDescription")}
                 </p>
 
                 <button
@@ -593,12 +576,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
-                    ? t("settings.library.waitingForGoogle", {
-                        defaultValue: "Waiting for Google…",
-                      })
-                    : t("settings.library.connectGoogleDrive", {
-                        defaultValue: "Connect Google Drive",
-                      })}
+                    ? t("settings.library.waitingForGoogle")
+                    : t("settings.library.connectGoogleDrive")}
                 </button>
 
                 {remoteAuthorizationUrl && (
@@ -608,9 +587,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     rel="noreferrer"
                     className="block text-[12px] text-[var(--color-accent)] underline underline-offset-2"
                   >
-                    {t("settings.library.openGoogleBrowserSignInAgain", {
-                      defaultValue: "Open Google sign-in in your browser again",
-                    })}
+                    {t("settings.library.openGoogleBrowserSignInAgain")}
                   </a>
                 )}
               </div>
@@ -620,9 +597,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
                   <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                    {t("settings.library.displayName", {
-                      defaultValue: "Display name",
-                    })}
+                    {t("settings.library.displayName")}
                   </label>
                   <input
                     value={remoteDisplayName}
@@ -635,71 +610,72 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                    {t("settings.library.webdavServerUrl", {
-                      defaultValue: "Server URL",
-                    })}
+                  <label
+                    htmlFor={WEBDAV_SERVER_URL_ID}
+                    className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                  >
+                    {t("settings.library.webdavServerUrl")}
                   </label>
                   <input
+                    id={WEBDAV_SERVER_URL_ID}
                     value={remoteServerUrl}
                     onChange={(event) => setRemoteServerUrl(event.target.value)}
-                    placeholder="https://dav.example.com/remote.php/dav/files/you/"
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     spellCheck={false}
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                    {t("settings.library.webdavLibraryPath", {
-                      defaultValue: "Library path",
-                    })}
+                  <label
+                    htmlFor={WEBDAV_LIBRARY_PATH_ID}
+                    className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                  >
+                    {t("settings.library.webdavLibraryPath")}
                   </label>
                   <input
+                    id={WEBDAV_LIBRARY_PATH_ID}
                     value={remoteRootPath}
                     onChange={(event) => setRemoteRootPath(event.target.value)}
-                    placeholder="/OpenKara"
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     spellCheck={false}
                   />
                   <p className="mt-1 text-[11px] text-[var(--color-text-dimmer)]">
-                    {t("settings.library.webdavLibraryPathDescription", {
-                      defaultValue:
-                        "Point this at an existing remote repository path, or enter a new folder name and OpenKara will initialize it for you.",
-                    })}
+                    {t("settings.library.webdavLibraryPathDescription")}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                      {t("settings.library.webdavUsername", {
-                        defaultValue: "Username",
-                      })}
+                    <label
+                      htmlFor={WEBDAV_USERNAME_ID}
+                      className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                    >
+                      {t("settings.library.webdavUsername")}
                     </label>
                     <input
+                      id={WEBDAV_USERNAME_ID}
                       value={remoteUsername}
                       onChange={(event) =>
                         setRemoteUsername(event.target.value)
                       }
-                      placeholder="username"
                       className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                       spellCheck={false}
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                      {t("settings.library.webdavPassword", {
-                        defaultValue: "Password",
-                      })}
+                    <label
+                      htmlFor={WEBDAV_PASSWORD_ID}
+                      className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                    >
+                      {t("settings.library.webdavPassword")}
                     </label>
                     <input
+                      id={WEBDAV_PASSWORD_ID}
                       type="password"
                       value={remotePassword}
                       onChange={(event) =>
                         setRemotePassword(event.target.value)
                       }
-                      placeholder="password"
                       className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     />
                   </div>
@@ -711,12 +687,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
-                    ? t("settings.library.connecting", {
-                        defaultValue: "Connecting…",
-                      })
-                    : t("settings.library.connectWebdavLibrary", {
-                        defaultValue: "Connect WebDAV library",
-                      })}
+                    ? t("settings.library.connecting")
+                    : t("settings.library.connectWebdavLibrary")}
                 </button>
               </div>
             )}
@@ -725,9 +697,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
                   <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
-                    {t("settings.library.displayName", {
-                      defaultValue: "Display name",
-                    })}
+                    {t("settings.library.displayName")}
                   </label>
                   <input
                     value={remoteDisplayName}
@@ -739,10 +709,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   />
                 </div>
                 <p className="text-[11px] text-[var(--color-text-dimmer)]">
-                  {t("settings.library.dropboxBundledDescription", {
-                    defaultValue:
-                      "OpenKara uses its bundled Dropbox app registration and will create or reuse a folder with this display name in Dropbox.",
-                  })}
+                  {t("settings.library.dropboxBundledDescription")}
                 </p>
 
                 <button
@@ -751,12 +718,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
-                    ? t("settings.library.waitingForDropbox", {
-                        defaultValue: "Waiting for Dropbox…",
-                      })
-                    : t("settings.library.connectDropbox", {
-                        defaultValue: "Connect Dropbox",
-                      })}
+                    ? t("settings.library.waitingForDropbox")
+                    : t("settings.library.connectDropbox")}
                 </button>
 
                 {remoteAuthorizationUrl && (
@@ -766,10 +729,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     rel="noreferrer"
                     className="block text-[12px] text-[var(--color-accent)] underline underline-offset-2"
                   >
-                    {t("settings.library.openDropboxBrowserSignInAgain", {
-                      defaultValue:
-                        "Open Dropbox sign-in in your browser again",
-                    })}
+                    {t("settings.library.openDropboxBrowserSignInAgain")}
                   </a>
                 )}
               </div>

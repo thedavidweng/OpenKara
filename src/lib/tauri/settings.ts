@@ -14,6 +14,19 @@ import type {
   WindowShellStateSnapshot,
 } from "@/types/ipc";
 
+export interface NativeAppMenuLabels {
+  file: string;
+  edit: string;
+  view: string;
+  window: string;
+  help: string;
+  import: string;
+  settings: string;
+  switchLibrary: string;
+  toggleSidebar: string;
+  copyDebugInfo: string;
+}
+
 export function getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot> {
   return invoke<ModelBootstrapStatusSnapshot>("get_model_bootstrap_status");
 }
@@ -36,6 +49,12 @@ export function setNativeSidebarVisibility(visible: boolean): Promise<void> {
 
 export function windowReady(): Promise<void> {
   return invoke<void>("window_ready");
+}
+
+export function setNativeAppMenuLabels(
+  labels: NativeAppMenuLabels,
+): Promise<void> {
+  return invoke<void>("set_native_app_menu_labels", { labels });
 }
 
 export function setStemMode(mode: string): Promise<AppSettings> {

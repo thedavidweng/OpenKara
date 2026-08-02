@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "취소",
     "close": "닫기",
@@ -14,7 +33,8 @@
     "loading": "불러오는 중…",
     "deleting": "삭제 중...",
     "unknownTitle": "제목 없음",
-    "unknownArtist": "아티스트 없음"
+    "unknownArtist": "아티스트 없음",
+    "coverArtAlt": "{{title}} 커버 아트"
   },
   "setup": {
     "welcome": "노래방 라이브러리 설정",
@@ -63,6 +83,8 @@
     "allTracks": "전체 트랙",
     "separated": "분리됨",
     "localMusic": "로컬 음악",
+    "resize": "사이드바 크기 조정",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "정렬 기준",
       "recently_imported": "최근 가져온 순",
@@ -94,6 +116,9 @@
     "settings": "설정"
   },
   "windowChrome": {
+    "view": "보기",
+    "switchLibrary": "라이브러리 전환…",
+    "copyDebugInfo": "디버그 정보 복사",
     "file": "파일",
     "edit": "편집",
     "window": "창",
@@ -158,7 +183,8 @@
     "importPrompt": {
       "confirmTitle": "가져오기 확인",
       "confirmMessage": "노래 {{songCount}}곡을 가져올까요?",
-      "confirmOk": "가져오기"
+      "confirmOk": "가져오기",
+      "audioLyricsFilter": "오디오 및 가사"
     },
     "modelPreparing": "분리 모델을 준비하는 중…",
     "cancelSeparation": "분리 취소",
@@ -176,9 +202,11 @@
     "seek": "탐색",
     "selectMonitor": "모니터 선택",
     "monitor": "모니터 {{index}}",
+    "unnamedMonitor": "이름 없는 모니터 {{index}}",
     "localDisplayOutput": "로컬 디스플레이 출력",
     "airPlayOutput": "AirPlay 출력",
     "noDisplaysFound": "아직 발견된 디스플레이가 없어요.",
+    "seekToLine": "{{index}}번째 줄로 이동",
     "reconnecting": "다시 연결하는 중… ({{attempt}}/{{max}})",
     "resync": "재동기화됨 −{{delta}} ms",
     "reconnectFailed": "다시 연결 실패"
@@ -242,13 +270,22 @@
     "fontSizeIncrease": "가사 크기 키우기",
     "fontSizeReset": "가사 크기 초기화",
     "fontSizeResetShort": "초기화",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "재생 중인 가사 따라가기",
     "matchedToast": "가사를 \"{{song}}\"에 연결했어요",
     "unmatchedToast": "가사 파일을 노래에 연결하지 못했어요: {{file}}",
     "offsetDecrease": "가사를 0.5초 뒤로 조정",
     "offsetIncrease": "가사를 0.5초 앞으로 조정",
     "offsetReset": "가사 오프셋 초기화",
-    "offsetResetShort": "초기화"
+    "offsetResetShort": "초기화",
+    "switchToCentered": "가사를 가운데 정렬로 전환",
+    "switchToLeftAligned": "가사를 왼쪽 정렬로 전환"
   },
   "songEdit": {
     "title": "노래 정보 편집",
@@ -309,6 +346,11 @@
       "removeLibrary": "저장소 연결 해제",
       "deleteLibrary": "저장소 삭제",
       "typeToConfirmDelete": "영구 삭제를 확인하려면 \"{{displayName}}\"을(를) 입력하세요.",
+      "confirmDisconnectRemote": "{{appName}}에서 \"{{displayName}}\"의 연결을 끊을까요? 원격 저장소의 내용은 {{provider}}에 남아요.",
+      "confirmDisconnectLocal": "{{appName}}에서 이 라이브러리의 연결을 끊을까요? 라이브러리 데이터는 디스크에 남아요.",
+      "confirmDeleteRemote": "\"{{displayName}}\"을(를) 삭제할까요? {{provider}}의 {{path}}에 있는 원격 저장소 내용과 로컬 작업 복사본을 삭제해요.",
+      "confirmDeleteLocal": "{{appName}}에서 \"{{displayName}}\"을(를) 삭제할까요? 디스크에서 로컬 라이브러리 데이터를 삭제해요.",
+      "thisLibrary": "이 라이브러리",
       "refreshRemoteRepository": "원격 저장소 새로고침",
       "reauthorizeRemoteRepository": "원격 저장소 재승인",
       "reauthorizeRemoteRepositoryDescription": "이 원격 저장소에 대한 접근 권한을 갱신해요. 저장소가 이동된 경우 OpenKara가 저장된 위치를 바꾸기 전에 확인해요.",
@@ -459,7 +501,11 @@
       "presetWarm": "따뜻함",
       "presetBright": "밝음",
       "presetRock": "록",
-      "presetPop": "팝"
+      "presetPop": "팝",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "크로스페이드",
@@ -564,6 +610,7 @@
       "entries": "항목 수",
       "pinned": "고정됨",
       "clearButton": "캐시 지우기",
+      "clearing": "지우는 중…",
       "evicted": "항목 {{count}}개를 제거했어요."
     },
     "remoteDiagnostics": {
@@ -642,6 +689,7 @@
     "singer": "가수",
     "singerName": "가수 이름",
     "removeSinger": "가수 제거",
+    "removeSingerAriaLabel": "{{name}} 제거",
     "confirmRemoveSinger": "가수 제거",
     "confirmRemoveSingerMessage": "이 가수는 대기열의 노래에 지정되어 있어요. 가수를 제거하면 해당 노래도 대기열에서 함께 제거돼요."
   },

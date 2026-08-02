@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -27,6 +28,7 @@ export function SidebarRail({
   resizable = true,
   children,
 }: SidebarRailProps) {
+  const { t } = useTranslation();
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(
     null,
   );
@@ -120,11 +122,11 @@ export function SidebarRail({
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize sidebar"
+            aria-label={t("sidebar.resize")}
             aria-valuemin={MIN_SIDEBAR_WIDTH}
             aria-valuemax={MAX_SIDEBAR_WIDTH}
             aria-valuenow={width}
-            aria-valuetext={`${width} px`}
+            aria-valuetext={t("sidebar.widthValue", { width })}
             tabIndex={0}
             onPointerDown={handleDragStart}
             onKeyDown={handleKeyboardResize}

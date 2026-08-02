@@ -59,7 +59,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
     try {
       await createPlaylist(name.trim());
     } catch {
-      notifyError(new Error("Failed to create playlist"));
+      notifyError(new Error(t("errors.somethingWentWrong")));
     }
   };
   const separableSongs = songs.filter(songCanBeSeparated);

@@ -78,11 +78,11 @@ test.describe("Rotation / singer management", () => {
     await expect(queueButton).toBeVisible();
     await queueButton.click();
 
-    // Rotation section should show "Singer" label and an "Add Singer" button
+    // Rotation section should show "Singer" label and an "Assign Singer" button
     await expect(page.getByText(/singer/i).first()).toBeVisible({
       timeout: 5000,
     });
-    await expect(page.getByText(/add singer/i).first()).toBeVisible();
+    await expect(page.getByText(/assign singer/i).first()).toBeVisible();
   });
 
   test("add singer input persists through the rotation IPC state", async ({
@@ -100,7 +100,7 @@ test.describe("Rotation / singer management", () => {
 
     // Click "Add Singer"
     await page
-      .getByText(/add singer/i)
+      .getByText(/assign singer/i)
       .first()
       .click();
 

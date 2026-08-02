@@ -636,7 +636,7 @@ describe("LyricsPanel contextual reveal", () => {
     });
 
     const button = host.querySelector(
-      "[aria-label='Switch to centered lyrics']",
+      "[aria-label='lyrics.switchToCentered']",
     ) as HTMLButtonElement;
     expect(button).toBeTruthy();
     act(() => {

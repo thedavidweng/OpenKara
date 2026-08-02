@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "キャンセル",
     "close": "閉じる",
@@ -14,7 +33,8 @@
     "loading": "読み込み中…",
     "deleting": "削除中...",
     "unknownTitle": "不明なタイトル",
-    "unknownArtist": "不明なアーティスト"
+    "unknownArtist": "不明なアーティスト",
+    "coverArtAlt": "{{title}}のジャケット"
   },
   "setup": {
     "welcome": "カラオケライブラリを設定",
@@ -63,6 +83,8 @@
     "allTracks": "すべてのトラック",
     "separated": "分離済み",
     "localMusic": "ローカル音楽",
+    "resize": "サイドバーの幅を変更",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "並び替え",
       "recently_imported": "最近インポート",
@@ -94,6 +116,9 @@
     "settings": "設定"
   },
   "windowChrome": {
+    "view": "表示",
+    "switchLibrary": "ライブラリを切り替え",
+    "copyDebugInfo": "デバッグ情報をコピー",
     "file": "ファイル",
     "edit": "編集",
     "window": "ウィンドウ",
@@ -158,7 +183,8 @@
     "importPrompt": {
       "confirmTitle": "インポートの確認",
       "confirmMessage": "{{songCount}} 曲をインポートしますか？",
-      "confirmOk": "インポート"
+      "confirmOk": "インポート",
+      "audioLyricsFilter": "音声と歌詞"
     },
     "modelPreparing": "分離モデルを準備しています…",
     "cancelSeparation": "分離をキャンセル",
@@ -176,9 +202,11 @@
     "seek": "シーク",
     "selectMonitor": "モニターを選択",
     "monitor": "モニター {{index}}",
+    "unnamedMonitor": "名前のないモニター {{index}}",
     "localDisplayOutput": "ローカルディスプレイ出力",
     "airPlayOutput": "AirPlay 出力",
     "noDisplaysFound": "ディスプレイがまだ見つかりません。",
+    "seekToLine": "{{index}}行目へ移動",
     "reconnecting": "再接続中… ({{attempt}}/{{max}})",
     "resync": "−{{delta}} ms 再同期しました",
     "reconnectFailed": "再接続に失敗しました"
@@ -242,13 +270,22 @@
     "fontSizeIncrease": "歌詞のサイズを拡大",
     "fontSizeReset": "歌詞のサイズをリセット",
     "fontSizeResetShort": "リセット",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "再生中の歌詞を追従",
     "matchedToast": "歌詞を「{{song}}」に一致させました",
     "unmatchedToast": "歌詞ファイルを曲に一致させられませんでした: {{file}}",
     "offsetDecrease": "歌詞を0.5秒戻す",
     "offsetIncrease": "歌詞を0.5秒進める",
     "offsetReset": "歌詞オフセットをリセット",
-    "offsetResetShort": "リセット"
+    "offsetResetShort": "リセット",
+    "switchToCentered": "歌詞を中央揃えに切り替え",
+    "switchToLeftAligned": "歌詞を左揃えに切り替え"
   },
   "songEdit": {
     "title": "曲情報を編集",
@@ -309,6 +346,11 @@
       "removeLibrary": "リポジトリを切断",
       "deleteLibrary": "リポジトリを削除",
       "typeToConfirmDelete": "完全に削除するには「{{displayName}}」と入力してください。",
+      "confirmDisconnectRemote": "{{appName}} から「{{displayName}}」を切断しますか？リモートリポジトリの内容は {{provider}} に残ります。",
+      "confirmDisconnectLocal": "{{appName}} からこのライブラリを切断しますか？ライブラリのデータはディスクに残ります。",
+      "confirmDeleteRemote": "「{{displayName}}」を削除しますか？{{provider}} の {{path}} にあるリモートリポジトリの内容とローカル作業コピーを削除します。",
+      "confirmDeleteLocal": "{{appName}} から「{{displayName}}」を削除しますか？ローカルライブラリのデータをディスクから削除します。",
+      "thisLibrary": "このライブラリ",
       "refreshRemoteRepository": "リモートリポジトリを更新",
       "reauthorizeRemoteRepository": "リモートリポジトリを再認証",
       "reauthorizeRemoteRepositoryDescription": "このリモートリポジトリへのアクセスを更新します。リポジトリが移動されている場合、OpenKara は保存された場所を置き換える前に確認します。",
@@ -459,7 +501,11 @@
       "presetWarm": "ウォーム",
       "presetBright": "ブライト",
       "presetRock": "ロック",
-      "presetPop": "ポップ"
+      "presetPop": "ポップ",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "クロスフェード",
@@ -564,6 +610,7 @@
       "entries": "エントリ",
       "pinned": "固定済み",
       "clearButton": "キャッシュをクリア",
+      "clearing": "消去中…",
       "evicted": "{{count}} 件のエントリを削除しました。"
     },
     "remoteDiagnostics": {
@@ -642,6 +689,7 @@
     "singer": "シンガー",
     "singerName": "シンガー名",
     "removeSinger": "シンガーを削除",
+    "removeSingerAriaLabel": "{{name}}を削除",
     "confirmRemoveSinger": "シンガーを削除",
     "confirmRemoveSingerMessage": "このシンガーはキュー内の曲に割り当てられています。削除すると、それらの曲もキューから削除されます。"
   },

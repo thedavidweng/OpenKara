@@ -38,7 +38,7 @@ export function SettingsAboutSection() {
 
   const handleCopy = async () => {
     try {
-      await copyDebugInfo();
+      await copyDebugInfo({ translate: t });
       setCopied(true);
       window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
     } catch (error) {
@@ -46,23 +46,23 @@ export function SettingsAboutSection() {
     }
   };
 
-  const placeholder = "—";
+  const emptyValue = "—";
   const version = info
     ? `${info.app_version} (${t("settings.about.build")} ${info.build_sha})`
-    : placeholder;
-  const system = info ? `${info.os} · ${info.arch}` : placeholder;
+    : emptyValue;
+  const system = info ? `${info.os} · ${info.arch}` : emptyValue;
   const catalog = info
     ? `${info.catalog_generation} · ${info.catalog_release_id}`
-    : placeholder;
+    : emptyValue;
   const model = info
     ? `${info.model_variant} · ${info.model_state}`
-    : placeholder;
+    : emptyValue;
   const runtime = info
     ? `${info.runtime_state} · ${info.runtime_version}`
-    : placeholder;
-  const executionProvider = info ? info.execution_provider : placeholder;
-  const modelPath = info ? info.model_path : placeholder;
-  const logFile = info ? info.log_file : placeholder;
+    : emptyValue;
+  const executionProvider = info ? info.execution_provider : emptyValue;
+  const modelPath = info ? info.model_path : emptyValue;
+  const logFile = info ? info.log_file : emptyValue;
 
   return (
     <SettingsSectionCard

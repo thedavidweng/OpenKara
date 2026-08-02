@@ -122,11 +122,7 @@ export function RemoteLibraryWizard({
       mode === "mirror_active_local" &&
       !activeLocalLibrary
     ) {
-      setError(
-        t("settings.library.mirrorActiveLocalDescriptionNoLocal", {
-          defaultValue: "Switch to the local library you want to mirror first.",
-        }),
-      );
+      setError(t("settings.library.mirrorActiveLocalDescriptionNoLocal"));
       return;
     }
 
@@ -181,8 +177,6 @@ export function RemoteLibraryWizard({
       ) {
         const confirmed = window.confirm(
           t("settings.library.confirmRemoteRepositoryRelocation", {
-            defaultValue:
-              "The selected remote repository location changed. Replace OpenKara's saved location with {{nextLocation}}? The old remote contents will not be deleted.",
             nextLocation: candidate.remote_path_display,
           }),
         );
@@ -202,12 +196,7 @@ export function RemoteLibraryWizard({
         : registry.active_library_id;
 
       if (!remoteLibraryId) {
-        throw new Error(
-          t("settings.library.remoteLibraryMissingId", {
-            defaultValue:
-              "The new remote repository was registered without an ID.",
-          }),
-        );
+        throw new Error(t("settings.library.remoteLibraryMissingId"));
       }
 
       if (
@@ -222,18 +211,12 @@ export function RemoteLibraryWizard({
         await actions.switchLibrary(remoteLibraryId);
         setMessage(
           t("settings.library.remoteLibraryCreatedAndMirroring", {
-            defaultValue:
-              "Remote repository created and now mirroring {{displayName}}.",
             displayName: activeLocalLibrary.display_name,
           }),
         );
       } else {
         await actions.switchLibrary(remoteLibraryId);
-        setMessage(
-          t("settings.library.remoteLibraryConnected", {
-            defaultValue: "Remote repository connected.",
-          }),
-        );
+        setMessage(t("settings.library.remoteLibraryConnected"));
       }
 
       onClose();
@@ -277,18 +260,10 @@ export function RemoteLibraryWizard({
               id={titleId}
               className="text-lg font-semibold text-[var(--color-text)]"
             >
-              {t(titleKey, {
-                defaultValue: isReauthorizeFlow
-                  ? "Reauthorize remote repository"
-                  : "Add Remote Repository",
-              })}
+              {t(titleKey)}
             </h2>
             <p className="mt-1 text-sm text-[var(--color-text-dim)]">
-              {t(descriptionKey, {
-                defaultValue: isReauthorizeFlow
-                  ? "Renew access to this remote repository without changing its contents."
-                  : "Open an existing remote repository, or create one and mirror the active local library.",
-              })}
+              {t(descriptionKey)}
             </p>
           </div>
           <button
@@ -316,15 +291,10 @@ export function RemoteLibraryWizard({
               }`}
             >
               <p className="text-sm font-medium text-[var(--color-text)]">
-                {t("settings.library.openRemoteLibrary", {
-                  defaultValue: "Open Remote Repository",
-                })}
+                {t("settings.library.openRemoteLibrary")}
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-dim)]">
-                {t("settings.library.openRemoteLibraryDescription", {
-                  defaultValue:
-                    "Register a remote working copy and switch into it.",
-                })}
+                {t("settings.library.openRemoteLibraryDescription")}
               </p>
             </button>
             <button
@@ -339,21 +309,14 @@ export function RemoteLibraryWizard({
               } disabled:opacity-50`}
             >
               <p className="text-sm font-medium text-[var(--color-text)]">
-                {t("settings.library.createAndMirrorActiveLocal", {
-                  defaultValue: "Create And Mirror Active Local",
-                })}
+                {t("settings.library.createAndMirrorActiveLocal")}
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-dim)]">
                 {activeLocalLibrary
                   ? t("settings.library.mirrorActiveLocalDescriptionWithName", {
-                      defaultValue:
-                        "Mirror {{displayName}} into a new remote repository.",
                       displayName: activeLocalLibrary.display_name,
                     })
-                  : t("settings.library.mirrorActiveLocalDescriptionNoLocal", {
-                      defaultValue:
-                        "Switch to the local library you want to mirror first.",
-                    })}
+                  : t("settings.library.mirrorActiveLocalDescriptionNoLocal")}
               </p>
             </button>
           </div>
@@ -396,9 +359,7 @@ export function RemoteLibraryWizard({
               htmlFor={displayNameInputId}
               className="mb-1 block text-xs font-medium text-[var(--color-text)]"
             >
-              {t("settings.library.displayName", {
-                defaultValue: "Display name",
-              })}
+              {t("settings.library.displayName")}
             </label>
             <input
               id={displayNameInputId}
@@ -410,19 +371,13 @@ export function RemoteLibraryWizard({
 
           {provider === "google_drive" && (
             <p className="text-xs text-[var(--color-text-dim)]">
-              {t("settings.library.googleDriveBundledDescription", {
-                defaultValue:
-                  "OpenKara uses its bundled Google Drive app registration and will create or reuse a folder with this display name in My Drive.",
-              })}
+              {t("settings.library.googleDriveBundledDescription")}
             </p>
           )}
 
           {provider === "dropbox" && (
             <p className="text-xs text-[var(--color-text-dim)]">
-              {t("settings.library.dropboxBundledDescription", {
-                defaultValue:
-                  "OpenKara uses its bundled Dropbox app registration and will create or reuse a folder with this display name in Dropbox.",
-              })}
+              {t("settings.library.dropboxBundledDescription")}
             </p>
           )}
 
@@ -433,16 +388,13 @@ export function RemoteLibraryWizard({
                   htmlFor={serverUrlInputId}
                   className="mb-1 block text-xs font-medium text-[var(--color-text)]"
                 >
-                  {t("settings.library.webdavServerUrl", {
-                    defaultValue: "Server URL",
-                  })}
+                  {t("settings.library.webdavServerUrl")}
                 </label>
                 <input
                   id={serverUrlInputId}
                   type="url"
                   value={serverUrl}
                   onChange={(event) => setServerUrl(event.target.value)}
-                  placeholder="https://dav.example.com/remote.php/dav/files/you/"
                   className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   spellCheck={false}
                 />
@@ -452,15 +404,12 @@ export function RemoteLibraryWizard({
                   htmlFor={rootPathInputId}
                   className="mb-1 block text-xs font-medium text-[var(--color-text)]"
                 >
-                  {t("settings.library.webdavLibraryPath", {
-                    defaultValue: "Library path",
-                  })}
+                  {t("settings.library.webdavLibraryPath")}
                 </label>
                 <input
                   id={rootPathInputId}
                   value={rootPath}
                   onChange={(event) => setRootPath(event.target.value)}
-                  placeholder="/OpenKara"
                   className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   spellCheck={false}
                 />
@@ -471,9 +420,7 @@ export function RemoteLibraryWizard({
                     htmlFor={usernameInputId}
                     className="mb-1 block text-xs font-medium text-[var(--color-text)]"
                   >
-                    {t("settings.library.webdavUsername", {
-                      defaultValue: "Username",
-                    })}
+                    {t("settings.library.webdavUsername")}
                   </label>
                   <input
                     id={usernameInputId}
@@ -489,9 +436,7 @@ export function RemoteLibraryWizard({
                     htmlFor={passwordInputId}
                     className="mb-1 block text-xs font-medium text-[var(--color-text)]"
                   >
-                    {t("settings.library.webdavPassword", {
-                      defaultValue: "Password",
-                    })}
+                    {t("settings.library.webdavPassword")}
                   </label>
                   <input
                     id={passwordInputId}
@@ -513,17 +458,11 @@ export function RemoteLibraryWizard({
             className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading
-              ? t("settings.library.connecting", {
-                  defaultValue: "Connecting…",
-                })
+              ? t("settings.library.connecting")
               : !isRecoveryFlow && mode === "mirror_active_local"
-                ? t("settings.library.createRemoteLibraryAndStartMirror", {
-                    defaultValue: "Create Remote Repository And Start Mirror",
-                  })
+                ? t("settings.library.createRemoteLibraryAndStartMirror")
                 : isReauthorizeFlow
-                  ? t("settings.library.reauthorizeRemoteRepository", {
-                      defaultValue: "Reauthorize remote repository",
-                    })
+                  ? t("settings.library.reauthorizeRemoteRepository")
                   : getRemoteProviderConnectLabel(t, provider)}
           </button>
 
@@ -534,9 +473,7 @@ export function RemoteLibraryWizard({
               rel="noreferrer"
               className="block text-xs text-[var(--color-accent)] underline underline-offset-2"
             >
-              {t("settings.library.openBrowserSignInAgain", {
-                defaultValue: "Open browser sign-in again",
-              })}
+              {t("settings.library.openBrowserSignInAgain")}
             </a>
           )}
 
@@ -560,9 +497,7 @@ export function RemoteLibraryWizard({
         {remoteLibraries.length > 0 && (
           <div className="mt-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-4">
             <p className="mb-2 text-xs font-medium text-[var(--color-text-dim)]">
-              {t("settings.library.existingRemoteLibraries", {
-                defaultValue: "Existing Remote Libraries",
-              })}
+              {t("settings.library.existingRemoteLibraries")}
             </p>
             <div className="space-y-2">
               {remoteLibraries.map((library) => (

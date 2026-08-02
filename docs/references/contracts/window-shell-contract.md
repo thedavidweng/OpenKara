@@ -10,6 +10,7 @@ shell-specific React entry tree.
 - `get_window_shell_state() -> WindowShellStateSnapshot`
 - `set_native_sidebar_visibility(visible: boolean) -> void` (legacy no-op; kept for IPC stability)
 - `window_ready() -> void`
+- `set_native_app_menu_labels(labels: NativeAppMenuLabels) -> void`
 
 The frontend calls `window_ready` after the first real app screen commits.
 The main window may start hidden. This command is the contract boundary. It
@@ -30,6 +31,19 @@ interface WindowShellStateSnapshot {
   traffic_light_inset_leading: number;
   sidebar_header_height_px: number;
   sidebar_width_px: number;
+}
+
+interface NativeAppMenuLabels {
+  file: string;
+  edit: string;
+  view: string;
+  window: string;
+  help: string;
+  import: string;
+  settings: string;
+  switchLibrary: string;
+  toggleSidebar: string;
+  copyDebugInfo: string;
 }
 ```
 
@@ -56,6 +70,10 @@ interface WindowShellStateSnapshot {
 - `WindowShellStateSnapshot` only controls **window-level** metrics (toolbar height, traffic-light layouts, sidebar width token). It must not imply a second rendering path or split-webview product shell.
 - Windows/Linux return `desktop` values unless their shell design changes intentionally.
 - Native visual work happens in shared components and CSS tokens. The host tier only supplies metric tokens.
+- `set_native_app_menu_labels` receives labels from the shared React i18n
+  runtime. macOS uses them for its global application menu except for the
+  application-menu title, which comes from the bundle name. Other platforms
+  accept the command as a no-op so the shared runtime has one contract.
 
 ## Sidebar Visibility Sync
 

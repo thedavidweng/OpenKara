@@ -114,7 +114,7 @@ export function SettingsGeneralSection() {
           >
             {SUPPORTED_LANGUAGES.map((language) => (
               <option key={language.code} value={language.code}>
-                {language.name}
+                {t(language.nameKey)}
               </option>
             ))}
           </select>

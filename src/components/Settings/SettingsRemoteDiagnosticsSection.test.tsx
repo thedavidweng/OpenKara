@@ -23,8 +23,7 @@ vi.mock("react-i18next", async (importOriginal) => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (_key: string, opts?: { defaultValue?: string }) =>
-        opts?.defaultValue ?? "",
+      t: (key: string) => key,
     }),
   };
 });
@@ -134,10 +133,12 @@ describe("SettingsRemoteDiagnosticsSection", () => {
 
     render(<SettingsRemoteDiagnosticsSection />);
     await waitFor(() => {
-      expect(screen.getByText("Keep my changes")).toBeTruthy();
+      expect(
+        screen.getByText("settings.remoteDiagnostics.conflictKeepLocal"),
+      ).toBeTruthy();
     });
 
-    screen.getByText("Keep my changes").click();
+    screen.getByText("settings.remoteDiagnostics.conflictKeepLocal").click();
     await waitFor(() => {
       expect(mockResolveRemoteConflict).toHaveBeenCalledWith("keep_local");
     });
@@ -145,7 +146,7 @@ describe("SettingsRemoteDiagnosticsSection", () => {
       expect(mockGetRemoteDiagnostics).toHaveBeenCalledTimes(2);
     });
 
-    screen.getByText("Use the remote version").click();
+    screen.getByText("settings.remoteDiagnostics.conflictUseRemote").click();
     await waitFor(() => {
       expect(mockResolveRemoteConflict).toHaveBeenCalledWith("use_remote");
     });
@@ -170,7 +171,9 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     await waitFor(() => {
       expect(screen.getByText("clean")).toBeTruthy();
     });
-    expect(screen.queryByText("Keep my changes")).toBeNull();
+    expect(
+      screen.queryByText("settings.remoteDiagnostics.conflictKeepLocal"),
+    ).toBeNull();
   });
 
   test("renders recent operations list", async () => {
@@ -244,7 +247,11 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Refresh/i }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "settings.remoteDiagnostics.refresh",
+        }),
+      );
     });
 
     await waitFor(() => {

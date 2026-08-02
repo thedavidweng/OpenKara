@@ -20,7 +20,10 @@ const { mockRotationState, mockQueueState } = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { name?: string }) =>
+      key === "rotation.removeSingerAriaLabel"
+        ? `Remove ${options?.name}`
+        : key,
   }),
 }));
 
@@ -42,6 +45,9 @@ describe("RotationControls", () => {
     expect(markup).toContain("John");
     expect(markup).toContain("Jack");
     expect(markup).toContain("rotation.shuffle");
+    expect(markup).toContain('aria-label="Remove David"');
+    expect(markup).toContain('aria-label="Remove John"');
+    expect(markup).toContain('aria-label="Remove Jack"');
     expect(markup).toContain('aria-pressed="true"');
   });
 
@@ -59,7 +65,7 @@ describe("RotationControls", () => {
   test("shows add singer button when no singers exist", () => {
     mockRotationState.singerNames = [];
     const markup = renderToStaticMarkup(<RotationControls />);
-    expect(markup).toContain("+ Add Singer");
+    expect(markup).toContain("+ rotation.assignSinger");
     mockRotationState.singerNames = ["David", "John", "Jack"];
   });
 });

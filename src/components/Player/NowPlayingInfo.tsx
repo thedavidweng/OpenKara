@@ -22,7 +22,7 @@ export function NowPlayingInfo({
     return (
       <div className="flex items-center gap-3">
         <span className="truncate text-[12px] font-medium text-[var(--color-text-dim)]">
-          OpenKara
+          {t("app.name")}
         </span>
       </div>
     );
@@ -51,7 +51,7 @@ export function NowPlayingInfo({
           songHash={snapshot.song_id}
           coverArt={song?.cover_art}
           thumbnailPath={song?.artwork_thumb_path}
-          alt={`${title} cover art`}
+          alt={t("common.coverArtAlt", { title })}
           className="h-12 w-12 shrink-0"
         />
       )}

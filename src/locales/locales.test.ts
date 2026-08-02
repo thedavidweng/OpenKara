@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { NATIVE_LANGUAGE_NAMES } from "@/lib/i18n";
 import {
   analyzeReference,
   compareLocale,
@@ -68,23 +67,19 @@ describe("locale registry", () => {
     );
   });
 
-  test("every locale file has a native name and vice versa", () => {
-    const fileCodes = Object.keys(LOCALES).sort();
-    const nameCodes = Object.keys(NATIVE_LANGUAGE_NAMES).sort();
+  test("every locale has a translated name for each shipped language", () => {
+    const languageCodes = Object.keys(LOCALES).sort();
 
-    const filesWithoutName = fileCodes.filter(
-      (code) => !(code in NATIVE_LANGUAGE_NAMES),
-    );
-    const namesWithoutFile = nameCodes.filter((code) => !(code in LOCALES));
-
-    expect(
-      filesWithoutName,
-      `locale files missing a NATIVE_LANGUAGE_NAMES entry: ${filesWithoutName.join(", ")}`,
-    ).toEqual([]);
-    expect(
-      namesWithoutFile,
-      `NATIVE_LANGUAGE_NAMES entries with no locale file: ${namesWithoutFile.join(", ")}`,
-    ).toEqual([]);
+    for (const [code, locale] of Object.entries(LOCALES)) {
+      const missing = languageCodes.filter(
+        (languageCode) =>
+          lookup(locale, `languageNames.${languageCode}`) === undefined,
+      );
+      expect(
+        missing,
+        `${code}.json is missing language names: ${missing.join(", ")}`,
+      ).toEqual([]);
+    }
   });
 });
 
@@ -309,6 +304,68 @@ describe("bootstrap banner i18n completeness", () => {
     expect(
       missing,
       `Missing locale keys referenced in the bootstrap banners: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+const USER_FACING_SOURCE_FILES = import.meta.glob(
+  [
+    "../components/**/*.tsx",
+    "../lib/**/*.ts",
+    "../runtime/**/*.ts",
+    "../hooks/**/*.ts",
+    "../stores/**/*.ts",
+  ],
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+
+describe("user-facing copy", () => {
+  test("does not keep language in production source fallbacks or literals", () => {
+    const violations: string[] = [];
+    const patterns = [
+      ["translation fallback", /defaultValue\s*:/g],
+      ["literal accessible name", /aria-label\s*=\s*["']/g],
+      ["literal input placeholder", /placeholder\s*=\s*["']/g],
+      [
+        "literal tooltip or image alternative",
+        /(?:title|alt)\s*=\s*(?:"[^"]+?"|'[^']+?')/g,
+      ],
+      ["literal browser confirmation", /window\.confirm\s*\(\s*["'`]/g],
+    ] as const;
+
+    for (const [path, source] of Object.entries(USER_FACING_SOURCE_FILES)) {
+      if (path.includes(".test.")) continue;
+      for (const [label, pattern] of patterns) {
+        for (const match of source.matchAll(pattern)) {
+          violations.push(`${path}: ${label} at offset ${match.index}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  test("resolves every static translation call in every locale", () => {
+    const keys = new Set<string>();
+    const translationCall = /\b(?:t|i18next\.t)\(\s*["']([^"']+)["']/g;
+
+    for (const [path, source] of Object.entries(USER_FACING_SOURCE_FILES)) {
+      if (path.includes(".test.")) continue;
+      for (const match of source.matchAll(translationCall)) {
+        keys.add(match[1]);
+      }
+    }
+
+    const missing: string[] = [];
+    for (const [code, locale] of Object.entries(LOCALES)) {
+      for (const key of keys) {
+        if (!isPresent(locale, key)) missing.push(`${code}:${key}`);
+      }
+    }
+
+    expect(
+      missing,
+      `Missing static translation keys: ${missing.join(", ")}`,
     ).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import {
   WebviewWindow,
 } from "@tauri-apps/api/webviewWindow";
 import { availableMonitors } from "@tauri-apps/api/window";
+import i18next from "@/lib/i18n";
 
 export async function getMonitors() {
   return availableMonitors();
@@ -25,7 +26,7 @@ export async function openFullscreenPlayer(monitorIndex?: number) {
 
   new WebviewWindow("fullscreen-player", {
     url: "index.html?mode=fullscreen-player",
-    title: "OpenKara Player",
+    title: i18next.t("app.name"),
     x: target.position.x / scaleFactor,
     y: target.position.y / scaleFactor,
     width: target.size.width / scaleFactor,

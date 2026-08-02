@@ -46,7 +46,6 @@ export function RemoteReconnectIndicator() {
         {t("player.reconnecting", {
           attempt,
           max: maxAttempts,
-          defaultValue: "Reconnecting… ({{attempt}}/{{max}})",
         })}
       </span>
     );
@@ -63,7 +62,6 @@ export function RemoteReconnectIndicator() {
       >
         {t("player.resync", {
           delta: resyncDeltaMs ?? 0,
-          defaultValue: "Resynced −{{delta}} ms",
         })}
       </span>
     );
@@ -78,9 +76,7 @@ export function RemoteReconnectIndicator() {
       className="flex items-center gap-1.5 rounded-md bg-[var(--color-destructive)]/10 px-2 py-0.5 text-[11px] text-[var(--color-destructive)]"
       title={reason ?? undefined}
     >
-      {t("player.reconnectFailed", {
-        defaultValue: "Reconnect failed",
-      })}
+      {t("player.reconnectFailed")}
     </span>
   );
 }

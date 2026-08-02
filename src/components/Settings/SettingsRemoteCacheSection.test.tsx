@@ -23,8 +23,14 @@ vi.mock("react-i18next", async (importOriginal) => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (_key: string, opts?: { defaultValue?: string }) =>
-        opts?.defaultValue ?? "",
+      t: (key: string, opts?: { count?: number }) =>
+        key === "settings.remoteCache.evicted"
+          ? `Evicted ${opts?.count ?? 0} entries.`
+          : key === "settings.remoteCache.clearButton"
+            ? "Clear Cache"
+            : key === "settings.remoteCache.clearing"
+              ? "Clearing…"
+              : key,
     }),
   };
 });

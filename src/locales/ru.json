@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Отмена",
     "close": "Закрыть",
@@ -14,7 +33,8 @@
     "loading": "Загрузка…",
     "deleting": "Удаление...",
     "unknownTitle": "Без названия",
-    "unknownArtist": "Неизвестный исполнитель"
+    "unknownArtist": "Неизвестный исполнитель",
+    "coverArtAlt": "Обложка: {{title}}"
   },
   "setup": {
     "welcome": "Настройте свою караоке-библиотеку",
@@ -63,6 +83,8 @@
     "allTracks": "Все треки",
     "separated": "Разделённые",
     "localMusic": "ЛОКАЛЬНАЯ МУЗЫКА",
+    "resize": "Изменить размер боковой панели",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Сортировать по",
       "recently_imported": "Недавно добавленные",
@@ -94,6 +116,9 @@
     "settings": "Настройки"
   },
   "windowChrome": {
+    "view": "Вид",
+    "switchLibrary": "Сменить библиотеку…",
+    "copyDebugInfo": "Копировать отладочную информацию",
     "file": "Файл",
     "edit": "Правка",
     "window": "Окно",
@@ -161,7 +186,8 @@
     "importPrompt": {
       "confirmTitle": "Подтвердить импорт",
       "confirmMessage": "Импортировать {{songCount}} песен?",
-      "confirmOk": "Импортировать"
+      "confirmOk": "Импортировать",
+      "audioLyricsFilter": "Аудио и тексты песен"
     },
     "modelPreparing": "Подготовка модели разделения…",
     "cancelSeparation": "Отменить разделение",
@@ -179,9 +205,11 @@
     "seek": "Перемотка",
     "selectMonitor": "Выбрать монитор",
     "monitor": "Монитор {{index}}",
+    "unnamedMonitor": "Монитор без имени {{index}}",
     "localDisplayOutput": "Вывод на локальный дисплей",
     "airPlayOutput": "Вывод через AirPlay",
     "noDisplaysFound": "Дисплеи пока не найдены.",
+    "seekToLine": "Перейти к строке {{index}}",
     "reconnecting": "Переподключение… ({{attempt}}/{{max}})",
     "resync": "Пересинхронизация −{{delta}} мс",
     "reconnectFailed": "Не удалось переподключиться"
@@ -245,13 +273,22 @@
     "fontSizeIncrease": "Увеличить размер текста",
     "fontSizeReset": "Сбросить размер текста",
     "fontSizeResetShort": "Сброс",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Следовать за воспроизведением",
     "matchedToast": "Текст сопоставлен с «{{song}}»",
     "unmatchedToast": "Не удалось сопоставить файл текста с песней: {{file}}",
     "offsetDecrease": "Сдвинуть текст назад на 0,5 секунды",
     "offsetIncrease": "Сдвинуть текст вперёд на 0,5 секунды",
     "offsetReset": "Сбросить смещение текста",
-    "offsetResetShort": "Сброс"
+    "offsetResetShort": "Сброс",
+    "switchToCentered": "Переключить текст по центру",
+    "switchToLeftAligned": "Переключить текст по левому краю"
   },
   "songEdit": {
     "title": "Изменить сведения о песне",
@@ -312,6 +349,11 @@
       "removeLibrary": "Отключить репозиторий",
       "deleteLibrary": "Удалить репозиторий",
       "typeToConfirmDelete": "Введите «{{displayName}}», чтобы подтвердить безвозвратное удаление.",
+      "confirmDisconnectRemote": "Отключить «{{displayName}}» от {{appName}}? Содержимое удалённого репозитория останется в {{provider}}.",
+      "confirmDisconnectLocal": "Отключить эту библиотеку от {{appName}}? Данные библиотеки останутся на диске.",
+      "confirmDeleteRemote": "Удалить «{{displayName}}»? Содержимое удалённого репозитория в {{provider}} по адресу {{path}} и локальная рабочая копия будут удалены.",
+      "confirmDeleteLocal": "Удалить «{{displayName}}» из {{appName}}? Данные локальной библиотеки будут удалены с диска.",
+      "thisLibrary": "эту библиотеку",
       "refreshRemoteRepository": "Обновить удалённый репозиторий",
       "reauthorizeRemoteRepository": "Повторно авторизовать удалённый репозиторий",
       "reauthorizeRemoteRepositoryDescription": "Обновите доступ к этому удалённому репозиторию. Если репозиторий был перемещён, OpenKara спросит перед заменой сохранённого расположения.",
@@ -462,7 +504,11 @@
       "presetWarm": "Тёплый",
       "presetBright": "Яркий",
       "presetRock": "Рок",
-      "presetPop": "Поп"
+      "presetPop": "Поп",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Кроссфейд",
@@ -567,6 +613,7 @@
       "entries": "Записи",
       "pinned": "закреплено",
       "clearButton": "Очистить кэш",
+      "clearing": "Очистка…",
       "evicted": "Удалено записей: {{count}}."
     },
     "remoteDiagnostics": {
@@ -645,6 +692,7 @@
     "singer": "Певец",
     "singerName": "Имя певца",
     "removeSinger": "Удалить певца",
+    "removeSingerAriaLabel": "Удалить {{name}}",
     "confirmRemoveSinger": "Удалить певца",
     "confirmRemoveSingerMessage": "Этот певец назначен на песни в очереди. При его удалении эти песни также будут убраны из очереди."
   },

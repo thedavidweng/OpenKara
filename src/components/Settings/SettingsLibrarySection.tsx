@@ -12,18 +12,13 @@ import {
   Unlink2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { InputDialog } from "./InputDialog";
 import { IntegrityReportModal } from "./IntegrityReportModal";
 import { RemoteLibraryWizard } from "./RemoteLibraryWizard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
-
-const remoteProviderLabels: Record<RemoteLibraryProvider, string> = {
-  google_drive: "Google Drive",
-  dropbox: "Dropbox",
-  webdav: "WebDAV",
-};
 
 type RemoteWizardOptions = {
   initialProvider?: RemoteLibraryProvider;
@@ -66,12 +61,19 @@ function webDavRootPathFromLocator(
   }
 }
 
-function describeLibrarySubtitle(library: RegisteredLibrary) {
+function describeLibrarySubtitle(t: TFunction, library: RegisteredLibrary) {
   if (library.kind === "local") {
     return library.root_path;
   }
 
-  return `${remoteProviderLabels[library.provider]} · ${
+  const providerLabel =
+    library.provider === "google_drive"
+      ? t("setup.remoteProvider.googleDrive.title")
+      : library.provider === "dropbox"
+        ? t("setup.remoteProvider.dropbox.title")
+        : t("setup.remoteProvider.webdav.title");
+
+  return `${providerLabel} · ${
     library.remote_path_display || library.remote_root_locator
   }`;
 }
@@ -150,7 +152,7 @@ export function SettingsLibrarySection() {
                       {library.display_name}
                     </p>
                     <p className="truncate text-[11px] text-[var(--color-text-dim)]">
-                      {describeLibrarySubtitle(library)}
+                      {describeLibrarySubtitle(t, library)}
                     </p>
                   </div>
                   {isActive ? (
@@ -169,9 +171,7 @@ export function SettingsLibrarySection() {
                           void actions.refreshRemoteRepository(library.id)
                         }
                         disabled={meta.isInitializing}
-                        title={t("settings.library.refreshRemoteRepository", {
-                          defaultValue: "Refresh remote repository",
-                        })}
+                        title={t("settings.library.refreshRemoteRepository")}
                         className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                       >
                         <RefreshCw size={12} />
@@ -205,9 +205,6 @@ export function SettingsLibrarySection() {
                         disabled={meta.isInitializing}
                         title={t(
                           "settings.library.reauthorizeRemoteRepository",
-                          {
-                            defaultValue: "Reauthorize remote repository",
-                          },
                         )}
                         className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                       >
@@ -224,9 +221,7 @@ export function SettingsLibrarySection() {
                           meta.integrityCheckInProgress ||
                           meta.integrityCleanupInProgress
                         }
-                        title={t("settings.integrity.checkButton", {
-                          defaultValue: "Check library integrity",
-                        })}
+                        title={t("settings.integrity.checkButton")}
                         className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
                       >
                         {meta.integrityCheckInProgress ? (
@@ -247,9 +242,7 @@ export function SettingsLibrarySection() {
                       })
                     }
                     disabled={meta.isInitializing}
-                    title={t("settings.library.renameLibrary", {
-                      defaultValue: "Rename library",
-                    })}
+                    title={t("settings.library.renameLibrary")}
                     className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
                     <PencilLine size={12} />
@@ -258,9 +251,7 @@ export function SettingsLibrarySection() {
                     type="button"
                     onClick={() => void actions.removeLibrary(library.id)}
                     disabled={meta.isInitializing}
-                    title={t("settings.library.removeLibrary", {
-                      defaultValue: "Disconnect repository",
-                    })}
+                    title={t("settings.library.removeLibrary")}
                     className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
                     <Unlink2 size={12} />
@@ -274,9 +265,7 @@ export function SettingsLibrarySection() {
                       })
                     }
                     disabled={meta.isInitializing}
-                    title={t("settings.library.deleteLibrary", {
-                      defaultValue: "Delete repository",
-                    })}
+                    title={t("settings.library.deleteLibrary")}
                     className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] hover:border-[var(--color-destructive)] disabled:opacity-50"
                   >
                     <Trash2 size={12} />
@@ -310,10 +299,7 @@ export function SettingsLibrarySection() {
           disabled={meta.isInitializing}
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
-          <Globe size={12} />{" "}
-          {t("settings.library.addRemoteLibrary", {
-            defaultValue: "Add Remote Repository",
-          })}
+          <Globe size={12} /> {t("settings.library.addRemoteLibrary")}
         </button>
       </div>
 

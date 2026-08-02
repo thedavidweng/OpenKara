@@ -20,7 +20,7 @@ vi.mock("react-i18next", async (importOriginal) => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (key: string) => {
+      t: (key: string, options?: { value?: string }) => {
         const map: Record<string, string> = {
           "settings.eq.label": "Equalizer",
           "settings.eq.enable": "Enable 5-band EQ",
@@ -45,9 +45,14 @@ vi.mock("react-i18next", async (importOriginal) => {
           "settings.eq.presetBright": "Bright",
           "settings.eq.presetRock": "Rock",
           "settings.eq.presetPop": "Pop",
+          "settings.eq.gainValue": "{{value}} dB",
+          "settings.eq.minimumGain": "-12 dB",
+          "settings.eq.neutralGain": "0",
+          "settings.eq.maximumGain": "+12 dB",
           "settings.eq.reset": "Reset to flat",
         };
-        return map[key] ?? key;
+        const value = map[key] ?? key;
+        return value.replace(/{{value}}/g, options?.value ?? "");
       },
     }),
   };

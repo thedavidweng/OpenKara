@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "取消",
     "close": "关闭",
@@ -14,7 +33,8 @@
     "loading": "加载中…",
     "deleting": "删除中...",
     "unknownTitle": "未知标题",
-    "unknownArtist": "未知艺术家"
+    "unknownArtist": "未知艺术家",
+    "coverArtAlt": "{{title}} 封面"
   },
   "setup": {
     "welcome": "欢迎使用 OpenKara",
@@ -63,6 +83,8 @@
     "allTracks": "全部曲目",
     "separated": "已分离",
     "localMusic": "本地音乐",
+    "resize": "调整侧栏宽度",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "排序方式",
       "recently_imported": "最近导入",
@@ -94,6 +116,9 @@
     "settings": "设置"
   },
   "windowChrome": {
+    "view": "视图",
+    "switchLibrary": "切换曲库…",
+    "copyDebugInfo": "复制调试信息",
     "file": "文件",
     "edit": "编辑",
     "window": "窗口",
@@ -159,7 +184,8 @@
     "importPrompt": {
       "confirmTitle": "确认导入",
       "confirmMessage": "是否导入 {{songCount}} 首歌曲？",
-      "confirmOk": "导入"
+      "confirmOk": "导入",
+      "audioLyricsFilter": "音频和歌词"
     },
     "modelPreparing": "正在准备分离模型…",
     "cancelSeparation": "取消分离",
@@ -177,9 +203,11 @@
     "seek": "进度",
     "selectMonitor": "选择显示器",
     "monitor": "显示器 {{index}}",
+    "unnamedMonitor": "未命名显示器 {{index}}",
     "localDisplayOutput": "本地显示器输出",
     "airPlayOutput": "AirPlay 输出",
     "noDisplaysFound": "暂未发现可用显示器。",
+    "seekToLine": "跳转到第 {{index}} 行",
     "reconnecting": "正在重连… ({{attempt}}/{{max}})",
     "resync": "已重新同步 −{{delta}} 毫秒",
     "reconnectFailed": "重连失败"
@@ -243,13 +271,22 @@
     "fontSizeIncrease": "增大歌词字号",
     "fontSizeReset": "重置歌词字号",
     "fontSizeResetShort": "重置",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "跟随正在播放的歌词",
     "matchedToast": "歌词已匹配到「{{song}}」",
     "unmatchedToast": "歌词文件无法匹配到歌曲：{{file}}",
     "offsetDecrease": "歌词后移 0.5 秒",
     "offsetIncrease": "歌词前移 0.5 秒",
     "offsetReset": "重置歌词偏移",
-    "offsetResetShort": "重置"
+    "offsetResetShort": "重置",
+    "switchToCentered": "切换为居中歌词",
+    "switchToLeftAligned": "切换为左对齐歌词"
   },
   "songEdit": {
     "title": "编辑歌曲信息",
@@ -310,6 +347,11 @@
       "removeLibrary": "断开资料库",
       "deleteLibrary": "删除资料库",
       "typeToConfirmDelete": "输入“{{displayName}}”以确认永久删除。",
+      "confirmDisconnectRemote": "断开“{{displayName}}”与 {{appName}} 的连接？远程资料库内容将保留在 {{provider}} 中。",
+      "confirmDisconnectLocal": "断开此曲库与 {{appName}} 的连接？曲库数据会保留在磁盘上。",
+      "confirmDeleteRemote": "删除“{{displayName}}”？这将从 {{provider}} 的 {{path}} 中删除远程资料库内容，并移除本地工作副本。",
+      "confirmDeleteLocal": "从 {{appName}} 中删除“{{displayName}}”？这会从磁盘删除本地曲库数据。",
+      "thisLibrary": "此曲库",
       "refreshRemoteRepository": "刷新远程资料库",
       "reauthorizeRemoteRepository": "重新授权远程资料库",
       "reauthorizeRemoteRepositoryDescription": "恢复 OpenKara 对这个远程资料库的访问权限。如果资料库位置发生变化，OpenKara 会先询问是否替换保存的位置。",
@@ -464,7 +506,11 @@
       "presetWarm": "温暖",
       "presetBright": "明亮",
       "presetRock": "摇滚",
-      "presetPop": "流行"
+      "presetPop": "流行",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "淡入淡出",
@@ -569,6 +615,7 @@
       "entries": "条目数",
       "pinned": "已锁定",
       "clearButton": "清除缓存",
+      "clearing": "正在清除…",
       "evicted": "已清除 {{count}} 个条目。"
     },
     "remoteDiagnostics": {
@@ -643,6 +690,7 @@
     "singer": "歌手",
     "singerName": "歌手姓名",
     "removeSinger": "移除歌手",
+    "removeSingerAriaLabel": "移除 {{name}}",
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },
