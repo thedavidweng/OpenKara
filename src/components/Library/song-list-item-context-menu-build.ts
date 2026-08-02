@@ -161,7 +161,7 @@ export function buildSongListContextMenuForSong(
     },
     fetchLyricsOnline: () => {
       api
-        .fetchLyricsOnline(song.hash, true)
+        .fetchLyricsOnline(song.hash, "user_replace")
         .then((payload) => {
           const currentSongId = usePlayerStore.getState().snapshot?.song_id;
           if (currentSongId === song.hash && payload.lines.length > 0) {

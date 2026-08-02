@@ -1,3 +1,4 @@
+pub mod acquisition;
 pub mod error;
 pub mod fetch;
 pub mod lrcapi;

@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ImportLyricsResult, LyricsPayload } from "@/types/ipc";
+import type {
+  ImportLyricsResult,
+  LyricsOnlineFetchIntent,
+  LyricsPayload,
+} from "@/types/ipc";
 
 export function importLyricsFiles(
   paths: string[],
@@ -28,10 +32,10 @@ export function extractEmbeddedLyrics(songId: string): Promise<LyricsPayload> {
 
 export function fetchLyricsOnline(
   songId: string,
-  userInitiated: boolean,
+  intent: LyricsOnlineFetchIntent,
 ): Promise<LyricsPayload> {
   return invoke<LyricsPayload>("fetch_lyrics_online", {
     songId,
-    userInitiated,
+    intent,
   });
 }

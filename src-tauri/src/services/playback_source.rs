@@ -2,30 +2,24 @@ use crate::{
     audio::{
         decode,
         error::PlaybackError,
-        playback::{LoadedStems, StemSet},
-        remote_source::{self, FetchEvent, RemoteMediaSource},
-        streaming::{self, StreamMetadata, StreamingTrack},
+        playback::LoadedStems,
+        streaming::{self, StreamingTrack},
     },
     cache,
     library::Song,
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
-    remote,
-    remote::cache_catalog::{CacheCatalog, CacheIdentity, CachePinGuard},
-    remote::provider::RemoteProvider,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::{mpsc, Arc, Mutex},
+    path::Path,
+    sync::{Arc, Mutex},
 };
 
-pub(crate) struct PlaybackSourceLoad {
-    pub(crate) decoded_audio: decode::DecodedAudio,
-    pub(crate) stems: Option<LoadedStems>,
-}
+pub(crate) use crate::remote::content::{
+    PlaybackSourceLoad, RemoteContent, StreamingPlaybackSource,
+};
 
 pub(crate) fn probe_song_audio(library_root: &LibraryRoot, song: &Song) -> Result<()> {
     let song_path = resolve_song_file_path(song)?;
@@ -63,21 +57,18 @@ pub(crate) fn load_playback_source(
     song: &Song,
 ) -> Result<PlaybackSourceLoad, PlaybackError> {
     if song.is_remote_stems() {
-        // Download missing stem files before decoding. The streaming path
-        // (load_playback_source_streaming) returns Ok(None) for remote stems,
-        // so this fallback path is the one that actually caches them. Without
-        // this call, a cold-cache remote-stems song would reach
-        // load_remote_stems_playback_source with no files on disk and fail
-        // to decode. request_id=0 is safe here because the fallback path is
-        // not guarded by the streaming stale-guard.
-        ensure_remote_stem_files_cached(app_data_dir, library_root, connection, song, 0)
+        // Remote stems must be fully materialized before synchronous decode.
+        RemoteContent::new(app_data_dir)
+            .ensure_stem_files_cached(library_root, connection, song, 0)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-        return load_remote_stems_playback_source(connection, library_root, song)
+        return RemoteContent::new(app_data_dir)
+            .load_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()));
     }
 
     if song.is_remote() {
-        ensure_remote_song_files_cached(app_data_dir, song)
+        RemoteContent::new(app_data_dir)
+            .ensure_song_files_cached(song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     }
 
@@ -96,9 +87,11 @@ pub(crate) fn load_cached_stems_for_song(
     request_id: u64,
 ) -> Result<LoadedStems, PlaybackError> {
     if song.is_remote_stems() {
-        ensure_remote_stem_files_cached(app_data_dir, library_root, connection, song, request_id)
+        RemoteContent::new(app_data_dir)
+            .ensure_stem_files_cached(library_root, connection, song, request_id)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-        return load_remote_stems_playback_source(connection, library_root, song)
+        return RemoteContent::new(app_data_dir)
+            .load_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?
             .stems
             .ok_or_else(|| {
@@ -114,7 +107,7 @@ pub(crate) fn load_cached_stems_for_song(
             PlaybackError::KaraokeNotReady(format!("no cached stems for song {}", song.hash))
         })?;
 
-    decode_stem_entry(library_root, &cached)
+    crate::remote::content::decode_stem_entry(library_root, &cached)
         .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))
 }
 
@@ -169,62 +162,24 @@ pub(crate) fn load_cached_stems_for_song_streaming(
     }))
 }
 
-pub(crate) struct StreamingPlaybackSource {
-    pub(crate) streaming_track: StreamingTrack,
-    pub(crate) metadata: StreamMetadata,
-    pub(crate) decode_handle: std::thread::JoinHandle<Result<(), decode::DecodeError>>,
-    /// Receiver for fetch events (only present for remote streaming).
-    /// The caller should consume these to handle ConsecutiveFailures, etc.
-    pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
-    /// RAII pin guard for the remote cache entry. When dropped (on source
-    /// release / track skip / stop), the pin count decrements so the entry
-    /// becomes eligible for eviction. `None` for local sources. The field is
-    /// never read directly — it exists only for its `Drop` side effect.
-    pub(crate) cache_pin_guard: Option<CachePinGuard>,
-}
-
-/// For local files, decodes directly from disk. For remote songs, creates a
-/// `RemoteMediaSource` that fetches byte ranges on demand via HTTP Range
-/// requests, enabling edge-downloaded playback without pre-downloading the
-/// entire file.
-///
-/// Falls back to full decode for Media+G containers (which require in-memory
-/// byte extraction).
 pub(crate) fn load_playback_source_streaming(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
+    remote_chunk_cache: &Arc<Mutex<crate::remote::cache_catalog::CacheCatalog>>,
     library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
-    // Media+G containers require in-memory extraction — can't stream from disk.
-    if song.media_g_container.as_deref() == Some(MEDIA_G_ZIP) {
+    if song.media_g_container.as_deref() == Some(media_g::MEDIA_G_ZIP) || song.is_remote_stems() {
         return Ok(None);
     }
-
-    // Remote stems must not enter the single-file remote streaming branch.
-    // `update_remote_song(..., "stems_remote")` clears `song.file_path`, so
-    // `resolve_song_file_path()` would fail inside `load_remote_streaming_source`
-    // before the stem-caching path is ever reached.  Returning `Ok(None)` makes
-    // the caller fall back to the non-streaming `load_playback_source` path,
-    // which downloads missing stems via `ensure_remote_stem_files_cached` and
-    // then decodes them via `load_remote_stems_playback_source`.  Remote stems
-    // use local file streaming after complete caching — they do NOT use
-    // network-backed per-stem readers in this PR.
-    if song.is_remote_stems() {
-        return Ok(None);
-    }
-
     if song.is_remote() {
-        return load_remote_streaming_source(app_data_dir, remote_chunk_cache, library_root, song);
+        return RemoteContent::new(app_data_dir).load_streaming_source(remote_chunk_cache, song);
     }
 
     let song_path =
-        resolve_song_file_path(song).map_err(|e| PlaybackError::Internal(e.to_string()))?;
+        resolve_song_file_path(song).map_err(|error| PlaybackError::Internal(error.to_string()))?;
     let absolute_path = library_root.resolve(song_path);
-
     let (consumer, metadata, decode_handle) = streaming::spawn_decode_producer(&absolute_path)
-        .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
-
+        .map_err(|error| PlaybackError::AudioDecodeFailed(error.to_string()))?;
     Ok(Some(StreamingPlaybackSource {
         streaming_track: StreamingTrack::Single { consumer },
         metadata,
@@ -234,829 +189,19 @@ pub(crate) fn load_playback_source_streaming(
     }))
 }
 
-/// Returns `Ok(None)` if the provider doesn't support Range
-/// requests (caller should fall back to full-file download).
 pub(crate) fn load_remote_streaming_source(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
+    remote_chunk_cache: &Arc<Mutex<crate::remote::cache_catalog::CacheCatalog>>,
     _library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
-    let Some(app_data_dir) = app_data_dir else {
-        return Ok(None);
-    };
-
-    let song_path =
-        resolve_song_file_path(song).map_err(|e| PlaybackError::Internal(e.to_string()))?;
-
-    let library = remote::active_remote_library(app_data_dir)
-        .map_err(|e| PlaybackError::Internal(e.message.clone()))?;
-    let Some(library) = library else {
-        return Ok(None);
-    };
-    let provider = remote::provider::create_provider(app_data_dir, &library)
-        .map_err(|e| PlaybackError::Internal(e.message.clone()))?;
-
-    let fetcher = match provider.create_range_fetcher(song_path) {
-        Ok(Some(f)) => f,
-        Ok(None) => return Ok(None), // Provider doesn't support Range — fall back.
-        Err(_) => return Ok(None),   // Can't create fetcher — fall back.
-    };
-
-    let file_size = provider
-        .get_file_size(song_path)
-        .map_err(|e| PlaybackError::Internal(e.message.clone()))?
-        .unwrap_or(0);
-    if file_size == 0 {
-        return Ok(None); // Can't determine size — fall back.
-    }
-
-    // Build a revision-aware cache identity so a replaced remote object (new
-    // provider revision or changed size) does not reuse bytes from an older
-    // version. The cache key is the SHA-256 of (library_id, relative_path,
-    // provider_revision, expected_size). When the provider does not expose a
-    // revision token, fall back to the library's stored remote_revision; if
-    // that is also unavailable, the content-digest fallback path in the
-    // catalog computes a SHA-256 of the cached file after the first full
-    // download and uses that for future lookups.
-    let provider_revision = provider.get_revision(song_path).ok().flatten();
-    let revision = provider_revision.or_else(|| library.remote_revision().map(str::to_owned));
-    let identity = CacheIdentity {
-        library_id: library.id().to_owned(),
-        relative_path: song_path.to_owned(),
-        provider_revision: revision,
-        expected_size: file_size,
-    };
-    let cache_key = identity.cache_key();
-
-    let cache = {
-        let mut manager = remote_chunk_cache.lock().map_err(|_| {
-            PlaybackError::Internal("remote chunk cache manager lock was poisoned".to_owned())
-        })?;
-        manager.get_or_create(&identity).map_err(map_cache_error)?
-    };
-
-    // Pin the cache entry so eviction cannot remove the file while playback is
-    // active. The guard decrements the pin count on drop (source release /
-    // track skip / stop), making the entry eligible for eviction again.
-    let cache_pin_guard = {
-        Some(
-            CacheCatalog::pin_cache_entry(remote_chunk_cache, &cache_key)
-                .map_err(map_cache_error)?,
-        )
-    };
-
-    // Create a persistence callback so the fetch thread can persist
-    // download progress to the cache catalog after each successful range
-    // write. Without this, downloaded_ranges_json stays empty and complete
-    // stays false, so cached remote audio is re-downloaded after restart.
-    let persist_catalog = Arc::clone(remote_chunk_cache);
-    let persist_key = cache_key.clone();
-    let on_range_written: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-        if let Ok(manager) = persist_catalog.lock() {
-            let _ = manager.persist_ranges(&persist_key);
-        }
-    });
-
-    let (fetch_tx, fetch_event_rx, _bandwidth_monitor, _fetch_handle) =
-        remote_source::spawn_fetch_thread_with_fetcher(
-            String::new(), // URL is embedded in the fetcher
-            Arc::clone(&cache),
-            fetcher,
-            remote_source::RetryConfig::default(),
-            Some(on_range_written),
-        );
-
-    let extension = std::path::Path::new(song_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_owned());
-
-    // Create a RemoteMediaSource for probing. The probe consumes the source,
-    // but the underlying ChunkedCache is shared, so data fetched during
-    // probing is available to the second source used for decoding.
-    let probe_source = RemoteMediaSource::new(Arc::clone(&cache), fetch_tx.clone());
-    let probe_metadata = probe_remote_source(probe_source, extension.as_deref())
-        .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
-
-    // Create the decode source with startup buffering (~1s at 128kbps).
-    let startup_bytes = file_size.min(16 * 1024);
-    let decode_source = RemoteMediaSource::new(cache, fetch_tx).with_startup_buffer(startup_bytes);
-
-    // Spawn the decode producer from the remote source. Slow networks should
-    // surface as buffering/retry behavior, not PCM frame dropping, because
-    // changing decoded samples audibly degrades karaoke playback quality.
-    let (consumer, decode_handle) = streaming::spawn_decode_producer_from_source(
-        Box::new(decode_source),
-        extension.as_deref(),
-        &probe_metadata,
-        streaming::ProxyConfig::none(),
-    )
-    .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
-
-    Ok(Some(StreamingPlaybackSource {
-        streaming_track: StreamingTrack::Single { consumer },
-        metadata: probe_metadata,
-        decode_handle,
-        fetch_event_rx: Some(fetch_event_rx),
-        cache_pin_guard,
-    }))
-}
-
-/// Consumes the source (symphonia takes ownership of the `MediaSourceStream`).
-fn probe_remote_source(
-    source: RemoteMediaSource,
-    extension: Option<&str>,
-) -> Result<StreamMetadata, decode::DecodeError> {
-    use symphonia::core::{
-        formats::{probe::Hint, FormatOptions, TrackType},
-        io::MediaSourceStream,
-        meta::MetadataOptions,
-        units::Timestamp,
-    };
-
-    let mut hint = Hint::new();
-    if let Some(ext) = extension {
-        hint.with_extension(ext);
-    }
-
-    let mss = MediaSourceStream::new(Box::new(source), Default::default());
-    let mut probed = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(|e| decode::DecodeError::ProbeFailed(format!("remote source: {e}")))?;
-
-    let (codec_params, track_id, n_frames, time_base) = {
-        let track = probed
-            .default_track(TrackType::Audio)
-            .ok_or(decode::DecodeError::NoDefaultTrack)?;
-        let audio_params = track
-            .codec_params
-            .as_ref()
-            .and_then(|p| p.audio())
-            .ok_or(decode::DecodeError::NoDefaultTrack)?
-            .clone();
-        (audio_params, track.id, track.num_frames, track.time_base)
-    };
-
-    let mut sample_rate = codec_params.sample_rate;
-    let mut channels = codec_params.channels.as_ref().map(|c| c.count());
-
-    // Some containers don't expose sample rate / channel layout in the
-    // codec params.  symphonia only populates these after decoding the
-    // first packet, so try that before giving up.
-    if sample_rate.is_none() || channels.is_none() {
-        use symphonia::core::codecs::audio::AudioDecoderOptions as DO;
-        if let Ok(mut decoder) =
-            symphonia::default::get_codecs().make_audio_decoder(&codec_params, &DO::default())
-        {
-            while let Ok(Some(packet)) = probed.next_packet() {
-                if packet.track_id != track_id {
-                    continue;
-                }
-                if let Ok(decoded) = decoder.decode(&packet) {
-                    let spec = decoded.spec();
-                    sample_rate.get_or_insert(spec.rate());
-                    channels.get_or_insert(spec.channels().count());
-                    break;
-                }
-            }
-        }
-    }
-
-    let sample_rate = sample_rate.ok_or(decode::DecodeError::MissingSampleRate)?;
-    let channels = channels.ok_or(decode::DecodeError::MissingChannels)?;
-
-    // Try to get duration from container metadata.
-    // Return None when unavailable so playback can start immediately.
-    let duration_ms = if let (Some(n_frames), Some(tb)) = (n_frames, time_base) {
-        let time = tb.calc_time(Timestamp::new(n_frames as i64));
-        time.map(|t| t.as_millis() as u64)
-    } else {
-        None
-    };
-
-    Ok(StreamMetadata {
-        sample_rate_hz: sample_rate,
-        channels,
-        duration_ms,
-    })
+    RemoteContent::new(app_data_dir).load_streaming_source(remote_chunk_cache, song)
 }
 
 pub(crate) fn resolve_song_file_path(song: &Song) -> Result<&str> {
     song.file_path
         .as_deref()
         .with_context(|| format!("song {} does not have a local file path", song.hash))
-}
-
-pub(crate) fn ensure_remote_song_files_cached(
-    app_data_dir: Option<&Path>,
-    song: &Song,
-) -> Result<()> {
-    let Some(app_data_dir) = app_data_dir else {
-        return Ok(());
-    };
-    if let Some(file_path) = song.file_path.as_deref() {
-        remote::ensure_remote_file_cached(app_data_dir, file_path)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    }
-    if let Some(cdg_path) = song.cdg_path.as_deref() {
-        remote::ensure_remote_file_cached(app_data_dir, cdg_path)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    }
-    Ok(())
-}
-
-pub(crate) fn ensure_remote_stem_files_cached(
-    app_data_dir: Option<&Path>,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-) -> Result<()> {
-    let Some(app_data_dir) = app_data_dir else {
-        return Ok(());
-    };
-
-    let Some(library) = remote::active_remote_library(app_data_dir)
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?
-    else {
-        return Ok(());
-    };
-    let provider = remote::provider::create_provider(app_data_dir, &library)
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-
-    ensure_remote_stem_set_cached(
-        provider.as_ref(),
-        library_root,
-        connection,
-        song,
-        request_id,
-    )
-}
-
-/// Guarded variant of [`ensure_remote_stem_files_cached`] for the async
-/// playback path (PR #7, issue #151 defect #11). Threads a stale-guard
-/// closure through to [`ensure_remote_stem_set_cached_guarded`] so a skip
-/// cancels remaining stem downloads and aborts the atomic rename. Returns a
-/// typed `RemoteError` so the caller can no-op on `StaleRequest`.
-pub(crate) fn ensure_remote_stem_files_cached_guarded(
-    app_data_dir: Option<&Path>,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-    is_current: impl Fn() -> bool,
-) -> std::result::Result<(), remote::errors::RemoteError> {
-    let Some(app_data_dir) = app_data_dir else {
-        return Ok(());
-    };
-
-    let Some(library) = remote::active_remote_library(app_data_dir).map_err(|error| {
-        remote::errors::RemoteError::new(
-            remote::errors::RemoteErrorKind::NetworkUnavailable,
-            error.message.clone(),
-        )
-    })?
-    else {
-        return Ok(());
-    };
-    let provider = remote::provider::create_provider(app_data_dir, &library).map_err(|error| {
-        remote::errors::RemoteError::new(
-            remote::errors::RemoteErrorKind::NetworkUnavailable,
-            error.message.clone(),
-        )
-    })?;
-
-    ensure_remote_stem_set_cached_guarded(
-        provider.as_ref(),
-        library_root,
-        connection,
-        song,
-        request_id,
-        is_current,
-    )
-}
-
-/// A single required stem within a remote stem set, with its relative path
-/// (as stored in the cache database) and a human-readable label for errors.
-#[derive(Debug, Clone)]
-struct RequiredStem {
-    label: &'static str,
-    relative_path: String,
-}
-
-/// Returns the list of stems that must be present for the given cache entry.
-///
-/// Two-stem sets require vocals + accompaniment; four-stem sets require
-/// vocals + drums + bass + other.  The `accomp_path` column is always
-/// non-null in the schema but is empty for four-stem entries, so it is
-/// only included for two-stem sets.
-fn required_stems(entry: &cache::stems::StemCacheEntry) -> Vec<RequiredStem> {
-    if entry.has_individual_stems() {
-        vec![
-            RequiredStem {
-                label: "vocals",
-                relative_path: entry.vocals_path.clone(),
-            },
-            RequiredStem {
-                label: "drums",
-                relative_path: entry.drums_path.clone().unwrap_or_default(),
-            },
-            RequiredStem {
-                label: "bass",
-                relative_path: entry.bass_path.clone().unwrap_or_default(),
-            },
-            RequiredStem {
-                label: "other",
-                relative_path: entry.other_path.clone().unwrap_or_default(),
-            },
-        ]
-    } else {
-        vec![
-            RequiredStem {
-                label: "vocals",
-                relative_path: entry.vocals_path.clone(),
-            },
-            RequiredStem {
-                label: "accompaniment",
-                relative_path: entry.accomp_path.clone(),
-            },
-        ]
-    }
-}
-
-/// Downloaded-and-verified stem, waiting to be atomically installed.
-struct VerifiedStem {
-    /// Absolute path of the temp file that passed validation.
-    temp_path: PathBuf,
-    /// Absolute path of the final destination.
-    final_path: PathBuf,
-}
-
-/// Decoded audio metadata used for cross-stem alignment validation.
-struct StemSetMetadata {
-    sample_rate_hz: u32,
-    channels: usize,
-    /// Actual PCM frame count (samples.len() / channels) from a full decode.
-    /// This is more reliable than container-reported `num_frames`, which can
-    /// be wrong for truncated files.
-    frame_count: usize,
-}
-
-/// Decode a file and extract the metadata needed for set-level alignment
-/// validation.  A full decode is used (rather than just a probe) because it
-/// catches truncated files that have a valid header but incomplete data —
-/// a probe would report the header's frame count while the actual decoded
-/// frame count would be lower.
-///
-/// PR #3 will route this through a shared atomic-download helper that can
-/// cache the decoded audio to avoid re-decoding during playback.
-// TODO(PR#3): route through shared atomic download helper.
-// NOTE: PR#3's `atomic_download` helper (src-tauri/src/remote/atomic_download.rs)
-// downloads to a temp file, validates, and atomically renames to the final
-// destination in one shot. The stem-set path cannot use it directly because
-// PR#1's all-or-nothing semantics require every stem to pass the cross-set
-// alignment check (Phase 3) BEFORE any final-path file is touched. Using
-// `atomic_download` per-stem would rename each stem to its final path
-// immediately, reintroducing the partial-set problem PR#1 fixed (e.g. vocals
-// installed but accompaniment truncated). The shared helper is instead used by
-// `ensure_remote_file_cached` and `atomic_database_pull`, which have no
-// all-or-nothing constraint. A future refactor could split the helper into
-// "download+validate to temp" and "commit temp to final" steps so the stem
-// path can reuse the download half while keeping its delayed collective
-// rename; that split is deferred to avoid churning the helper API in PR#3.
-fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
-    let audio = decode::decode_file(path)
-        .with_context(|| format!("failed to decode stem at {}", path.display()))?;
-    let frame_count = audio.samples.len() / audio.channels.max(1);
-    Ok(StemSetMetadata {
-        sample_rate_hz: audio.sample_rate_hz,
-        channels: audio.channels,
-        frame_count,
-    })
-}
-
-/// All-or-nothing download + validation + atomic-rename for a remote stem set.
-///
-/// This orchestrator replaces the old per-stem `ensure_remote_file_cached`
-/// loop, which downloaded each stem independently to its final path with no
-/// validation and no set-level consistency check.  The old approach could
-/// leave a partially downloaded set on disk — e.g. vocals present but
-/// accompaniment truncated — which then produced silent or glitchy playback.
-///
-/// ## Semantics
-///
-/// * **All-or-nothing**: every required stem must download and validate
-///   successfully before any final-path file is touched.  If any stem fails
-///   (missing, truncated, corrupt, mismatched metadata), the entire set is
-///   rejected and existing final paths are left untouched.  Temp files are
-///   cleaned up.
-///
-/// * **In-process retention**: a stem whose final path already exists and
-///   decodes successfully is kept as-is — it is not re-downloaded.  This
-///   means a retry after a transient failure only re-downloads the stems that
-///   were missing or invalid.  Durable restart-survival (persisting which
-///   stems are verified across app restarts) is PR #2/#3's job; this function
-///   only retains verified stems within the same process lifetime.
-///   // TODO(PR#6): route through durable verified-stem catalog (remote_cache_entries)
-///   // so restart-survival works. PR#3's atomic_download helper is not used
-///   // here because of the all-or-nothing set constraint (see note above).
-///
-/// * **Sample alignment**: every stem in the set must share the same sample
-///   rate, channel count, and PCM frame count.  Mismatched stems would
-///   produce phase artifacts or silent channels during playback, so the set
-///   is rejected as a unit when any stem deviates.  A full decode is used
-///   for validation (not just a probe) because truncated files can have a
-///   valid header but incomplete data — only a full decode reveals the
-///   actual PCM frame count.
-///
-/// * **Stale-guard**: `request_id` is an epoch counter that identifies the
-///   playback request that initiated this download.  The guarded variant
-///   [`ensure_remote_stem_set_cached_guarded`] accepts a `is_current` closure
-///   that the orchestrator checks before each stem download and before the
-///   atomic-rename phase, so a skip cancels remaining work promptly and a
-///   late completion never installs a stem set for a song the user has
-///   already moved past.  The synchronous [`ensure_remote_stem_set_cached`]
-///   passes a guard that always returns `true` — the song cannot change
-///   mid-call — but the `request_id` parameter is threaded through so the
-///   async transition was a drop-in change.
-fn ensure_remote_stem_set_cached(
-    provider: &dyn RemoteProvider,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-) -> Result<()> {
-    ensure_remote_stem_set_cached_inner(
-        provider,
-        library_root,
-        connection,
-        song,
-        request_id,
-        &|| true,
-    )
-}
-
-/// Async-capable variant of [`ensure_remote_stem_set_cached`] with a
-/// stale-guard closure (PR #7, issue #151 defect #11).
-///
-/// `is_current` returns `true` while `request_id` still identifies the active
-/// playback request. The orchestrator checks it:
-///
-/// * before each stem download (between stems) so a skip cancels remaining
-///   work promptly, and
-/// * before the atomic-rename phase so a late completion does not install a
-///   stem set for a song the user has already skipped past.
-///
-/// When the guard reports the request as stale, the orchestrator discards all
-/// temp files and returns a typed [`remote::errors::RemoteError`] with
-/// [`RemoteErrorKind::StaleRequest`] so the caller can no-op. The function is
-/// synchronous in its body (the provider's `download_file` is blocking), but
-/// it is intended to be called from a dedicated background thread so the
-/// guard can observe a request_id change made on another thread between
-/// stems.
-pub(crate) fn ensure_remote_stem_set_cached_guarded(
-    provider: &dyn RemoteProvider,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-    is_current: impl Fn() -> bool,
-) -> std::result::Result<(), remote::errors::RemoteError> {
-    ensure_remote_stem_set_cached_inner(
-        provider,
-        library_root,
-        connection,
-        song,
-        request_id,
-        &is_current,
-    )
-    .map_err(|error| {
-        // Distinguish a stale-guard abort from any other failure so the
-        // caller can no-op instead of surfacing a user-visible error.
-        if error.to_string().contains(STALE_GUARD_MARKER) {
-            remote::errors::RemoteError::from_kind(remote::errors::RemoteErrorKind::StaleRequest)
-        } else {
-            remote::errors::RemoteError::new(
-                remote::errors::RemoteErrorKind::NetworkUnavailable,
-                error.to_string(),
-            )
-        }
-    })
-}
-
-/// Marker embedded in the error message when the stale-guard aborts the
-/// orchestrator. Used by [`ensure_remote_stem_set_cached_guarded`] to map the
-/// abort back to a typed `StaleRequest` error without threading a custom
-/// error type through the shared inner body.
-const STALE_GUARD_MARKER: &str = "__stale_request_guard_aborted__";
-
-fn ensure_remote_stem_set_cached_inner(
-    provider: &dyn RemoteProvider,
-    library_root: &LibraryRoot,
-    connection: &Connection,
-    song: &Song,
-    request_id: u64,
-    is_current: &dyn Fn() -> bool,
-) -> Result<()> {
-    let Some(cached) = cache::stems::get_cached_stem_entry(connection, &song.hash)
-        .context("failed to load cached stems")?
-    else {
-        // No stem cache entry — nothing to download.  The caller will surface
-        // a "karaoke not ready" error downstream.
-        return Ok(());
-    };
-
-    let required = required_stems(&cached);
-
-    // Phase 1: determine which stems are already verified (final path exists
-    // and decodes successfully) and which need downloading.
-    //
-    // A full decode is used for the retention check (not just a probe) so
-    // that a truncated or corrupt existing file is detected and re-downloaded
-    // rather than silently kept.
-    let mut verified: Vec<VerifiedStem> = Vec::new();
-    let mut to_download: Vec<RequiredStem> = Vec::new();
-    let mut reference_metadata: Option<StemSetMetadata> = None;
-
-    for stem in &required {
-        let final_path = library_root.resolve(&stem.relative_path);
-
-        if final_path.exists() {
-            match decode_stem_metadata(&final_path) {
-                Ok(metadata) => {
-                    // Retain already-verified stems — they survive retry and
-                    // are not re-downloaded.
-                    if reference_metadata.is_none() {
-                        reference_metadata = Some(metadata);
-                    }
-                    continue;
-                }
-                Err(_) => {
-                    // Existing file is corrupt or undecodeable — re-download.
-                }
-            }
-        }
-        to_download.push(stem.clone());
-    }
-
-    // Phase 2: download each missing stem to a unique temp path, then decode
-    // to validate content identity (fully decodable audio with non-zero
-    // length).
-    //
-    // Temp paths are unique per request so concurrent downloads for different
-    // playback requests do not collide: `<dest>.part.<stem>.<request_id>`.
-    for stem in &to_download {
-        // Stale-guard (PR #7, defect #11): check before each stem download so
-        // a skip cancels remaining work promptly. When the active request has
-        // moved on, discard any temps already collected and abort with the
-        // stale-guard marker so the guarded wrapper maps it to
-        // `RemoteErrorKind::StaleRequest`.
-        if !is_current() {
-            clean_up_temps(&verified);
-            anyhow::bail!("{STALE_GUARD_MARKER}");
-        }
-
-        let final_path = library_root.resolve(&stem.relative_path);
-        let temp_path = final_path.with_extension(format!("part.{}.{}", stem.label, request_id));
-
-        // Ensure the parent directory exists (the stem directory may not yet
-        // be present on a fresh working copy).
-        if let Some(parent) = temp_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create stem directory {}", parent.display()))?;
-        }
-
-        // Clean up any stale temp file from a previous attempt.
-        let _ = fs::remove_file(&temp_path);
-
-        provider
-            .download_file(&stem.relative_path, &temp_path)
-            .map_err(|error| {
-                clean_up_temps(&verified);
-                anyhow::anyhow!("failed to download stem {}: {}", stem.label, error.message)
-            })?;
-
-        // Validate file size: a zero-byte download is permanently invalid.
-        let size = fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
-        if size == 0 {
-            let _ = fs::remove_file(&temp_path);
-            clean_up_temps(&verified);
-            anyhow::bail!(
-                "stem {} downloaded as a zero-byte file — permanently invalid",
-                stem.label
-            );
-        }
-
-        // Full decode to verify content identity.  This catches truncated
-        // files (valid header but incomplete data) and corrupt files that
-        // cannot be decoded at all.
-        match decode_stem_metadata(&temp_path) {
-            Ok(metadata) => {
-                verified.push(VerifiedStem {
-                    temp_path,
-                    final_path,
-                });
-                if reference_metadata.is_none() {
-                    reference_metadata = Some(metadata);
-                }
-            }
-            Err(error) => {
-                let _ = fs::remove_file(&temp_path);
-                clean_up_temps(&verified);
-                anyhow::bail!("stem {} failed validation decode: {}", stem.label, error);
-            }
-        }
-    }
-
-    // Phase 3: cross-stem sample alignment check.
-    //
-    // Every stem in the set must share the same sample rate, channel count,
-    // and PCM frame count.  We decode each temp file and each already-verified
-    // final file and compare against the reference.  A mismatch means the
-    // set is inconsistent and must be rejected as a unit.
-    let reference = reference_metadata
-        .ok_or_else(|| anyhow::anyhow!("no stems to validate for song {}", song.hash))?;
-
-    for stem in &required {
-        let final_path = library_root.resolve(&stem.relative_path);
-        let path_to_check = verified
-            .iter()
-            .find(|v| v.final_path == final_path)
-            .map(|v| &v.temp_path)
-            .unwrap_or(&final_path);
-
-        if !path_to_check.exists() {
-            clean_up_temps(&verified);
-            anyhow::bail!(
-                "stem {} is missing after download phase — set incomplete",
-                stem.label
-            );
-        }
-
-        let metadata = decode_stem_metadata(path_to_check)
-            .with_context(|| format!("failed to decode stem {} for alignment check", stem.label))?;
-
-        if metadata.sample_rate_hz != reference.sample_rate_hz {
-            clean_up_temps(&verified);
-            anyhow::bail!(
-                "stem {} sample rate {} does not match set reference {}",
-                stem.label,
-                metadata.sample_rate_hz,
-                reference.sample_rate_hz
-            );
-        }
-        if metadata.channels != reference.channels {
-            clean_up_temps(&verified);
-            anyhow::bail!(
-                "stem {} channel count {} does not match set reference {}",
-                stem.label,
-                metadata.channels,
-                reference.channels
-            );
-        }
-        if metadata.frame_count != reference.frame_count {
-            clean_up_temps(&verified);
-            anyhow::bail!(
-                "stem {} PCM frame count {} does not match set reference {}",
-                stem.label,
-                metadata.frame_count,
-                reference.frame_count
-            );
-        }
-    }
-
-    // Phase 4: atomic rename — install every verified temp file over its
-    // final path only after ALL stems pass validation.
-    //
-    // `fs::rename` is atomic on POSIX (same filesystem) and overwrites the
-    // destination.  On Windows, `rename` also replaces the destination when
-    // both are on the same volume.  Temp files are siblings of the final
-    // path so they are always on the same filesystem.
-    //
-    // Stale-guard (PR #7, defect #11): re-check immediately before the
-    // atomic-rename phase. Even if every stem downloaded successfully, a
-    // skip that arrived during the (relatively cheap) Phase 3 alignment
-    // check must prevent the rename from installing a stem set for a song
-    // the user has already moved past.
-    if !is_current() {
-        clean_up_temps(&verified);
-        anyhow::bail!("{STALE_GUARD_MARKER}");
-    }
-    for v in &verified {
-        fs::rename(&v.temp_path, &v.final_path).with_context(|| {
-            format!(
-                "failed to atomically install stem {} -> {}",
-                v.temp_path.display(),
-                v.final_path.display()
-            )
-        })?;
-    }
-
-    Ok(())
-}
-
-/// Remove all temp files from a list of verified stems (used on validation
-/// failure to avoid leaving partial downloads on disk).
-fn clean_up_temps(verified: &[VerifiedStem]) {
-    for v in verified {
-        let _ = fs::remove_file(&v.temp_path);
-    }
-}
-
-fn load_remote_stems_playback_source(
-    connection: &Connection,
-    library_root: &LibraryRoot,
-    song: &Song,
-) -> Result<PlaybackSourceLoad> {
-    let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
-        .context("failed to load cached stems")?
-        .with_context(|| format!("no cached stems for song {}", song.hash))?;
-
-    if cached.has_individual_stems() {
-        let LoadedStems::FourStem(StemSet {
-            vocals,
-            drums,
-            bass,
-            other,
-        }) = decode_stem_entry(library_root, &cached)?
-        else {
-            unreachable!("individual stem cache entries decode to four stems");
-        };
-        Ok(PlaybackSourceLoad {
-            decoded_audio: vocals.clone(),
-            stems: Some(LoadedStems::FourStem(StemSet {
-                vocals,
-                drums,
-                bass,
-                other,
-            })),
-        })
-    } else {
-        let LoadedStems::TwoStem {
-            vocals,
-            accompaniment,
-        } = decode_stem_entry(library_root, &cached)?
-        else {
-            unreachable!("two stem cache entries decode to two stems");
-        };
-        Ok(PlaybackSourceLoad {
-            decoded_audio: accompaniment.clone(),
-            stems: Some(LoadedStems::TwoStem {
-                vocals,
-                accompaniment,
-            }),
-        })
-    }
-}
-
-fn decode_stem_entry(
-    library_root: &LibraryRoot,
-    cached: &cache::stems::StemCacheEntry,
-) -> Result<LoadedStems> {
-    let load_stem = |path: &str| -> Result<decode::DecodedAudio> {
-        let abs = library_root.resolve(path);
-        decode::decode_file(&abs)
-            .map_err(|e| anyhow::anyhow!("failed to decode stem {}: {}", path, e))
-    };
-
-    if cached.has_individual_stems() {
-        Ok(LoadedStems::FourStem(StemSet {
-            vocals: load_stem(&cached.vocals_path)?,
-            drums: load_stem(
-                cached
-                    .drums_path
-                    .as_deref()
-                    .context("missing drums stem path")?,
-            )?,
-            bass: load_stem(
-                cached
-                    .bass_path
-                    .as_deref()
-                    .context("missing bass stem path")?,
-            )?,
-            other: load_stem(
-                cached
-                    .other_path
-                    .as_deref()
-                    .context("missing other stem path")?,
-            )?,
-        }))
-    } else {
-        Ok(LoadedStems::TwoStem {
-            vocals: load_stem(&cached.vocals_path)?,
-            accompaniment: load_stem(&cached.accomp_path)?,
-        })
-    }
-}
-
-fn map_cache_error(error: crate::commands::error::CommandError) -> PlaybackError {
-    PlaybackError::Internal(error.message)
 }
 
 #[cfg(test)]
@@ -1067,7 +212,9 @@ mod tests {
     use crate::library_root::LibraryRoot;
     use crate::remote::cache_catalog::{CacheCatalog, CacheIdentity, DEFAULT_CACHE_BYTES_LIMIT};
     use crate::remote::control_db::open_control_db;
-    use crate::remote::provider::RemoteProvider;
+    use crate::remote::provider::{
+        RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+    };
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
@@ -1134,7 +281,11 @@ mod tests {
         }
     }
 
-    impl RemoteProvider for FakeRemoteProvider {
+    impl RepositoryStorage for FakeRemoteProvider {
+        fn media_source(&self) -> &dyn RemoteMediaSource {
+            self
+        }
+
         fn get_revision(&self, _relative_path: &str) -> CommandResult<Option<String>> {
             Ok(None)
         }
@@ -1170,6 +321,18 @@ mod tests {
             Ok(None)
         }
 
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl RemoteMediaSource for FakeRemoteProvider {
+        fn capabilities(&self) -> RemoteMediaSourceCapabilities {
+            RemoteMediaSourceCapabilities {
+                range_download: false,
+            }
+        }
+
         fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
             Ok(self
                 .files
@@ -1177,10 +340,6 @@ mod tests {
                 .unwrap()
                 .get(relative_path)
                 .map(|d| d.len() as u64))
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -1340,7 +499,8 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav.clone());
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(
             result.is_ok(),
@@ -1381,7 +541,8 @@ mod tests {
         files.insert(entry.other_path.clone().unwrap(), wav.clone());
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(
             result.is_ok(),
@@ -1408,7 +569,8 @@ mod tests {
         // accomp is missing from the provider — download will fail.
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(result.is_err(), "set with missing stem should fail");
 
@@ -1435,7 +597,8 @@ mod tests {
         files.insert(entry.accomp_path.clone(), truncated);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(result.is_err(), "set with truncated stem should fail");
 
@@ -1461,7 +624,8 @@ mod tests {
         files.insert(entry.accomp_path.clone(), corrupt);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(result.is_err(), "set with corrupt stem should fail");
         assert!(!lib.resolve(&entry.vocals_path).exists());
@@ -1484,7 +648,8 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav_48000);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         let err = result.expect_err("mismatched sample rate should reject set");
         assert!(
@@ -1517,7 +682,8 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+        let result =
+            crate::remote::content::ensure_stem_set_cached(&provider, &lib, &connection, &song, 1);
 
         assert!(
             result.is_ok(),
@@ -1533,12 +699,8 @@ mod tests {
 
     #[test]
     fn stale_download_for_song_a_does_not_overwrite_song_b_files() {
-        // PR #1's stale-guard is structural: the function is synchronous so
-        // the song cannot change mid-call.  This test verifies that calling
-        // ensure_remote_stem_set_cached for song A does not touch song B's
-        // already-installed stem files.  When PR #7 makes this async, the
-        // request_id guard will prevent a late completion from song A's
-        // download from installing after song B is current.
+        // Materialization is scoped by song, so a request for song A must not
+        // touch an already-installed stem set for song B.
         let (_dir, lib) = test_library_root();
         let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
 
@@ -1562,7 +724,7 @@ mod tests {
         files.insert(entry_a.accomp_path.clone(), wav.clone());
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached(
+        let result = crate::remote::content::ensure_stem_set_cached(
             &provider,
             &lib,
             &connection,
@@ -1586,7 +748,7 @@ mod tests {
         assert!(lib.resolve(&entry_a.accomp_path).exists());
     }
 
-    // ---- PR #7 stale-guard tests (defect #11) ----
+    // ---- Stale-request tests ----
 
     /// A fake provider that counts how many stems it has downloaded, so a
     /// test can flip the stale guard after the first stem completes and
@@ -1605,7 +767,11 @@ mod tests {
         }
     }
 
-    impl RemoteProvider for CountingFakeProvider {
+    impl RepositoryStorage for CountingFakeProvider {
+        fn media_source(&self) -> &dyn RemoteMediaSource {
+            self
+        }
+
         fn get_revision(&self, _relative_path: &str) -> CommandResult<Option<String>> {
             Ok(None)
         }
@@ -1643,6 +809,18 @@ mod tests {
             Ok(None)
         }
 
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl RemoteMediaSource for CountingFakeProvider {
+        fn capabilities(&self) -> RemoteMediaSourceCapabilities {
+            RemoteMediaSourceCapabilities {
+                range_download: false,
+            }
+        }
+
         fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
             Ok(self
                 .files
@@ -1650,10 +828,6 @@ mod tests {
                 .unwrap()
                 .get(relative_path)
                 .map(|d| d.len() as u64))
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -1676,7 +850,7 @@ mod tests {
         let provider = CountingFakeProvider::with_files(files);
 
         // Guard is always stale — aborts before any download/rename.
-        let result = super::ensure_remote_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached_guarded(
             &provider,
             &lib,
             &connection,
@@ -1729,7 +903,7 @@ mod tests {
         // orchestrator checks the guard before EACH stem download, so only
         // stem 1 (vocals) is downloaded before the abort.
         let guard = move || download_count.load(std::sync::atomic::Ordering::SeqCst) < 1;
-        let result = super::ensure_remote_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached_guarded(
             &provider,
             &lib,
             &connection,
@@ -1774,7 +948,7 @@ mod tests {
         files.insert(entry.accomp_path.clone(), wav);
         let provider = FakeRemoteProvider::with_files(files);
 
-        let result = super::ensure_remote_stem_set_cached_guarded(
+        let result = crate::remote::content::ensure_stem_set_cached_guarded(
             &provider,
             &lib,
             &connection,

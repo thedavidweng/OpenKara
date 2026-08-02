@@ -7,8 +7,8 @@
 --   * writer_id identifies the local installation that committed a generation.
 --     It is for diagnostics only, not a security principal.
 --
--- Both columns are nullable so existing rows (created by PR#2 before the
--- manifest protocol existed) remain valid. The executor generates and
+-- Both columns are nullable so existing rows created before the manifest
+-- protocol existed remain valid. The executor generates and
 -- persists them on first publication.
 --
 -- NOTE: ALTER TABLE ADD COLUMN is NOT idempotent in SQLite. The Rust

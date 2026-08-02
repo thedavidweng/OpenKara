@@ -1,8 +1,8 @@
 # lyrics
 
-Lyrics backend: LRCLIB/LrcApi clients, TTML/LYS/LRC parsers, fetch priority
-chain (LRCLIB -> LrcApi -> embedded tags -> sidecar), SQLite cache, per-song
-offset persistence. Command payloads for `fetch_lyrics`, `fetch_lyrics_online`,
-and `set_lyrics_offset`.
+Lyrics backend: fixed acquisition chain (cache -> embedded tags -> TTML/LYS/LRC
+sidecars -> LRCLIB -> LrcApi), TTML/LYS/LRC parsers, SQLite cache, and per-song
+offset persistence. `fetch_lyrics_online` accepts `automatic_upgrade` or
+`user_replace` intent.
 
 React lyrics panel and sync loop live in the frontend (`src/`).

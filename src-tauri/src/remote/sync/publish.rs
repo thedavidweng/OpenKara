@@ -16,7 +16,7 @@ use crate::{
 };
 use tauri::AppHandle;
 
-use super::super::provider::create_provider;
+use super::super::provider::{create_repository_storage, RepositoryStorage};
 use super::super::types::{
     load_app_config, load_remote_root, upsert_stem_entry, UploadState, UploadStatusSnapshot,
 };
@@ -37,7 +37,7 @@ fn publish_artwork_derivatives(
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
     remote_connection: &rusqlite::Connection,
-    provider: &dyn super::super::provider::RemoteProvider,
+    provider: &dyn RepositoryStorage,
     song_id: &str,
     _same_root: bool,
 ) -> CommandResult<()> {
@@ -214,7 +214,7 @@ fn content_addressed_asset_relative_path(
 fn publish_content_addressed_asset(
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn super::super::provider::RemoteProvider,
+    provider: &dyn RepositoryStorage,
     source_relative_path: &str,
 ) -> CommandResult<String> {
     let source = local_root.resolve(source_relative_path);
@@ -274,7 +274,7 @@ fn publish_content_addressed_stem_entry(
     entry: &crate::cache::stems::StemCacheEntry,
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn super::super::provider::RemoteProvider,
+    provider: &dyn RepositoryStorage,
 ) -> CommandResult<crate::cache::stems::StemCacheEntry> {
     let mut remote_entry = entry.clone();
     remote_entry.vocals_path =
@@ -426,7 +426,7 @@ pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
     // Resolve target library: prefer the durable operation's library_id so a
     // post-mutation library switch cannot redirect the publish.
     let target_library_id = if let Some(op_id) = operation_id {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let op = crate::remote::control_db::get_operation(&conn, op_id)?.ok_or_else(|| {
@@ -485,7 +485,7 @@ pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
 /// re-publish). All song_ids in the operation are uploaded under one commit
 /// lock, then a single candidate freeze + CAS runs. Never reopens terminal
 /// operations.
-fn publish_operation_internal<R: tauri::Runtime>(
+pub(crate) fn publish_operation_internal<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     operation_id: Option<&str>,
@@ -508,18 +508,12 @@ fn publish_song_internal<R: tauri::Runtime>(
     operation_id: Option<&str>,
     batch_song_ids: &[String],
 ) -> CommandResult<UploadStatusSnapshot> {
-    if state.remote.control_db_degraded {
-        return Err(CommandError::from(LibraryError::Internal(
-            "remote control database is unavailable; publication is disabled \
-             until the control plane is repaired"
-                .to_string(),
-        )));
-    }
+    state.remote.ensure_available()?;
 
     // Resolve the durable operation FIRST so the target library is taken from
     // op.library_id — not the currently active library (user may have switched).
     let (resolved_op, remote_library) = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         if let Some(op_id) = operation_id {
@@ -572,7 +566,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     // If this operation was merged/cancelled by a concurrent publisher, stop.
     {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         if let Some(op) =
@@ -592,7 +586,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     // prepare under lock uses the same registered library object (not a
     // re-resolved "active" root).
     let remote_library = {
-        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+        let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         prepare_remote_database_for_mutation(
@@ -604,7 +598,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
     let local_root = remote_root.clone();
     let same_root = true;
-    let provider = create_provider(&state.shell.app_data_dir, &remote_library)?;
+    let provider = create_repository_storage(&state.shell.app_data_dir, &remote_library)?;
 
     // Phase 1: CAS-boundary ops must reconcile before any new freeze. Running
     // a later Pending first would see A's generation as a conflict and leave
@@ -612,7 +606,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     reconcile_cas_boundary_ops(state, &remote_library_id, &remote_library, &remote_root)?;
 
     let preferred_still_live = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         match crate::remote::control_db::get_operation(&conn, &resolved_op.operation_id)? {
@@ -627,7 +621,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     let primary_id = if preferred_still_live {
         resolved_op.operation_id.clone()
     } else {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let ops = list_operations_for_library(&conn, &remote_library_id)?;
@@ -671,7 +665,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     // Inherited Retry-After: whole library waits — do not freeze a partial set.
     {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         if let Some(op) = crate::remote::control_db::get_operation(&conn, &operation_id)? {
@@ -810,7 +804,7 @@ fn upload_one_song_assets(
     remote_connection: &mut rusqlite::Connection,
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn super::super::provider::RemoteProvider,
+    provider: &dyn RepositoryStorage,
     song_id: &str,
     same_root: bool,
 ) -> CommandResult<()> {
@@ -905,7 +899,7 @@ pub(crate) fn reconcile_cas_boundary_ops(
     remote_root: &LibraryRoot,
 ) -> CommandResult<()> {
     let cas_ops = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         let mut ops: Vec<OperationRow> = list_operations_for_library(&conn, library_id)?
@@ -943,7 +937,7 @@ pub(crate) fn reconcile_cas_boundary_ops(
     // candidate-bound operation behind. Callers may start the merge/freeze
     // phase only after this check succeeds.
     let unresolved = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         list_operations_for_library(&conn, library_id)?
@@ -1042,7 +1036,7 @@ pub(crate) fn merge_pending_ops_for_publish(
     working_copy_root: Option<&std::path::Path>,
 ) -> CommandResult<(String, Vec<String>)> {
     let conn =
-        state.remote.control_db.lock().map_err(|_| {
+        state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
     let now = crate::remote::types::current_unix_time_ms();
@@ -1076,10 +1070,16 @@ pub(crate) fn merge_pending_ops_for_publish(
         // clear their candidate identity before accepted-commit can run.
         let primary_may_have_cas = may_have_crossed_cas_boundary(&primary);
 
-        let mut song_ids: Vec<String> = OperationPayload::from_json(&primary.payload_json)
-            .map(|p| p.song_ids)
-            .unwrap_or_default();
-        if song_ids.is_empty() {
+        let primary_payload = OperationPayload::from_json(&primary.payload_json)?;
+        let mut whole_repository = primary_payload.whole_repository;
+        let mut song_ids = primary_payload.song_ids;
+        if whole_repository {
+            for song_id in batch_song_ids {
+                if !song_ids.iter().any(|existing| existing == song_id) {
+                    song_ids.push(song_id.clone());
+                }
+            }
+        } else if song_ids.is_empty() {
             if batch_song_ids.is_empty() {
                 if !fallback_song_id.is_empty() {
                     song_ids.push(fallback_song_id.to_owned());
@@ -1115,15 +1115,17 @@ pub(crate) fn merge_pending_ops_for_publish(
             // the survivor (and the library waits on max next_attempt_at_ms).
             // Skipping would freeze B's local rows under A's CAS while B
             // remains durable-uncommitted.
-            if let Ok(payload) = OperationPayload::from_json(&other.payload_json) {
-                for sid in payload.song_ids {
-                    if !song_ids.iter().any(|s| s == &sid) {
-                        song_ids.push(sid);
-                    }
+            let other_payload = OperationPayload::from_json(&other.payload_json)?;
+            if other_payload.whole_repository {
+                whole_repository = true;
+            }
+            for sid in other_payload.song_ids {
+                if !song_ids.iter().any(|s| s == &sid) {
+                    song_ids.push(sid);
                 }
-                if let Some(rel) = payload.candidate_relative_path {
-                    candidate_paths_to_delete.push(rel);
-                }
+            }
+            if let Some(rel) = other_payload.candidate_relative_path {
+                candidate_paths_to_delete.push(rel);
             }
             if let Some(t) = other.next_attempt_at_ms {
                 inherited_next_attempt = Some(inherited_next_attempt.map_or(t, |cur| cur.max(t)));
@@ -1143,7 +1145,7 @@ pub(crate) fn merge_pending_ops_for_publish(
             .map(|r| r.committed_generation)
             .unwrap_or(0);
 
-        let mut payload = OperationPayload::from_json(&primary.payload_json).unwrap_or_default();
+        let mut payload = OperationPayload::from_json(&primary.payload_json)?;
         let mut sorted_original = original_song_ids;
         let mut sorted_merged = song_ids.clone();
         sorted_original.sort();
@@ -1167,6 +1169,7 @@ pub(crate) fn merge_pending_ops_for_publish(
         }
 
         payload.song_ids = song_ids.clone();
+        payload.whole_repository = whole_repository;
         if payload.detail.is_none() {
             payload.detail = Some("Publishing to remote".to_owned());
         }
@@ -1224,7 +1227,7 @@ fn resolve_or_create_publish_operation(
     fallback_song_id: &str,
 ) -> CommandResult<OperationRow> {
     let conn =
-        state.remote.control_db.lock().map_err(|_| {
+        state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
     let now = crate::remote::types::current_unix_time_ms();
@@ -1298,18 +1301,12 @@ fn commit_via_executor(
     remote_root: &LibraryRoot,
 ) -> CommandResult<()> {
     // Caller already holds the per-library commit lock.
-    if state.remote.control_db_degraded {
-        return Err(CommandError::from(LibraryError::Internal(
-            "remote control database is unavailable; publication is disabled \
-             until the control plane is repaired"
-                .to_string(),
-        )));
-    }
+    state.remote.ensure_available()?;
 
-    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
+    let provider = create_repository_storage(&state.shell.app_data_dir, remote_library)?;
 
     let (repository_id, writer_id) = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
+        let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         if let Some(op) = crate::remote::control_db::get_operation(&conn, operation_id)? {
@@ -1362,13 +1359,38 @@ fn commit_via_executor(
         crate::commands::error::database_error(format!("failed to open control DB: {e:?}"))
     })?;
 
+    run_publication_driver(
+        &exec_conn,
+        provider.as_ref(),
+        remote_root.root(),
+        remote_library_id,
+        &writer_id,
+        &repository_id,
+        operation_id,
+    )
+}
+
+/// Execute the durable manifest publication protocol for one operation.
+///
+/// Immediate publishing and restart recovery both enter the executor through
+/// this driver. Asset staging may differ before this point, but freeze, CAS,
+/// operation transitions, and publication events have one implementation.
+pub(crate) fn run_publication_driver(
+    control_db: &rusqlite::Connection,
+    provider: &dyn RepositoryStorage,
+    working_copy_root: &std::path::Path,
+    library_id: &str,
+    writer_id: &str,
+    repository_id: &str,
+    operation_id: &str,
+) -> CommandResult<()> {
     let ctx = PublishContext {
-        control_db: &exec_conn,
-        provider: provider.as_ref(),
-        working_copy_root: remote_root.root(),
-        library_id: remote_library_id,
-        writer_id: &writer_id,
-        repository_id: &repository_id,
+        control_db,
+        provider,
+        working_copy_root,
+        library_id,
+        writer_id,
+        repository_id,
     };
 
     execute_publish(&ctx, operation_id)
@@ -1387,7 +1409,7 @@ pub(crate) fn reupload_song_assets_for_recovery(
         .map_err(|error| database_error(error.to_string()))?;
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
+    let provider = create_repository_storage(&state.shell.app_data_dir, remote_library)?;
     upload_one_song_assets(
         &local_connection,
         &mut remote_connection,
@@ -1466,7 +1488,6 @@ mod merge_tests {
         OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
     };
     use crate::AppState;
-    use std::sync::{Arc, Mutex};
 
     fn op(id: &str, library_id: &str, songs: &[&str], state: OperationState) -> OperationRow {
         let payload = OperationPayload {
@@ -1511,6 +1532,14 @@ mod merge_tests {
         payload.protocol_step = Some("candidate_ready".to_owned());
         row.payload_json = payload.to_json().unwrap();
         row.candidate_db_digest = Some(candidate_sha.to_owned());
+        row
+    }
+
+    fn whole_op(id: &str, library_id: &str, state: OperationState) -> OperationRow {
+        let mut row = op(id, library_id, &[], state);
+        let mut payload = OperationPayload::from_json(&row.payload_json).unwrap();
+        payload.whole_repository = true;
+        row.payload_json = payload.to_json().unwrap();
         row
     }
 
@@ -1565,7 +1594,7 @@ mod merge_tests {
         .unwrap();
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let (survivor, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
@@ -1573,7 +1602,7 @@ mod merge_tests {
         assert!(songs.contains(&"song-a".to_owned()));
         assert!(songs.contains(&"song-b".to_owned()));
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let a = get_operation(&conn, "op-a").unwrap().unwrap();
         assert_eq!(a.expected_generation, Some(10));
         let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
@@ -1603,17 +1632,55 @@ mod merge_tests {
         .unwrap();
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let (survivor, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
         assert_eq!(survivor, "op-a");
         assert_eq!(songs, vec!["song-a".to_owned()]);
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let prepared = get_operation(&conn, "op-prepared").unwrap().unwrap();
         assert_eq!(prepared.state, OperationState::Prepared);
         assert!(prepared.error_code.is_none());
+    }
+
+    #[test]
+    fn merge_binds_current_song_set_to_whole_repository_publish() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
+        upsert_operation(
+            &conn,
+            &whole_op("op-whole", "lib-1", OperationState::Pending),
+        )
+        .unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.replace_control_db(conn);
+
+        let (_, songs) = merge_pending_ops_for_publish(
+            &state,
+            "lib-1",
+            "op-whole",
+            &["song-a".to_owned(), "song-b".to_owned()],
+            "",
+            None,
+        )
+        .unwrap();
+        assert_eq!(songs, vec!["song-a".to_owned(), "song-b".to_owned()]);
+
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
+        let payload = OperationPayload::from_json(
+            &get_operation(&conn, "op-whole")
+                .unwrap()
+                .unwrap()
+                .payload_json,
+        )
+        .unwrap();
+        assert!(payload.whole_repository);
+        assert_eq!(payload.song_ids, songs);
     }
 
     #[test]
@@ -1647,14 +1714,14 @@ mod merge_tests {
         .unwrap();
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let (_survivor, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", Some(&work))
                 .unwrap();
         assert_eq!(songs, vec!["song-a".to_owned()]);
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let a = get_operation(&conn, "op-a").unwrap().unwrap();
         let payload = OperationPayload::from_json(&a.payload_json).unwrap();
         assert_eq!(payload.candidate_sha256.as_deref(), Some("deadbeef"));
@@ -1684,14 +1751,14 @@ mod merge_tests {
         upsert_operation(&conn, &rate_limited).unwrap();
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let (_, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
         assert!(songs.contains(&"song-a".to_owned()));
         assert!(songs.contains(&"song-b".to_owned()));
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let a = get_operation(&conn, "op-a").unwrap().unwrap();
         assert_eq!(a.next_attempt_at_ms, Some(i64::MAX));
         let b = get_operation(&conn, "op-b").unwrap().unwrap();
@@ -1735,14 +1802,14 @@ mod merge_tests {
         .unwrap();
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let (_, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
         assert!(songs.contains(&"song-a".to_owned()));
         assert!(songs.contains(&"song-b".to_owned()));
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         assert_eq!(
             get_operation(&conn, "op-b").unwrap().unwrap().state,
             OperationState::Cancelled

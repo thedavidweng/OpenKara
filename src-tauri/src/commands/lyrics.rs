@@ -1,18 +1,15 @@
 use crate::{
     cache,
     cache::lyrics::LyricsCacheEntry,
-    commands::error::{database_error, internal_error, CommandResult},
+    commands::error::{current_unix_timestamp, database_error, internal_error, CommandResult},
     library::Song,
     library_root::LibraryRoot,
     lyrics::{
         self,
+        acquisition::LyricsPersistenceResult,
+        acquisition::{LyricsAcquisition, LyricsAcquisitionResult},
         error::LyricsError,
-        fetch::{
-            fetch_online_timed_lyrics_async, lookup_query_from_song, LyricsFetchResult,
-            LyricsSource, TimedLyricsProvider, TimedLyricsProviderAsync,
-        },
-        lrcapi::LrcApiClient,
-        lrclib::{LrcLibClient, LyricsLookupQuery},
+        fetch::{LyricsFetchResult, LyricsSource},
         parser::LyricLine,
     },
     remote, AppState,
@@ -31,177 +28,67 @@ pub struct LyricsPayload {
     pub raw_lrc: String,
 }
 
+pub use crate::lyrics::acquisition::LyricsOnlineFetchIntent;
+
 #[tauri::command]
 pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<LyricsPayload> {
-    let background_state = state.inner().clone();
-
-    let song_id_for_phase1 = song_id.clone();
-    let phase1 = tauri::async_runtime::spawn_blocking(move || {
-        fetch_lyrics_phase1(&background_state, &song_id_for_phase1)
+    let state = state.inner().clone();
+    let app_handle = app_handle.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_lyrics_on_thread(&state, &app_handle, &song_id)
     })
     .await
-    .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))??;
-
-    match phase1 {
-        FetchLyricsPhase1::Ready(payload) => Ok(payload),
-        FetchLyricsPhase1::LocalLyrics { fetched, song_hash } => {
-            // Local lyrics must go through run_song_database_mutation so that
-            // prepare → sync_db → publish_song runs around the cache write.
-            let state_for_phase3 = state.inner().clone();
-            let handle_for_phase3 = app_handle.clone();
-            let song_id_for_phase3 = song_id.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                fetch_lyrics_phase3(
-                    &state_for_phase3,
-                    &handle_for_phase3,
-                    &song_id_for_phase3,
-                    &song_hash,
-                    Ok(Some(fetched)),
-                )
-            })
-            .await
-            .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
-        }
-        FetchLyricsPhase1::NeedOnline { query, song_hash } => {
-            let lrclib_client = &state.inner().lrclib_client;
-            let lrcapi_client = &state.inner().lrcapi_client;
-            let providers = [
-                TimedLyricsProviderAsync::LrcLib(lrclib_client),
-                TimedLyricsProviderAsync::LrcApi(lrcapi_client),
-            ];
-            let online_result = fetch_online_timed_lyrics_async(&providers, &query)
-                .await
-                .map_err(|e| LyricsError::NetworkUnavailable(e.to_string()));
-
-            let state_for_phase3 = state.inner().clone();
-            let handle_for_phase3 = app_handle.clone();
-            let song_id_for_phase3 = song_id.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                fetch_lyrics_phase3(
-                    &state_for_phase3,
-                    &handle_for_phase3,
-                    &song_id_for_phase3,
-                    &song_hash,
-                    online_result,
-                )
-            })
-            .await
-            .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
-        }
-    }
+    .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
 }
 
-enum FetchLyricsPhase1 {
-    Ready(LyricsPayload),
-    LocalLyrics {
-        fetched: LyricsFetchResult,
-        song_hash: String,
-    },
-    NeedOnline {
-        query: LyricsLookupQuery,
-        song_hash: String,
-    },
-}
-
-// Read-only: does NOT write the cache or call prepare/sync/publish. Cache
-// writes and remote sync happen in phase 3, wrapped in
-// run_song_database_mutation.
-fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLyricsPhase1> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
-    let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(database_error)?
-        .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
-
-    if let Some(cached) =
-        cache::lyrics::get_lyrics_cache_entry(&connection, song_id).map_err(database_error)?
-    {
-        if cached.source == LyricsSource::Absent {
-            if !is_negative_cache_expired(&cached) {
-                return Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash)));
-            }
-        } else {
-            let payload = payload_from_cached_entry(song.hash, cached)?;
-            return Ok(FetchLyricsPhase1::Ready(payload));
-        }
-    }
-
-    // The cache write is deferred to phase 3 so it goes through
-    // run_song_database_mutation (prepare → sync_db → publish_song).
-    if let Some(song_path) = song.file_path.as_deref() {
-        let resolved_path = library_root.resolve(song_path);
-        if let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song_local(&song, &resolved_path)
-            .map_err(|e| LyricsError::Internal(e.to_string()))?
-        {
-            return Ok(FetchLyricsPhase1::LocalLyrics {
-                fetched,
-                song_hash: song.hash,
-            });
-        }
-    }
-
-    match lookup_query_from_song(&song) {
-        Some(query) => Ok(FetchLyricsPhase1::NeedOnline {
-            query,
-            song_hash: song.hash,
-        }),
-        None => Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash))),
-    }
-}
-
-// Wrapped in run_song_database_mutation so prepare/sync/publish happen
-// around the DB write.
-fn fetch_lyrics_phase3(
+fn fetch_lyrics_on_thread(
     state: &AppState,
     app_handle: &AppHandle,
     song_id: &str,
-    song_hash: &str,
-    online_result: Result<Option<LyricsFetchResult>, LyricsError>,
 ) -> CommandResult<LyricsPayload> {
-    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
-        let result: Result<LyricsPayload, LyricsError> = match online_result {
-            Ok(Some(fetched)) => {
-                let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
-                    .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
-                let raw_lrc = fetched.raw_lrc.clone();
-                let source = fetched.source.clone();
-                let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-                    .offset_ms
-                    .unwrap_or(0);
-                cache::lyrics::upsert_lyrics_cache_entry(
-                    connection,
-                    &LyricsCacheEntry {
-                        song_hash: song_hash.to_owned(),
-                        lrc: fetched.raw_lrc,
-                        source: source.clone(),
-                        offset_ms,
-                        fetched_at: current_unix_timestamp()
-                            .map_err(|e| LyricsError::Internal(e.to_string()))?,
-                    },
-                )
-                .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
+    let library_root = state.library_root()?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    let acquisition = LyricsAcquisition::new(&state.lrclib_client, &state.lrcapi_client);
+    let acquired = acquisition.acquire(&connection, &library_root, song_id)?;
 
-                Ok(LyricsPayload {
-                    song_id: song_hash.to_owned(),
-                    lines,
-                    source: Some(source),
-                    offset_ms,
-                    raw_lrc,
-                })
+    match acquired {
+        LyricsAcquisitionResult::Cached(cached) => {
+            Ok(payload_from_cached_entry(song_id.to_owned(), cached)?)
+        }
+        LyricsAcquisitionResult::NegativeCacheHit
+        | LyricsAcquisitionResult::Absent {
+            cache_negative: false,
+        } => Ok(empty_lyrics_payload(song_id.to_owned())),
+        result @ (LyricsAcquisitionResult::Fetched(_)
+        | LyricsAcquisitionResult::Absent {
+            cache_negative: true,
+        }) => {
+            let publication = remote::PublishChanges::new(state, app_handle);
+            let applied = publication.apply(remote::Change::new(
+                remote::ChangeScope::Songs(vec![song_id.to_owned()]),
+                move |connection: &Connection, _library: &LibraryRoot| {
+                    LyricsAcquisition::persist_acquisition(connection, song_id, &result)
+                        .map_err(Into::into)
+                },
+                |result: &LyricsPersistenceResult| {
+                    if result.changed {
+                        remote::ChangeScope::Songs(vec![song_id.to_owned()])
+                    } else {
+                        remote::ChangeScope::None
+                    }
+                },
+            ))?;
+            publication.publish(&applied.scope)?;
+            match applied.value.fetched {
+                Some(fetched) => Ok(payload_from_fetched(song_id.to_owned(), &fetched)?),
+                None => Ok(empty_lyrics_payload(song_id.to_owned())),
             }
-            Ok(None) => {
-                cache_negative_lyrics_lookup(connection, song_hash)?;
-                Ok(empty_lyrics_payload(song_hash.to_owned()))
-            }
-            Err(_) => Ok(empty_lyrics_payload(song_hash.to_owned())),
-        };
-        result.map_err(Into::into)
-    })
+        }
+    }
 }
 
 #[tauri::command]
@@ -226,82 +113,16 @@ fn set_lyrics_offset_on_thread(
     song_id: &str,
     ms: i64,
 ) -> CommandResult<()> {
-    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
-        set_lyrics_offset_in_connection(connection, song_id, ms).map_err(Into::into)
-    })
-}
-
-pub fn fetch_lyrics_from_connection(
-    connection: &Connection,
-    library_root: &LibraryRoot,
-    lrclib_client: &LrcLibClient,
-    lrcapi_client: &LrcApiClient,
-    song_id: &str,
-) -> Result<LyricsPayload, LyricsError> {
-    let song = cache::get_song_by_hash(connection, song_id)
-        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
-        .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
-
-    if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)
-        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
-    {
-        if cached.source == LyricsSource::Absent && !is_negative_cache_expired(&cached) {
-            return Ok(empty_lyrics_payload(song.hash));
-        }
-        if cached.source != LyricsSource::Absent {
-            return payload_from_cached_entry(song.hash, cached);
-        }
-    }
-
-    let Some(song_path) = song.file_path.as_deref() else {
-        return Ok(LyricsPayload {
-            song_id: song.hash,
-            lines: Vec::new(),
-            source: None,
-            offset_ms: 0,
-            raw_lrc: String::new(),
-        });
-    };
-    let resolved_path = library_root.resolve(song_path);
-    let providers = [
-        TimedLyricsProvider::LrcLib(lrclib_client),
-        TimedLyricsProvider::LrcApi(lrcapi_client),
-    ];
-
-    let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(&providers, &song, &resolved_path)
-        .map_err(|e| LyricsError::Internal(e.to_string()))?
-    else {
-        cache_negative_lyrics_lookup(connection, &song.hash)?;
-        return Ok(empty_lyrics_payload(song.hash));
-    };
-
-    let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
-        .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
-    let source = fetched.source;
-    let raw_lrc = fetched.raw_lrc.clone();
-    let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-        .offset_ms
-        .unwrap_or(0);
-    cache::lyrics::upsert_lyrics_cache_entry(
-        connection,
-        &LyricsCacheEntry {
-            song_hash: song.hash.clone(),
-            lrc: fetched.raw_lrc,
-            source: source.clone(),
-            offset_ms,
-            fetched_at: current_unix_timestamp()
-                .map_err(|e| LyricsError::Internal(e.to_string()))?,
+    let publication = remote::PublishChanges::new(state, app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(vec![song_id.to_owned()]),
+        |connection: &Connection, _library: &LibraryRoot| {
+            set_lyrics_offset_in_connection(connection, song_id, ms).map_err(Into::into)
         },
-    )
-    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
-
-    Ok(LyricsPayload {
-        song_id: song.hash,
-        lines,
-        source: Some(source),
-        offset_ms,
-        raw_lrc,
-    })
+        |_: &()| remote::ChangeScope::Songs(vec![song_id.to_owned()]),
+    ))?;
+    publication.publish(&applied.scope)?;
+    Ok(())
 }
 
 pub fn set_lyrics_offset_in_connection(
@@ -349,6 +170,27 @@ fn payload_from_cached_entry(
     })
 }
 
+fn payload_from_fetched(
+    song_id: String,
+    fetched: &LyricsFetchResult,
+) -> Result<LyricsPayload, LyricsError> {
+    let mut lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
+        .map_err(|error| LyricsError::LyricsNotReady(error.to_string()))?;
+    if lines.is_empty() {
+        lines = plain_text_to_lines(&fetched.raw_lrc);
+    }
+    let offset_ms = lyrics::parser::parse_lrc_metadata(&fetched.raw_lrc)
+        .offset_ms
+        .unwrap_or(0);
+    Ok(LyricsPayload {
+        song_id,
+        lines,
+        source: Some(fetched.source.clone()),
+        offset_ms,
+        raw_lrc: fetched.raw_lrc.clone(),
+    })
+}
+
 #[tauri::command]
 pub async fn save_manual_lyrics(
     state: State<'_, AppState>,
@@ -372,62 +214,69 @@ fn save_manual_lyrics_on_thread(
     text: String,
 ) -> CommandResult<LyricsPayload> {
     let publish_song_id = song_id.to_owned();
-    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
-        let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
-            Ok(parsed) if !parsed.is_empty() => parsed,
-            _ => plain_text_to_lines(&text),
-        };
+    let publication = remote::PublishChanges::new(state, app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(vec![song_id.to_owned()]),
+        |connection: &Connection, _library: &LibraryRoot| {
+            let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
+                Ok(parsed) if !parsed.is_empty() => parsed,
+                _ => plain_text_to_lines(&text),
+            };
 
-        let source = {
-            let trimmed = text.trim();
-            if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
-                LyricsSource::ManualTtml
-            } else if trimmed
-                .lines()
-                .find(|l| !l.trim().is_empty())
-                .is_some_and(|l| {
-                    let bytes = l.trim().as_bytes();
-                    bytes.starts_with(b"[")
-                        && bytes.len() >= 3
-                        && bytes[1].is_ascii_digit()
-                        && bytes[2] == b']'
-                })
-            {
-                LyricsSource::ManualLys
-            } else {
-                LyricsSource::Manual
-            }
-        };
+            let source = {
+                let trimmed = text.trim();
+                if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
+                    LyricsSource::ManualTtml
+                } else if trimmed
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .is_some_and(|l| {
+                        let bytes = l.trim().as_bytes();
+                        bytes.starts_with(b"[")
+                            && bytes.len() >= 3
+                            && bytes[1].is_ascii_digit()
+                            && bytes[2] == b']'
+                    })
+                {
+                    LyricsSource::ManualLys
+                } else {
+                    LyricsSource::Manual
+                }
+            };
 
-        let raw_lrc = text.clone();
+            let raw_lrc = text.clone();
 
-        let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-            .offset_ms
-            .unwrap_or(0);
+            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+                .offset_ms
+                .unwrap_or(0);
 
-        let fetched_at =
-            current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
+            let fetched_at =
+                current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
-        cache::lyrics::upsert_lyrics_cache_entry(
-            connection,
-            &LyricsCacheEntry {
-                song_hash: publish_song_id.clone(),
-                lrc: text,
-                source: source.clone(),
+            cache::lyrics::upsert_lyrics_cache_entry(
+                connection,
+                &LyricsCacheEntry {
+                    song_hash: publish_song_id.clone(),
+                    lrc: text,
+                    source: source.clone(),
+                    offset_ms,
+                    fetched_at,
+                },
+            )
+            .map_err(database_error)?;
+
+            Ok(LyricsPayload {
+                song_id: publish_song_id,
+                lines,
+                source: Some(source),
                 offset_ms,
-                fetched_at,
-            },
-        )
-        .map_err(database_error)?;
-
-        Ok(LyricsPayload {
-            song_id: publish_song_id,
-            lines,
-            source: Some(source),
-            offset_ms,
-            raw_lrc,
-        })
-    })
+                raw_lrc,
+            })
+        },
+        |payload: &LyricsPayload| remote::ChangeScope::Songs(vec![payload.song_id.clone()]),
+    ))?;
+    publication.publish(&applied.scope)?;
+    Ok(applied.value)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -464,10 +313,10 @@ fn import_lyrics_files_on_thread(
     app_handle: &AppHandle,
     paths: Vec<String>,
 ) -> CommandResult<ImportLyricsResult> {
-    remote::run_songs_database_mutation(
-        state,
-        app_handle,
-        |connection| {
+    let publication = remote::PublishChanges::new(state, app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::WholeRepository,
+        |connection: &Connection, _library: &LibraryRoot| {
             let all_songs = cache::list_songs(connection).map_err(database_error)?;
 
             let mut matched = Vec::new();
@@ -556,14 +405,18 @@ fn import_lyrics_files_on_thread(
 
             Ok(ImportLyricsResult { matched, unmatched })
         },
-        |result| {
-            result
-                .matched
-                .iter()
-                .map(|entry| entry.song_id.clone())
-                .collect()
+        |result: &ImportLyricsResult| {
+            remote::ChangeScope::Songs(
+                result
+                    .matched
+                    .iter()
+                    .map(|entry| entry.song_id.clone())
+                    .collect(),
+            )
         },
-    )
+    ))?;
+    publication.publish(&applied.scope)?;
+    Ok(applied.value)
 }
 
 #[tauri::command]
@@ -586,61 +439,67 @@ fn extract_embedded_lyrics_on_thread(
     app_handle: &AppHandle,
     song_id: &str,
 ) -> CommandResult<LyricsPayload> {
-    let library_root = state.library_root()?;
     let publish_song_id = song_id.to_owned();
-    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
-        let song = cache::get_song_by_hash(connection, &publish_song_id)
-            .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
-            .ok_or(LyricsError::SongNotFound(publish_song_id.clone()))?;
+    let publication = remote::PublishChanges::new(state, app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(vec![song_id.to_owned()]),
+        |connection: &Connection, library_root: &LibraryRoot| {
+            let song = cache::get_song_by_hash(connection, &publish_song_id)
+                .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+                .ok_or(LyricsError::SongNotFound(publish_song_id.clone()))?;
 
-        let Some(song_path) = song.file_path.as_deref() else {
-            return Err(LyricsError::Internal(format!(
-                "song {} does not have a local file path",
-                publish_song_id
-            ))
-            .into());
-        };
-        let resolved_path = library_root.resolve(song_path);
-        let embedded = lyrics::fetch::read_embedded_lyrics(&resolved_path)
-            .map_err(|e| LyricsError::Internal(e.to_string()))?
-            .ok_or(LyricsError::LyricsNotReady(
-                "No embedded lyrics found in this file".to_owned(),
-            ))?;
+            let Some(song_path) = song.file_path.as_deref() else {
+                return Err(LyricsError::Internal(format!(
+                    "song {} does not have a local file path",
+                    publish_song_id
+                ))
+                .into());
+            };
+            let resolved_path = library_root.resolve(song_path);
+            let embedded = lyrics::fetch::read_embedded_lyrics(&resolved_path)
+                .map_err(|e| LyricsError::Internal(e.to_string()))?
+                .ok_or(LyricsError::LyricsNotReady(
+                    "No embedded lyrics found in this file".to_owned(),
+                ))?;
 
-        let lines = match lyrics::fetch::parse_lyrics_auto(&embedded) {
-            Ok(parsed) if !parsed.is_empty() => parsed,
-            _ => plain_text_to_lines(&embedded),
-        };
+            let lines = match lyrics::fetch::parse_lyrics_auto(&embedded) {
+                Ok(parsed) if !parsed.is_empty() => parsed,
+                _ => plain_text_to_lines(&embedded),
+            };
 
-        let raw_lrc = embedded.clone();
+            let raw_lrc = embedded.clone();
 
-        let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-            .offset_ms
-            .unwrap_or(0);
+            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+                .offset_ms
+                .unwrap_or(0);
 
-        let fetched_at =
-            current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
+            let fetched_at =
+                current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
-        cache::lyrics::upsert_lyrics_cache_entry(
-            connection,
-            &LyricsCacheEntry {
-                song_hash: publish_song_id.clone(),
-                lrc: embedded,
-                source: LyricsSource::Embedded,
+            cache::lyrics::upsert_lyrics_cache_entry(
+                connection,
+                &LyricsCacheEntry {
+                    song_hash: publish_song_id.clone(),
+                    lrc: embedded,
+                    source: LyricsSource::Embedded,
+                    offset_ms,
+                    fetched_at,
+                },
+            )
+            .map_err(database_error)?;
+
+            Ok(LyricsPayload {
+                song_id: publish_song_id,
+                lines,
+                source: Some(LyricsSource::Embedded),
                 offset_ms,
-                fetched_at,
-            },
-        )
-        .map_err(database_error)?;
-
-        Ok(LyricsPayload {
-            song_id: publish_song_id,
-            lines,
-            source: Some(LyricsSource::Embedded),
-            offset_ms,
-            raw_lrc,
-        })
-    })
+                raw_lrc,
+            })
+        },
+        |payload: &LyricsPayload| remote::ChangeScope::Songs(vec![payload.song_id.clone()]),
+    ))?;
+    publication.publish(&applied.scope)?;
+    Ok(applied.value)
 }
 
 #[tauri::command]
@@ -648,172 +507,57 @@ pub async fn fetch_lyrics_online(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     song_id: String,
-    // True only for the explicit "fetch lyrics online" action. The silent
-    // auto-upgrade fired on song open passes false so it cannot clobber
-    // user-authored lyrics (issue #203).
-    user_initiated: bool,
+    intent: LyricsOnlineFetchIntent,
 ) -> CommandResult<LyricsPayload> {
-    let background_state = state.inner().clone();
-    let song_id_for_phase1 = song_id.clone();
-    let phase1 = tauri::async_runtime::spawn_blocking(move || {
-        fetch_lyrics_online_phase1(&background_state, &song_id_for_phase1)
+    let state = state.inner().clone();
+    let app_handle = app_handle.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_lyrics_online_on_thread(&state, &app_handle, &song_id, intent)
     })
     .await
-    .map_err(|error| internal_error(format!("fetch_lyrics_online task failed: {error}")))??;
-
-    match phase1 {
-        FetchOnlinePhase1::NoQuery(payload) => Ok(payload),
-        FetchOnlinePhase1::Fetch { query, song_hash } => {
-            let lrclib_client = &state.inner().lrclib_client;
-            let lrcapi_client = &state.inner().lrcapi_client;
-            let providers = [
-                TimedLyricsProviderAsync::LrcLib(lrclib_client),
-                TimedLyricsProviderAsync::LrcApi(lrcapi_client),
-            ];
-            let online_result = fetch_online_timed_lyrics_async(&providers, &query)
-                .await
-                .map_err(|e| LyricsError::NetworkUnavailable(e.to_string()));
-
-            let state_for_phase3 = state.inner().clone();
-            let handle_for_phase3 = app_handle.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                fetch_lyrics_online_phase3(
-                    &state_for_phase3,
-                    &handle_for_phase3,
-                    &song_hash,
-                    online_result,
-                    user_initiated,
-                )
-            })
-            .await
-            .map_err(|error| internal_error(format!("fetch_lyrics_online task failed: {error}")))?
-        }
-    }
+    .map_err(|error| internal_error(format!("fetch_lyrics_online task failed: {error}")))?
 }
 
-enum FetchOnlinePhase1 {
-    NoQuery(LyricsPayload),
-    Fetch {
-        query: LyricsLookupQuery,
-        song_hash: String,
-    },
-}
-
-fn fetch_lyrics_online_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchOnlinePhase1> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
-    let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(database_error)?
-        .ok_or(LyricsError::SongNotFound(song_id.to_owned()))?;
-
-    match lookup_query_from_song(&song) {
-        Some(query) => Ok(FetchOnlinePhase1::Fetch {
-            query,
-            song_hash: song.hash,
-        }),
-        None => Ok(FetchOnlinePhase1::NoQuery(LyricsPayload {
-            song_id: song.hash,
-            lines: Vec::new(),
-            source: None,
-            offset_ms: 0,
-            raw_lrc: String::new(),
-        })),
-    }
-}
-
-fn fetch_lyrics_online_phase3(
+fn fetch_lyrics_online_on_thread(
     state: &AppState,
     app_handle: &AppHandle,
-    song_hash: &str,
-    online_result: Result<Option<LyricsFetchResult>, LyricsError>,
-    user_initiated: bool,
+    song_id: &str,
+    intent: LyricsOnlineFetchIntent,
 ) -> CommandResult<LyricsPayload> {
-    remote::run_song_database_mutation_with_result(
-        state,
-        app_handle,
-        |connection| {
-            apply_online_lyrics_result(connection, song_hash, online_result, user_initiated)
-                .map_err(Into::into)
-        },
-        |payload| payload.source.as_ref().map(|_| payload.song_id.clone()),
-    )
-}
+    let library_root = state.library_root()?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    let acquisition = LyricsAcquisition::new(&state.lrclib_client, &state.lrcapi_client);
+    let online_result = acquisition.fetch_online(&connection, song_id, intent)?;
+    let should_publish = !matches!(
+        online_result,
+        crate::lyrics::fetch::OnlineLyricsResult::NotApplicable
+    );
+    let song_id_owned = song_id.to_owned();
 
-/// Cache sources that a silent auto-upgrade (non-user-initiated online fetch)
-/// is allowed to overwrite. Embedded lyrics and the negative-cache marker are
-/// derived, not user-authored, so upgrading them to online synced lyrics is
-/// safe. Every other source — `Manual*`, `Sidecar*`, and already-online
-/// results — is user-authored or user-provided and must never be clobbered by
-/// a background upgrade (issue #203).
-fn is_auto_upgradable_source(source: &LyricsSource) -> bool {
-    matches!(source, LyricsSource::Embedded | LyricsSource::Absent)
-}
-
-/// Applies an online lyrics fetch result to the cache and returns the payload.
-///
-/// When `user_initiated` is false (the silent auto-upgrade fired on song open),
-/// an existing cache entry whose source is not auto-upgradable is preserved and
-/// returned unchanged instead of being overwritten — this is the belt-and-
-/// suspenders guard that keeps a wrong online match from destroying hand-entered
-/// or user-provided lyrics. When `user_initiated` is true (the explicit "fetch
-/// lyrics online" action), the online result always replaces the cache entry.
-fn apply_online_lyrics_result(
-    connection: &Connection,
-    song_hash: &str,
-    online_result: Result<Option<LyricsFetchResult>, LyricsError>,
-    user_initiated: bool,
-) -> Result<LyricsPayload, LyricsError> {
-    match online_result {
-        Ok(Some(fetched)) => {
-            if !user_initiated {
-                if let Some(existing) = cache::lyrics::get_lyrics_cache_entry(connection, song_hash)
-                    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
-                {
-                    if !is_auto_upgradable_source(&existing.source) {
-                        return payload_from_cached_entry(song_hash.to_owned(), existing);
-                    }
-                }
-            }
-
-            let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
-                .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
-            let raw_lrc = fetched.raw_lrc.clone();
-            let source = fetched.source.clone();
-            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-                .offset_ms
-                .unwrap_or(0);
-            let fetched_at =
-                current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
-
-            cache::lyrics::upsert_lyrics_cache_entry(
+    let publication = remote::PublishChanges::new(state, app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(vec![song_id_owned.clone()]),
+        move |connection: &Connection, _library: &LibraryRoot| {
+            LyricsAcquisition::persist_online_result(
                 connection,
-                &LyricsCacheEntry {
-                    song_hash: song_hash.to_owned(),
-                    lrc: fetched.raw_lrc,
-                    source: source.clone(),
-                    offset_ms,
-                    fetched_at,
-                },
+                &song_id_owned,
+                online_result,
+                intent,
             )
-            .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
-
-            Ok(LyricsPayload {
-                song_id: song_hash.to_owned(),
-                lines,
-                source: Some(source),
-                offset_ms,
-                raw_lrc,
-            })
-        }
-        Ok(None) => Ok(LyricsPayload {
-            song_id: song_hash.to_owned(),
-            lines: Vec::new(),
-            source: None,
-            offset_ms: 0,
-            raw_lrc: String::new(),
-        }),
-        Err(e) => Err(e),
+            .map_err(Into::into)
+        },
+        move |result: &LyricsPersistenceResult| {
+            if should_publish && result.changed {
+                remote::ChangeScope::Songs(vec![song_id.to_owned()])
+            } else {
+                remote::ChangeScope::None
+            }
+        },
+    ))?;
+    publication.publish(&applied.scope)?;
+    match applied.value.fetched {
+        Some(fetched) => Ok(payload_from_fetched(song_id.to_owned(), &fetched)?),
+        None => Ok(empty_lyrics_payload(song_id.to_owned())),
     }
 }
 
@@ -839,73 +583,9 @@ fn empty_lyrics_payload(song_id: String) -> LyricsPayload {
     }
 }
 
-fn cache_negative_lyrics_lookup(
-    connection: &rusqlite::Connection,
-    song_hash: &str,
-) -> Result<(), LyricsError> {
-    let fetched_at = current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
-    cache::lyrics::upsert_lyrics_cache_entry(
-        connection,
-        &LyricsCacheEntry {
-            song_hash: song_hash.to_owned(),
-            lrc: String::new(),
-            source: LyricsSource::Absent,
-            offset_ms: 0,
-            fetched_at,
-        },
-    )
-    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
-    Ok(())
-}
-
-use super::error::current_unix_timestamp;
-
-/// Negative cache TTL: how long an Absent entry suppresses online re-lookup.
-/// LRCLIB and LrcAPI are community-edited, so lyrics may appear later. A 7-day
-/// TTL balances re-discovery against hammering the APIs on every song change.
-const NEGATIVE_CACHE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
-
-fn is_negative_cache_expired(entry: &LyricsCacheEntry) -> bool {
-    match current_unix_timestamp() {
-        Ok(now) => now - entry.fetched_at > NEGATIVE_CACHE_TTL_SECS,
-        Err(_) => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn absent_entry(fetched_at: i64) -> LyricsCacheEntry {
-        LyricsCacheEntry {
-            song_hash: "test".to_owned(),
-            lrc: String::new(),
-            source: LyricsSource::Absent,
-            offset_ms: 0,
-            fetched_at,
-        }
-    }
-
-    #[test]
-    fn negative_cache_expired_after_ttl() {
-        let now = current_unix_timestamp().unwrap();
-        let entry = absent_entry(now - 8 * 24 * 60 * 60);
-        assert!(is_negative_cache_expired(&entry));
-    }
-
-    #[test]
-    fn negative_cache_not_expired_within_ttl() {
-        let now = current_unix_timestamp().unwrap();
-        let entry = absent_entry(now - 24 * 60 * 60);
-        assert!(!is_negative_cache_expired(&entry));
-    }
-
-    #[test]
-    fn negative_cache_not_expired_when_fresh() {
-        let now = current_unix_timestamp().unwrap();
-        let entry = absent_entry(now);
-        assert!(!is_negative_cache_expired(&entry));
-    }
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -956,6 +636,20 @@ mod tests {
         }))
     }
 
+    fn apply_online_lyrics_result(
+        connection: &Connection,
+        song_hash: &str,
+        online_result: Result<Option<LyricsFetchResult>, LyricsError>,
+        intent: LyricsOnlineFetchIntent,
+    ) -> Result<LyricsPersistenceResult, LyricsError> {
+        let result = match online_result {
+            Ok(Some(fetched)) => crate::lyrics::fetch::OnlineLyricsResult::Found(fetched),
+            Ok(None) => crate::lyrics::fetch::OnlineLyricsResult::DefiniteMissing,
+            Err(error) => return Err(error),
+        };
+        LyricsAcquisition::persist_online_result(connection, song_hash, result, intent)
+    }
+
     // Issue #203: the silent auto-upgrade must never overwrite hand-entered
     // lyrics with an online match (which may be a wrong match for a mistagged
     // song).
@@ -966,12 +660,15 @@ mod tests {
         let manual_lrc = "Hand written line one\nHand written line two\n";
         seed_entry(&conn, "song-manual", LyricsSource::Manual, manual_lrc);
 
-        let payload =
-            apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), false)
-                .expect("apply should succeed");
+        let persisted = apply_online_lyrics_result(
+            &conn,
+            "song-manual",
+            synced_online_result(),
+            LyricsOnlineFetchIntent::AutomaticUpgrade,
+        )
+        .expect("apply should succeed");
 
-        assert_eq!(payload.source, Some(LyricsSource::Manual));
-        assert_eq!(payload.raw_lrc, manual_lrc);
+        assert!(!persisted.changed);
 
         let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-manual")
             .expect("get")
@@ -993,9 +690,14 @@ mod tests {
             insert_song(&conn, hash);
             seed_entry(&conn, hash, source.clone(), "user provided lyric\n");
 
-            let payload = apply_online_lyrics_result(&conn, hash, synced_online_result(), false)
-                .expect("apply should succeed");
-            assert_eq!(payload.source, Some(source.clone()), "source {source:?}");
+            let persisted = apply_online_lyrics_result(
+                &conn,
+                hash,
+                synced_online_result(),
+                LyricsOnlineFetchIntent::AutomaticUpgrade,
+            )
+            .expect("apply should succeed");
+            assert!(!persisted.changed, "source {source:?}");
 
             let stored = cache::lyrics::get_lyrics_cache_entry(&conn, hash)
                 .expect("get")
@@ -1005,16 +707,20 @@ mod tests {
     }
 
     #[test]
-    fn user_initiated_fetch_replaces_manual_entry() {
+    fn user_replace_fetch_replaces_manual_entry() {
         let conn = test_db();
         insert_song(&conn, "song-manual");
         seed_entry(&conn, "song-manual", LyricsSource::Manual, "Hand written\n");
 
-        let payload =
-            apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), true)
-                .expect("apply should succeed");
+        let persisted = apply_online_lyrics_result(
+            &conn,
+            "song-manual",
+            synced_online_result(),
+            LyricsOnlineFetchIntent::UserReplace,
+        )
+        .expect("apply should succeed");
 
-        assert_eq!(payload.source, Some(LyricsSource::LrcLib));
+        assert!(persisted.changed);
 
         let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-manual")
             .expect("get")
@@ -1034,11 +740,15 @@ mod tests {
             "Embedded plain line\n",
         );
 
-        let payload =
-            apply_online_lyrics_result(&conn, "song-embedded", synced_online_result(), false)
-                .expect("apply should succeed");
+        let persisted = apply_online_lyrics_result(
+            &conn,
+            "song-embedded",
+            synced_online_result(),
+            LyricsOnlineFetchIntent::AutomaticUpgrade,
+        )
+        .expect("apply should succeed");
 
-        assert_eq!(payload.source, Some(LyricsSource::LrcLib));
+        assert!(persisted.changed);
 
         let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-embedded")
             .expect("get")

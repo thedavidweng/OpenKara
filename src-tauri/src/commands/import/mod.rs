@@ -34,17 +34,23 @@ pub fn import_songs(
     paths: Vec<String>,
     options: Option<ImportSongsOptions>,
 ) -> CommandResult<ImportSongsResult> {
-    // Connection + outbox share one library SQLite transaction inside the
-    // mutation wrapper — do not open a separate connection here.
-    let mut result =
-        remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
-            import_songs_from_paths_with_options(
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::None,
+        |connection: &rusqlite::Connection, library: &LibraryRoot| {
+            Ok(import_songs_from_paths_with_options(
                 connection,
                 library,
                 &paths,
                 &options.unwrap_or_default(),
-            )
-        })?;
+            ))
+        },
+        |result: &ImportSongsResult| {
+            remote::ChangeScope::Songs(remote::song_ids_from_songs(&result.imported))
+        },
+    ))?;
+    publication.publish(&applied.scope)?;
+    let mut result = applied.value;
     absolutize_thumbnail_paths(&app_handle, &mut result.imported, &state.library_root()?);
     Ok(result)
 }
@@ -418,18 +424,21 @@ pub fn extract_embedded_cover_art(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<ExtractEmbeddedCoverArtResult> {
-    let library = state.library_root()?;
-
-    let mut result = remote::run_updated_songs_mutation(
-        &state,
-        &app_handle,
-        |connection| {
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(song_ids.clone()),
+        |connection: &rusqlite::Connection, library: &LibraryRoot| {
             Ok(extract_embedded_cover_art_from_connection(
-                connection, &library, &song_ids,
+                connection, library, &song_ids,
             ))
         },
-        |result| remote::song_ids_from_songs(&result.updated_songs),
-    )?;
+        |result: &ExtractEmbeddedCoverArtResult| {
+            remote::ChangeScope::Songs(remote::song_ids_from_songs(&result.updated_songs))
+        },
+    ))?;
+    publication.publish(&applied.scope)?;
+    let mut result = applied.value;
+    let library = state.library_root()?;
     absolutize_thumbnail_paths(&app_handle, &mut result.updated_songs, &library);
     Ok(result)
 }
@@ -442,9 +451,21 @@ pub fn update_song_metadata(
     title: Option<String>,
     artist: Option<String>,
 ) -> CommandResult<Song> {
-    let mut song = remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
-        update_song_metadata_in_connection(connection, &hash, title.as_deref(), artist.as_deref())
-    })?;
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(vec![hash.clone()]),
+        |connection: &rusqlite::Connection, _library: &LibraryRoot| {
+            update_song_metadata_in_connection(
+                connection,
+                &hash,
+                title.as_deref(),
+                artist.as_deref(),
+            )
+        },
+        |song: &Song| remote::ChangeScope::Songs(vec![song.hash.clone()]),
+    ))?;
+    publication.publish(&applied.scope)?;
+    let mut song = applied.value;
     absolutize_thumbnail_paths(
         &app_handle,
         std::slice::from_mut(&mut song),
@@ -460,12 +481,17 @@ pub fn set_songs_instrumental(
     song_ids: Vec<String>,
     instrumental: bool,
 ) -> CommandResult<Vec<Song>> {
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(song_ids.clone()),
+        |connection: &rusqlite::Connection, _library: &LibraryRoot| {
+            set_songs_instrumental_in_connection(connection, &song_ids, instrumental)
+        },
+        |songs: &Vec<Song>| remote::ChangeScope::Songs(remote::song_ids_from_songs(songs)),
+    ))?;
+    publication.publish(&applied.scope)?;
+    let mut songs = applied.value;
     let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
-    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
-        set_songs_instrumental_in_connection(&connection, &song_ids, instrumental)
-    })?;
     absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
     Ok(songs)
 }
@@ -477,12 +503,17 @@ pub fn set_songs_language(
     song_ids: Vec<String>,
     language: Option<String>,
 ) -> CommandResult<Vec<Song>> {
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::Songs(song_ids.clone()),
+        |connection: &rusqlite::Connection, _library: &LibraryRoot| {
+            set_songs_language_in_connection(connection, &song_ids, language.as_deref())
+        },
+        |songs: &Vec<Song>| remote::ChangeScope::Songs(remote::song_ids_from_songs(songs)),
+    ))?;
+    publication.publish(&applied.scope)?;
+    let mut songs = applied.value;
     let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
-    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
-        set_songs_language_in_connection(&connection, &song_ids, language.as_deref())
-    })?;
     absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
     Ok(songs)
 }

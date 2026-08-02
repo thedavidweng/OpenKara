@@ -1,5 +1,22 @@
 # Scripts
 
+## `openkara_release_evidence`
+
+Builds and validates the canonical release evidence files from the Rust
+release evidence module.
+
+- **Automation validation:** `openkara_release_evidence validate-automation-report --input automation-report.json --output installed-app-smoke-validation.json`
+- **Desktop E2E validation:** `openkara_release_evidence validate-desktop-e2e --input desktop-e2e-report.json --scenario keyboard-workflow`
+- **Separation smoke validation:** `openkara_release_evidence validate-local-audio-smoke --input local-audio-smoke-report.json`
+- **Schema:** `cargo run --features automation-driver --bin openkara_release_evidence -- schema schemas/release-evidence.schema.json`
+- **Fragment:** `openkara_release_evidence fragment-from-automation-report --input automation-report.json --repository thedavidweng/OpenKara --commit-sha <sha> --tag <tag> --version <version> --platform <platform> --scenario <scenario> --output release-evidence-fragment.json`
+- **Aggregate:** `openkara_release_evidence aggregate --commit-sha <sha> --tag <tag> --version <version> --fragment <fragment> --output release-evidence.json`
+- **Candidate verification:** `openkara_release_evidence verify-assets --evidence release-evidence.json --target <target> --assets-dir <candidate-root>`
+- **Latest manifest:** `openkara_release_evidence latest --evidence release-evidence.json --output latest.json`
+- **Checksums:** `openkara_release_evidence checksums --evidence release-evidence.json --assets-dir <release-assets> --output SHA256SUMS`
+- **Output:** JSON Schema, platform evidence fragments, canonical aggregate evidence, updater manifest, and checksums
+- **Owner:** `src-tauri/src/release_evidence.rs`
+
 ## `ci/classify-changes.mjs`
 
 CI change classifier — the single source of truth for path-based CI gating.

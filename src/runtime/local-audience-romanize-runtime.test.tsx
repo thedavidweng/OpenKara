@@ -8,6 +8,7 @@ import {
   LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT,
   LOCAL_AUDIENCE_ROMANIZE_STATE_EVENT,
   FULLSCREEN_PLAYER_WINDOW_LABEL,
+  type LocalAudienceRomanizeSetRequest,
 } from "@/lib/local-audience-romanize";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -35,6 +36,14 @@ function Harness({ enabled = true }: { enabled?: boolean }) {
   useLocalAudienceRomanizeRuntime(enabled);
   return null;
 }
+
+type SyncRequestListener = (event: { payload: Record<string, never> }) => void;
+type SetRequestListener = (event: {
+  payload: LocalAudienceRomanizeSetRequest;
+}) => void;
+type ListenerCall =
+  | [typeof LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT, SyncRequestListener]
+  | [typeof LOCAL_AUDIENCE_ROMANIZE_SET_EVENT, SetRequestListener];
 
 function resetStores() {
   useLyricsStore.setState({
@@ -77,15 +86,30 @@ describe("useLocalAudienceRomanizeRuntime", () => {
   }
 
   function collectListeners() {
-    const calls = mockListen.mock.calls as unknown as [
-      string,
-      (event: { payload: unknown }) => void,
-    ][];
-    return calls;
+    return mockListen.mock.calls as ListenerCall[];
   }
 
-  function getListener(eventName: string) {
-    const call = collectListeners().find(([name]) => name === eventName);
+  function getSyncListener() {
+    const call = collectListeners().find(
+      (
+        entry,
+      ): entry is [
+        typeof LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT,
+        SyncRequestListener,
+      ] => entry[0] === LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT,
+    );
+    return call?.[1] ?? null;
+  }
+
+  function getSetListener() {
+    const call = collectListeners().find(
+      (
+        entry,
+      ): entry is [
+        typeof LOCAL_AUDIENCE_ROMANIZE_SET_EVENT,
+        SetRequestListener,
+      ] => entry[0] === LOCAL_AUDIENCE_ROMANIZE_SET_EVENT,
+    );
     return call?.[1] ?? null;
   }
 
@@ -130,9 +154,7 @@ describe("useLocalAudienceRomanizeRuntime", () => {
     );
 
     // Sync request listener should answer with the latest snapshot.
-    const syncListener = getListener(
-      LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT,
-    );
+    const syncListener = getSyncListener();
     expect(syncListener).not.toBeNull();
 
     await act(async () => {
@@ -225,7 +247,7 @@ describe("useLocalAudienceRomanizeRuntime", () => {
 
     await renderHarness();
 
-    const setListener = getListener(LOCAL_AUDIENCE_ROMANIZE_SET_EVENT);
+    const setListener = getSetListener();
     expect(setListener).not.toBeNull();
 
     await act(async () => {
@@ -244,7 +266,7 @@ describe("useLocalAudienceRomanizeRuntime", () => {
 
     await renderHarness();
 
-    const setListener = getListener(LOCAL_AUDIENCE_ROMANIZE_SET_EVENT);
+    const setListener = getSetListener();
     await act(async () => {
       setListener!({ payload: { songId: "song-2", showRomanized: true } });
     });
@@ -262,7 +284,7 @@ describe("useLocalAudienceRomanizeRuntime", () => {
 
     await renderHarness();
 
-    const setListener = getListener(LOCAL_AUDIENCE_ROMANIZE_SET_EVENT);
+    const setListener = getSetListener();
     const before = mockEmitTo.mock.calls.length;
     await act(async () => {
       setListener!({ payload: { songId: "song-1", showRomanized: true } });

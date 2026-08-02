@@ -8,7 +8,7 @@
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
 3. `set_lyrics_font_step(step: i8) -> AppSettings`
 4. `save_manual_lyrics(song_id: String, text: String) -> LyricsPayload`
-5. 抓取优先顺序固定为 `LRCLIB -> LrcApi -> embedded -> sidecar`
+5. 抓取优先顺序固定为 `cache -> embedded -> sidecar TTML -> sidecar LYS -> sidecar LRC -> LRCLIB -> LrcApi`
 6. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
 7. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
 8. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
@@ -70,14 +70,14 @@
 1. `song_id` 对应 `songs.hash`
 2. 后端会先检查 SQLite `lyrics` cache；命中后直接用 `parse_lyrics_auto` 解析缓存的原始歌词文本
 3. cache miss 时，后端按固定顺序尝试：
-   - LRCLIB `GET /api/get`
-   - LrcApi `GET /jsonapi`；优先用 `lrc`，没有 synced LRC 时可用 `lrc_ttml`
    - 音频文件内嵌歌词标签
    - 同名 sidecar `.ttml`
    - 同名 sidecar `.lys`
    - 同名 sidecar `.lrc`
+   - LRCLIB `GET /api/get`
+   - LrcApi `GET /jsonapi`；优先用 `lrc`，没有 synced LRC 时可用 `lrc_ttml`
 4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始歌词文本、来源和 `offset_ms = 0` 写入 SQLite
-5. 在线 provider 的请求失败或 `jsonapi` 返回 `{"message":"未找到歌词"}` 时，不会中断后续 provider / 本地来源的查找
+5. 在线 provider 的请求失败不会被当作确定缺失；后端会继续尝试后续 provider，并且不会写入 negative cache
 6. 如果所有来源都 miss，命令仍然成功返回；只是 `lines = []`、`source = null`
 7. 如果歌曲不存在、文件读取失败或歌词解析失败，命令返回 `CommandError`
 
@@ -87,17 +87,20 @@
 
 ```json
 {
-  "song_id": "sha256 hash string"
+  "song_id": "sha256 hash string",
+  "intent": "automatic_upgrade"
 }
 ```
 
 **Semantics**
 
 1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar
-2. 在线 provider 顺序固定为 `LRCLIB -> LrcApi`
-3. 如果两个 provider 都 miss，命令返回空 payload，而不是写入缓存
-4. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
-5. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`
+2. `intent` 必须为 `automatic_upgrade` 或 `user_replace`
+3. 在线 provider 顺序固定为 `LRCLIB -> LrcApi`
+4. 只有两个 provider 都返回确定缺失时，命令才返回空 payload并写入 7 天 negative cache
+5. `automatic_upgrade` 只允许替换 `embedded` 或 `absent`；`user_replace` 可以替换现有歌词
+6. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
+7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache
 
 ### Command: `import_lyrics_files`
 
@@ -260,7 +263,7 @@
    - `source`
    - `offset_ms`
    - `fetched_at`
-2. 当所有来源（LRCLIB、LrcApi、embedded、sidecar）都 miss 时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
+2. 当 embedded、sidecar 和两个在线 provider 都确定缺失时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
 3. 负缓存行有 7 天 TTL（`NEGATIVE_CACHE_TTL_SECS`）。超过 TTL 后，`fetch_lyrics` / `fetch_lyrics_online` 会跳过缓存重新执行完整查找链，以便发现后续被添加到 LRCLIB/LrcAPI 的歌词
 4. 网络错误（非 definitive miss）不会写入负缓存
 5. `source` 序列化值固定为：
@@ -274,7 +277,7 @@
    - `manual`
    - `manual_ttml`
    - `manual_lys`
-   - `absent`（负缓存，7 天 TTL）
+   - `absent`（内部负缓存，7 天 TTL；不出现在 `LyricsPayload.source`）
 
 ## Required dependencies
 

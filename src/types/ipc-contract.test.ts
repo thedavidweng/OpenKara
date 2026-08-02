@@ -240,7 +240,7 @@ const LYRICS_COMMANDS: CommandContract[] = [
     frontendFile: "src/lib/tauri/lyrics.ts",
     frontendFn: "fetchLyricsOnline",
     hasArgs: true,
-    rustParams: ["song_id", "user_initiated"],
+    rustParams: ["song_id", "intent"],
   },
   {
     command: "save_manual_lyrics",
@@ -948,6 +948,7 @@ describe("CommandError shape matches Rust CommandError", () => {
   test("ErrorCode values match Rust ErrorCode enum", () => {
     const validCodes: CommandError["code"][] = [
       "database_unavailable",
+      "remote_repository_unavailable",
       "media_read_failed",
       "song_not_found",
       "model_unavailable",
@@ -957,11 +958,12 @@ describe("CommandError shape matches Rust CommandError", () => {
       "lyrics_not_ready",
       "network_unavailable",
       "invalid_playback_state",
+      "execution_provider_unavailable",
       "separation_failed",
       "internal",
     ];
-    // All 12 error codes from phase-5-error-contract.md
-    expect(validCodes).toHaveLength(12);
+    // All 14 error codes from the Rust ErrorCode enum.
+    expect(validCodes).toHaveLength(14);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }
@@ -1087,6 +1089,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       lyrics_font_step: 0,
       execution_provider: "cpu",
       available_execution_providers: ["cpu", "xnnpack"],
+      compatible_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       crossfade_enabled: false,
@@ -1104,6 +1107,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("lyrics_font_step");
     expect(settings).toHaveProperty("execution_provider");
     expect(settings).toHaveProperty("available_execution_providers");
+    expect(settings).toHaveProperty("compatible_execution_providers");
     expect(settings).toHaveProperty("eq_enabled");
     expect(settings).toHaveProperty("eq_gains_db");
     expect(settings).toHaveProperty("library_sort_mode");

@@ -44,6 +44,14 @@ pub enum TimedLyricsProvider<'a> {
     LrcApi(&'a LrcApiClient),
 }
 
+#[derive(Debug)]
+pub enum OnlineLyricsResult {
+    Found(LyricsFetchResult),
+    DefiniteMissing,
+    NotApplicable,
+    Unavailable(anyhow::Error),
+}
+
 impl TimedLyricsProvider<'_> {
     fn source(self) -> LyricsSource {
         match self {
@@ -79,28 +87,6 @@ impl TimedLyricsProvider<'_> {
                 .map_err(Into::into),
         }
     }
-}
-
-pub fn fetch_lyrics_for_song(
-    providers: &[TimedLyricsProvider<'_>],
-    song: &Song,
-    resolved_audio_path: &Path,
-) -> Result<Option<LyricsFetchResult>> {
-    if song.is_media_g_zip() {
-        return Ok(None);
-    }
-
-    if let Some(local) = fetch_lyrics_for_song_local(song, resolved_audio_path)? {
-        return Ok(Some(local));
-    }
-
-    if let Some(query) = lookup_query_from_song(song) {
-        if let Ok(Some(lyrics)) = fetch_online_timed_lyrics(providers, &query) {
-            return Ok(Some(lyrics));
-        }
-    }
-
-    Ok(None)
 }
 
 pub fn fetch_lyrics_for_song_local(
@@ -147,7 +133,7 @@ pub fn lookup_query_from_song(song: &Song) -> Option<LyricsLookupQuery> {
 pub fn fetch_online_timed_lyrics(
     providers: &[TimedLyricsProvider<'_>],
     query: &LyricsLookupQuery,
-) -> Result<Option<LyricsFetchResult>> {
+) -> OnlineLyricsResult {
     let mut last_error: Option<anyhow::Error> = None;
 
     for provider in providers {
@@ -171,10 +157,10 @@ pub fn fetch_online_timed_lyrics(
                 };
 
                 if has_timed {
-                    return Ok(Some(LyricsFetchResult {
+                    return OnlineLyricsResult::Found(LyricsFetchResult {
                         source,
                         raw_lrc: raw,
-                    }));
+                    });
                 }
             }
             Ok(None) => {}
@@ -185,101 +171,9 @@ pub fn fetch_online_timed_lyrics(
     }
 
     if let Some(error) = last_error {
-        Err(error)
+        OnlineLyricsResult::Unavailable(error)
     } else {
-        Ok(None)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum TimedLyricsProviderAsync<'a> {
-    LrcLib(&'a LrcLibClient),
-    LrcApi(&'a LrcApiClient),
-}
-
-impl TimedLyricsProviderAsync<'_> {
-    fn source(self) -> LyricsSource {
-        match self {
-            Self::LrcLib(_) => LyricsSource::LrcLib,
-            Self::LrcApi(_) => LyricsSource::LrcApi,
-        }
-    }
-
-    async fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
-        match self {
-            Self::LrcLib(client) => client
-                .fetch_by_track_async(query)
-                .await
-                .map(|result| {
-                    result.and_then(|lyrics| {
-                        lyrics
-                            .synced_lyrics
-                            .filter(|lyrics| !lyrics.trim().is_empty())
-                    })
-                })
-                .map_err(Into::into),
-            Self::LrcApi(client) => client
-                .fetch_by_track_async(query)
-                .await
-                .map(|result| {
-                    result.and_then(|lyrics| {
-                        let lrc = lyrics.lrc.trim();
-                        if !lrc.is_empty() {
-                            Some(lyrics.lrc)
-                        } else {
-                            lyrics.lrc_ttml.filter(|ttml| !ttml.trim().is_empty())
-                        }
-                    })
-                })
-                .map_err(Into::into),
-        }
-    }
-}
-
-pub async fn fetch_online_timed_lyrics_async(
-    providers: &[TimedLyricsProviderAsync<'_>],
-    query: &LyricsLookupQuery,
-) -> Result<Option<LyricsFetchResult>> {
-    let mut last_error: Option<anyhow::Error> = None;
-
-    for provider in providers {
-        match (*provider).fetch_timed_lrc(query).await {
-            Ok(Some(raw)) => {
-                let trimmed = raw.trim();
-                let source = if (*provider).source() == LyricsSource::LrcApi
-                    && (trimmed.starts_with("<?xml") || trimmed.starts_with("<tt"))
-                {
-                    LyricsSource::LrcApiTtml
-                } else {
-                    (*provider).source()
-                };
-
-                let has_timed = if source == LyricsSource::LrcApiTtml {
-                    ttml_parser::parse_ttml(&raw)
-                        .map(|lines| !lines.is_empty())
-                        .unwrap_or(false)
-                } else {
-                    has_timed_lines(&raw)
-                };
-
-                if has_timed {
-                    return Ok(Some(LyricsFetchResult {
-                        source,
-                        raw_lrc: raw,
-                    }));
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                last_error = Some(error);
-            }
-        }
-    }
-
-    if let Some(error) = last_error {
-        Err(error)
-    } else {
-        Ok(None)
+        OnlineLyricsResult::DefiniteMissing
     }
 }
 
@@ -319,45 +213,31 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
     };
 
     // Collect matching sidecar paths by scanning the directory once.
-    // Falls back to exact-extension probes if the directory can't be read.
     // Use PathBuf (not String) to preserve byte-exact paths on Linux where
     // paths may contain non-UTF-8 bytes.
     let mut candidates: Vec<(PathBuf, LyricsSource)> = Vec::new();
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            let Some(stem) = entry_path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if stem != file_stem {
-                continue;
-            }
-            let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            match ext.to_ascii_lowercase().as_str() {
-                "ttml" => candidates.push((entry_path, LyricsSource::SidecarTtml)),
-                "lys" => candidates.push((entry_path, LyricsSource::SidecarLys)),
-                "lrc" => candidates.push((entry_path, LyricsSource::Sidecar)),
-                _ => {}
-            }
+    let entries = fs::read_dir(parent)
+        .with_context(|| format!("failed to read sidecar directory {}", parent.display()))?;
+    for entry in entries {
+        let entry = entry
+            .with_context(|| format!("failed to inspect sidecar directory {}", parent.display()))?;
+        let entry_path = entry.path();
+        let Some(stem) = entry_path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if stem != file_stem {
+            continue;
         }
-    } else {
-        for (ext_lower, source) in &[
-            ("ttml", LyricsSource::SidecarTtml),
-            ("lys", LyricsSource::SidecarLys),
-            ("lrc", LyricsSource::Sidecar),
-        ] {
-            for ext in [*ext_lower, &ext_lower.to_ascii_uppercase()] {
-                let sidecar_path = path.with_extension(ext);
-                if sidecar_path.exists() {
-                    candidates.push((sidecar_path, source.clone()));
-                }
-            }
+        let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        match ext.to_ascii_lowercase().as_str() {
+            "ttml" => candidates.push((entry_path, LyricsSource::SidecarTtml)),
+            "lys" => candidates.push((entry_path, LyricsSource::SidecarLys)),
+            "lrc" => candidates.push((entry_path, LyricsSource::Sidecar)),
+            _ => {}
         }
     }
-
-    candidates.sort_by_key(|(_, source)| priority(source));
 
     fn priority(source: &LyricsSource) -> u8 {
         match source {

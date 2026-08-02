@@ -1,10 +1,11 @@
 use crate::commands::error::{database_error, CommandResult};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, types::Type, Connection, OptionalExtension};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibraryPublishOutboxRow {
     pub operation_id: String,
     pub song_ids: Vec<String>,
+    pub whole_repository: bool,
     pub expected_generation: Option<i64>,
     pub source_db_digest: Option<String>,
     pub created_at_ms: i64,
@@ -20,11 +21,12 @@ pub fn upsert_library_publish_outbox(
     connection
         .execute(
             "INSERT INTO remote_publish_outbox (
-                operation_id, song_ids_json, expected_generation, source_db_digest,
-                created_at_ms, projected_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                operation_id, song_ids_json, whole_repository, expected_generation,
+                source_db_digest, created_at_ms, projected_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(operation_id) DO UPDATE SET
                 song_ids_json = excluded.song_ids_json,
+                whole_repository = excluded.whole_repository,
                 expected_generation = excluded.expected_generation,
                 source_db_digest = excluded.source_db_digest,
                 created_at_ms = excluded.created_at_ms,
@@ -32,6 +34,7 @@ pub fn upsert_library_publish_outbox(
             params![
                 row.operation_id,
                 song_ids_json,
+                row.whole_repository,
                 row.expected_generation,
                 row.source_db_digest,
                 row.created_at_ms,
@@ -78,7 +81,7 @@ pub fn list_unprojected_library_outbox(
     let mut stmt = connection
         .prepare(
             "SELECT operation_id, song_ids_json, expected_generation, source_db_digest,
-                    created_at_ms, projected_at_ms
+                    whole_repository, created_at_ms, projected_at_ms
              FROM remote_publish_outbox
              WHERE projected_at_ms IS NULL
              ORDER BY created_at_ms ASC",
@@ -100,7 +103,7 @@ pub fn get_library_publish_outbox(
     connection
         .query_row(
             "SELECT operation_id, song_ids_json, expected_generation, source_db_digest,
-                    created_at_ms, projected_at_ms
+                    whole_repository, created_at_ms, projected_at_ms
              FROM remote_publish_outbox WHERE operation_id = ?1",
             params![operation_id],
             map_outbox_row,
@@ -111,14 +114,17 @@ pub fn get_library_publish_outbox(
 
 fn map_outbox_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryPublishOutboxRow> {
     let song_ids_json: String = row.get(1)?;
-    let song_ids: Vec<String> = serde_json::from_str(&song_ids_json).unwrap_or_default();
+    let song_ids: Vec<String> = serde_json::from_str(&song_ids_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(1, Type::Text, Box::new(error))
+    })?;
     Ok(LibraryPublishOutboxRow {
         operation_id: row.get(0)?,
         song_ids,
+        whole_repository: row.get::<_, i64>(4)? != 0,
         expected_generation: row.get(2)?,
         source_db_digest: row.get(3)?,
-        created_at_ms: row.get(4)?,
-        projected_at_ms: row.get(5)?,
+        created_at_ms: row.get(5)?,
+        projected_at_ms: row.get(6)?,
     })
 }
 
@@ -141,6 +147,7 @@ mod tests {
         let row = LibraryPublishOutboxRow {
             operation_id: "op-1".to_owned(),
             song_ids: vec!["a".to_owned(), "b".to_owned()],
+            whole_repository: false,
             expected_generation: Some(3),
             source_db_digest: Some("deadbeef".to_owned()),
             created_at_ms: 1000,
@@ -153,6 +160,30 @@ mod tests {
         delete_library_publish_outbox(&conn, "op-1").unwrap();
         assert!(get_library_publish_outbox(&conn, "op-1").unwrap().is_none());
         assert!(list_unprojected_library_outbox(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn whole_repository_scope_roundtrips_without_song_ids() {
+        let (_dir, conn) = open_library_db();
+        upsert_library_publish_outbox(
+            &conn,
+            &LibraryPublishOutboxRow {
+                operation_id: "op-whole".to_owned(),
+                song_ids: Vec::new(),
+                whole_repository: true,
+                expected_generation: Some(2),
+                source_db_digest: Some("digest".to_owned()),
+                created_at_ms: 2,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+
+        let loaded = get_library_publish_outbox(&conn, "op-whole")
+            .unwrap()
+            .expect("whole-repository outbox row");
+        assert!(loaded.whole_repository);
+        assert!(loaded.song_ids.is_empty());
     }
 
     #[test]
@@ -169,6 +200,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: "op-tx".to_owned(),
                 song_ids: vec!["s1".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(0),
                 source_db_digest: None,
                 created_at_ms: 1,
@@ -203,6 +235,7 @@ mod tests {
                 &LibraryPublishOutboxRow {
                     operation_id: "op-rb".to_owned(),
                     song_ids: vec!["s2".to_owned()],
+                    whole_repository: false,
                     expected_generation: None,
                     source_db_digest: None,
                     created_at_ms: 1,
@@ -231,6 +264,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: "op-x".to_owned(),
                 song_ids: vec!["z".to_owned()],
+                whole_repository: false,
                 expected_generation: None,
                 source_db_digest: None,
                 created_at_ms: 1,
@@ -245,9 +279,9 @@ mod tests {
     // Fault-injection windows required by #175 acceptance
 
     use crate::remote::control_db::{
-        bind_song_ids_mark_pending_and_dirty_tx, get_operation, get_repository_state,
-        open_control_db, upsert_operation, LocalState, OperationKind, OperationPayload,
-        OperationRow, OperationState,
+        bind_scope_mark_pending_and_dirty_tx, get_operation, get_repository_state, open_control_db,
+        upsert_operation, LocalState, OperationKind, OperationPayload, OperationRow,
+        OperationState,
     };
 
     fn open_control() -> (tempfile::TempDir, Connection) {
@@ -325,6 +359,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: op_id.to_owned(),
                 song_ids: vec!["s-a".to_owned(), "s-b".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(0),
                 source_db_digest: Some("aaa".to_owned()),
                 created_at_ms: 100,
@@ -336,7 +371,7 @@ mod tests {
         let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].song_ids, vec!["s-a", "s-b"]);
-        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids)
+        bind_scope_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids, false)
             .unwrap();
         delete_library_publish_outbox(&lib_conn, op_id).unwrap();
 
@@ -363,6 +398,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: op_id.to_owned(),
                 song_ids: vec!["s-x".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(0),
                 source_db_digest: Some("aaa".to_owned()),
                 created_at_ms: 1,
@@ -389,7 +425,7 @@ mod tests {
 
         let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
         assert_eq!(rows.len(), 1);
-        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids)
+        bind_scope_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids, false)
             .unwrap();
         let op = get_operation(&control, op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Pending);
@@ -416,6 +452,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: op_id.to_owned(),
                 song_ids: vec!["s-y".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(0),
                 source_db_digest: Some("aaa".to_owned()),
                 created_at_ms: 1,
@@ -424,13 +461,25 @@ mod tests {
         )
         .unwrap();
 
-        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
-            .unwrap();
+        bind_scope_mark_pending_and_dirty_tx(
+            &control,
+            op_id,
+            library_id,
+            &["s-y".to_owned()],
+            false,
+        )
+        .unwrap();
 
         assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
 
-        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
-            .unwrap();
+        bind_scope_mark_pending_and_dirty_tx(
+            &control,
+            op_id,
+            library_id,
+            &["s-y".to_owned()],
+            false,
+        )
+        .unwrap();
         delete_library_publish_outbox(&lib_conn, op_id).unwrap();
 
         let op = get_operation(&control, op_id).unwrap().unwrap();
@@ -451,6 +500,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: "missing-op".to_owned(),
                 song_ids: vec!["s-z".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(0),
                 source_db_digest: None,
                 created_at_ms: 1,
@@ -459,11 +509,12 @@ mod tests {
         )
         .unwrap();
 
-        let err = bind_song_ids_mark_pending_and_dirty_tx(
+        let err = bind_scope_mark_pending_and_dirty_tx(
             &control,
             "missing-op",
             "lib-1",
             &["s-z".to_owned()],
+            false,
         );
         assert!(err.is_err());
         assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
@@ -478,6 +529,7 @@ mod tests {
             &LibraryPublishOutboxRow {
                 operation_id: "op-local".to_owned(),
                 song_ids: vec!["local-only".to_owned()],
+                whole_repository: false,
                 expected_generation: Some(1),
                 source_db_digest: Some("digest".to_owned()),
                 created_at_ms: 1,

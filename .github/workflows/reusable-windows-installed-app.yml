@@ -53,6 +53,16 @@ on:
         required: false
         type: boolean
         default: false
+      release_tag:
+        description: "Release tag used as the evidence subject"
+        required: false
+        type: string
+        default: ""
+      updater_target:
+        description: "Tauri updater platform key"
+        required: false
+        type: string
+        default: ""
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         description: "Minisign private key for updater artifacts"
@@ -180,7 +190,7 @@ jobs:
           }
 
           Push-Location src-tauri
-          cargo build --release --features automation-driver --bin openkara_automation_driver
+          cargo build --release --features automation-driver --bin openkara_automation_driver --bin openkara_release_evidence
           if ($LASTEXITCODE -ne 0) {
             if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
             throw "automation driver build failed with exit code $LASTEXITCODE"
@@ -229,14 +239,23 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
+      - name: Upload release evidence driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: src-tauri/target/release/openkara_release_evidence.exe
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
       - name: Upload Windows updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_prefix }}-updater
           path: |
-            src-tauri/target/release/bundle/**/latest.json
-            src-tauri/target/release/bundle/**/*.sig
+            src-tauri/target/release/bundle/**/*.nsis.zip
+            src-tauri/target/release/bundle/**/*.nsis.zip.sig
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 
@@ -268,6 +287,19 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-driver
           path: ${{ runner.temp }}/driver
+
+      - name: Download release evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
+      - name: Download release updater artifacts
+        if: ${{ inputs.release_build }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-updater
+          path: ${{ runner.temp }}/updater
 
       - name: Install candidate (clean)
         shell: pwsh
@@ -328,6 +360,40 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Installed app scenario failed with exit code $LASTEXITCODE" }
 
           "OPENKARA_SMOKE_APP_DATA=$appData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate Rust release evidence fragment
+        if: ${{ always() && inputs.release_build }}
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.openkara_version }}
+          RELEASE_SCENARIO: ${{ inputs.driver_scenario }}
+          RELEASE_PLATFORM: ${{ inputs.updater_target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "evidence-driver") -Filter "openkara_release_evidence.exe" -File | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Release evidence driver was not found." }
+          $installer = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "installer") -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $installer) { throw "Windows installer candidate was not found." }
+          $arguments = @(
+            "fragment-from-automation-report",
+            "--input", (Join-Path $env:SMOKE_ROOT "automation-report.json"),
+            "--repository", $env:GITHUB_REPOSITORY,
+            "--commit-sha", $env:GITHUB_SHA,
+            "--tag", $env:RELEASE_TAG,
+            "--version", $env:RELEASE_VERSION,
+            "--platform", $env:RELEASE_PLATFORM,
+            "--scenario", $env:RELEASE_SCENARIO,
+            "--artifact", "installer:$($env:RELEASE_PLATFORM):$($installer.FullName)"
+          )
+          $updaterFiles = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "updater") -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*.nsis.zip" -or $_.Name -like "*.nsis.zip.sig" })
+          foreach ($file in $updaterFiles) {
+            $arguments += @("--artifact", "updater-$($file.Name):$($env:RELEASE_PLATFORM):$($file.FullName)")
+          }
+          $arguments += @("--output", (Join-Path $env:SMOKE_ROOT "release-evidence-fragment.json"))
+          & $evidence.FullName @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Release evidence fragment generation failed with exit code $LASTEXITCODE" }
 
       - name: Download UIA probe
         if: ${{ inputs.run_keyboard_uia }}
@@ -473,13 +539,17 @@ jobs:
 
       - name: Validate desktop E2E report
         if: ${{ always() && inputs.run_keyboard_uia }}
-        shell: bash
+        shell: pwsh
         env:
           UIA_SCENARIO: ${{ inputs.uia_scenario }}
         run: |
-          node scripts/validate-desktop-e2e-report.mjs \
-            "${RUNNER_TEMP}/desktop-e2e/desktop-e2e-report.json" \
-            "${UIA_SCENARIO}"
+          $ErrorActionPreference = "Stop"
+          $evidence = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "evidence-driver") -Filter "openkara_release_evidence.exe" -File | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Release evidence driver was not found." }
+          & $evidence.FullName validate-desktop-e2e `
+            --input (Join-Path $env:RUNNER_TEMP "desktop-e2e/desktop-e2e-report.json") `
+            --scenario $env:UIA_SCENARIO
+          if ($LASTEXITCODE -ne 0) { throw "Desktop E2E evidence validation failed with exit code $LASTEXITCODE" }
 
       - name: Run Windows display scaling matrix
         if: ${{ inputs.run_display_matrix }}
@@ -504,10 +574,11 @@ jobs:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
         run: |
           $ErrorActionPreference = "Stop"
-          node scripts/validate-installed-app-smoke.mjs `
-            (Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json") `
-            (Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json") `
-            $env:SMOKE_ROOT
+          $evidence = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "evidence-driver") -Filter "openkara_release_evidence.exe" -File | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Release evidence driver was not found." }
+          & $evidence.FullName validate-automation-report `
+            --input (Join-Path $env:SMOKE_ROOT "automation-report.json") `
+            --output (Join-Path $env:SMOKE_ROOT "installed-app-smoke-validation.json")
           if ($LASTEXITCODE -ne 0) { throw "Installed app smoke validation failed with exit code $LASTEXITCODE" }
 
       - name: Silent uninstall and assert cleanup
@@ -576,6 +647,7 @@ jobs:
             ${{ runner.temp }}/openkara-clean-install-smoke/**/installed-app-smoke-report.json
             ${{ runner.temp }}/openkara-clean-install-smoke/**/installed-app-smoke-validation.json
             ${{ runner.temp }}/openkara-clean-install-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/release-evidence-fragment.json
             ${{ runner.temp }}/openkara-clean-install-smoke/**/local-audio-smoke-report.*
             ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
             ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
@@ -612,6 +684,12 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-driver
           path: ${{ runner.temp }}/driver
+
+      - name: Download release evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
 
       - name: Install previous release, seed library marker, upgrade to candidate
         shell: pwsh
@@ -732,10 +810,11 @@ jobs:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-upgrade-install-smoke
         run: |
           $ErrorActionPreference = "Stop"
-          node scripts/validate-installed-app-smoke.mjs `
-            (Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json") `
-            (Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json") `
-            $env:SMOKE_ROOT
+          $evidence = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "evidence-driver") -Filter "openkara_release_evidence.exe" -File | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Release evidence driver was not found." }
+          & $evidence.FullName validate-automation-report `
+            --input (Join-Path $env:SMOKE_ROOT "automation-report.json") `
+            --output (Join-Path $env:SMOKE_ROOT "installed-app-smoke-validation.json")
           if ($LASTEXITCODE -ne 0) { throw "Upgrade installed app smoke validation failed with exit code $LASTEXITCODE" }
 
       - name: Silent uninstall after upgrade
@@ -811,6 +890,12 @@ jobs:
           name: ${{ inputs.artifact_prefix }}-driver
           path: ${{ runner.temp }}/driver
 
+      - name: Download release evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
       - name: Install candidate for fault injection
         shell: pwsh
         env:
@@ -869,23 +954,12 @@ jobs:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-fault-injection-smoke
         run: |
           $ErrorActionPreference = "Stop"
-          $prepare = Join-Path $env:SMOKE_ROOT "prepare/installed-app-smoke-report.json"
-          $restart = Join-Path $env:SMOKE_ROOT "restart/installed-app-smoke-report.json"
-          if ((Test-Path $prepare) -and (Test-Path $restart)) {
-            node scripts/validate-installed-app-smoke.mjs $prepare $restart $env:SMOKE_ROOT
-            if ($LASTEXITCODE -ne 0) { throw "Fault-injection smoke validation failed with exit code $LASTEXITCODE" }
-          } else {
-            Write-Warning "Prepare/restart smoke reports not both present; relying on automation-report.json status."
-          }
-
-          $automationReport = Join-Path $env:SMOKE_ROOT "automation-report.json"
-          if (-not (Test-Path $automationReport)) {
-            throw "Fault-injection automation report was not written at $automationReport"
-          }
-          $report = Get-Content $automationReport -Raw | ConvertFrom-Json
-          if ($report.status -ne "passed") {
-            throw "Fault-injection automation report status is '$($report.status)' (expected passed)"
-          }
+          $evidence = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "evidence-driver") -Filter "openkara_release_evidence.exe" -File | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Release evidence driver was not found." }
+          & $evidence.FullName validate-automation-report `
+            --input (Join-Path $env:SMOKE_ROOT "automation-report.json") `
+            --output (Join-Path $env:SMOKE_ROOT "installed-app-smoke-validation.json")
+          if ($LASTEXITCODE -ne 0) { throw "Fault-injection smoke validation failed with exit code $LASTEXITCODE" }
 
       - name: Upload fault-injection reports
         if: always()

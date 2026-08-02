@@ -89,6 +89,68 @@ pub struct LocalAudioSmokeReport {
     pub songs: Vec<LocalAudioSmokeSongReport>,
 }
 
+impl LocalAudioSmokeReport {
+    pub fn validate_release_gate(&self) -> Result<()> {
+        let mut failures = Vec::new();
+        if self.model.status != SmokeStepStatus::Passed {
+            failures.push(format!(
+                "model status was {}",
+                status_label(&self.model.status)
+            ));
+        }
+        if self.summary.discovered_files != 1 {
+            failures.push(format!(
+                "expected 1 discovered file, got {}",
+                self.summary.discovered_files
+            ));
+        }
+        if self.summary.imported != 1 {
+            failures.push(format!(
+                "expected 1 imported file, got {}",
+                self.summary.imported
+            ));
+        }
+        if self.summary.playback_failed != 0 {
+            failures.push(format!(
+                "playback_failed was {}",
+                self.summary.playback_failed
+            ));
+        }
+        if self.summary.separation_passed < 1 {
+            failures.push(format!(
+                "separation_passed was {}",
+                self.summary.separation_passed
+            ));
+        }
+        if self.summary.separation_failed != 0 {
+            failures.push(format!(
+                "separation_failed was {}",
+                self.summary.separation_failed
+            ));
+        }
+        if self.summary.separation_skipped != 0 {
+            failures.push(format!(
+                "separation_skipped was {}",
+                self.summary.separation_skipped
+            ));
+        }
+        let has_separated_song = self.songs.iter().any(|song| {
+            song.separation_status == SmokeStepStatus::Passed
+                && song.accompaniment_path.is_some()
+                && song.vocals_path.is_some()
+        });
+        if !has_separated_song {
+            failures.push("no song produced accompaniment and vocals artifacts".to_owned());
+        }
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("local audio smoke gate failed: {}", failures.join("; "))
+        }
+    }
+}
+
 pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudioSmokeReport> {
     fs::create_dir_all(&config.output_dir).with_context(|| {
         format!(
@@ -128,12 +190,13 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
         .iter()
         .map(|path| path.display().to_string())
         .collect();
-    let library =
-        crate::library_root::LibraryRoot::create(&config.output_dir.join("smoke-library"))
-            .or_else(|_| {
-                crate::library_root::LibraryRoot::open(&config.output_dir.join("smoke-library"))
-            })
-            .context("failed to set up smoke library root")?;
+    let library_path = config.output_dir.join("smoke-library");
+    let library = if library_path.exists() {
+        crate::library_root::LibraryRoot::open(&library_path)
+    } else {
+        crate::library_root::LibraryRoot::create(&library_path)
+    }
+    .context("failed to set up smoke library root")?;
     let import_result = import_songs_from_paths(&connection, &library, &import_paths);
     // `song.file_path` is a library-relative path (`media/{hash}.{ext}`) for
     // local songs; remote songs may omit it entirely and are excluded from
@@ -517,5 +580,68 @@ fn status_label(status: &SmokeStepStatus) -> &'static str {
         SmokeStepStatus::Passed => "passed",
         SmokeStepStatus::Skipped => "skipped",
         SmokeStepStatus::Failed => "failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(status: SmokeStepStatus) -> LocalAudioSmokeReport {
+        LocalAudioSmokeReport {
+            generated_at: 0,
+            input_dir: String::new(),
+            output_dir: String::new(),
+            report_json_path: PathBuf::new(),
+            report_markdown_path: PathBuf::new(),
+            model: SmokeModelStatus {
+                status: status.clone(),
+                path: None,
+                message: None,
+            },
+            summary: LocalAudioSmokeSummary {
+                discovered_files: 1,
+                imported: 1,
+                import_failed: 0,
+                playback_passed: 1,
+                playback_failed: 0,
+                separation_passed: 1,
+                separation_failed: 0,
+                separation_skipped: 0,
+            },
+            songs: vec![LocalAudioSmokeSongReport {
+                source_path: String::new(),
+                song_id: Some("song".to_owned()),
+                import_status: SmokeStepStatus::Passed,
+                import_message: None,
+                playback_status: SmokeStepStatus::Passed,
+                playback_message: None,
+                separation_status: status,
+                separation_message: None,
+                performance: None,
+                accompaniment_path: Some("accomp.ogg".to_owned()),
+                vocals_path: Some("vocals.ogg".to_owned()),
+            }],
+        }
+    }
+
+    #[test]
+    fn release_gate_accepts_a_complete_separation_report() {
+        report(SmokeStepStatus::Passed)
+            .validate_release_gate()
+            .expect("complete report should pass");
+    }
+
+    #[test]
+    fn release_gate_rejects_missing_model_or_stems() {
+        let mut value = report(SmokeStepStatus::Skipped);
+        value.songs[0].accompaniment_path = None;
+        let error = value
+            .validate_release_gate()
+            .expect_err("incomplete report should fail");
+        assert!(error.to_string().contains("model status was skipped"));
+        assert!(error
+            .to_string()
+            .contains("no song produced accompaniment and vocals artifacts"));
     }
 }

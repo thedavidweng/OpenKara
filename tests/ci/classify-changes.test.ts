@@ -106,12 +106,6 @@ describe("classifyFile", () => {
     ).toEqual(["release_workflow"]);
   });
 
-  test("installed-app smoke validator is release_workflow", () => {
-    expect(classifyFile("scripts/validate-installed-app-smoke.mjs")).toEqual([
-      "release_workflow",
-    ]);
-  });
-
   test("Windows desktop E2E scripts are release_workflow", () => {
     expect(classifyFile("scripts/ci/run-windows-desktop-e2e.ps1")).toEqual([
       "release_workflow",

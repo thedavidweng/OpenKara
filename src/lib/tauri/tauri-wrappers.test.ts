@@ -432,6 +432,7 @@ describe("settings", () => {
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
+    compatible_execution_providers: ["cpu" as const],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
     crossfade_enabled: false,
@@ -729,12 +730,12 @@ describe("lyrics", () => {
     expect(returned).toBe(lyricsPayload);
   });
 
-  test("fetchLyricsOnline invokes fetch_lyrics_online with userInitiated", async () => {
+  test("fetchLyricsOnline invokes fetch_lyrics_online with intent", async () => {
     mockInvoke.mockResolvedValueOnce(lyricsPayload);
-    const returned = await lyrics.fetchLyricsOnline("song-1", true);
+    const returned = await lyrics.fetchLyricsOnline("song-1", "user_replace");
     expect(mockInvoke).toHaveBeenCalledWith("fetch_lyrics_online", {
       songId: "song-1",
-      userInitiated: true,
+      intent: "user_replace",
     });
     expect(returned).toBe(lyricsPayload);
   });
@@ -1325,24 +1326,22 @@ describe("remote-repository", () => {
     });
   });
 
-  test("reauthorizeRemoteLibrary invokes reauthorize_remote_library", async () => {
+  test("reauthorizeRemoteRepository invokes reauthorize_remote_repository", async () => {
     mockInvoke.mockResolvedValueOnce({
       active_library_id: "lib-1",
       libraries: [],
     });
-    const returned = await remoteRepository.reauthorizeRemoteLibrary(
+    const returned = await remoteRepository.reauthorizeRemoteRepository(
       "lib-1",
       "sess-2",
       "drive:root",
       "Music",
-      true,
     );
-    expect(mockInvoke).toHaveBeenCalledWith("reauthorize_remote_library", {
+    expect(mockInvoke).toHaveBeenCalledWith("reauthorize_remote_repository", {
       libraryId: "lib-1",
       sessionId: "sess-2",
       remoteRootLocator: "drive:root",
       displayName: "Music",
-      allowRelocation: true,
     });
     expect(returned).toEqual({ active_library_id: "lib-1", libraries: [] });
   });
@@ -1360,10 +1359,10 @@ describe("remote-repository", () => {
     expect(returned).toBeUndefined();
   });
 
-  test("refreshRemoteRepository invokes sync_active_remote_library", async () => {
+  test("refreshRemoteRepository invokes refresh_remote_repository", async () => {
     mockInvoke.mockResolvedValueOnce({ synced: true });
     const returned = await remoteRepository.refreshRemoteRepository();
-    expect(mockInvoke).toHaveBeenCalledWith("sync_active_remote_library");
+    expect(mockInvoke).toHaveBeenCalledWith("refresh_remote_repository");
     expect(returned).toEqual({ synced: true });
   });
 

@@ -141,7 +141,6 @@ const CATEGORY_PATTERNS = {
     "scripts/ci/run-windows-desktop-e2e.ps1",
     "scripts/setup.sh",
     "scripts/run-local-smoke.sh",
-    "scripts/validate-installed-app-smoke.mjs",
   ],
 
   packaging_workflow: [".github/workflows/packaging.yml"],

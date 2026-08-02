@@ -1,7 +1,10 @@
 use crate::{
     cache,
     commands::bootstrap::{self, ModelBootstrapStatusSnapshot},
-    commands::error::{database_error, state_lock_error, CommandError, CommandResult},
+    commands::error::{
+        database_error, execution_provider_unavailable, state_lock_error, CommandError,
+        CommandResult,
+    },
     commands::runtime_bootstrap::{self, RuntimeBootstrapStatusSnapshot},
     config::{self, ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
@@ -216,6 +219,9 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
         .as_ref()
         .map(|c| c.effective_execution_provider())
         .unwrap_or_default();
+    if !ep_preference.is_compatible_for_current_platform() {
+        return Err(execution_provider_unavailable(ep_preference));
+    }
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())
@@ -336,7 +342,8 @@ where
 /// can assert completion without remote I/O.
 pub fn publish_on_complete_default<R: Runtime>(app_handle: &AppHandle<R>, song_id: &str) {
     let state = app_handle.state::<AppState>();
-    let _ = remote::publish_song_to_active_remote_if_ready(&state, app_handle, song_id);
+    let _ = remote::PublishChanges::new(&state, app_handle)
+        .publish(&remote::ChangeScope::Songs(vec![song_id.to_owned()]));
 }
 
 pub fn get_separation_status_from_map(
@@ -1044,7 +1051,8 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
             status: completed.clone(),
         },
     );
-    remote::publish_song_to_active_remote_if_ready(state, app_handle, song_id)?;
+    let publication = remote::PublishChanges::new(state, app_handle);
+    publication.publish(&remote::ChangeScope::Songs(vec![song_id.to_owned()]))?;
 
     Ok(completed)
 }

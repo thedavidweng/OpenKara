@@ -136,7 +136,7 @@ export function RemoteLibraryWizard({
     setAuthorizationUrl(null);
 
     try {
-      const runRegistration = async (allowRelocation: boolean) =>
+      const runRegistration = async (relocate: boolean) =>
         runRemoteLibraryRegistrationFlow({
           provider,
           displayName,
@@ -148,7 +148,7 @@ export function RemoteLibraryWizard({
           existingRemotePathDisplay: isReauthorizeFlow
             ? initialRemotePathDisplay
             : undefined,
-          allowRelocation,
+          relocate,
           webdav: {
             serverUrl,
             username,

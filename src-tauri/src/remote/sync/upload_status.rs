@@ -140,7 +140,7 @@ pub(crate) fn project_upload_status_from_operation(
 ) -> CommandResult<UploadStatusSnapshot> {
     let conn = state
         .remote
-        .control_db
+        .control_db()?
         .lock()
         .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
     let existing = crate::remote::control_db::get_operation(&conn, operation_id)?;
@@ -181,7 +181,7 @@ pub(crate) fn project_upload_status_from_durable(
 ) -> CommandResult<UploadStatusSnapshot> {
     let conn = state
         .remote
-        .control_db
+        .control_db()?
         .lock()
         .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
     let existing = crate::remote::control_db::get_latest_publish_operation_for_song(
@@ -230,7 +230,7 @@ pub(crate) fn mark_upload_status_for_operation(
     let existing = {
         let conn = state
             .remote
-            .control_db
+            .control_db()?
             .lock()
             .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
         crate::remote::control_db::get_operation(&conn, operation_id)?
@@ -247,7 +247,7 @@ pub(crate) fn mark_upload_status_for_operation(
     }
 
     let now = control_db_now_ms();
-    let mut payload = OperationPayload::from_json(&existing.payload_json).unwrap_or_default();
+    let mut payload = OperationPayload::from_json(&existing.payload_json)?;
     if payload.song_ids.is_empty() {
         payload.song_ids = vec![song_id.to_owned()];
     }
@@ -287,7 +287,7 @@ pub(crate) fn mark_upload_status_for_operation(
     {
         let conn = state
             .remote
-            .control_db
+            .control_db()?
             .lock()
             .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
         upsert_operation(&conn, &row)?;
@@ -348,7 +348,7 @@ pub(crate) fn mark_upload_status(
         let existing = {
             let conn = state
                 .remote
-                .control_db
+                .control_db()?
                 .lock()
                 .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
             crate::remote::control_db::get_latest_publish_operation_for_song(
@@ -432,7 +432,7 @@ pub(crate) fn mark_upload_status(
 
         let conn = state
             .remote
-            .control_db
+            .control_db()?
             .lock()
             .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
         upsert_operation(&conn, &row)?;
@@ -517,7 +517,7 @@ pub(crate) fn emit_upload_error<R: tauri::Runtime>(
 pub fn get_all_upload_statuses(state: &AppState) -> CommandResult<Vec<UploadStatusSnapshot>> {
     let conn = state
         .remote
-        .control_db
+        .control_db()?
         .lock()
         .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
 
@@ -556,7 +556,6 @@ mod tests {
     use crate::remote::control_db::{
         open_control_db, upsert_operation, OperationKind, OperationRow, OperationState,
     };
-    use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
     fn test_state_with_control_db() -> (AppState, TempDir) {
@@ -565,7 +564,7 @@ mod tests {
         let conn = open_control_db(&path).expect("open control DB");
 
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
         (state, dir)
     }
 
@@ -584,7 +583,7 @@ mod tests {
         )
         .unwrap();
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let op = crate::remote::control_db::get_latest_publish_operation_for_song(
             &conn, "lib-1", "song-1",
         )
@@ -653,7 +652,7 @@ mod tests {
 
         let conn = open_control_db(&path).unwrap();
         let mut state = AppState::test_fixture();
-        state.remote.control_db = Arc::new(Mutex::new(conn));
+        state.remote.replace_control_db(conn);
 
         let statuses = get_all_upload_statuses(&state).unwrap();
         assert_eq!(statuses.len(), 1);
@@ -668,7 +667,7 @@ mod tests {
 
         mark_upload_status(&state, "song-1", None, UploadState::Running, 0, None, None).unwrap();
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let ops = list_operations(&conn).unwrap();
         assert!(ops.is_empty());
     }
@@ -678,7 +677,7 @@ mod tests {
         let (state, _dir) = test_state_with_control_db();
         let now = control_db_now_ms();
         upsert_operation(
-            &state.remote.control_db.lock().unwrap(),
+            &state.remote.control_db().unwrap().lock().unwrap(),
             &OperationRow {
                 operation_id: "op-retry".to_owned(),
                 library_id: "lib-1".to_owned(),
@@ -733,7 +732,7 @@ mod tests {
         )
         .unwrap();
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let op = crate::remote::control_db::get_latest_publish_operation_for_song(
             &conn, "lib-1", "song-1",
         )
@@ -780,7 +779,7 @@ mod tests {
         )
         .unwrap();
 
-        let conn = state.remote.control_db.lock().unwrap();
+        let conn = state.remote.control_db().unwrap().lock().unwrap();
         let op = crate::remote::control_db::get_latest_publish_operation_for_song(
             &conn, "lib-1", "song-1",
         )
@@ -796,7 +795,7 @@ mod tests {
 
         let now = control_db_now_ms();
         upsert_operation(
-            &state.remote.control_db.lock().unwrap(),
+            &state.remote.control_db().unwrap().lock().unwrap(),
             &OperationRow {
                 operation_id: "publish-batch-123".to_owned(),
                 library_id: "lib-1".to_owned(),

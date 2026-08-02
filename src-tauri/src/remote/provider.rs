@@ -27,7 +27,9 @@ impl ConditionalSource {
     }
 }
 
-pub(crate) trait RemoteProvider {
+pub(crate) trait RepositoryStorage {
+    fn media_source(&self) -> &dyn RemoteMediaSource;
+
     fn capabilities(&self) -> RemoteProviderCapabilities {
         RemoteProviderCapabilities::default()
     }
@@ -36,15 +38,14 @@ pub(crate) trait RemoteProvider {
 
     fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
         let revision = self.get_revision(relative_path)?;
-        let size = self.get_file_size(relative_path)?;
-        if revision.is_none() && size.is_none() {
+        if revision.is_none() {
             // Distinguish "absent" from "present but no metadata". When both
             // are None, treat the object as absent. Providers with a real
             // `stat` override return None only on a true 404.
             Ok(None)
         } else {
             Ok(Some(RemoteObjectMetadata {
-                size_bytes: size,
+                size_bytes: None,
                 revision,
             }))
         }
@@ -52,21 +53,8 @@ pub(crate) trait RemoteProvider {
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
-    fn download_range(
-        &self,
-        _relative_path: &str,
-        _destination: &Path,
-        _offset: u64,
-        _length: u64,
-    ) -> RemoteResult<u64> {
-        Err(RemoteError::from_kind(
-            RemoteErrorKind::ProviderCapabilityUnavailable,
-        ))
-    }
-
     fn upload_file(&self, relative_path: &str) -> CommandResult<()>;
 
-    // used by PR#5: resumable uploads
     fn resumable_upload_bytes(
         &self,
         _relative_path: &str,
@@ -94,6 +82,29 @@ pub(crate) trait RemoteProvider {
 
     fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
 
+    fn refresh_existing(&self) -> CommandResult<Option<String>>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RemoteMediaSourceCapabilities {
+    pub range_download: bool,
+}
+
+pub(crate) trait RemoteMediaSource {
+    fn capabilities(&self) -> RemoteMediaSourceCapabilities;
+
+    fn download_range(
+        &self,
+        _relative_path: &str,
+        _destination: &Path,
+        _offset: u64,
+        _length: u64,
+    ) -> RemoteResult<u64> {
+        Err(RemoteError::from_kind(
+            RemoteErrorKind::ProviderCapabilityUnavailable,
+        ))
+    }
+
     fn create_range_fetcher(
         &self,
         _relative_path: &str,
@@ -104,14 +115,52 @@ pub(crate) trait RemoteProvider {
     fn get_file_size(&self, _relative_path: &str) -> CommandResult<Option<u64>> {
         Ok(None)
     }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>>;
 }
 
-pub(crate) fn create_provider<'a>(
+pub(crate) fn create_repository_storage<'a>(
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
-) -> CommandResult<Box<dyn RemoteProvider + 'a>> {
+) -> CommandResult<Box<dyn RepositoryStorage + 'a>> {
+    use super::dropbox;
+    use super::google_drive;
+    use super::webdav;
+    use crate::config::RemoteLibraryProvider;
+
+    match library.provider() {
+        Some(RemoteLibraryProvider::WebDav) => {
+            let secret = webdav::load_webdav_secret(app_data_dir, library)?;
+            Ok(Box::new(webdav::WebDAVProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
+        }
+        Some(RemoteLibraryProvider::GoogleDrive) => {
+            let secret = google_drive::load_google_drive_secret(app_data_dir, library)?;
+            Ok(Box::new(google_drive::GoogleDriveProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
+        }
+        Some(RemoteLibraryProvider::Dropbox) => {
+            let secret = dropbox::load_dropbox_secret(app_data_dir, library)?;
+            Ok(Box::new(dropbox::DropboxProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
+        }
+        None => Err(CommandError::from(LibraryError::Internal(
+            "the target library is not a remote library".to_owned(),
+        ))),
+    }
+}
+
+pub(crate) fn create_remote_media_source<'a>(
+    app_data_dir: &'a Path,
+    library: &'a RegisteredLibrary,
+) -> CommandResult<Box<dyn RemoteMediaSource + 'a>> {
     use super::dropbox;
     use super::google_drive;
     use super::webdav;

@@ -22,18 +22,23 @@ pub fn delete_all_stems(
     let freed_bytes = cache::stems::estimate_stems_disk_usage(&library_root)
         .map_err(|e| internal_error(format!("failed to estimate stems disk usage: {e}")))?;
 
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::WholeRepository,
+        |connection: &rusqlite::Connection, library: &crate::library_root::LibraryRoot| {
+            let deleted_count = cache::stems::delete_all_stem_cache_entries(connection, library)
+                .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
 
-    let deleted_count = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
-        let deleted_count = cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
-            .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
+            if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
+                statuses.clear();
+            }
 
-        if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
-            statuses.clear();
-        }
-
-        Ok(deleted_count)
-    })?;
+            Ok(deleted_count)
+        },
+        |_: &usize| remote::ChangeScope::WholeRepository,
+    ))?;
+    publication.publish(&applied.scope)?;
+    let deleted_count = applied.value;
 
     Ok(DeleteStemsResult {
         deleted_count,
@@ -59,13 +64,12 @@ pub fn downgrade_all_to_two_stem(
     state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> CommandResult<DowngradeResult> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
-    let (downgraded_count, freed_bytes) =
-        remote::run_active_library_mirror_mutation(&state, &app_handle, || {
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::WholeRepository,
+        |connection: &rusqlite::Connection, library: &crate::library_root::LibraryRoot| {
             let (downgraded_count, freed_bytes) =
-                cache::stems::batch_downgrade_to_two_stem(&connection, &library_root)
+                cache::stems::batch_downgrade_to_two_stem(connection, library)
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
 
             if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
@@ -80,7 +84,11 @@ pub fn downgrade_all_to_two_stem(
                 }
             }
             Ok((downgraded_count, freed_bytes))
-        })?;
+        },
+        |_: &(usize, u64)| remote::ChangeScope::WholeRepository,
+    ))?;
+    publication.publish(&applied.scope)?;
+    let (downgraded_count, freed_bytes) = applied.value;
 
     Ok(DowngradeResult {
         downgraded_count,
@@ -102,11 +110,15 @@ pub fn delete_all_cached_lyrics(
     state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> CommandResult<usize> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
-    let deleted = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
-        cache::lyrics::delete_all_lyrics_cache_entries(&connection).map_err(database_error)
-    })?;
+    let publication = remote::PublishChanges::new(&state, &app_handle);
+    let applied = publication.apply(remote::Change::new(
+        remote::ChangeScope::WholeRepository,
+        |connection: &rusqlite::Connection, _library: &crate::library_root::LibraryRoot| {
+            cache::lyrics::delete_all_lyrics_cache_entries(connection).map_err(database_error)
+        },
+        |_: &usize| remote::ChangeScope::WholeRepository,
+    ))?;
+    publication.publish(&applied.scope)?;
+    let deleted = applied.value;
     Ok(deleted)
 }

@@ -150,7 +150,10 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         normalized.lines.every((l) => l.time_ms === 0)
       ) {
         try {
-          const online = await api.fetchLyricsOnline(songId, false);
+          const online = await api.fetchLyricsOnline(
+            songId,
+            "automatic_upgrade",
+          );
           if (
             gen === fetchGeneration &&
             get().songId === songId &&

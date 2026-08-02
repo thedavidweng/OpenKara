@@ -265,7 +265,10 @@ describe("lyrics-store fetchLyrics", () => {
 
     await useLyricsStore.getState().fetchLyrics("song-1");
 
-    expect(mockFetchLyricsOnline).toHaveBeenCalledWith("song-1", false);
+    expect(mockFetchLyricsOnline).toHaveBeenCalledWith(
+      "song-1",
+      "automatic_upgrade",
+    );
     const state = useLyricsStore.getState();
     expect(state.lines).toEqual(synced.lines);
     expect(state.source).toBe("lrc_lib");

@@ -25,9 +25,14 @@ scripts/ci/run-windows-desktop-e2e.ps1 `
   -StepTimeoutMs 30000
 ```
 
-The script exits non-zero when any step assertion fails. The validator
-`scripts/validate-desktop-e2e-report.mjs` re-checks the report for release and
-PR gates.
+The script exits non-zero when any step assertion fails. The Rust release
+evidence driver re-checks the report for release and PR gates:
+
+```powershell
+openkara_release_evidence.exe validate-desktop-e2e `
+  --input desktop-e2e-report.json `
+  --scenario keyboard-workflow
+```
 
 ## Local usage
 

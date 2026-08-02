@@ -526,6 +526,10 @@
       "xnnpackDescription": "CPU z akceleracją SIMD — szybsze na Apple Silicon i nowoczesnych x86",
       "directml": "DirectML",
       "directmlDescription": "Akceleracja GPU DirectX 12 dla systemu Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Akceleracja Neural Engine i GPU na urządzeniach Apple Silicon",
+      "incompatible": "Niezgodne",
+      "incompatibleWarning": "Ten dostawca nie jest zgodny z tym urządzeniem. Przełącz na CPU w Ustawieniach.",
       "note": "Zmiany zaczną obowiązywać przy następnym rozdzielaniu."
     },
     "integrity": {
@@ -655,8 +659,11 @@
     "lyrics_not_ready": "Tekst niedostępny",
     "network_unavailable": "Błąd sieci",
     "invalid_playback_state": "Błąd odtwarzania",
+    "execution_provider_unavailable": "Dostawca wykonania jest niedostępny",
+    "executionProviderUnavailableMessage": "Wybrany dostawca nie jest zgodny z tym urządzeniem. Przełącz na CPU w Ustawieniach.",
     "separation_failed": "Rozdzielanie nie powiodło się",
     "internal": "Błąd wewnętrzny",
+    "remote_repository_unavailable": "Zdalne repozytorium jest niedostępne",
     "somethingWentWrong": "Coś poszło nie tak"
   },
   "updater": {

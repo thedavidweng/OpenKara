@@ -16,7 +16,7 @@ use super::super::types::{
     current_unix_time_ms, load_app_config, load_remote_root, persist_app_config,
 };
 
-use super::super::provider::create_provider;
+use super::super::provider::create_repository_storage;
 
 pub(crate) fn update_remote_revision_in_config(
     app_data_dir: &Path,
@@ -63,7 +63,7 @@ pub(crate) fn remote_database_revision(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<Option<String>> {
-    let provider = create_provider(app_data_dir, library)?;
+    let provider = create_repository_storage(app_data_dir, library)?;
     // For manifest-based repositories, the manifest revision is the staleness
     // signal: a new generation always produces a new manifest write. For
     // legacy repositories (no manifest), fall back to the `openkara.db`
@@ -158,8 +158,8 @@ pub(crate) fn prepare_remote_database_for_mutation(
     // must NOT be overwritten by an automatic pull — otherwise network loss or
     // a failed publication would silently destroy the user's work.
     if !should_allow_automatic_pull(control_db_conn, library) {
-        // Preserve the current working copy. PR#4 drives the actual resume
-        // publication; PR#3 only blocks the overwrite.
+        // Preserve the current working copy. The publication executor can
+        // resume the pending operation without an automatic pull overwriting it.
         tracing::info!(
             "skipping automatic remote database pull for library {} because \
              the working copy is not clean",
@@ -218,7 +218,7 @@ fn pull_remote_database_atomically(
     library: &RegisteredLibrary,
     provider_revision: Option<&str>,
 ) -> CommandResult<RegisteredLibrary> {
-    let provider = create_provider(app_data_dir, library)?;
+    let provider = create_repository_storage(app_data_dir, library)?;
     let root = load_remote_root(app_data_dir, library)?;
 
     // Sanitize the provider revision before embedding it in the operation
@@ -248,7 +248,7 @@ fn pull_remote_database_atomically(
 
     let (remote_db_path, expected_size, expected_digest, committed_generation) = match &manifest {
         Some(m) => {
-            let size = provider.get_file_size(&m.database_path)?;
+            let size = provider.media_source().get_file_size(&m.database_path)?;
             (
                 m.database_path.as_str(),
                 size.or(Some(m.database_size_bytes)),
@@ -257,7 +257,7 @@ fn pull_remote_database_atomically(
             )
         }
         None => {
-            let size = provider.get_file_size("openkara.db")?;
+            let size = provider.media_source().get_file_size("openkara.db")?;
             ("openkara.db", size, None, 0)
         }
     };
@@ -319,7 +319,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
     let root = load_remote_root(app_data_dir, &library)?;
     let destination = root.resolve(relative_path);
 
-    let provider = create_provider(app_data_dir, &library)?;
+    let provider = create_repository_storage(app_data_dir, &library)?;
 
     // Verified cache catalog lookup. The cache key is derived from the
     // identity tuple (library_id, relative_path, provider_revision,
@@ -328,7 +328,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
     // download. This replaces the old existence+revision+size check that could
     // reuse bytes from an older provider revision (defect #7).
     let provider_revision = provider.get_revision(relative_path)?;
-    let remote_size = provider.get_file_size(relative_path)?;
+    let remote_size = provider.media_source().get_file_size(relative_path)?;
     let revision = provider_revision
         .clone()
         .or_else(|| library.remote_revision().map(str::to_owned));
@@ -404,17 +404,8 @@ pub(crate) fn resolve_active_remote(config: &AppConfig) -> Option<RegisteredLibr
     })
 }
 
-pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
-    // Fail closed when the durable control plane is unavailable. An in-memory
-    // fallback cannot prove the working copy is clean, so automatic refresh
-    // must not overwrite it.
-    if state.remote.control_db_degraded {
-        return Err(CommandError::from(LibraryError::Internal(
-            "remote control database is unavailable; automatic refresh is \
-             disabled until the control plane is repaired"
-                .to_string(),
-        )));
-    }
+pub(crate) fn refresh_remote_repository(state: &AppState) -> CommandResult<()> {
+    state.remote.ensure_available()?;
 
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
@@ -424,7 +415,7 @@ pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> 
     };
 
     if matches!(active_library, RegisteredLibrary::Remote { .. }) {
-        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+        let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
         // Dirty working-copy protection: only pull when the working copy is

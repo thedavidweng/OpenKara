@@ -201,6 +201,8 @@ jobs:
       previous_version: ""
       retention_days: 90
       release_build: true
+      release_tag: ${{ needs.prepare-release.outputs.tag }}
+      updater_target: windows-x86_64
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -222,6 +224,30 @@ jobs:
       previous_version: none
       retention_days: 90
       release_build: true
+      release_tag: ${{ needs.prepare-release.outputs.tag }}
+      updater_target: darwin-aarch64
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    permissions:
+      contents: read
+
+  release-macos-intel-installed-smoke:
+    name: Release macOS installed-app smoke (Intel)
+    needs: prepare-release
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: ${{ needs.prepare-release.outputs.version }}
+      artifact_prefix: release-macos-installed-app-x86_64
+      os: macos-15-intel
+      rust_target: x86_64-apple-darwin
+      tauri_target: x86_64-apple-darwin
+      scenario: clean-install
+      previous_version: none
+      retention_days: 90
+      release_build: true
+      release_tag: ${{ needs.prepare-release.outputs.tag }}
+      updater_target: darwin-x86_64
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -242,11 +268,107 @@ jobs:
       previous_version: none
       retention_days: 90
       release_build: true
+      release_tag: ${{ needs.prepare-release.outputs.tag }}
+      updater_target: linux-x86_64
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     permissions:
       contents: read
+
+  assemble-release-evidence:
+    name: Assemble release evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - prepare-release
+      - release-windows-installed-smoke
+      - release-macos-installed-smoke
+      - release-macos-intel-installed-smoke
+      - release-linux-installed-smoke
+    permissions:
+      contents: read
+    steps:
+      - name: Download Rust evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-linux-installed-app-x86_64-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
+      - name: Download installed-app evidence fragments
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*-smoke-reports
+          path: ${{ runner.temp }}/smoke-reports
+
+      - name: Aggregate canonical release evidence
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          EVIDENCE_ROOT: ${{ runner.temp }}/evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          mapfile -t fragments < <(find "${RUNNER_TEMP}/smoke-reports" -name "release-evidence-fragment.json" -type f | sort)
+          fragment_args=()
+          for fragment in "${fragments[@]}"; do
+            fragment_args+=(--fragment "$fragment")
+          done
+          chmod +x "${RUNNER_TEMP}/evidence-driver/openkara_release_evidence"
+          "${RUNNER_TEMP}/evidence-driver/openkara_release_evidence" aggregate \
+            --repository "${GITHUB_REPOSITORY}" \
+            --commit-sha "${GITHUB_SHA}" \
+            --tag "$RELEASE_TAG" \
+            --version "$RELEASE_VERSION" \
+            "${fragment_args[@]}" \
+            --output "$EVIDENCE_ROOT/release-evidence.json"
+
+      - name: Upload canonical release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/evidence/release-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-release-evidence:
+    name: Publish release evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [prepare-release, assemble-release-evidence]
+    permissions:
+      contents: write # Uploads the canonical release evidence to the draft release.
+    steps:
+      - name: Download canonical release evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/release-evidence
+
+      - name: Create draft release and upload evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}
+          RELEASE_PRERELEASE: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            prerelease_args=()
+            if [ "$RELEASE_PRERELEASE" = "true" ]; then
+              prerelease_args+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --draft \
+              --title "OpenKara v${RELEASE_VERSION}" \
+              --notes "$RELEASE_BODY" \
+              "${prerelease_args[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" --repo "$GH_REPO" \
+            "${RUNNER_TEMP}/release-evidence/release-evidence.json" --clobber
 
   # Playwright accessibility is exercised in nightly-hardening (windows-matrix
   # accessibility leg) and local `pnpm test:a11y`. Release publish is gated on
@@ -261,27 +383,21 @@ jobs:
       - release-separation-smoke
       - release-windows-installed-smoke
       - release-macos-installed-smoke
+      - release-macos-intel-installed-smoke
       - release-linux-installed-smoke
+      - publish-release-evidence
     permissions:
-      contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
+      contents: write # Creates the draft release and uploads tested candidates.
     strategy:
       fail-fast: false
-      # Serialize the matrix. tauri-action's uploadUpdaterJson does a
-      # non-atomic read-modify-write of the release's single latest.json: it
-      # downloads the current manifest, merges in this leg's platform entry, and
-      # re-uploads. Run concurrently, two legs read the same base and the later
-      # writer clobbers the earlier one's platform — the served latest.json
-      # silently loses a target, and that OS's users never see the update.
-      # Publishing one leg at a time closes that window (its only cost is a
-      # longer, release-only wall time).
-      max-parallel: 1
       matrix:
         include:
           - name: macOS (Apple Silicon)
             os: macos-14
-            args: --target aarch64-apple-darwin
+            artifact_prefix: release-macos-installed-app-aarch64
             ort_target: aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
+            release_target: darwin-aarch64
           # Native Intel runner: the Intel app must be built, and its runtime
           # loaded, on the architecture it ships for — cross-compiling from
           # Apple Silicon proves neither. macos-15-intel is GitHub's supported
@@ -289,14 +405,16 @@ jobs:
           # must be established before hosted Intel runners retire.
           - name: macOS (Intel)
             os: macos-15-intel
-            args: --target x86_64-apple-darwin
+            artifact_prefix: release-macos-installed-app-x86_64
             ort_target: x86_64-apple-darwin
             rust_targets: x86_64-apple-darwin
+            release_target: darwin-x86_64
           - name: Linux
             os: ubuntu-22.04
-            args: ""
+            artifact_prefix: release-linux-installed-app-x86_64
             ort_target: x86_64-unknown-linux-gnu
             rust_targets: ""
+            release_target: linux-x86_64
 
     steps:
       - name: Checkout
@@ -366,39 +484,86 @@ jobs:
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
 
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON: ${{ secrets.OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON }}
-          OPENKARA_DROPBOX_APP_KEY: ${{ secrets.OPENKARA_DROPBOX_APP_KEY }}
-          OPENKARA_DROPBOX_APP_SECRET: ${{ secrets.OPENKARA_DROPBOX_APP_SECRET }}
-          # In-app updater (#255): the minisign private key signs the updater
-          # payloads. Its public half lives in tauri.conf.json
-          # plugins.updater.pubkey — the two must be a pair, or the updater
-          # rejects every download. Only this signed release build produces the
-          # .sig files and latest.json.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Download tested Release Candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          tagName: ${{ needs.prepare-release.outputs.tag }}
-          releaseName: OpenKara v${{ needs.prepare-release.outputs.version }}
-          releaseBody: ${{ needs.prepare-release.outputs.release_body }}
-          releaseDraft: true
-          # Prerelease only for suffixed tags (v1.0.0-rc.1). GitHub's
-          # /releases/latest — the URL the in-app updater polls — resolves only
-          # the newest non-draft, non-prerelease release, so plain tags (v1.0.0)
-          # must publish as full releases or the updater never sees them.
-          prerelease: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
-          # DELIBERATE DIVERGENCE from the base config (#255): createUpdaterArtifacts
-          # is NOT set in src-tauri/tauri.conf.json — OpenKara's verification
-          # contract runs a full `pnpm tauri build` everywhere and PR CI must stay
-          # keyless. The overlay flips it on for this signed release build only.
-          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
-          tauriScript: pnpm tauri
-        # macOS and Linux build and publish through tauri-action. Each leg
-        # downloads the existing latest.json, merges its own platform entry, and
-        # re-uploads. Windows is published separately by `publish-windows`.
+          pattern: ${{ matrix.artifact_prefix }}-*
+          path: ${{ runner.temp }}/release-candidate
+          merge-multiple: true
+
+      - name: Download release evidence and verifier
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/release-evidence
+
+      - name: Download platform release evidence verifier
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact_prefix }}-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
+      - name: Verify tested Release Candidate bytes
+        shell: bash
+        env:
+          CANDIDATE_ROOT: ${{ runner.temp }}/release-candidate
+          EVIDENCE_ROOT: ${{ runner.temp }}/release-evidence
+          DRIVER_ROOT: ${{ runner.temp }}/evidence-driver
+          RELEASE_TARGET: ${{ matrix.release_target }}
+        run: |
+          set -euo pipefail
+          driver="${DRIVER_ROOT}/openkara_release_evidence"
+          if [ ! -x "$driver" ]; then
+            chmod +x "$driver"
+          fi
+          "$driver" verify-assets \
+            --evidence "${EVIDENCE_ROOT}/release-evidence.json" \
+            --target "$RELEASE_TARGET" \
+            --assets-dir "$CANDIDATE_ROOT"
+
+      - name: Publish tested Release Candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}
+          RELEASE_PRERELEASE: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
+          CANDIDATE_ROOT: ${{ runner.temp }}/release-candidate
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            if [ "$RELEASE_PRERELEASE" = "true" ]; then
+              prerelease_flag="--prerelease"
+            else
+              prerelease_flag=""
+            fi
+            gh release create "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --draft \
+              --title "OpenKara v${RELEASE_VERSION}" \
+              --notes "$RELEASE_BODY" \
+              $prerelease_flag
+          fi
+
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find "$CANDIDATE_ROOT" -type f \( \
+            -name "*.dmg" -o \
+            -name "*.AppImage" -o \
+            -name "*.deb" -o \
+            -name "*.tar.gz" -o \
+            -name "*.sig" \
+          \) -print0)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No tested release candidate assets were found."
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" --repo "$GH_REPO" "${files[@]}" --clobber
 
   publish-windows:
     name: Release (Windows)
@@ -428,6 +593,26 @@ jobs:
           path: ${{ runner.temp }}/windows-smoke
           pattern: release-windows-installed-app-*
 
+      - name: Download canonical release evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/release-evidence
+
+      - name: Verify tested Windows Release Candidate bytes
+        shell: pwsh
+        env:
+          WINDOWS_SMOKE_ROOT: ${{ runner.temp }}\windows-smoke
+          EVIDENCE_ROOT: ${{ runner.temp }}\release-evidence
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Get-ChildItem -Path $env:WINDOWS_SMOKE_ROOT -Filter "openkara_release_evidence.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $evidence) { throw "Windows release evidence verifier was not found" }
+          $canonical = Join-Path $env:EVIDENCE_ROOT "release-evidence.json"
+          if (-not (Test-Path -Path $canonical -PathType Leaf)) { throw "Canonical release evidence was not found" }
+          & $evidence.FullName verify-assets --evidence $canonical --target windows-x86_64 --assets-dir $env:WINDOWS_SMOKE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw "Windows Release Candidate bytes do not match canonical release evidence" }
+
       - name: Publish Windows release assets
         shell: pwsh
         env:
@@ -441,79 +626,48 @@ jobs:
           $installer = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-installer" -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
           if ($null -eq $installer) { throw "No Windows installer artifact found" }
 
-          $sigFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "*.sig" -File -Recurse)
-          if ($sigFiles.Count -eq 0) { throw "No Windows updater .sig artifact found" }
-
-          $releaseDir = Join-Path $env:RUNNER_TEMP "release-latest-json"
-          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-
-          # Local `tauri build` with createUpdaterArtifacts emits .sig but not
-          # latest.json (tauri-action normally writes that). Synthesize a
-          # Windows-only overlay from the NSIS signature when missing.
-          $windowsLatest = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -Filter "latest.json" -File -Recurse | Select-Object -First 1
-          if ($null -eq $windowsLatest) {
-            $sigText = (Get-Content -Path $sigFiles[0].FullName -Raw).Trim()
-            $downloadUrl = "https://github.com/${env:GH_REPO}/releases/download/${env:RELEASE_TAG}/$($installer.Name)"
-            $platformEntry = [ordered]@{
-              signature = $sigText
-              url       = $downloadUrl
-            }
-            $overlay = [ordered]@{
-              version   = $env:RELEASE_VERSION
-              pub_date  = (Get-Date).ToUniversalTime().ToString("o")
-              platforms = [ordered]@{
-                "windows-x86_64"      = $platformEntry
-                "windows-x86_64-nsis" = $platformEntry
-              }
-            }
-            $windowsLatestPath = Join-Path $releaseDir "windows-latest.json"
-            ($overlay | ConvertTo-Json -Depth 6) | Set-Content -Path $windowsLatestPath -Encoding utf8
-            $windowsLatest = Get-Item $windowsLatestPath
-            Write-Host "Synthesized Windows updater overlay at $($windowsLatest.FullName)"
-          }
-
-          # Merge the Windows platform entry into the latest.json already
-          # uploaded by the macOS and Linux publish legs.
-          $mergedLatest = Join-Path $releaseDir "latest.json"
-          try {
-            gh release download $env:RELEASE_TAG --repo $env:GH_REPO --pattern "latest.json" --dir $releaseDir --clobber
-            $baseLatest = Join-Path $releaseDir "latest.json"
-            node scripts/merge-latest-json.mjs $baseLatest $windowsLatest.FullName | Set-Content -Path $mergedLatest -Encoding utf8
-          } catch {
-            Copy-Item $windowsLatest.FullName $mergedLatest
-          }
+          $updaterFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -File -Recurse | Where-Object { $_.Name -like "*.nsis.zip" -or $_.Name -like "*.nsis.zip.sig" })
+          if ($updaterFiles.Count -eq 0) { throw "No Windows updater artifacts found" }
 
           gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $installer.FullName --clobber
-          foreach ($sig in $sigFiles) {
-            gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $sig.FullName --clobber
+          foreach ($updaterFile in $updaterFiles) {
+            gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $updaterFile.FullName --clobber
           }
-          gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $mergedLatest --clobber
 
-  generate-checksums:
-    name: Generate SHA256SUMS
+  generate-release-metadata:
+    name: Generate release metadata
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [prepare-release, publish, publish-windows]
+    timeout-minutes: 15
+    needs: [prepare-release, publish, publish-windows, publish-release-evidence]
     permissions:
-      contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
+      contents: write # Needed to attach evidence-derived release metadata.
     steps:
-      - name: Download release assets and generate SHA256SUMS
+      - name: Download Rust evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-linux-installed-app-x86_64-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
+      - name: Download release evidence and published assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
           set -euo pipefail
-          mkdir -p artifacts && cd artifacts
-          gh release download "${RELEASE_TAG}" --pattern "OpenKara_*" --clobber
-          files=(OpenKara_*)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No release assets found to checksum" >&2
-            exit 1
-          fi
-          sha256sum "${files[@]}" > SHA256SUMS
-          cat SHA256SUMS
-          gh release upload "${RELEASE_TAG}" SHA256SUMS --clobber
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" --pattern "release-evidence.json" --dir artifacts --clobber
+          gh release download "${RELEASE_TAG}" --pattern "OpenKara_*" --dir artifacts --clobber
+          driver="${RUNNER_TEMP}/evidence-driver/openkara_release_evidence"
+          chmod +x "$driver"
+          "$driver" latest \
+            --evidence artifacts/release-evidence.json \
+            --output latest.json
+          "$driver" checksums \
+            --evidence artifacts/release-evidence.json \
+            --assets-dir artifacts \
+            --output SHA256SUMS
+          gh release upload "${RELEASE_TAG}" latest.json SHA256SUMS --clobber
 
   # Ship gate: merge of the release-please PR is the human decision. After
   # platform smoke, signed assets, and SHA256SUMS land, undraft so
@@ -522,7 +676,8 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [prepare-release, publish, publish-windows, generate-checksums]
+    needs:
+      [prepare-release, publish, publish-windows, generate-release-metadata]
     permissions:
       contents: write # undraft the GitHub Release after assets are complete
     steps:
@@ -541,6 +696,7 @@ jobs:
             "OpenKara_${RELEASE_VERSION}_x64.dmg"
             "OpenKara_${RELEASE_VERSION}_amd64.AppImage"
             "OpenKara_${RELEASE_VERSION}_amd64.deb"
+            "release-evidence.json"
             "latest.json"
             "SHA256SUMS"
           )

@@ -523,6 +523,10 @@
       "xnnpackDescription": "SIMD で高速化された CPU — Apple Silicon や最新の x86 で高速",
       "directml": "DirectML",
       "directmlDescription": "Windows 向けの DirectX 12 GPU アクセラレーション",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Silicon の Neural Engine と GPU によるアクセラレーション",
+      "incompatible": "互換性なし",
+      "incompatibleWarning": "このプロバイダーはこのデバイスと互換性がありません。設定で CPU に切り替えてください。",
       "note": "変更は次回の分離から有効になります。"
     },
     "integrity": {
@@ -652,8 +656,11 @@
     "lyrics_not_ready": "歌詞を利用できません",
     "network_unavailable": "ネットワークエラー",
     "invalid_playback_state": "再生エラー",
+    "execution_provider_unavailable": "実行プロバイダーを利用できません",
+    "executionProviderUnavailableMessage": "選択したプロバイダーはこのデバイスと互換性がありません。設定で CPU に切り替えてください。",
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
+    "remote_repository_unavailable": "リモートリポジトリを利用できません",
     "somethingWentWrong": "問題が発生しました"
   },
   "updater": {

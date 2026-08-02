@@ -166,7 +166,6 @@ impl OperationState {
     }
 }
 
-// used by PR#5: resumable uploads/downloads
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferDirection {
@@ -175,7 +174,6 @@ pub enum TransferDirection {
 }
 
 impl TransferDirection {
-    // used by PR#5: resumable uploads/downloads
     pub fn as_str(self) -> &'static str {
         match self {
             TransferDirection::Upload => "upload",
@@ -183,7 +181,6 @@ impl TransferDirection {
         }
     }
 
-    // used by PR#5: resumable uploads/downloads
     fn from_db(value: &str) -> Result<Self, CommandError> {
         match value {
             "upload" => Ok(TransferDirection::Upload),
@@ -202,6 +199,11 @@ pub struct OperationPayload {
     /// of the asset-upload phase — an empty list cannot re-upload assets.
     #[serde(default)]
     pub song_ids: Vec<String>,
+    /// A whole-repository mutation has no stable song subset. This flag keeps
+    /// its recovery identity explicit instead of treating an empty song list
+    /// as a recoverable publish.
+    #[serde(default)]
+    pub whole_repository: bool,
     #[serde(default)]
     pub percent: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -251,10 +253,10 @@ pub struct RepositoryStateRow {
     pub updated_at_ms: i64,
     /// Stable repository UUID, set on first publication and never changed.
     /// Written into the manifest so all clients agree on repository identity.
-    /// `None` for rows created before PR#4's manifest protocol.
+    /// `None` for rows created before the manifest protocol.
     pub repository_id: Option<String>,
     /// Stable installation UUID of the writer. For diagnostics only, not a
-    /// security principal. `None` for rows created before PR#4.
+    /// security principal. `None` for rows created before the writer ID field.
     pub writer_id: Option<String>,
 }
 
@@ -277,7 +279,6 @@ pub struct OperationRow {
     pub updated_at_ms: i64,
 }
 
-// used by PR#5: resumable uploads/downloads
 #[derive(Debug, Clone)]
 pub struct TransferPartRow {
     pub operation_id: String,
@@ -389,7 +390,6 @@ fn apply_migration_002_manifest_columns(connection: &Connection) -> CommandResul
     Ok(())
 }
 
-// also used by PR#5 for transfer diagnostics
 #[allow(dead_code)]
 pub fn journal_mode(connection: &Connection) -> CommandResult<String> {
     connection
@@ -578,18 +578,18 @@ pub fn get_latest_publish_operation_for_song(
     Ok(matching.into_iter().next())
 }
 
-/// Atomically bind song IDs, mark the operation Pending, and mark the
-/// repository Dirty with `active_operation_id` in one SQLite transaction.
-/// Crash between the statements cannot leave Pending with Clean.
-pub fn bind_song_ids_mark_pending_and_dirty_tx(
+/// Atomically bind a publish scope, mark the operation pending, and mark the
+/// repository dirty. A whole-repository scope may have no song IDs.
+pub fn bind_scope_mark_pending_and_dirty_tx(
     connection: &Connection,
     operation_id: &str,
     library_id: &str,
     song_ids: &[String],
+    whole_repository: bool,
 ) -> CommandResult<()> {
-    if song_ids.is_empty() {
+    if song_ids.is_empty() && !whole_repository {
         return Err(internal_error(
-            "refusing to mark publish operation pending without song_ids",
+            "refusing to mark publish operation pending without a change scope",
         ));
     }
     let now = crate::remote::types::current_unix_time_ms();
@@ -611,8 +611,9 @@ pub fn bind_song_ids_mark_pending_and_dirty_tx(
             op.state.as_str()
         )));
     }
-    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let mut payload = OperationPayload::from_json(&op.payload_json)?;
     payload.song_ids = song_ids.to_vec();
+    payload.whole_repository = whole_repository;
     op.payload_json = payload.to_json()?;
     op.state = OperationState::Pending;
     op.updated_at_ms = now;
@@ -664,7 +665,6 @@ pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRo
     Ok(rows)
 }
 
-// used by PR#4: operation executor
 pub fn list_operations_for_library(
     connection: &Connection,
     library_id: &str,
@@ -760,7 +760,6 @@ fn map_operation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRow> 
     })
 }
 
-// used by PR#5: resumable uploads/downloads
 pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> CommandResult<()> {
     connection
         .execute(
@@ -794,7 +793,6 @@ pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> C
     Ok(())
 }
 
-// used by PR#5: resumable uploads/downloads
 pub fn list_transfer_parts(
     connection: &Connection,
     operation_id: &str,
@@ -835,7 +833,6 @@ pub fn list_all_transfer_parts(connection: &Connection) -> CommandResult<Vec<Tra
     Ok(rows)
 }
 
-// used by PR#5: resumable uploads/downloads
 fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPartRow> {
     let direction_str: String = row.get(2)?;
     let direction = TransferDirection::from_db(&direction_str).map_err(|e| {
@@ -865,7 +862,6 @@ fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPa
 /// Delete all transfer parts for an operation. Called after a transfer
 /// completes (or is cancelled) so stale offsets do not cause a future restart
 /// to resume against a non-existent remote partial.
-// used by PR#5: resumable uploads/downloads
 pub fn delete_transfer_parts(connection: &Connection, operation_id: &str) -> CommandResult<()> {
     connection
         .execute(
@@ -1312,9 +1308,14 @@ mod tests {
             },
         )
         .unwrap();
-        let err =
-            bind_song_ids_mark_pending_and_dirty_tx(&conn, "op-a", "lib-b", &["song-1".to_owned()])
-                .unwrap_err();
+        let err = bind_scope_mark_pending_and_dirty_tx(
+            &conn,
+            "op-a",
+            "lib-b",
+            &["song-1".to_owned()],
+            false,
+        )
+        .unwrap_err();
         assert!(
             err.message.contains("library_id"),
             "expected library_id mismatch error, got: {}",
@@ -1336,6 +1337,7 @@ mod tests {
         let json = payload.to_json().unwrap();
         let back = OperationPayload::from_json(&json).unwrap();
         assert_eq!(back.song_ids, vec!["x".to_owned()]);
+        assert!(!back.whole_repository);
         assert_eq!(back.percent, 0);
     }
 }

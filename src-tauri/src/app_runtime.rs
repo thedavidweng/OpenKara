@@ -245,10 +245,10 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .and_then(|config| config.remote_cache_bytes_limit);
     let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
 
-    // Run startup recovery for the durable remote control plane. This
-    // transitions interrupted operations to safe states but does NOT
-    // re-execute them (PR#4/#5 drive re-execution). The recovery pass must
-    // not block library startup — it runs after the control DB is open.
+    // Run startup recovery for the durable remote control plane. The recovery
+    // pass completes before the executor thread processes pending work.
+    // It must not block library startup because it runs after the control DB
+    // is open.
     run_remote_recovery(&remote_state, &app_data_dir);
 
     let shell_state = AppShell::new(
@@ -295,7 +295,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(shell_state);
     app.manage(app_state.clone());
 
-    spawn_durable_operation_executor(app_state);
+    spawn_durable_operation_executor(app_state, app.handle().clone());
 
     spawn_coordinator(coordinator_runtime, command_rx);
 
@@ -733,9 +733,8 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
 /// Run the startup recovery pass for the durable remote control plane.
 ///
 /// This transitions interrupted operations (running/committing/verifying →
-/// retry_wait, prepared → cancelled/pending/conflicted) but does NOT
-/// re-execute them. PR#4/#5 will drive re-execution once credentials and the
-/// active library are available.
+/// retry_wait, prepared → cancelled/pending/conflicted). The executor thread
+/// re-executes pending work after app state initialization.
 ///
 /// The recovery pass runs after the control DB is open and must not block
 /// library startup. Errors are logged but do not abort app startup — a
@@ -744,10 +743,19 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
 fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
     use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
 
+    if !remote_state.is_available() {
+        tracing::warn!("remote repository state is unavailable; skipping recovery");
+        return;
+    }
+
     project_library_outboxes_into_control_db(remote_state, app_data_dir);
 
     let recovery_result = {
-        let conn = match remote_state.control_db.lock() {
+        let conn = match remote_state.control_db().and_then(|db| {
+            db.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })
+        }) {
             Ok(conn) => conn,
             Err(_) => {
                 tracing::warn!("remote control DB lock was poisoned during recovery");
@@ -807,10 +815,15 @@ fn residual_outbox_safe_to_drop(
     op_library_id: &str,
     outbox_library_id: &str,
     outbox_song_ids: &[String],
+    outbox_whole_repository: bool,
     terminal_payload_song_ids: &[String],
+    terminal_whole_repository: bool,
 ) -> bool {
     if op_library_id != outbox_library_id {
         return false;
+    }
+    if outbox_whole_repository {
+        return terminal_whole_repository;
     }
     if terminal_payload_song_ids.is_empty() {
         return false;
@@ -825,7 +838,7 @@ fn project_library_outboxes_into_control_db(
     app_data_dir: &std::path::Path,
 ) {
     use crate::remote::control_db::{
-        bind_song_ids_mark_pending_and_dirty_tx, get_operation, upsert_operation, OperationKind,
+        bind_scope_mark_pending_and_dirty_tx, get_operation, upsert_operation, OperationKind,
         OperationPayload, OperationRow, OperationState,
     };
     use crate::remote::library_outbox::{
@@ -871,13 +884,17 @@ fn project_library_outboxes_into_control_db(
         if rows.is_empty() {
             continue;
         }
-        let Ok(control) = remote_state.control_db.lock() else {
+        let Ok(control_db) = remote_state.control_db() else {
+            tracing::warn!("control DB unavailable during outbox projection");
+            continue;
+        };
+        let Ok(control) = control_db.lock() else {
             tracing::warn!("control DB lock poisoned during outbox projection");
             continue;
         };
         let now = crate::remote::types::current_unix_time_ms();
         for row in rows {
-            if row.song_ids.is_empty() {
+            if row.song_ids.is_empty() && !row.whole_repository {
                 continue;
             }
             let projected = match get_operation(&control, &row.operation_id) {
@@ -888,13 +905,15 @@ fn project_library_outboxes_into_control_db(
                     let payload_ids = crate::remote::control_db::OperationPayload::from_json(
                         &existing.payload_json,
                     )
-                    .map(|p| p.song_ids)
+                    .map(|p| (p.song_ids, p.whole_repository))
                     .unwrap_or_default();
                     if residual_outbox_safe_to_drop(
                         &existing.library_id,
                         &library_id,
                         &row.song_ids,
-                        &payload_ids,
+                        row.whole_repository,
+                        &payload_ids.0,
+                        payload_ids.1,
                     ) {
                         true
                     } else {
@@ -905,16 +924,18 @@ fn project_library_outboxes_into_control_db(
                         false
                     }
                 }
-                Ok(Some(_)) => bind_song_ids_mark_pending_and_dirty_tx(
+                Ok(Some(_)) => bind_scope_mark_pending_and_dirty_tx(
                     &control,
                     &row.operation_id,
                     &library_id,
                     &row.song_ids,
+                    row.whole_repository,
                 )
                 .is_ok(),
                 Ok(None) => {
                     let payload = OperationPayload {
                         song_ids: row.song_ids.clone(),
+                        whole_repository: row.whole_repository,
                         percent: 0,
                         detail: Some("Recovered from library outbox".to_owned()),
                         ..Default::default()
@@ -948,11 +969,12 @@ fn project_library_outboxes_into_control_db(
                         updated_at_ms: now,
                     };
                     match upsert_operation(&control, &op) {
-                        Ok(()) => bind_song_ids_mark_pending_and_dirty_tx(
+                        Ok(()) => bind_scope_mark_pending_and_dirty_tx(
                             &control,
                             &row.operation_id,
                             &library_id,
                             &row.song_ids,
+                            row.whole_repository,
                         )
                         .is_ok(),
                         Err(error) => {
@@ -1015,9 +1037,13 @@ fn recover_stale_part_files_for_all_libraries(
     }
 }
 
-fn spawn_durable_operation_executor(app_state: AppState) {
+fn spawn_durable_operation_executor<R: tauri::Runtime>(
+    app_state: AppState,
+    app_handle: tauri::AppHandle<R>,
+) {
     std::thread::spawn(move || {
-        if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+        let publish_changes = crate::remote::PublishChanges::new(&app_state, &app_handle);
+        if let Err(error) = publish_changes.recover_pending() {
             tracing::warn!(
                 "durable operation executor initial pass failed: {:?}",
                 error
@@ -1027,7 +1053,7 @@ fn spawn_durable_operation_executor(app_state: AppState) {
         let poll_interval = std::time::Duration::from_secs(30);
         loop {
             std::thread::sleep(poll_interval);
-            if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+            if let Err(error) = publish_changes.recover_pending() {
                 tracing::warn!(
                     "durable operation executor periodic pass failed: {:?}",
                     error
@@ -1044,7 +1070,9 @@ mod residual_outbox_tests {
     #[test]
     fn equal_sets_are_safe() {
         let ids = vec!["a".to_owned(), "b".to_owned()];
-        assert!(residual_outbox_safe_to_drop("lib", "lib", &ids, &ids));
+        assert!(residual_outbox_safe_to_drop(
+            "lib", "lib", &ids, false, &ids, false
+        ));
     }
 
     #[test]
@@ -1052,7 +1080,7 @@ mod residual_outbox_tests {
         let outbox = vec!["a".to_owned()];
         let payload = vec!["a".to_owned(), "b".to_owned()];
         assert!(residual_outbox_safe_to_drop(
-            "lib", "lib", &outbox, &payload
+            "lib", "lib", &outbox, false, &payload, false
         ));
     }
 
@@ -1061,7 +1089,7 @@ mod residual_outbox_tests {
         let outbox = vec!["a".to_owned(), "b".to_owned()];
         let payload = vec!["a".to_owned()];
         assert!(!residual_outbox_safe_to_drop(
-            "lib", "lib", &outbox, &payload
+            "lib", "lib", &outbox, false, &payload, false
         ));
     }
 
@@ -1070,14 +1098,36 @@ mod residual_outbox_tests {
         let outbox = vec!["a".to_owned()];
         let payload: Vec<String> = vec![];
         assert!(!residual_outbox_safe_to_drop(
-            "lib", "lib", &outbox, &payload
+            "lib", "lib", &outbox, false, &payload, false
         ));
     }
 
     #[test]
     fn library_mismatch_is_not_safe() {
         let ids = vec!["a".to_owned()];
-        assert!(!residual_outbox_safe_to_drop("lib-a", "lib-b", &ids, &ids));
+        assert!(!residual_outbox_safe_to_drop(
+            "lib-a", "lib-b", &ids, false, &ids, false
+        ));
+    }
+
+    #[test]
+    fn matching_whole_repository_scopes_are_safe() {
+        assert!(residual_outbox_safe_to_drop(
+            "lib",
+            "lib",
+            &[],
+            true,
+            &[],
+            true
+        ));
+        assert!(!residual_outbox_safe_to_drop(
+            "lib",
+            "lib",
+            &[],
+            true,
+            &[],
+            false
+        ));
     }
 }
 

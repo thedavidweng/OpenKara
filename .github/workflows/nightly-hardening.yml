@@ -81,7 +81,6 @@ jobs:
   # Nightly evidence and only re-runs product packaging + Windows #284 core.
   separation-smoke:
     name: ${{ matrix.name }}
-    needs: []
     strategy:
       fail-fast: false
       matrix:

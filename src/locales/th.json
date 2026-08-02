@@ -523,6 +523,10 @@
       "xnnpackDescription": "CPU ที่เร่งด้วย SIMD — เร็วกว่าบน Apple Silicon และ x86 รุ่นใหม่",
       "directml": "DirectML",
       "directmlDescription": "การเร่ง GPU ด้วย DirectX 12 สำหรับ Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "การเร่ง Neural Engine และ GPU สำหรับ Apple Silicon",
+      "incompatible": "ไม่รองรับ",
+      "incompatibleWarning": "ตัวประมวลผลนี้ไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
       "note": "การเปลี่ยนแปลงจะมีผลในการแยกเสียงครั้งถัดไป"
     },
     "integrity": {
@@ -652,8 +656,11 @@
     "lyrics_not_ready": "เนื้อเพลงไม่พร้อมใช้งาน",
     "network_unavailable": "ข้อผิดพลาดเครือข่าย",
     "invalid_playback_state": "ข้อผิดพลาดการเล่น",
+    "execution_provider_unavailable": "ไม่พบตัวประมวลผลการทำงาน",
+    "executionProviderUnavailableMessage": "ตัวประมวลผลที่เลือกไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",
+    "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
     "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง"
   },
   "updater": {

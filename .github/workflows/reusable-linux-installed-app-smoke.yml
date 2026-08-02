@@ -23,6 +23,11 @@ on:
         description: "Tauri bundle target triple"
         required: true
         type: string
+      updater_target:
+        description: "Tauri updater platform key"
+        required: false
+        type: string
+        default: ""
       scenario:
         description: "Automation scenario name"
         required: false
@@ -43,6 +48,11 @@ on:
         required: false
         type: boolean
         default: false
+      release_tag:
+        description: "Release tag used as the evidence subject"
+        required: false
+        type: string
+        default: ""
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         description: "Minisign private key for updater artifacts"
@@ -137,19 +147,23 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          bundles="appimage"
+          if [ "${RELEASE_BUILD}" = "true" ]; then
+            bundles="appimage,deb"
+          fi
           # automation-smoke only: packs the openkara CLI entry point, not the
           # separate automation-driver binary (see Cargo.toml features).
           if [ "${RELEASE_BUILD}" = "true" ]; then
-            pnpm tauri build --ci --bundles appimage --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+            pnpm tauri build --ci --bundles "${bundles}" --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
-            pnpm tauri build --ci --bundles appimage --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
+            pnpm tauri build --ci --bundles "${bundles}" --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
           fi
 
       - name: Build automation driver
         working-directory: src-tauri
         env:
           RUST_TARGET: ${{ inputs.rust_target }}
-        run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver
+        run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver --bin openkara_release_evidence
 
       - name: Upload AppImage
         if: always()
@@ -157,6 +171,15 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-installer
           path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Upload Debian package
+        if: ${{ inputs.release_build }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-deb
+          path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/deb/*.deb
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
@@ -169,6 +192,15 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
+      - name: Upload release evidence driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: src-tauri/target/${{ inputs.rust_target }}/release/openkara_release_evidence
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
       - name: Upload Linux updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -177,7 +209,6 @@ jobs:
           path: |
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
-            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/latest.json
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 
@@ -230,6 +261,26 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-driver
           path: ${{ runner.temp }}/driver
+
+      - name: Download release evidence driver
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-evidence-driver
+          path: ${{ runner.temp }}/evidence-driver
+
+      - name: Download release updater artifacts
+        if: ${{ inputs.release_build }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-updater
+          path: ${{ runner.temp }}/updater
+
+      - name: Download Debian candidate
+        if: ${{ inputs.release_build }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact_prefix }}-deb
+          path: ${{ runner.temp }}/deb
 
       - name: Make driver executable
         env:
@@ -312,10 +363,41 @@ jobs:
           SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
         run: |
           set -euo pipefail
-          node scripts/validate-installed-app-smoke.mjs \
-            "$SMOKE_ROOT/prepare/installed-app-smoke-report.json" \
-            "$SMOKE_ROOT/restart/installed-app-smoke-report.json" \
-            "$SMOKE_ROOT"
+          evidence_driver="${RUNNER_TEMP}/evidence-driver/openkara_release_evidence"
+          chmod +x "$evidence_driver"
+          "$evidence_driver" validate-automation-report \
+            --input "$SMOKE_ROOT/automation-report.json" \
+            --output "$SMOKE_ROOT/installed-app-smoke-validation.json"
+
+      - name: Generate Rust release evidence fragment
+        if: ${{ always() && inputs.release_build }}
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-installed-app-smoke
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.openkara_version }}
+          RELEASE_PLATFORM: ${{ inputs.updater_target }}
+          RELEASE_SCENARIO: ${{ inputs.scenario }}
+        run: |
+          set -euo pipefail
+          evidence_driver="${RUNNER_TEMP}/evidence-driver/openkara_release_evidence"
+          chmod +x "$evidence_driver"
+          candidate_appimage=$(find "${RUNNER_TEMP}/installer" -name "*.AppImage" -type f | head -n 1)
+          artifact_args=(--artifact "installer:${RELEASE_PLATFORM}:${candidate_appimage}")
+          candidate_deb=$(find "${RUNNER_TEMP}/deb" -name "*.deb" -type f | head -n 1)
+          artifact_args+=(--artifact "deb:${RELEASE_PLATFORM}:${candidate_deb}")
+          while IFS= read -r -d '' artifact; do
+            artifact_args+=(--artifact "updater-${artifact##*/}:${RELEASE_PLATFORM}:${artifact}")
+          done < <(find "${RUNNER_TEMP}/updater" -type f \( -name "*.tar.gz" -o -name "*.sig" \) -print0)
+          "$evidence_driver" fragment-from-automation-report \
+            --input "$SMOKE_ROOT/automation-report.json" \
+            --repository "$GITHUB_REPOSITORY" \
+            --commit-sha "$GITHUB_SHA" \
+            --tag "$RELEASE_TAG" \
+            --version "$RELEASE_VERSION" \
+            --platform "$RELEASE_PLATFORM" \
+            --scenario "$RELEASE_SCENARIO" \
+            "${artifact_args[@]}" \
+            --output "$SMOKE_ROOT/release-evidence-fragment.json"
 
       - name: Upload smoke reports
         if: always()
@@ -326,6 +408,7 @@ jobs:
             ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
             ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-validation.json
             ${{ runner.temp }}/openkara-installed-app-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/release-evidence-fragment.json
             ${{ runner.temp }}/openkara-installed-app-smoke/**/local-audio-smoke-report.*
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
@@ -371,10 +454,12 @@ jobs:
           pass=$(node -p "require(process.env.VALIDATION_PATH).fail_count === 0")
           echo "passed=$pass" >> "$GITHUB_OUTPUT"
 
-          echo "# Linux installed-app smoke validation" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          node -e "
-            const fs = require('fs');
-            const v = JSON.parse(fs.readFileSync(process.env.VALIDATION_PATH, 'utf8'));
-            console.log(\`Pass: \${v.pass_count}, Fail: \${v.fail_count}, Total: \${v.assertions.length}\`);
-          " >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "# Linux installed-app smoke validation"
+            echo ""
+            node -e "
+              const fs = require('fs');
+              const v = JSON.parse(fs.readFileSync(process.env.VALIDATION_PATH, 'utf8'));
+              console.log(\`Pass: \${v.pass_count}, Fail: \${v.fail_count}, Total: \${v.assertions.length}\`);
+            "
+          } >> "$GITHUB_STEP_SUMMARY"

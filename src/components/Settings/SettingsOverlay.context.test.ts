@@ -12,6 +12,7 @@ const mockGetAppSettingsSnapshot = vi.hoisted(() =>
     lyricsFontStep: 2,
     executionProvider: "cpu",
     availableExecutionProviders: ["cpu"],
+    compatibleExecutionProviders: ["cpu"],
   }),
 );
 

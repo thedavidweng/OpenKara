@@ -524,6 +524,10 @@
       "xnnpackDescription": "SIMD-beschleunigte CPU — schneller auf Apple Silicon und modernem x86",
       "directml": "DirectML",
       "directmlDescription": "DirectX-12-GPU-Beschleunigung für Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Beschleunigung durch Neural Engine und GPU auf Apple Silicon",
+      "incompatible": "Nicht kompatibel",
+      "incompatibleWarning": "Dieser Anbieter ist mit diesem Gerät nicht kompatibel. Wechseln Sie in den Einstellungen zu CPU.",
       "note": "Änderungen werden bei der nächsten Trennung wirksam."
     },
     "integrity": {
@@ -653,8 +657,11 @@
     "lyrics_not_ready": "Liedtexte nicht verfügbar",
     "network_unavailable": "Netzwerkfehler",
     "invalid_playback_state": "Wiedergabefehler",
+    "execution_provider_unavailable": "Ausführungsanbieter nicht verfügbar",
+    "executionProviderUnavailableMessage": "Der ausgewählte Anbieter ist mit diesem Gerät nicht kompatibel. Wechseln Sie in den Einstellungen zu CPU.",
     "separation_failed": "Trennung fehlgeschlagen",
     "internal": "Interner Fehler",
+    "remote_repository_unavailable": "Remote-Repository nicht verfügbar",
     "somethingWentWrong": "Etwas ist schiefgelaufen"
   },
   "updater": {

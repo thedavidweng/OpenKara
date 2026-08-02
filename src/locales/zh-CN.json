@@ -528,6 +528,10 @@
       "xnnpackDescription": "SIMD 加速 CPU — 在 Apple Silicon 和现代 x86 上更快",
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU 加速 — 适用于 Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Silicon 神经引擎和 GPU 加速",
+      "incompatible": "不兼容",
+      "incompatibleWarning": "所选提供程序与此设备不兼容。请在设置中切换到 CPU。",
       "note": "更改将在下次分离时生效。"
     },
     "integrity": {
@@ -653,8 +657,11 @@
     "lyrics_not_ready": "歌词不可用",
     "network_unavailable": "网络错误",
     "invalid_playback_state": "播放错误",
+    "execution_provider_unavailable": "执行提供程序不可用",
+    "executionProviderUnavailableMessage": "所选提供程序与此设备不兼容。请在设置中切换到 CPU。",
     "separation_failed": "分离失败",
     "internal": "内部错误",
+    "remote_repository_unavailable": "远程仓库不可用",
     "somethingWentWrong": "出了点问题"
   },
   "updater": {

@@ -10,8 +10,7 @@ use openkara_lib::{
     audio::playback::PlaybackController,
     cache,
     commands::{
-        import::import_songs_from_paths,
-        lyrics::{fetch_lyrics_from_connection, set_lyrics_offset_in_connection},
+        import::import_songs_from_paths, lyrics::set_lyrics_offset_in_connection,
         playback::play_song_from_library,
     },
     config::{ExecutionProviderPreference, StemMode},
@@ -115,7 +114,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         .expect_at_most(0)
         .create();
 
-    let lyrics = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &LrcLibClient::new(server.url()),
@@ -123,15 +122,21 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         &song_id,
     )
     .expect("lyrics fetch should fall back to the sidecar file");
+    assert!(persisted.changed);
+    let cached = cache::lyrics::get_lyrics_cache_entry(&connection, &song_id)
+        .expect("lyrics cache lookup should succeed")
+        .expect("sidecar lyrics should be cached");
     assert_eq!(
-        lyrics.source,
-        Some(openkara_lib::lyrics::fetch::LyricsSource::Sidecar)
+        cached.source,
+        openkara_lib::lyrics::fetch::LyricsSource::Sidecar
     );
-    assert_eq!(lyrics.lines.len(), 2);
+    let lines = openkara_lib::lyrics::fetch::parse_lyrics_auto(&cached.lrc)
+        .expect("sidecar lyrics should parse");
+    assert_eq!(lines.len(), 2);
 
     set_lyrics_offset_in_connection(&connection, &song_id, 500)
         .expect("offset should persist for fetched lyrics");
-    let cached_lyrics = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &LrcLibClient::new("http://127.0.0.1:9"),
@@ -139,6 +144,10 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         &song_id,
     )
     .expect("second fetch should read lyrics from cache");
+    assert!(!persisted.changed);
+    let cached_lyrics = cache::lyrics::get_lyrics_cache_entry(&connection, &song_id)
+        .expect("lyrics cache lookup should succeed")
+        .expect("cached lyrics should exist");
     assert_eq!(cached_lyrics.offset_ms, 500);
 
     mock.assert();

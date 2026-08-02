@@ -526,6 +526,10 @@
       "xnnpackDescription": "CPU с ускорением SIMD — быстрее на Apple Silicon и современных x86",
       "directml": "DirectML",
       "directmlDescription": "Ускорение GPU через DirectX 12 для Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Ускорение Neural Engine и GPU на Apple Silicon",
+      "incompatible": "Несовместимо",
+      "incompatibleWarning": "Этот провайдер несовместим с данным устройством. Переключите CPU в настройках.",
       "note": "Изменения вступят в силу при следующем разделении."
     },
     "integrity": {
@@ -655,8 +659,11 @@
     "lyrics_not_ready": "Текст недоступен",
     "network_unavailable": "Ошибка сети",
     "invalid_playback_state": "Ошибка воспроизведения",
+    "execution_provider_unavailable": "Провайдер выполнения недоступен",
+    "executionProviderUnavailableMessage": "Выбранный провайдер несовместим с данным устройством. Переключите CPU в настройках.",
     "separation_failed": "Ошибка разделения",
     "internal": "Внутренняя ошибка",
+    "remote_repository_unavailable": "Удалённый репозиторий недоступен",
     "somethingWentWrong": "Что-то пошло не так"
   },
   "updater": {

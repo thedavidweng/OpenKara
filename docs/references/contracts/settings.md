@@ -15,8 +15,9 @@ Field or command semantic changes must update this document before changing UI c
 | `cover_art_backdrop` | `boolean` | Show blurred cover-art backdrop in player |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
-| `execution_provider` | `string` | Active ONNX Runtime execution provider |
-| `available_execution_providers` | `Vec<string>` | Providers available on current platform |
+| `execution_provider` | `string` | Active ONNX Runtime execution provider. When unset, OpenKara selects a runtime provider only when the current target and host capability support it; otherwise it selects CPU. Apple Silicon uses CoreML, Windows uses DirectML only with a usable D3D12 hardware adapter, and Intel macOS/Linux use the measured CPU default. |
+| `available_execution_providers` | `Vec<string>` | Provider choices for the current target. A choice can be present but incompatible with the current host. |
+| `compatible_execution_providers` | `Vec<string>` | Provider choices that the current host can use. CPU is always present. If `execution_provider` is not in this list, the Settings screen marks it and asks the user to switch to CPU. Separation rejects that explicit choice with `execution_provider_unavailable`. |
 | `eq_enabled` | `bool` | Whether the five-band equalizer is enabled |
 | `eq_gains_db` | `[f32; 5]` | Per-band dB gains, each clamped to `[-12, 12]` |
 | `crossfade_enabled` | `bool` | Whether equal-power crossfade is enabled |

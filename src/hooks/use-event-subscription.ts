@@ -1,13 +1,9 @@
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
-
-interface EventSubscription {
-  event: string;
-  handler: (payload: unknown) => void;
-}
+import type { RuntimeEventSubscription } from "@/runtime/event-source";
+import { createRuntimeEventRuntime } from "@/runtime/event-runtime";
 
 export function useEventSubscriptions(
-  subscriptions: EventSubscription[],
+  subscriptions: RuntimeEventSubscription[],
   enabled: boolean,
   onCleanup?: () => void,
   deps: React.DependencyList = [],
@@ -15,28 +11,11 @@ export function useEventSubscriptions(
   useEffect(() => {
     if (!enabled) return;
 
-    let cancelled = false;
-    const unlisteners: (() => void)[] = [];
-
-    const setup = async () => {
-      for (const sub of subscriptions) {
-        const unlisten = await listen(sub.event, (e) => {
-          if (!cancelled) sub.handler(e.payload);
-        });
-        if (cancelled) {
-          unlisten();
-        } else {
-          unlisteners.push(unlisten);
-        }
-      }
-    };
-
-    void setup();
+    const runtime = createRuntimeEventRuntime(subscriptions, onCleanup);
+    void runtime.start();
 
     return () => {
-      cancelled = true;
-      onCleanup?.();
-      unlisteners.forEach((fn) => fn());
+      runtime.stop();
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);

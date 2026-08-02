@@ -19,7 +19,7 @@ use openkara_lib::{
         import::{
             extract_embedded_cover_art_from_connection, set_songs_instrumental_in_connection,
         },
-        lyrics::{fetch_lyrics_from_connection, set_lyrics_offset_in_connection},
+        lyrics::set_lyrics_offset_in_connection,
     },
     library::Song,
     library_root::LibraryRoot,
@@ -126,7 +126,7 @@ fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
     )
     .expect("lyrics cache insert should succeed");
 
-    let payload = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &LrcLibClient::new("http://127.0.0.1:9"),
@@ -135,12 +135,17 @@ fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
     )
     .expect("cache-backed lyrics fetch should succeed");
 
-    assert_eq!(payload.song_id, "song-a");
-    assert_eq!(payload.offset_ms, 250);
-    assert_eq!(payload.source, Some(LyricsSource::LrcLib));
-    assert_eq!(payload.lines.len(), 1);
-    assert_eq!(payload.lines[0].time_ms, 10_000);
-    assert_eq!(payload.lines[0].text, "Look at the stars");
+    assert!(!persisted.changed);
+    let cached = lyrics::get_lyrics_cache_entry(&connection, &song.hash)
+        .expect("lyrics cache lookup should succeed")
+        .expect("lyrics cache entry should exist");
+    assert_eq!(cached.offset_ms, 250);
+    assert_eq!(cached.source, LyricsSource::LrcLib);
+    let lines = openkara_lib::lyrics::fetch::parse_lyrics_auto(&cached.lrc)
+        .expect("cached lyrics should parse");
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].time_ms, 10_000);
+    assert_eq!(lines[0].text, "Look at the stars");
 }
 
 #[test]
@@ -197,7 +202,7 @@ fn fetch_lyrics_fetches_remote_lrc_api_and_persists_it_in_cache() {
         .create();
 
     let lrcapi_client = LrcApiClient::new(lrcapi_server.url());
-    let payload = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &LrcLibClient::new(lrclib_server.url()),
@@ -206,17 +211,18 @@ fn fetch_lyrics_fetches_remote_lrc_api_and_persists_it_in_cache() {
     )
     .expect("remote lyrics fetch should succeed");
 
-    assert_eq!(payload.song_id, "song-b");
-    assert_eq!(payload.offset_ms, 0);
-    assert_eq!(payload.source, Some(LyricsSource::LrcApi));
-    assert_eq!(payload.lines.len(), 1);
-    assert_eq!(payload.lines[0].time_ms, 35_660);
+    assert!(persisted.changed);
 
     let cached = lyrics::get_lyrics_cache_entry(&connection, &song.hash)
         .expect("lyrics cache lookup should succeed")
         .expect("lyrics cache entry should exist after fetch");
     assert_eq!(cached.source, LyricsSource::LrcApi);
     assert_eq!(cached.lrc, "[00:35.66] Look at the stars");
+    assert_eq!(cached.offset_ms, 0);
+    let lines = openkara_lib::lyrics::fetch::parse_lyrics_auto(&cached.lrc)
+        .expect("fetched lyrics should parse");
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].time_ms, 35_660);
 
     lrclib_mock.assert();
     lrcapi_mock.assert();
@@ -259,7 +265,7 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
         .with_body(r#"{"message":"未找到歌词"}"#)
         .create();
 
-    let payload = fetch_lyrics_from_connection(
+    let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
         &LrcLibClient::new(lrclib_server.url()),
@@ -268,14 +274,13 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     )
     .expect("lyrics miss should still succeed");
 
-    assert_eq!(payload.song_id, "song-c");
-    assert!(payload.lines.is_empty());
-    assert_eq!(payload.offset_ms, 0);
-    assert_eq!(payload.source, None);
+    assert!(persisted.changed);
     let cached = lyrics::get_lyrics_cache_entry(&connection, &song.hash)
         .expect("lyrics cache lookup should succeed")
         .expect("negative cache should be stored");
     assert_eq!(cached.source, LyricsSource::Absent);
+    assert!(cached.lrc.is_empty());
+    assert_eq!(cached.offset_ms, 0);
 
     lrclib_mock.assert();
     lrcapi_mock.assert();

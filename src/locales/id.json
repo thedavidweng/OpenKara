@@ -523,6 +523,10 @@
       "xnnpackDescription": "CPU dipercepat SIMD — lebih cepat di Apple Silicon dan x86 modern",
       "directml": "DirectML",
       "directmlDescription": "Akselerasi GPU DirectX 12 untuk Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Akselerasi Neural Engine dan GPU untuk Apple Silicon",
+      "incompatible": "Tidak kompatibel",
+      "incompatibleWarning": "Penyedia ini tidak kompatibel dengan perangkat ini. Ganti ke CPU di Pengaturan.",
       "note": "Perubahan berlaku pada pemisahan berikutnya."
     },
     "integrity": {
@@ -652,8 +656,11 @@
     "lyrics_not_ready": "Lirik Tidak Tersedia",
     "network_unavailable": "Kesalahan Jaringan",
     "invalid_playback_state": "Kesalahan Pemutaran",
+    "execution_provider_unavailable": "Penyedia Eksekusi Tidak Tersedia",
+    "executionProviderUnavailableMessage": "Penyedia yang dipilih tidak kompatibel dengan perangkat ini. Ganti ke CPU di Pengaturan.",
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
+    "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",
     "somethingWentWrong": "Terjadi kesalahan"
   },
   "updater": {

@@ -1,5 +1,6 @@
 export type ErrorCode =
   | "database_unavailable"
+  | "remote_repository_unavailable"
   | "media_read_failed"
   | "song_not_found"
   | "model_unavailable"
@@ -9,6 +10,7 @@ export type ErrorCode =
   | "lyrics_not_ready"
   | "network_unavailable"
   | "invalid_playback_state"
+  | "execution_provider_unavailable"
   | "separation_failed"
   | "internal";
 
@@ -212,7 +214,7 @@ export interface ImportLyricsResult {
 
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
-export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
+export type ExecutionProvider = "cpu" | "xnnpack" | "coreml" | "directml";
 export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -228,6 +230,7 @@ export interface AppSettings {
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;
   available_execution_providers: ExecutionProvider[];
+  compatible_execution_providers: ExecutionProvider[];
   eq_enabled: boolean;
   eq_gains_db: [number, number, number, number, number];
   crossfade_enabled: boolean;
@@ -531,6 +534,8 @@ export type LyricsSource =
   | "manual"
   | "manual_ttml"
   | "manual_lys";
+
+export type LyricsOnlineFetchIntent = "automatic_upgrade" | "user_replace";
 
 export interface WordToken {
   time_ms: number;

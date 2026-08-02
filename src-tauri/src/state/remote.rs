@@ -1,3 +1,4 @@
+use crate::commands::error::{remote_repository_unavailable, CommandResult};
 use crate::remote::cache_catalog::{CacheCatalog, DEFAULT_CACHE_BYTES_LIMIT};
 use crate::remote::control_db;
 use crate::remote::{RemoteAuthSession, UploadStatusSnapshot};
@@ -9,7 +10,6 @@ use std::sync::{Arc, Mutex};
 ///
 /// Two concurrent commit attempts for the same library block each other;
 /// independent asset downloads for different libraries proceed in parallel.
-/// PR#5 will use this to coordinate resumable transfers.
 pub type CommitLockMap = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 
 #[derive(Clone)]
@@ -23,15 +23,12 @@ pub struct RemoteState {
     /// `remote_cache_entries` table in the control DB is the authoritative
     /// catalog; on-disk data files are content-addressed by the cache key
     /// digest. Replaces the old in-memory-only `CacheManager`.
-    pub remote_chunk_cache: Arc<Mutex<CacheCatalog>>,
+    remote_chunk_cache: Option<Arc<Mutex<CacheCatalog>>>,
     /// Durable control-plane database handle (`remote-state.db`). Holds the
     /// authoritative local record of remote operation/outbox state, repository
     /// cleanliness, and resumable transfer offsets. Never uploaded.
-    pub control_db: Arc<Mutex<rusqlite::Connection>>,
-    /// `true` when the durable control DB could not be opened and the app
-    /// is running on an in-memory fallback. Publication, resumable recovery,
-    /// and automatic pull must fail closed when this is `true`.
-    pub control_db_degraded: bool,
+    control_db_handle: Option<Arc<Mutex<rusqlite::Connection>>>,
+    unavailable_reason: Option<String>,
     /// Per-library commit locks. See `CommitLockMap`.
     pub commit_locks: CommitLockMap,
 }
@@ -47,63 +44,37 @@ impl RemoteState {
         let max_bytes = remote_cache_bytes_limit.unwrap_or(DEFAULT_CACHE_BYTES_LIMIT);
 
         // Open the durable control DB. This stays outside every portable
-        // library and is never uploaded. WAL mode is enabled on open so
-        // concurrent readers (upload-status queries) do not block the writer.
-        //
-        // If the control DB cannot be opened, fall back to an in-memory
-        // connection so the app can still start in a degraded read-only
-        // mode. The in-memory fallback supports local library use and
-        // cached playback, but must NOT be used for durable publication,
-        // resumable recovery, or clean-state guarantees — those require a
-        // writable control DB. The `control_db_degraded` flag below
-        // distinguishes this state so callers can fail closed for
-        // operations that need durable state.
+        // library and is never uploaded.
         let control_db_path = control_db::control_db_path(app_data_dir);
-        let (control_db_conn, control_db_degraded) =
+        let (control_db_handle, mut unavailable_reason) =
             match control_db::open_control_db(&control_db_path) {
-                Ok(conn) => (conn, false),
-                Err(error) => {
-                    eprintln!(
-                        "warning: failed to open remote control DB at {}: {:?}; \
-                         starting in degraded read-only mode — publication and \
-                         resumable recovery are disabled until the control DB \
-                         is repaired",
-                        control_db_path.display(),
-                        error
-                    );
-                    let conn = rusqlite::Connection::open_in_memory()
-                        .expect("in-memory control DB fallback should always open");
-                    control_db::apply_migrations(&conn)
-                        .expect("in-memory control DB migrations should always succeed");
-                    (conn, true)
-                }
+                Ok(conn) => (Some(Arc::new(Mutex::new(conn))), None),
+                Err(error) => (
+                    None,
+                    Some(format!("failed to open remote control database: {error:?}")),
+                ),
             };
-
-        let control_db = Arc::new(Mutex::new(control_db_conn));
 
         // Open the persistent cache catalog. This runs startup reconciliation
         // (orphaned files removed, inconsistent rows discarded) before any
         // playback uses the cache.
-        let remote_chunk_cache = CacheCatalog::open(cache_dir, Arc::clone(&control_db), max_bytes)
-            .unwrap_or_else(|error| {
-                eprintln!(
-                    "warning: failed to open remote cache catalog: {:?}; \
-                 falling back to an empty in-memory-only catalog",
-                    error
-                );
-                // Fall back to an empty catalog backed by a temp dir so the app
-                // can still start in degraded mode (cache will not persist).
-                let fallback_dir = std::env::temp_dir().join("openkara-remote-cache-fallback");
-                CacheCatalog::open(fallback_dir, Arc::clone(&control_db), max_bytes)
-                    .expect("fallback cache catalog should always open")
-            });
+        let remote_chunk_cache = control_db_handle.as_ref().and_then(|control_db| {
+            match CacheCatalog::open(cache_dir, Arc::clone(control_db), max_bytes) {
+                Ok(catalog) => Some(Arc::new(Mutex::new(catalog))),
+                Err(error) => {
+                    unavailable_reason =
+                        Some(format!("failed to open remote cache catalog: {error:?}"));
+                    None
+                }
+            }
+        });
 
         Self {
             remote_auth_sessions: Arc::new(Mutex::new(HashMap::new())),
             remote_upload_statuses: Arc::new(Mutex::new(HashMap::new())),
-            remote_chunk_cache: Arc::new(Mutex::new(remote_chunk_cache)),
-            control_db,
-            control_db_degraded,
+            remote_chunk_cache,
+            control_db_handle,
+            unavailable_reason,
             commit_locks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -113,7 +84,52 @@ impl RemoteState {
     }
 
     pub fn test_fixture() -> Self {
-        Self::new(Path::new("/tmp/openkara-test-remote-cache"))
+        let path =
+            std::env::temp_dir().join(format!("openkara-test-remote-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("remote test directory should be writable");
+        let state = Self::new(&path);
+        assert!(state.is_available(), "remote test state must be available");
+        state
+    }
+
+    pub fn is_available(&self) -> bool {
+        self.control_db_handle.is_some() && self.remote_chunk_cache.is_some()
+    }
+
+    pub fn ensure_available(&self) -> CommandResult<()> {
+        if self.is_available() {
+            return Ok(());
+        }
+        Err(remote_repository_unavailable(
+            self.unavailable_reason
+                .as_deref()
+                .unwrap_or("remote repository state is unavailable"),
+        ))
+    }
+
+    pub fn control_db(&self) -> CommandResult<&Arc<Mutex<rusqlite::Connection>>> {
+        self.control_db_handle.as_ref().ok_or_else(|| {
+            remote_repository_unavailable(
+                self.unavailable_reason
+                    .as_deref()
+                    .unwrap_or("remote control database is unavailable"),
+            )
+        })
+    }
+
+    pub fn remote_chunk_cache(&self) -> CommandResult<&Arc<Mutex<CacheCatalog>>> {
+        self.remote_chunk_cache.as_ref().ok_or_else(|| {
+            remote_repository_unavailable(
+                self.unavailable_reason
+                    .as_deref()
+                    .unwrap_or("remote cache catalog is unavailable"),
+            )
+        })
+    }
+
+    #[cfg(test)]
+    pub fn replace_control_db(&mut self, connection: rusqlite::Connection) {
+        self.control_db_handle = Some(Arc::new(Mutex::new(connection)));
     }
 
     /// Resolve the per-library commit lock, creating it on first use. The
