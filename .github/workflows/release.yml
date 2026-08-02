@@ -9,11 +9,6 @@ on:
         description: "Release version (e.g. 1.0.0)"
         required: true
         type: string
-      notes:
-        description: "Extra release notes (appended after default text)"
-        required: false
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -73,73 +68,20 @@ jobs:
           fi
           echo "package.json version ${package_version} matches release ${RELEASE_TAG}."
 
-      - name: Build release notes
+      - name: Verify draft release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
-          INPUT_NOTES: ${{ github.event.inputs.notes }}
         run: |
           set -euo pipefail
-
-          # release-please creates the draft release with changelog notes.
-          # Draft releases are hidden from the tag endpoint, so fall back to
-          # the releases list (same pattern as scripts/release-metadata.mjs).
-          if gh release view "${RELEASE_TAG}" --json body -q .body > RELEASE_NOTES.md 2>/dev/null; then
-            echo "Found release for ${RELEASE_TAG} via tag endpoint"
-          else
-            release_body="$(gh api "repos/${GH_REPO}/releases" --paginate \
-              --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].body // empty")"
-            if [ -n "${release_body}" ]; then
-              echo "${release_body}" > RELEASE_NOTES.md
-              echo "Found draft release for ${RELEASE_TAG} via releases list"
-            else
-              echo "::warning::No release found for ${RELEASE_TAG}. Using minimal release notes."
-              echo "## Release ${RELEASE_TAG}" > RELEASE_NOTES.md
-            fi
-          fi
-
-          # Append installation section. Mirrors README "Install from Release"
-          # so users can install straight from the GitHub Release page.
-          if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
-            printf '\n\n' >> RELEASE_NOTES.md
-            cat .github/release-notes-installation.md >> RELEASE_NOTES.md
-          fi
-
-          if [ -n "${INPUT_NOTES}" ]; then
-            {
-              echo ""
-              echo "---"
-              echo "${INPUT_NOTES}"
-            } >> RELEASE_NOTES.md
-          fi
-
           release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
-            --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].id // empty")"
-          if [ -n "${release_id}" ]; then
-            gh api --method PATCH "repos/${GH_REPO}/releases/${release_id}" \
-              -F "body=@RELEASE_NOTES.md" >/dev/null
-            echo "Updated release notes for ${RELEASE_TAG}"
-          else
-            prerelease_args=()
-            if [[ "${RELEASE_TAG}" == *-* ]]; then
-              prerelease_args+=(--prerelease)
-            fi
-            gh release create "${RELEASE_TAG}" \
-              --repo "${GH_REPO}" \
-              --draft \
-              --title "OpenKara v${RELEASE_TAG#v}" \
-              --notes-file RELEASE_NOTES.md \
-              "${prerelease_args[@]}"
-            echo "Created draft release for ${RELEASE_TAG}"
+            --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\" and .draft == true)] | .[0].id // empty")"
+          if [ -z "${release_id}" ]; then
+            echo "::error::No draft GitHub Release is bound to ${RELEASE_TAG}. Run the Release Please workflow before dispatching Release."
+            exit 1
           fi
-
-      - name: Upload release notes
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-notes
-          path: RELEASE_NOTES.md
-          retention-days: 5
+          echo "Verified draft release ${release_id} for ${RELEASE_TAG}."
 
   # Release gate profile (docs/CI_LAYERS.md):
   # - Windows: full clean/upgrade + #284 fault recovery + separation after heal
