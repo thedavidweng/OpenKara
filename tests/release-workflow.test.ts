@@ -224,7 +224,18 @@ describe("release workflow", () => {
     );
     expect(macOSValidationStep).toContain("if: ${{ inputs.release_build }}");
     expect(macOSValidationStep).toContain('-name "*.tar.gz"');
-    expect(macOSValidationStep).toContain('-name "*.sig"');
+    expect(macOSValidationStep).toContain(
+      "RELEASE_TARGET: ${{ inputs.updater_target }}",
+    );
+    expect(macOSValidationStep).toContain(
+      'updater_name="OpenKara_${RELEASE_VERSION}_${RELEASE_TARGET}.app.tar.gz"',
+    );
+    expect(macOSValidationStep).toContain(
+      'cp "$archive" "$UPDATER_DIR/$updater_name"',
+    );
+    expect(macOSValidationStep).toContain(
+      'cp "$signature" "$UPDATER_DIR/$updater_name.sig"',
+    );
     expect(macOSValidationStep).toContain(
       "No macOS updater archive was produced.",
     );
@@ -277,12 +288,17 @@ describe("release workflow", () => {
       "Upload macOS updater artifacts",
     );
     expect(macOSUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz",
-    );
-    expect(macOSUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig",
+      "path: ${{ runner.temp }}/macos-updater",
     );
     expect(macOSUpdaterStep).toContain("if-no-files-found: error");
+
+    const macOSEvidenceStep = readWorkflowStep(
+      macOSWorkflow,
+      "Generate Rust release evidence fragment",
+    );
+    expect(macOSEvidenceStep).toContain(
+      'find "${RUNNER_TEMP}/updater" -type f',
+    );
 
     const linuxUpdaterStep = readWorkflowStep(
       linuxWorkflow,
