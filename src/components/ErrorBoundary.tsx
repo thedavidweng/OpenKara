@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import i18next from "@/lib/i18n";
 import { windowReady } from "@/lib/tauri";
 
 interface ErrorBoundaryProps {
@@ -38,16 +39,17 @@ export class ErrorBoundary extends Component<
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--color-bg)] p-8 text-center">
           <h1 className="text-xl font-semibold text-[var(--color-text)]">
-            Something went wrong
+            {i18next.t("errors.somethingWentWrong")}
           </h1>
           <p className="max-w-md text-[13px] text-[var(--color-text-dim)]">
-            {this.state.error?.message || "An unexpected error occurred."}
+            {this.state.error?.message ||
+              i18next.t("errors.somethingWentWrong")}
           </p>
           <button
             onClick={this.handleReload}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent-hover)]"
           >
-            Reload
+            {i18next.t("common.tryAgain")}
           </button>
         </div>
       );

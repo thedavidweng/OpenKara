@@ -1,6 +1,7 @@
+use serde::Deserialize;
 use tauri::{
-    menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
-    AppHandle, Emitter, Runtime,
+    menu::{AboutMetadata, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
+    AppHandle, Emitter, Manager, Runtime,
 };
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -24,48 +25,76 @@ const MENU_ITEM_SWITCH_LIBRARY: &str = "app.switch-library";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const MENU_ITEM_TOGGLE_SIDEBAR: &str = "view.toggle-sidebar";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_ITEM_COPY_DEBUG_INFO: &str = "help.copy-debug-info";
+const MENU_LABEL_PLACEHOLDER: &str = "";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_APP: &str = "app.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_FILE: &str = "file.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_EDIT: &str = "edit.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_VIEW: &str = "view.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_WINDOW: &str = "window.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_SUBMENU_HELP: &str = "help.menu";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const ABOUT_AUTHOR_CREDIT: &str = "@David Weng";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const ABOUT_REPOSITORY_URL: &str = "https://github.com/thedavidweng/OpenKara";
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const ABOUT_REPOSITORY_LABEL: &str = "Official Repository";
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeAppMenuLabels {
+    pub app_name: String,
+    pub file: String,
+    pub edit: String,
+    pub view: String,
+    pub window: String,
+    pub help: String,
+    pub import: String,
+    pub settings: String,
+    pub switch_library: String,
+    pub toggle_sidebar: String,
+    pub copy_debug_info: String,
+}
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_about_metadata<R: Runtime>(app_handle: &AppHandle<R>) -> AboutMetadata<'static> {
     let pkg_info = app_handle.package_info();
     let config = app_handle.config();
     let build_hash = option_env!("GIT_BUILD_HASH").unwrap_or("unknown");
-    let version_with_build = format!("{} (build {})", pkg_info.version, build_hash);
+    let version_with_hash = format!("{} ({})", pkg_info.version, build_hash);
 
     AboutMetadata {
         name: Some(pkg_info.name.clone()),
-        version: Some(version_with_build),
+        version: Some(version_with_hash),
         copyright: config.bundle.copyright.clone(),
         authors: Some(vec!["@David Weng".to_owned()]),
         credits: Some(ABOUT_AUTHOR_CREDIT.to_owned()),
         website: Some(ABOUT_REPOSITORY_URL.to_owned()),
-        website_label: Some(ABOUT_REPOSITORY_LABEL.to_owned()),
         ..Default::default()
     }
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let _pkg_info = app_handle.package_info();
     #[cfg(target_os = "macos")]
     let about_metadata = build_about_metadata(app_handle);
 
     let import_item = MenuItem::with_id(
         app_handle,
         MENU_ITEM_IMPORT_FILES,
-        "Import...",
+        MENU_LABEL_PLACEHOLDER,
         true,
         Some("CmdOrCtrl+O"),
     )?;
 
-    let window_menu = Submenu::with_items(
+    let window_menu = Submenu::with_id_and_items(
         app_handle,
-        "Window",
+        MENU_SUBMENU_WINDOW,
+        MENU_LABEL_PLACEHOLDER,
         true,
         &[
             &PredefinedMenuItem::minimize(app_handle, None)?,
@@ -78,15 +107,16 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
 
     let copy_debug_info_item = MenuItem::with_id(
         app_handle,
-        "help.copy-debug-info",
-        "Copy Debug Info",
+        MENU_ITEM_COPY_DEBUG_INFO,
+        MENU_LABEL_PLACEHOLDER,
         true,
         None::<&str>,
     )?;
 
-    let help_menu = Submenu::with_items(
+    let help_menu = Submenu::with_id_and_items(
         app_handle,
-        "Help",
+        MENU_SUBMENU_HELP,
+        MENU_LABEL_PLACEHOLDER,
         true,
         &[
             &copy_debug_info_item,
@@ -99,9 +129,10 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
         app_handle,
         &[
             #[cfg(target_os = "macos")]
-            &Submenu::with_items(
+            &Submenu::with_id_and_items(
                 app_handle,
-                _pkg_info.name.clone(),
+                MENU_SUBMENU_APP,
+                MENU_LABEL_PLACEHOLDER,
                 true,
                 &[
                     &PredefinedMenuItem::about(app_handle, None, Some(about_metadata.clone()))?,
@@ -109,14 +140,14 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_OPEN_SETTINGS,
-                        "Settings...",
+                        MENU_LABEL_PLACEHOLDER,
                         true,
                         Some("CmdOrCtrl+,"),
                     )?,
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_SWITCH_LIBRARY,
-                        "Switch Library...",
+                        MENU_LABEL_PLACEHOLDER,
                         true,
                         None::<&str>,
                     )?,
@@ -129,9 +160,10 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &PredefinedMenuItem::quit(app_handle, None)?,
                 ],
             )?,
-            &Submenu::with_items(
+            &Submenu::with_id_and_items(
                 app_handle,
-                "File",
+                MENU_SUBMENU_FILE,
+                MENU_LABEL_PLACEHOLDER,
                 true,
                 &[
                     &import_item,
@@ -140,7 +172,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_SWITCH_LIBRARY,
-                        "Switch Library...",
+                        MENU_LABEL_PLACEHOLDER,
                         true,
                         None::<&str>,
                     )?,
@@ -151,9 +183,10 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &PredefinedMenuItem::quit(app_handle, None)?,
                 ],
             )?,
-            &Submenu::with_items(
+            &Submenu::with_id_and_items(
                 app_handle,
-                "Edit",
+                MENU_SUBMENU_EDIT,
+                MENU_LABEL_PLACEHOLDER,
                 true,
                 &[
                     &PredefinedMenuItem::undo(app_handle, None)?,
@@ -166,15 +199,16 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                 ],
             )?,
             #[cfg(target_os = "macos")]
-            &Submenu::with_items(
+            &Submenu::with_id_and_items(
                 app_handle,
-                "View",
+                MENU_SUBMENU_VIEW,
+                MENU_LABEL_PLACEHOLDER,
                 true,
                 &[
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_TOGGLE_SIDEBAR,
-                        "Toggle Sidebar",
+                        MENU_LABEL_PLACEHOLDER,
                         true,
                         Some("CmdOrCtrl+B"),
                     )?,
@@ -205,11 +239,105 @@ pub fn handle_menu_event<R: Runtime>(app_handle: &AppHandle<R>, event: MenuEvent
         MENU_ITEM_TOGGLE_SIDEBAR => {
             let _ = app_handle.emit_to("main", MENU_ACTION_EVENT, MENU_ACTION_TOGGLE_SIDEBAR);
         }
-        "help.copy-debug-info" => {
+        MENU_ITEM_COPY_DEBUG_INFO => {
             let _ = app_handle.emit_to("main", MENU_ACTION_EVENT, MENU_ACTION_COPY_DEBUG_INFO);
         }
         _ => {}
     }
+}
+
+#[cfg(target_os = "macos")]
+fn set_menu_item_text<R: Runtime>(item: MenuItemKind<R>, text: &str) -> tauri::Result<()> {
+    match item {
+        MenuItemKind::MenuItem(item) => item.set_text(text),
+        MenuItemKind::Submenu(item) => item.set_text(text),
+        MenuItemKind::Predefined(item) => item.set_text(text),
+        MenuItemKind::Check(item) => item.set_text(text),
+        MenuItemKind::Icon(item) => item.set_text(text),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_root_menu_item_text<R: Runtime>(menu: &Menu<R>, id: &str, text: &str) -> tauri::Result<()> {
+    if let Some(item) = menu.get(id) {
+        set_menu_item_text(item, text)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn set_submenu_item_text<R: Runtime>(
+    menu: &Menu<R>,
+    submenu_id: &str,
+    item_id: &str,
+    text: &str,
+) -> tauri::Result<()> {
+    if let Some(MenuItemKind::Submenu(submenu)) = menu.get(submenu_id) {
+        if let Some(item) = submenu.get(item_id) {
+            set_menu_item_text(item, text)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_native_app_menu_labels(
+    app_handle: AppHandle,
+    labels: NativeAppMenuLabels,
+) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    if let Some(menu) = app_handle
+        .get_webview_window("main")
+        .and_then(|window| window.menu())
+    {
+        set_root_menu_item_text(&menu, MENU_SUBMENU_APP, &labels.app_name)?;
+        set_root_menu_item_text(&menu, MENU_SUBMENU_FILE, &labels.file)?;
+        set_root_menu_item_text(&menu, MENU_SUBMENU_EDIT, &labels.edit)?;
+        set_root_menu_item_text(&menu, MENU_SUBMENU_VIEW, &labels.view)?;
+        set_root_menu_item_text(&menu, MENU_SUBMENU_WINDOW, &labels.window)?;
+        set_root_menu_item_text(&menu, MENU_SUBMENU_HELP, &labels.help)?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_APP,
+            MENU_ITEM_OPEN_SETTINGS,
+            &labels.settings,
+        )?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_APP,
+            MENU_ITEM_SWITCH_LIBRARY,
+            &labels.switch_library,
+        )?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_FILE,
+            MENU_ITEM_IMPORT_FILES,
+            &labels.import,
+        )?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_FILE,
+            MENU_ITEM_SWITCH_LIBRARY,
+            &labels.switch_library,
+        )?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_VIEW,
+            MENU_ITEM_TOGGLE_SIDEBAR,
+            &labels.toggle_sidebar,
+        )?;
+        set_submenu_item_text(
+            &menu,
+            MENU_SUBMENU_HELP,
+            MENU_ITEM_COPY_DEBUG_INFO,
+            &labels.copy_debug_info,
+        )?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app_handle, labels);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -240,6 +368,5 @@ mod tests {
             ABOUT_REPOSITORY_URL,
             "https://github.com/thedavidweng/OpenKara"
         );
-        assert_eq!(ABOUT_REPOSITORY_LABEL, "Official Repository");
     }
 }

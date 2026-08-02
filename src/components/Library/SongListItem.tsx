@@ -239,7 +239,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         songHash={song.hash}
         coverArt={song.cover_art}
         thumbnailPath={song.artwork_thumb_path}
-        alt={`${songDisplayTitle(song)} cover art`}
+        alt={t("common.coverArtAlt", { title: songDisplayTitle(song) })}
         className="pointer-events-none h-11 w-11 shrink-0"
       />
 
@@ -352,7 +352,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               percent={separationStatus?.percent ?? 0}
               ariaLabel={t("progress.separating", {
                 title: songDisplayTitle(song),
-                defaultValue: `Separating: ${songDisplayTitle(song)}`,
               })}
             />
           </div>

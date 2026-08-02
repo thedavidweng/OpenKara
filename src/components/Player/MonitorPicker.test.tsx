@@ -15,19 +15,23 @@ const {
   mockSyncAirPlayAudienceState: vi.fn(),
 }));
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { index?: number }) =>
-      (
-        ({
-          "player.selectMonitor": "Select Monitor",
-          "player.localDisplayOutput": "Local Display Output",
-          "player.noDisplaysFound": "No displays found yet.",
-          "player.monitor": `Monitor ${options?.index ?? ""}`.trim(),
-        }) as const
-      )[key] ?? key,
-  }),
-}));
+vi.mock("react-i18next", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-i18next")>();
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (key: string, options?: { index?: number }) =>
+        (
+          ({
+            "player.selectMonitor": "Select Monitor",
+            "player.localDisplayOutput": "Local Display Output",
+            "player.noDisplaysFound": "No displays found yet.",
+            "player.monitor": `Monitor ${options?.index ?? ""}`.trim(),
+          }) as const
+        )[key] ?? key,
+    }),
+  };
+});
 
 vi.mock("@/lib/fullscreen-player", () => ({
   getMonitors: mockGetMonitors,

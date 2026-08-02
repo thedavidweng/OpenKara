@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Monitor } from "lucide-react";
 import { buildAudiencePresentationSpec } from "@/lib/audience-presentation";
 import { getMonitors, openFullscreenPlayer } from "@/lib/fullscreen-player";
+import i18next from "@/lib/i18n";
 import { syncAirPlayAudienceState } from "@/lib/tauri";
 
 interface MonitorInfo {
@@ -53,9 +54,10 @@ function getMonitorPickerPosition(
 
 function normalizeMonitors(
   monitors: Awaited<ReturnType<typeof getMonitors>>,
+  getFallbackName: (index: number) => string,
 ): MonitorInfo[] {
-  return monitors.map((monitor) => ({
-    name: monitor.name ?? "Display",
+  return monitors.map((monitor, index) => ({
+    name: monitor.name ?? getFallbackName(index),
     width: monitor.size.width,
     height: monitor.size.height,
   }));
@@ -76,7 +78,11 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
     getMonitors()
       .then((next) => {
         if (!cancelled) {
-          setMonitors(normalizeMonitors(next));
+          setMonitors(
+            normalizeMonitors(next, (index) =>
+              i18next.t("player.monitor", { index: index + 1 }),
+            ),
+          );
         }
       })
       .catch(() => {

@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "İptal",
     "close": "Kapat",
@@ -14,7 +33,8 @@
     "loading": "Yükleniyor…",
     "deleting": "Siliniyor...",
     "unknownTitle": "Bilinmeyen Başlık",
-    "unknownArtist": "Bilinmeyen Sanatçı"
+    "unknownArtist": "Bilinmeyen Sanatçı",
+    "coverArtAlt": "{{title}} kapak resmi"
   },
   "setup": {
     "welcome": "Karaoke kitaplığınızı ayarlayın",
@@ -63,6 +83,8 @@
     "allTracks": "Tüm Parçalar",
     "separated": "Ayrılmış",
     "localMusic": "YEREL MÜZİK",
+    "resize": "Kenar çubuğunu yeniden boyutlandır",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Sırala",
       "recently_imported": "Son içe aktarılan",
@@ -94,6 +116,9 @@
     "settings": "Ayarlar"
   },
   "windowChrome": {
+    "view": "Görünüm",
+    "switchLibrary": "Kitaplığı değiştir…",
+    "copyDebugInfo": "Hata ayıklama bilgilerini kopyala",
     "file": "Dosya",
     "edit": "Düzen",
     "window": "Pencere",
@@ -159,7 +184,8 @@
     "importPrompt": {
       "confirmTitle": "İçe aktarmayı onayla",
       "confirmMessage": "{{songCount}} şarkı içe aktarılsın mı?",
-      "confirmOk": "İçe Aktar"
+      "confirmOk": "İçe Aktar",
+      "audioLyricsFilter": "Ses ve şarkı sözleri"
     },
     "modelPreparing": "Ayırma modeli hazırlanıyor…",
     "cancelSeparation": "Ayırmayı iptal et",
@@ -180,6 +206,7 @@
     "localDisplayOutput": "Yerel Ekran Çıkışı",
     "airPlayOutput": "AirPlay Çıkışı",
     "noDisplaysFound": "Henüz ekran bulunamadı.",
+    "seekToLine": "{{index}}. satıra git",
     "reconnecting": "Yeniden bağlanılıyor… ({{attempt}}/{{max}})",
     "resync": "Yeniden eşitlendi −{{delta}} ms",
     "reconnectFailed": "Yeniden bağlanma başarısız"
@@ -243,13 +270,22 @@
     "fontSizeIncrease": "Söz boyutunu büyüt",
     "fontSizeReset": "Söz boyutunu sıfırla",
     "fontSizeResetShort": "Sıfırla",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Çalan sözü takip et",
     "matchedToast": "Sözler \"{{song}}\" ile eşleştirildi",
     "unmatchedToast": "Şarkı sözü dosyası bir şarkıyla eşleştirilemedi: {{file}}",
     "offsetDecrease": "Sözleri 0,5 saniye geri al",
     "offsetIncrease": "Sözleri 0,5 saniye ileri al",
     "offsetReset": "Söz ötelemesini sıfırla",
-    "offsetResetShort": "Sıfırla"
+    "offsetResetShort": "Sıfırla",
+    "switchToCentered": "Şarkı sözlerini ortala",
+    "switchToLeftAligned": "Şarkı sözlerini sola hizala"
   },
   "songEdit": {
     "title": "Şarkı Bilgisini Düzenle",
@@ -310,6 +346,11 @@
       "removeLibrary": "Depo bağlantısını kes",
       "deleteLibrary": "Depoyu sil",
       "typeToConfirmDelete": "Kalıcı silmeyi onaylamak için \"{{displayName}}\" yazın.",
+      "confirmDisconnectRemote": "\"{{displayName}}\" bağlantısı {{appName}} üzerinden kesilsin mi? Uzak depo içeriği {{provider}} içinde kalır.",
+      "confirmDisconnectLocal": "Bu kitaplığın {{appName}} ile bağlantısı kesilsin mi? Kitaplık verileri diskte kalır.",
+      "confirmDeleteRemote": "\"{{displayName}}\" silinsin mi? {{provider}} konumundaki {{path}} uzak depo içeriği ve yerel çalışma kopyası silinir.",
+      "confirmDeleteLocal": "\"{{displayName}}\", {{appName}} içinden silinsin mi? Yerel kitaplık verileri diskten silinir.",
+      "thisLibrary": "bu kitaplık",
       "refreshRemoteRepository": "Uzak depoyu yenile",
       "reauthorizeRemoteRepository": "Uzak depoyu yeniden yetkilendir",
       "reauthorizeRemoteRepositoryDescription": "Bu uzak depoya erişimi yenileyin. Depo taşındıysa, OpenKara kayıtlı konumu değiştirmeden önce sorar.",
@@ -460,7 +501,11 @@
       "presetWarm": "Sıcak",
       "presetBright": "Parlak",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Çapraz Geçiş",
@@ -565,6 +610,7 @@
       "entries": "Girdiler",
       "pinned": "sabitlenmiş",
       "clearButton": "Önbelleği Temizle",
+      "clearing": "Temizleniyor…",
       "evicted": "{{count}} girdi temizlendi."
     },
     "remoteDiagnostics": {

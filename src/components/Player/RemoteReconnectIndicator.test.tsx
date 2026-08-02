@@ -13,18 +13,16 @@ vi.mock("react-i18next", async (importOriginal) => {
     ...actual,
     useTranslation: () => ({
       t: (
-        _key: string,
-        opts?: { defaultValue?: string } & Record<string, unknown>,
-      ) => {
-        let result = opts?.defaultValue ?? "";
-        if (opts) {
-          for (const [k, v] of Object.entries(opts)) {
-            if (k === "defaultValue") continue;
-            result = result.replace(new RegExp(`{{${k}}}`, "g"), String(v));
-          }
-        }
-        return result;
-      },
+        key: string,
+        opts?: { attempt?: number; max?: number; delta?: number },
+      ) =>
+        key === "player.reconnecting"
+          ? `Reconnecting… (${opts?.attempt}/${opts?.max})`
+          : key === "player.resync"
+            ? `Resynced −${opts?.delta} ms`
+            : key === "player.reconnectFailed"
+              ? "Reconnect failed"
+              : key,
     }),
   };
 });

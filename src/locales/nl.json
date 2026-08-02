@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Annuleren",
     "close": "Sluiten",
@@ -14,7 +33,8 @@
     "loading": "Laden…",
     "deleting": "Verwijderen...",
     "unknownTitle": "Onbekende titel",
-    "unknownArtist": "Onbekende artiest"
+    "unknownArtist": "Onbekende artiest",
+    "coverArtAlt": "Albumhoes van {{title}}"
   },
   "setup": {
     "welcome": "Stel je karaokebibliotheek in",
@@ -63,6 +83,8 @@
     "allTracks": "Alle nummers",
     "separated": "Gescheiden",
     "localMusic": "LOKALE MUZIEK",
+    "resize": "Zijbalkgrootte wijzigen",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Sorteren op",
       "recently_imported": "Onlangs geïmporteerd",
@@ -94,6 +116,9 @@
     "settings": "Instellingen"
   },
   "windowChrome": {
+    "view": "Beeld",
+    "switchLibrary": "Bibliotheek wisselen…",
+    "copyDebugInfo": "Debuginformatie kopiëren",
     "file": "Bestand",
     "edit": "Bewerken",
     "window": "Venster",
@@ -159,7 +184,8 @@
     "importPrompt": {
       "confirmTitle": "Import bevestigen",
       "confirmMessage": "{{songCount}} nummers importeren?",
-      "confirmOk": "Importeren"
+      "confirmOk": "Importeren",
+      "audioLyricsFilter": "Audio en songteksten"
     },
     "modelPreparing": "Scheidingsmodel voorbereiden…",
     "cancelSeparation": "Scheiding annuleren",
@@ -180,6 +206,7 @@
     "localDisplayOutput": "Lokale beelduitvoer",
     "airPlayOutput": "AirPlay-uitvoer",
     "noDisplaysFound": "Nog geen beeldschermen gevonden.",
+    "seekToLine": "Ga naar regel {{index}}",
     "reconnecting": "Opnieuw verbinden… ({{attempt}}/{{max}})",
     "resync": "Opnieuw gesynchroniseerd −{{delta}} ms",
     "reconnectFailed": "Opnieuw verbinden mislukt"
@@ -243,13 +270,22 @@
     "fontSizeIncrease": "Songtekst groter",
     "fontSizeReset": "Songtekstgrootte resetten",
     "fontSizeResetShort": "Reset",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Actieve regel volgen",
     "matchedToast": "Songtekst gekoppeld aan \"{{song}}\"",
     "unmatchedToast": "Songtekstbestand kon niet aan een nummer worden gekoppeld: {{file}}",
     "offsetDecrease": "Songtekst 0,5 seconde achteruit verschuiven",
     "offsetIncrease": "Songtekst 0,5 seconde vooruit verschuiven",
     "offsetReset": "Songtekst-offset resetten",
-    "offsetResetShort": "Reset"
+    "offsetResetShort": "Reset",
+    "switchToCentered": "Songtekst naar het midden uitlijnen",
+    "switchToLeftAligned": "Songtekst links uitlijnen"
   },
   "songEdit": {
     "title": "Nummerinfo bewerken",
@@ -310,6 +346,11 @@
       "removeLibrary": "Opslag loskoppelen",
       "deleteLibrary": "Opslag verwijderen",
       "typeToConfirmDelete": "Typ \"{{displayName}}\" om definitieve verwijdering te bevestigen.",
+      "confirmDisconnectRemote": "\"{{displayName}}\" loskoppelen van {{appName}}? De inhoud van de externe opslag blijft in {{provider}}.",
+      "confirmDisconnectLocal": "Deze bibliotheek loskoppelen van {{appName}}? De bibliotheekgegevens blijven op schijf staan.",
+      "confirmDeleteRemote": "\"{{displayName}}\" verwijderen? De inhoud van de externe opslag in {{provider}} op {{path}} en de lokale werkkopie worden verwijderd.",
+      "confirmDeleteLocal": "\"{{displayName}}\" verwijderen uit {{appName}}? De gegevens van de lokale bibliotheek worden van schijf verwijderd.",
+      "thisLibrary": "deze bibliotheek",
       "refreshRemoteRepository": "Externe opslag vernieuwen",
       "reauthorizeRemoteRepository": "Externe opslag opnieuw autoriseren",
       "reauthorizeRemoteRepositoryDescription": "Vernieuw de toegang tot deze externe opslag. Als de opslag is verplaatst, vraagt OpenKara eerst voordat de opgeslagen locatie wordt vervangen.",
@@ -460,7 +501,11 @@
       "presetWarm": "Warm",
       "presetBright": "Helder",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Crossfade",
@@ -565,6 +610,7 @@
       "entries": "Items",
       "pinned": "vastgezet",
       "clearButton": "Cache wissen",
+      "clearing": "Bezig met wissen…",
       "evicted": "{{count}} items verwijderd."
     },
     "remoteDiagnostics": {

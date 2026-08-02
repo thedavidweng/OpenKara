@@ -4,13 +4,20 @@ import { useSettingsStore } from "@/stores/settings-store";
 
 type LyricsFontSizeControlProps = HTMLAttributes<HTMLDivElement>;
 
-const FONT_STEP_LABELS: Record<number, string> = {
-  [-2]: "XS",
-  [-1]: "S",
-  [0]: "M",
-  [1]: "L",
-  [2]: "XL",
-};
+function fontSizeStepKey(step: number) {
+  switch (step) {
+    case -2:
+      return "lyrics.fontSizeExtraSmall";
+    case -1:
+      return "lyrics.fontSizeSmall";
+    case 1:
+      return "lyrics.fontSizeLarge";
+    case 2:
+      return "lyrics.fontSizeExtraLarge";
+    default:
+      return "lyrics.fontSizeMedium";
+  }
+}
 
 export function LyricsFontSizeControl({
   className = "",
@@ -31,7 +38,7 @@ export function LyricsFontSizeControl({
         className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("lyrics.fontSizeDecrease")}
       >
-        A-
+        {t("lyrics.fontSizeDecreaseShort")}
       </button>
       <div className="min-w-[3.25rem] text-center">
         <div
@@ -41,7 +48,7 @@ export function LyricsFontSizeControl({
               : "text-[var(--color-control-primary)]"
           }`}
         >
-          {FONT_STEP_LABELS[lyricsFontStep] ?? "M"}
+          {t(fontSizeStepKey(lyricsFontStep))}
         </div>
       </div>
       <button
@@ -49,7 +56,7 @@ export function LyricsFontSizeControl({
         className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("lyrics.fontSizeIncrease")}
       >
-        A+
+        {t("lyrics.fontSizeIncreaseShort")}
       </button>
       <button
         onClick={() => void resetLyricsFontStep()}

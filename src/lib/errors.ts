@@ -3,7 +3,7 @@ import i18next from "@/lib/i18n";
 import type { CommandError, ErrorCode } from "@/types/ipc";
 
 function getErrorTitle(code: ErrorCode): string {
-  return i18next.t(`errors.${code}`) || "Error";
+  return i18next.t(`errors.${code}`) || i18next.t("errors.internal");
 }
 
 function isCommandError(err: unknown): err is CommandError {

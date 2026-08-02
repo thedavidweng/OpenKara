@@ -29,12 +29,12 @@ describe("formatDebugInfo", () => {
   test("includes every field value", () => {
     const text = formatDebugInfo(sample);
     for (const fragment of [
-      "OpenKara debug info",
+      "OpenKara · About",
       "0.9.1",
       "abc1234",
       "macos",
       "aarch64",
-      "generation 9",
+      "Catalog: 9",
       "2026-07-25-006",
       "htdemucs",
       "ready",
@@ -55,18 +55,17 @@ describe("formatDebugInfo", () => {
       model_installed: false,
       model_installed_version: null,
     });
-    expect(text).toContain("not installed");
-    expect(text).not.toContain("installed model-v2.1.0");
+    expect(text).toContain("Model: htdemucs · ready · — · model-v2.1.0");
   });
 
-  test("renders 'none' when no runtime artifact is active", () => {
+  test("renders an empty marker when no runtime artifact is active", () => {
     const text = formatDebugInfo({ ...sample, runtime_artifact_id: null });
-    expect(text).toMatch(/Runtime: .* · none · /);
+    expect(text).toContain("Runtime: ready · v1.27.1 · — ·");
   });
 
   test("is stable, newline-delimited plain text", () => {
     const lines = formatDebugInfo(sample).split("\n");
-    expect(lines[0]).toBe("OpenKara debug info");
+    expect(lines[0]).toBe("OpenKara · About");
     expect(lines).toHaveLength(8);
   });
 });

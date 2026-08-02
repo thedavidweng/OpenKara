@@ -1,26 +1,6 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-export const NATIVE_LANGUAGE_NAMES: Record<string, string> = {
-  en: "English",
-  "zh-CN": "简体中文",
-  ja: "日本語",
-  ko: "한국어",
-  "zh-TW": "繁體中文",
-  es: "Español",
-  "pt-BR": "Português (Brasil)",
-  fr: "Français",
-  de: "Deutsch",
-  it: "Italiano",
-  ru: "Русский",
-  id: "Bahasa Indonesia",
-  vi: "Tiếng Việt",
-  th: "ไทย",
-  tr: "Türkçe",
-  pl: "Polski",
-  nl: "Nederlands",
-};
-
 /**
  * Display order for the language pickers, in the issue #227 priority order.
  * Listing a code here is purely an ordering hint — a code with no file/name is
@@ -45,7 +25,10 @@ const LANGUAGE_PRIORITY = [
   "tr",
   "pl",
   "nl",
-];
+] as const;
+
+export type SupportedLanguageCode = (typeof LANGUAGE_PRIORITY)[number];
+export type SupportedLanguageNameKey = `languageNames.${SupportedLanguageCode}`;
 
 const localeModules = import.meta.glob<Record<string, unknown>>(
   "../locales/*.json",
@@ -65,18 +48,26 @@ for (const [path, data] of Object.entries(localeModules)) {
 
 const LOADED_LOCALE_CODES = Object.keys(translations);
 
-function orderIndex(code: string): number {
+function isSupportedLanguageCode(code: string): code is SupportedLanguageCode {
+  return (LANGUAGE_PRIORITY as readonly string[]).includes(code);
+}
+
+function orderIndex(code: SupportedLanguageCode): number {
   const index = LANGUAGE_PRIORITY.indexOf(code);
   return index === -1 ? Number.POSITIVE_INFINITY : index;
 }
 
 export const SUPPORTED_LANGUAGES = LOADED_LOCALE_CODES.slice()
+  .filter(isSupportedLanguageCode)
   .sort((a, b) => orderIndex(a) - orderIndex(b) || a.localeCompare(b))
-  .map((code) => ({ code, name: NATIVE_LANGUAGE_NAMES[code] ?? code }));
+  .map((code) => ({
+    code,
+    nameKey: `languageNames.${code}` as SupportedLanguageNameKey,
+  }));
 
 export function detectSystemLanguage(): string {
   const nav = navigator.language;
-  const supported = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));
+  const supported = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 
   // 1. Exact match on the full BCP-47 tag (e.g. "pt-BR", "zh-CN").
   if (supported.has(nav)) return nav;

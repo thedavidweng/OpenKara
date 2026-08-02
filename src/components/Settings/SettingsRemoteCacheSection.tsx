@@ -42,42 +42,27 @@ export function SettingsRemoteCacheSection() {
 
   return (
     <SettingsSectionCard
-      title={t("settings.remoteCache.label", {
-        defaultValue: "Remote Streaming Cache",
-      })}
-      description={t("settings.remoteCache.description", {
-        defaultValue:
-          "Byte-range downloads of remote media files are cached for playback resume.",
-      })}
+      title={t("settings.remoteCache.label")}
+      description={t("settings.remoteCache.description")}
     >
       <div className="space-y-3">
         {usage && (
           <div className="space-y-1 text-[12px] text-[var(--color-text-dim)]">
             <div className="flex justify-between">
-              <span>
-                {t("settings.remoteCache.used", { defaultValue: "Used" })}
-              </span>
+              <span>{t("settings.remoteCache.used")}</span>
               <span className="text-[var(--color-text)]">
                 {formatBytes(usage.used_bytes)} /{" "}
                 {formatBytes(usage.limit_bytes)}
               </span>
             </div>
             <div className="flex justify-between">
-              <span>
-                {t("settings.remoteCache.entries", {
-                  defaultValue: "Entries",
-                })}
-              </span>
+              <span>{t("settings.remoteCache.entries")}</span>
               <span className="text-[var(--color-text)]">
                 {usage.entry_count}
                 {usage.pinned_count > 0 && (
                   <span className="text-[var(--color-text-dim)]">
                     {" "}
-                    ({usage.pinned_count}{" "}
-                    {t("settings.remoteCache.pinned", {
-                      defaultValue: "pinned",
-                    })}
-                    )
+                    ({usage.pinned_count} {t("settings.remoteCache.pinned")})
                   </span>
                 )}
               </span>
@@ -87,10 +72,7 @@ export function SettingsRemoteCacheSection() {
 
         {evictedCount !== null && evictedCount > 0 && (
           <p className="text-[11px] text-[var(--color-text-dim)]">
-            {t("settings.remoteCache.evicted", {
-              count: evictedCount,
-              defaultValue: "Evicted {{count}} entries.",
-            })}
+            {t("settings.remoteCache.evicted", { count: evictedCount })}
           </p>
         )}
 
@@ -101,10 +83,8 @@ export function SettingsRemoteCacheSection() {
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] hover:border-[var(--color-destructive)] disabled:opacity-50"
         >
           {clearing
-            ? t("common.deleting", { defaultValue: "Clearing…" })
-            : t("settings.remoteCache.clearButton", {
-                defaultValue: "Clear Cache",
-              })}
+            ? t("settings.remoteCache.clearing")
+            : t("settings.remoteCache.clearButton")}
         </button>
       </div>
     </SettingsSectionCard>

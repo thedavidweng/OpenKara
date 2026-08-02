@@ -100,21 +100,15 @@ export function validateWebDavRemoteLibraryFields(
   >,
 ): string | null {
   if (!fields.serverUrl.trim()) {
-    return t("settings.library.webdavEnterServerUrl", {
-      defaultValue: "Enter the WebDAV server URL first.",
-    });
+    return t("settings.library.webdavEnterServerUrl");
   }
 
   if (!fields.username.trim()) {
-    return t("settings.library.webdavEnterUsername", {
-      defaultValue: "Enter the WebDAV username first.",
-    });
+    return t("settings.library.webdavEnterUsername");
   }
 
   if (!fields.password.trim()) {
-    return t("settings.library.webdavEnterPassword", {
-      defaultValue: "Enter the WebDAV password first.",
-    });
+    return t("settings.library.webdavEnterPassword");
   }
 
   return null;
@@ -144,9 +138,7 @@ export async function pollRemoteAuthUntilReady({
     if (status.state === "failed") {
       throw new Error(
         status.error?.message ??
-          t("settings.library.remoteSignInFailedUnexpectedly", {
-            defaultValue: "Remote sign-in failed unexpectedly.",
-          }),
+          t("settings.library.remoteSignInFailedUnexpectedly"),
       );
     }
   }

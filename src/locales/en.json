@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Cancel",
     "close": "Close",
@@ -14,7 +33,8 @@
     "loading": "Loading…",
     "deleting": "Deleting...",
     "unknownTitle": "Unknown Title",
-    "unknownArtist": "Unknown Artist"
+    "unknownArtist": "Unknown Artist",
+    "coverArtAlt": "{{title}} cover art"
   },
   "setup": {
     "welcome": "Set up your karaoke library",
@@ -63,6 +83,8 @@
     "allTracks": "All Tracks",
     "separated": "Separated",
     "localMusic": "LOCAL MUSIC",
+    "resize": "Resize sidebar",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Sort by",
       "recently_imported": "Recently imported",
@@ -94,6 +116,9 @@
     "settings": "Settings"
   },
   "windowChrome": {
+    "view": "View",
+    "switchLibrary": "Switch Library…",
+    "copyDebugInfo": "Copy debug info",
     "file": "File",
     "edit": "Edit",
     "window": "Window",
@@ -159,7 +184,8 @@
     "importPrompt": {
       "confirmTitle": "Confirm import",
       "confirmMessage": "Import {{songCount}} songs?",
-      "confirmOk": "Import"
+      "confirmOk": "Import",
+      "audioLyricsFilter": "Audio & Lyrics"
     },
     "modelPreparing": "Preparing separation model…",
     "cancelSeparation": "Cancel separation",
@@ -180,6 +206,7 @@
     "localDisplayOutput": "Local Display Output",
     "airPlayOutput": "AirPlay Output",
     "noDisplaysFound": "No displays found yet.",
+    "seekToLine": "Seek to line {{index}}",
     "reconnecting": "Reconnecting… ({{attempt}}/{{max}})",
     "resync": "Resynced −{{delta}} ms",
     "reconnectFailed": "Reconnect failed"
@@ -243,13 +270,22 @@
     "fontSizeIncrease": "Increase lyrics size",
     "fontSizeReset": "Reset lyrics size",
     "fontSizeResetShort": "Reset",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Follow playing lyric",
     "matchedToast": "Lyrics matched to \"{{song}}\"",
     "unmatchedToast": "Lyrics file could not be matched to a song: {{file}}",
     "offsetDecrease": "Adjust lyrics backward by 0.5 seconds",
     "offsetIncrease": "Adjust lyrics forward by 0.5 seconds",
     "offsetReset": "Reset lyrics offset",
-    "offsetResetShort": "Reset"
+    "offsetResetShort": "Reset",
+    "switchToCentered": "Switch to centered lyrics",
+    "switchToLeftAligned": "Switch to left-aligned lyrics"
   },
   "songEdit": {
     "title": "Edit Song Info",
@@ -310,6 +346,11 @@
       "removeLibrary": "Disconnect repository",
       "deleteLibrary": "Delete repository",
       "typeToConfirmDelete": "Type \"{{displayName}}\" to confirm permanent deletion.",
+      "confirmDisconnectRemote": "Disconnect \"{{displayName}}\" from {{appName}}? The remote repository contents will stay in {{provider}}.",
+      "confirmDisconnectLocal": "Disconnect this library from {{appName}}? The library data will stay on disk.",
+      "confirmDeleteRemote": "Delete \"{{displayName}}\"? This will delete the remote repository contents from {{provider}} at {{path}} and remove the local working copy.",
+      "confirmDeleteLocal": "Delete \"{{displayName}}\" from {{appName}}? This removes the local library data from disk.",
+      "thisLibrary": "this library",
       "refreshRemoteRepository": "Refresh remote repository",
       "reauthorizeRemoteRepository": "Reauthorize remote repository",
       "reauthorizeRemoteRepositoryDescription": "Renew access to this remote repository. If the repository was moved, OpenKara will ask before replacing the saved location.",
@@ -464,7 +505,11 @@
       "presetWarm": "Warm",
       "presetBright": "Bright",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Crossfade",
@@ -569,6 +614,7 @@
       "entries": "Entries",
       "pinned": "pinned",
       "clearButton": "Clear Cache",
+      "clearing": "Clearing…",
       "evicted": "Evicted {{count}} entries."
     },
     "remoteDiagnostics": {

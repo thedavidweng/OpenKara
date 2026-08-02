@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { audioDir } from "@tauri-apps/api/path";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
@@ -106,7 +107,7 @@ export async function promptImportFiles({
               defaultPath,
               filters: [
                 {
-                  name: "Audio & Lyrics",
+                  name: i18next.t("library.importPrompt.audioLyricsFilter"),
                   extensions: IMPORT_FILE_EXTENSIONS,
                 },
               ],
@@ -178,9 +179,28 @@ export async function handleAppMenuAction(
 }
 
 export function useAppMenuRuntime(enabled: boolean): void {
+  const { t } = useTranslation();
   const importFiles = useLibraryStore((s) => s.importFiles);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggle);
+
+  useEffect(() => {
+    void api
+      .setNativeAppMenuLabels({
+        appName: t("app.name"),
+        file: t("windowChrome.file"),
+        edit: t("windowChrome.edit"),
+        view: t("windowChrome.view"),
+        window: t("windowChrome.window"),
+        help: t("windowChrome.help"),
+        import: t("windowChrome.import"),
+        settings: t("windowChrome.settings"),
+        switchLibrary: t("windowChrome.switchLibrary"),
+        toggleSidebar: t("toolbar.toggleSidebar"),
+        copyDebugInfo: t("windowChrome.copyDebugInfo"),
+      })
+      .catch(() => {});
+  }, [t]);
 
   useEffect(() => {
     if (!enabled) {

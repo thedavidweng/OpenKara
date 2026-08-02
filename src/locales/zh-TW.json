@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "取消",
     "close": "關閉",
@@ -14,7 +33,8 @@
     "loading": "載入中…",
     "deleting": "刪除中...",
     "unknownTitle": "未知標題",
-    "unknownArtist": "未知演出者"
+    "unknownArtist": "未知演出者",
+    "coverArtAlt": "{{title}} 封面"
   },
   "setup": {
     "welcome": "設定你的卡拉OK曲庫",
@@ -63,6 +83,8 @@
     "allTracks": "全部曲目",
     "separated": "已分離",
     "localMusic": "本機音樂",
+    "resize": "調整側欄寬度",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "排序方式",
       "recently_imported": "最近匯入",
@@ -94,6 +116,9 @@
     "settings": "設定"
   },
   "windowChrome": {
+    "view": "檢視",
+    "switchLibrary": "切換曲庫…",
+    "copyDebugInfo": "複製除錯資訊",
     "file": "檔案",
     "edit": "編輯",
     "window": "視窗",
@@ -158,7 +183,8 @@
     "importPrompt": {
       "confirmTitle": "確認匯入",
       "confirmMessage": "要匯入 {{songCount}} 首歌曲嗎？",
-      "confirmOk": "匯入"
+      "confirmOk": "匯入",
+      "audioLyricsFilter": "音訊與歌詞"
     },
     "modelPreparing": "正在準備分離模型…",
     "cancelSeparation": "取消分離",
@@ -179,6 +205,7 @@
     "localDisplayOutput": "本機螢幕輸出",
     "airPlayOutput": "AirPlay 輸出",
     "noDisplaysFound": "尚未找到可用的螢幕。",
+    "seekToLine": "跳至第 {{index}} 行",
     "reconnecting": "正在重新連線… ({{attempt}}/{{max}})",
     "resync": "已重新同步 −{{delta}} 毫秒",
     "reconnectFailed": "重新連線失敗"
@@ -242,13 +269,22 @@
     "fontSizeIncrease": "放大歌詞字級",
     "fontSizeReset": "重設歌詞字級",
     "fontSizeResetShort": "重設",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "跟隨播放中的歌詞",
     "matchedToast": "歌詞已對應至「{{song}}」",
     "unmatchedToast": "歌詞檔案無法對應到任何歌曲：{{file}}",
     "offsetDecrease": "將歌詞往後調整 0.5 秒",
     "offsetIncrease": "將歌詞往前調整 0.5 秒",
     "offsetReset": "重設歌詞偏移",
-    "offsetResetShort": "重設"
+    "offsetResetShort": "重設",
+    "switchToCentered": "切換為置中歌詞",
+    "switchToLeftAligned": "切換為靠左對齊歌詞"
   },
   "songEdit": {
     "title": "編輯歌曲資訊",
@@ -309,6 +345,11 @@
       "removeLibrary": "中斷儲存庫連線",
       "deleteLibrary": "刪除儲存庫",
       "typeToConfirmDelete": "請輸入「{{displayName}}」以確認永久刪除。",
+      "confirmDisconnectRemote": "中斷「{{displayName}}」與 {{appName}} 的連線？遠端資料庫內容會保留在 {{provider}} 中。",
+      "confirmDisconnectLocal": "中斷此曲庫與 {{appName}} 的連線？曲庫資料會保留在磁碟上。",
+      "confirmDeleteRemote": "刪除「{{displayName}}」？這會從 {{provider}} 的 {{path}} 刪除遠端資料庫內容，並移除本機工作副本。",
+      "confirmDeleteLocal": "從 {{appName}} 刪除「{{displayName}}」？這會從磁碟移除本機曲庫資料。",
+      "thisLibrary": "此曲庫",
       "refreshRemoteRepository": "重新整理遠端儲存庫",
       "reauthorizeRemoteRepository": "重新授權遠端儲存庫",
       "reauthorizeRemoteRepositoryDescription": "重新取得對此遠端儲存庫的存取權。如果儲存庫已被移動，OpenKara 會在替換已儲存的位置前先詢問你。",
@@ -463,7 +504,11 @@
       "presetWarm": "溫暖",
       "presetBright": "明亮",
       "presetRock": "搖滾",
-      "presetPop": "流行"
+      "presetPop": "流行",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "交叉淡化",
@@ -568,6 +613,7 @@
       "entries": "項目",
       "pinned": "已釘選",
       "clearButton": "清除快取",
+      "clearing": "清除中…",
       "evicted": "已清除 {{count}} 個項目。"
     },
     "remoteDiagnostics": {

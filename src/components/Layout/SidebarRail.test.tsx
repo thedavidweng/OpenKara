@@ -63,7 +63,7 @@ describe("SidebarRail", () => {
     );
 
     const separator = screen.getByRole("separator", {
-      name: "Resize sidebar",
+      name: "sidebar.resize",
     });
     fireEvent.keyDown(separator, { key: "ArrowRight" });
     fireEvent.keyDown(separator, { key: "ArrowLeft" });

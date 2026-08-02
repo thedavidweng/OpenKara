@@ -1,4 +1,5 @@
 import { memo, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { KaraokeFillController } from "./karaoke-fill";
 import {
   buildAudiencePresentationSpec,
@@ -148,6 +149,7 @@ export const LyricLine = memo(function LyricLine({
   romanizedText,
   alignment = "center",
 }: LyricLineProps) {
+  const { t } = useTranslation();
   const seek = usePlayerStore((s) => s.seek);
   const isSeekable = state !== "plain";
   const isLeftAligned = alignment === "left";
@@ -518,7 +520,9 @@ export const LyricLine = memo(function LyricLine({
     const visibleName = line.text.trim() || wordText;
     // Only set an explicit label when the button would otherwise expose no name
     // (for example empty/bg-only lines). Named lines keep their text content.
-    const ariaLabel = visibleName ? undefined : `Seek to line ${lineIndex + 1}`;
+    const ariaLabel = visibleName
+      ? undefined
+      : t("player.seekToLine", { index: lineIndex + 1 });
 
     return (
       <button

@@ -206,8 +206,9 @@ export function SettingsEqSection() {
                     </span>
                   </label>
                   <span className="text-[11px] tabular-nums text-[var(--color-text-dim)]">
-                    {gain > 0 ? "+" : ""}
-                    {gain.toFixed(1)} dB
+                    {t("settings.eq.gainValue", {
+                      value: `${gain > 0 ? "+" : ""}${gain.toFixed(1)}`,
+                    })}
                   </span>
                 </div>
                 <input
@@ -234,9 +235,9 @@ export function SettingsEqSection() {
             aria-hidden="true"
             className="flex items-center justify-between text-[10px] tabular-nums text-[var(--color-text-dim)]"
           >
-            <span>-12 dB</span>
-            <span>0</span>
-            <span>+12 dB</span>
+            <span>{t("settings.eq.minimumGain")}</span>
+            <span>{t("settings.eq.neutralGain")}</span>
+            <span>{t("settings.eq.maximumGain")}</span>
           </div>
 
           <button

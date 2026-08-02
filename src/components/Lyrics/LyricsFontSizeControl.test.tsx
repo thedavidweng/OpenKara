@@ -12,7 +12,16 @@ const { mockSettingsState } = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string) =>
+      ({
+        "lyrics.fontSizeExtraSmall": "XS",
+        "lyrics.fontSizeSmall": "S",
+        "lyrics.fontSizeMedium": "M",
+        "lyrics.fontSizeLarge": "L",
+        "lyrics.fontSizeExtraLarge": "XL",
+        "lyrics.fontSizeDecreaseShort": "A-",
+        "lyrics.fontSizeIncreaseShort": "A+",
+      })[key] ?? key,
   }),
 }));
 

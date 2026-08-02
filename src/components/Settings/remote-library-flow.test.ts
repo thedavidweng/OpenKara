@@ -14,8 +14,10 @@ import {
 import { getRemoteProviderDisplayName } from "./remote-library-copy";
 
 const t = ((key: string) => key) as TFunction;
-const tWithDefault = ((key: string, options?: { defaultValue?: string }) =>
-  options?.defaultValue ?? key) as TFunction;
+const tForDisplayName = ((key: string) =>
+  key === "settings.library.remoteLibraryDisplayName"
+    ? "OpenKara"
+    : key) as TFunction;
 
 function createRemoteApiMock(): RemoteLibraryFlowApi {
   return {
@@ -68,13 +70,13 @@ describe("remote-library-flow", () => {
   });
 
   test("uses OpenKara as the default remote repository display name for every provider", () => {
-    expect(getRemoteProviderDisplayName(tWithDefault, "google_drive")).toBe(
+    expect(getRemoteProviderDisplayName(tForDisplayName, "google_drive")).toBe(
       "OpenKara",
     );
-    expect(getRemoteProviderDisplayName(tWithDefault, "dropbox")).toBe(
+    expect(getRemoteProviderDisplayName(tForDisplayName, "dropbox")).toBe(
       "OpenKara",
     );
-    expect(getRemoteProviderDisplayName(tWithDefault, "webdav")).toBe(
+    expect(getRemoteProviderDisplayName(tForDisplayName, "webdav")).toBe(
       "OpenKara",
     );
   });

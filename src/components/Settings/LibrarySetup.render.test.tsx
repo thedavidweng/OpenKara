@@ -13,7 +13,17 @@ const mockSetModelVariant = vi.hoisted(() => vi.fn());
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
+      ({
+        "languageNames.en": "English",
+        "languageNames.zh-CN": "简体中文",
+        "setup.createNew": "Create new local library",
+        "setup.openExisting": "Open existing library",
+        "setup.useRemoteRepository": "Use remote repository",
+        "setup.remoteProvider.googleDrive.title": "Google Drive",
+        "settings.library.connectGoogleDrive": "Connect Google Drive",
+      })[key] ??
+      options?.defaultValue ??
+      key,
   }),
 }));
 
@@ -58,8 +68,8 @@ vi.mock("@/lib/i18n", () => ({
     changeLanguage: vi.fn(),
   },
   SUPPORTED_LANGUAGES: [
-    { code: "en", name: "English" },
-    { code: "zh-CN", name: "简体中文" },
+    { code: "en", nameKey: "languageNames.en" },
+    { code: "zh-CN", nameKey: "languageNames.zh-CN" },
   ],
   detectSystemLanguage: () => "en",
 }));
@@ -170,8 +180,7 @@ describe("LibrarySetup destructive error surfaces", () => {
     );
 
     const googleDrive = Array.from(container.querySelectorAll("button")).find(
-      (button) =>
-        button.textContent?.includes("setup.remoteProvider.googleDrive.title"),
+      (button) => button.textContent?.includes("Google Drive"),
     );
     expect(googleDrive).toBeTruthy();
     await act(async () => {

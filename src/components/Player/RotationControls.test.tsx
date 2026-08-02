@@ -59,7 +59,7 @@ describe("RotationControls", () => {
   test("shows add singer button when no singers exist", () => {
     mockRotationState.singerNames = [];
     const markup = renderToStaticMarkup(<RotationControls />);
-    expect(markup).toContain("+ Add Singer");
+    expect(markup).toContain("+ rotation.assignSinger");
     mockRotationState.singerNames = ["David", "John", "Jack"];
   });
 });

@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "Anuluj",
     "close": "Zamknij",
@@ -14,7 +33,8 @@
     "loading": "Ładowanie…",
     "deleting": "Usuwanie...",
     "unknownTitle": "Nieznany tytuł",
-    "unknownArtist": "Nieznany wykonawca"
+    "unknownArtist": "Nieznany wykonawca",
+    "coverArtAlt": "Okładka {{title}}"
   },
   "setup": {
     "welcome": "Skonfiguruj swoją bibliotekę karaoke",
@@ -63,6 +83,8 @@
     "allTracks": "Wszystkie utwory",
     "separated": "Rozdzielone",
     "localMusic": "MUZYKA LOKALNA",
+    "resize": "Zmień rozmiar panelu bocznego",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "Sortuj według",
       "recently_imported": "Ostatnio zaimportowane",
@@ -94,6 +116,9 @@
     "settings": "Ustawienia"
   },
   "windowChrome": {
+    "view": "Widok",
+    "switchLibrary": "Przełącz bibliotekę…",
+    "copyDebugInfo": "Kopiuj informacje debugowania",
     "file": "Plik",
     "edit": "Edycja",
     "window": "Okno",
@@ -161,7 +186,8 @@
     "importPrompt": {
       "confirmTitle": "Potwierdź import",
       "confirmMessage": "Zaimportować utwory ({{songCount}})?",
-      "confirmOk": "Importuj"
+      "confirmOk": "Importuj",
+      "audioLyricsFilter": "Audio i teksty"
     },
     "modelPreparing": "Przygotowywanie modelu rozdzielania…",
     "cancelSeparation": "Anuluj rozdzielanie",
@@ -182,6 +208,7 @@
     "localDisplayOutput": "Wyjście na lokalny ekran",
     "airPlayOutput": "Wyjście AirPlay",
     "noDisplaysFound": "Nie znaleziono jeszcze żadnych ekranów.",
+    "seekToLine": "Przejdź do wiersza {{index}}",
     "reconnecting": "Ponowne łączenie… ({{attempt}}/{{max}})",
     "resync": "Zsynchronizowano ponownie −{{delta}} ms",
     "reconnectFailed": "Ponowne łączenie nie powiodło się"
@@ -245,13 +272,22 @@
     "fontSizeIncrease": "Zwiększ rozmiar tekstu",
     "fontSizeReset": "Resetuj rozmiar tekstu",
     "fontSizeResetShort": "Resetuj",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "Podążaj za odtwarzanym tekstem",
     "matchedToast": "Dopasowano tekst do „{{song}}”",
     "unmatchedToast": "Nie udało się dopasować pliku tekstu do utworu: {{file}}",
     "offsetDecrease": "Cofnij tekst o 0,5 sekundy",
     "offsetIncrease": "Przesuń tekst do przodu o 0,5 sekundy",
     "offsetReset": "Resetuj przesunięcie tekstu",
-    "offsetResetShort": "Resetuj"
+    "offsetResetShort": "Resetuj",
+    "switchToCentered": "Przełącz na tekst wyśrodkowany",
+    "switchToLeftAligned": "Przełącz na tekst wyrównany do lewej"
   },
   "songEdit": {
     "title": "Edytuj informacje o utworze",
@@ -312,6 +348,11 @@
       "removeLibrary": "Odłącz repozytorium",
       "deleteLibrary": "Usuń repozytorium",
       "typeToConfirmDelete": "Wpisz „{{displayName}}”, aby potwierdzić trwałe usunięcie.",
+      "confirmDisconnectRemote": "Odłączyć „{{displayName}}” od {{appName}}? Zawartość zdalnego repozytorium pozostanie w {{provider}}.",
+      "confirmDisconnectLocal": "Odłączyć tę bibliotekę od {{appName}}? Dane biblioteki pozostaną na dysku.",
+      "confirmDeleteRemote": "Usunąć „{{displayName}}”? Zawartość zdalnego repozytorium w {{provider}} pod adresem {{path}} oraz lokalna kopia robocza zostaną usunięte.",
+      "confirmDeleteLocal": "Usunąć „{{displayName}}” z {{appName}}? Dane lokalnej biblioteki zostaną usunięte z dysku.",
+      "thisLibrary": "ta biblioteka",
       "refreshRemoteRepository": "Odśwież zdalne repozytorium",
       "reauthorizeRemoteRepository": "Autoryzuj ponownie zdalne repozytorium",
       "reauthorizeRemoteRepositoryDescription": "Odnów dostęp do tego zdalnego repozytorium. Jeśli repozytorium zostało przeniesione, OpenKara zapyta przed zastąpieniem zapisanej lokalizacji.",
@@ -462,7 +503,11 @@
       "presetWarm": "Ciepły",
       "presetBright": "Jasny",
       "presetRock": "Rock",
-      "presetPop": "Pop"
+      "presetPop": "Pop",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "Płynne przejście",
@@ -567,6 +612,7 @@
       "entries": "Wpisy",
       "pinned": "przypięte",
       "clearButton": "Wyczyść pamięć podręczną",
+      "clearing": "Czyszczenie…",
       "evicted": "Usunięto wpisów z pamięci podręcznej: {{count}}."
     },
     "remoteDiagnostics": {

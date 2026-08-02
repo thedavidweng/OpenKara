@@ -8,8 +8,22 @@ import {
 import type { RemoteLibraryProvider } from "@/types/ipc";
 import type { TFunction } from "i18next";
 
-const t: TFunction = ((key: string, opts?: { defaultValue?: string }) =>
-  opts?.defaultValue ?? key) as TFunction;
+const translations: Record<string, string> = {
+  "setup.remoteProvider.googleDrive.title": "Google Drive",
+  "setup.remoteProvider.dropbox.title": "Dropbox",
+  "setup.remoteProvider.webdav.title": "WebDAV",
+  "settings.library.googleSignInOpened":
+    "Google sign-in opened in your browser.",
+  "settings.library.dropboxSignInOpened":
+    "Dropbox sign-in opened in your browser.",
+  "settings.library.googleSignInTimedOut": "Google sign-in timed out.",
+  "settings.library.dropboxSignInTimedOut": "Dropbox sign-in timed out.",
+  "settings.library.remoteSignInTimedOut": "Remote sign-in timed out.",
+  "settings.library.remoteLibraryConnected":
+    "Remote library connected successfully.",
+};
+
+const t: TFunction = ((key: string) => translations[key] ?? key) as TFunction;
 
 describe("getRemoteProviderLabel", () => {
   test('returns "Google Drive" for google_drive', () => {
@@ -63,17 +77,17 @@ describe("getRemoteProviderAuthTimeoutMessage", () => {
 describe("getRemoteLibraryConnectedMessage", () => {
   test("returns Google Drive connected message for google_drive", () => {
     const msg = getRemoteLibraryConnectedMessage(t, "google_drive");
-    expect(msg).toBe("Google Drive library connected successfully.");
+    expect(msg).toBe("Remote library connected successfully.");
   });
 
   test("returns Dropbox connected message for dropbox", () => {
     const msg = getRemoteLibraryConnectedMessage(t, "dropbox");
-    expect(msg).toBe("Dropbox library connected successfully.");
+    expect(msg).toBe("Remote library connected successfully.");
   });
 
   test("returns WebDAV connected message for webdav", () => {
     const msg = getRemoteLibraryConnectedMessage(t, "webdav");
-    expect(msg).toBe("WebDAV library connected successfully.");
+    expect(msg).toBe("Remote library connected successfully.");
   });
 
   test("returns generic connected message for unknown provider", () => {

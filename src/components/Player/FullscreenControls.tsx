@@ -198,8 +198,8 @@ export function FullscreenControls() {
           onClick={handleAlignmentClick}
           aria-label={
             lyricsAlignment === "left"
-              ? "Switch to centered lyrics"
-              : "Switch to left-aligned lyrics"
+              ? t("lyrics.switchToCentered")
+              : t("lyrics.switchToLeftAligned")
           }
           aria-pressed={lyricsAlignment === "left"}
           disabled={!hasLyrics || !lyricSongId}

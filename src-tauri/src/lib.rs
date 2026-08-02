@@ -216,6 +216,7 @@ pub fn run() {
             commands::settings::set_theme_preference,
             commands::settings::set_update_policy,
             commands::settings::restart_app,
+            crate::app_menu::set_native_app_menu_labels,
             crate::window_shell::get_window_shell_state,
             crate::window_shell::set_native_sidebar_visibility,
             crate::window_shell::window_ready,

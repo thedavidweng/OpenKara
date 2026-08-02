@@ -264,8 +264,8 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             <Tooltip
               label={
                 lyricsAlignment === "left"
-                  ? "Switch to centered lyrics"
-                  : "Switch to left-aligned lyrics"
+                  ? t("lyrics.switchToCentered")
+                  : t("lyrics.switchToLeftAligned")
               }
             >
               <button
@@ -273,8 +273,8 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                 onClick={toggleLyricsAlignment}
                 aria-label={
                   lyricsAlignment === "left"
-                    ? "Switch to centered lyrics"
-                    : "Switch to left-aligned lyrics"
+                    ? t("lyrics.switchToCentered")
+                    : t("lyrics.switchToLeftAligned")
                 }
                 className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                   lyricsAlignment === "left"

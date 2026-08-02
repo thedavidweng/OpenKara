@@ -2,6 +2,25 @@
   "app": {
     "name": "OpenKara"
   },
+  "languageNames": {
+    "en": "English",
+    "zh-CN": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-TW": "繁體中文",
+    "es": "Español",
+    "pt-BR": "Português (Brasil)",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "ru": "Русский",
+    "id": "Bahasa Indonesia",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "tr": "Türkçe",
+    "pl": "Polski",
+    "nl": "Nederlands"
+  },
   "common": {
     "cancel": "ยกเลิก",
     "close": "ปิด",
@@ -14,7 +33,8 @@
     "loading": "กำลังโหลด…",
     "deleting": "กำลังลบ...",
     "unknownTitle": "ไม่ทราบชื่อเพลง",
-    "unknownArtist": "ไม่ทราบศิลปิน"
+    "unknownArtist": "ไม่ทราบศิลปิน",
+    "coverArtAlt": "ปกอัลบั้ม {{title}}"
   },
   "setup": {
     "welcome": "ตั้งค่าคลังเพลงคาราโอเกะของคุณ",
@@ -63,6 +83,8 @@
     "allTracks": "เพลงทั้งหมด",
     "separated": "แยกเสียงแล้ว",
     "localMusic": "เพลงในเครื่อง",
+    "resize": "ปรับขนาดแถบด้านข้าง",
+    "widthValue": "{{width}} px",
     "sortMode": {
       "label": "เรียงตาม",
       "recently_imported": "นำเข้าล่าสุด",
@@ -94,6 +116,9 @@
     "settings": "การตั้งค่า"
   },
   "windowChrome": {
+    "view": "มุมมอง",
+    "switchLibrary": "สลับคลังเพลง…",
+    "copyDebugInfo": "คัดลอกข้อมูลการแก้ไขข้อบกพร่อง",
     "file": "ไฟล์",
     "edit": "แก้ไข",
     "window": "หน้าต่าง",
@@ -158,7 +183,8 @@
     "importPrompt": {
       "confirmTitle": "ยืนยันการนำเข้า",
       "confirmMessage": "นำเข้า {{songCount}} เพลงหรือไม่?",
-      "confirmOk": "นำเข้า"
+      "confirmOk": "นำเข้า",
+      "audioLyricsFilter": "เสียงและเนื้อเพลง"
     },
     "modelPreparing": "กำลังเตรียมโมเดลแยกเสียง…",
     "cancelSeparation": "ยกเลิกการแยกเสียง",
@@ -179,6 +205,7 @@
     "localDisplayOutput": "เอาต์พุตจอภาพในเครื่อง",
     "airPlayOutput": "เอาต์พุต AirPlay",
     "noDisplaysFound": "ยังไม่พบจอภาพ",
+    "seekToLine": "ไปยังบรรทัดที่ {{index}}",
     "reconnecting": "กำลังเชื่อมต่อใหม่… ({{attempt}}/{{max}})",
     "resync": "ซิงค์ใหม่แล้ว −{{delta}} มิลลิวินาที",
     "reconnectFailed": "เชื่อมต่อใหม่ล้มเหลว"
@@ -242,13 +269,22 @@
     "fontSizeIncrease": "เพิ่มขนาดเนื้อเพลง",
     "fontSizeReset": "รีเซ็ตขนาดเนื้อเพลง",
     "fontSizeResetShort": "รีเซ็ต",
+    "fontSizeExtraSmall": "XS",
+    "fontSizeSmall": "S",
+    "fontSizeMedium": "M",
+    "fontSizeLarge": "L",
+    "fontSizeExtraLarge": "XL",
+    "fontSizeDecreaseShort": "A-",
+    "fontSizeIncreaseShort": "A+",
     "followPlaying": "ติดตามเนื้อเพลงที่กำลังเล่น",
     "matchedToast": "จับคู่เนื้อเพลงกับ \"{{song}}\" แล้ว",
     "unmatchedToast": "ไม่สามารถจับคู่ไฟล์เนื้อเพลงกับเพลงได้: {{file}}",
     "offsetDecrease": "เลื่อนเนื้อเพลงถอยหลัง 0.5 วินาที",
     "offsetIncrease": "เลื่อนเนื้อเพลงไปข้างหน้า 0.5 วินาที",
     "offsetReset": "รีเซ็ตการเลื่อนเนื้อเพลง",
-    "offsetResetShort": "รีเซ็ต"
+    "offsetResetShort": "รีเซ็ต",
+    "switchToCentered": "สลับเป็นเนื้อเพลงจัดกึ่งกลาง",
+    "switchToLeftAligned": "สลับเป็นเนื้อเพลงจัดชิดซ้าย"
   },
   "songEdit": {
     "title": "แก้ไขข้อมูลเพลง",
@@ -309,6 +345,11 @@
       "removeLibrary": "ตัดการเชื่อมต่อที่เก็บ",
       "deleteLibrary": "ลบที่เก็บ",
       "typeToConfirmDelete": "พิมพ์ \"{{displayName}}\" เพื่อยืนยันการลบถาวร",
+      "confirmDisconnectRemote": "ตัดการเชื่อมต่อ \"{{displayName}}\" จาก {{appName}} หรือไม่ เนื้อหาในที่เก็บระยะไกลจะยังคงอยู่ใน {{provider}}",
+      "confirmDisconnectLocal": "ตัดการเชื่อมต่อคลังเพลงนี้จาก {{appName}} หรือไม่ ข้อมูลคลังเพลงจะยังคงอยู่ในดิสก์",
+      "confirmDeleteRemote": "ลบ \"{{displayName}}\" หรือไม่ เนื้อหาในที่เก็บระยะไกลของ {{provider}} ที่ {{path}} และสำเนาการทำงานในเครื่องจะถูกลบ",
+      "confirmDeleteLocal": "ลบ \"{{displayName}}\" จาก {{appName}} หรือไม่ ข้อมูลคลังเพลงในเครื่องจะถูกลบจากดิสก์",
+      "thisLibrary": "คลังเพลงนี้",
       "refreshRemoteRepository": "รีเฟรชที่เก็บระยะไกล",
       "reauthorizeRemoteRepository": "อนุญาตสิทธิ์ที่เก็บระยะไกลอีกครั้ง",
       "reauthorizeRemoteRepositoryDescription": "ต่ออายุการเข้าถึงที่เก็บระยะไกลนี้ หากที่เก็บถูกย้าย OpenKara จะถามก่อนแทนที่ตำแหน่งที่บันทึกไว้",
@@ -459,7 +500,11 @@
       "presetWarm": "อุ่น",
       "presetBright": "สดใส",
       "presetRock": "ร็อก",
-      "presetPop": "ป็อป"
+      "presetPop": "ป็อป",
+      "gainValue": "{{value}} dB",
+      "minimumGain": "-12 dB",
+      "neutralGain": "0",
+      "maximumGain": "+12 dB"
     },
     "crossfade": {
       "label": "ครอสเฟด",
@@ -564,6 +609,7 @@
       "entries": "รายการ",
       "pinned": "ปักหมุดแล้ว",
       "clearButton": "ล้างแคช",
+      "clearing": "กำลังล้าง…",
       "evicted": "ล้าง {{count}} รายการแล้ว"
     },
     "remoteDiagnostics": {

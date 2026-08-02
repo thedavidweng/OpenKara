@@ -326,6 +326,29 @@ describe("tauri API wrappers", () => {
     expect(mockInvoke).toHaveBeenCalledWith("window_ready");
   });
 
+  test("syncs localized native app menu labels through the shell command", async () => {
+    const { setNativeAppMenuLabels } = await import("./tauri");
+    const labels = {
+      appName: "OpenKara",
+      file: "File",
+      edit: "Edit",
+      view: "View",
+      window: "Window",
+      help: "Help",
+      import: "Import",
+      settings: "Settings",
+      switchLibrary: "Switch Library",
+      toggleSidebar: "Toggle Sidebar",
+      copyDebugInfo: "Copy debug info",
+    };
+
+    await setNativeAppMenuLabels(labels);
+
+    expect(mockInvoke).toHaveBeenCalledWith("set_native_app_menu_labels", {
+      labels,
+    });
+  });
+
   test("requests an app restart through the dedicated lifecycle command", async () => {
     const { restartApp } = await import("./tauri");
 

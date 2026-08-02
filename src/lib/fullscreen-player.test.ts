@@ -138,7 +138,7 @@ describe("openFullscreenPlayer", () => {
       "fullscreen-player",
       expect.objectContaining({
         url: "index.html?mode=fullscreen-player",
-        title: "OpenKara Player",
+        title: "OpenKara",
         x: 960,
         y: 0,
         width: 2560,
