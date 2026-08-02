@@ -214,9 +214,47 @@ describe("release workflow", () => {
     expect(macOSWorkflow).toContain(
       "name: ${{ inputs.artifact_prefix }}-updater",
     );
-    expect(macOSWorkflow).toContain("Validate macOS updater artifacts");
-    expect(linuxWorkflow).toContain("Validate Linux updater artifacts");
-    expect(windowsWorkflow).toContain("Validate Windows updater artifacts");
+    const macOSValidationStep = readWorkflowStep(
+      macOSWorkflow,
+      "Validate macOS updater artifacts",
+    );
+    expect(macOSValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(macOSValidationStep).toContain('-name "*.tar.gz"');
+    expect(macOSValidationStep).toContain('-name "*.sig"');
+    expect(macOSValidationStep).toContain(
+      "No macOS updater archive was produced.",
+    );
+    expect(macOSValidationStep).toContain(
+      "No macOS updater signature was produced.",
+    );
+
+    const linuxValidationStep = readWorkflowStep(
+      linuxWorkflow,
+      "Validate Linux updater artifacts",
+    );
+    expect(linuxValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(linuxValidationStep).toContain('-name "*.tar.gz"');
+    expect(linuxValidationStep).toContain('-name "*.sig"');
+    expect(linuxValidationStep).toContain(
+      "No Linux updater archive was produced.",
+    );
+    expect(linuxValidationStep).toContain(
+      "No Linux updater signature was produced.",
+    );
+
+    const windowsValidationStep = readWorkflowStep(
+      windowsWorkflow,
+      "Validate Windows updater artifacts",
+    );
+    expect(windowsValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip"');
+    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip.sig"');
+    expect(windowsValidationStep).toContain(
+      "No Windows updater archive was produced.",
+    );
+    expect(windowsValidationStep).toContain(
+      "No Windows updater signature was produced.",
+    );
 
     const macOSUpdaterStep = readWorkflowStep(
       macOSWorkflow,
