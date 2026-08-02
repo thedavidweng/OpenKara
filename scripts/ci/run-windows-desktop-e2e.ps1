@@ -1486,7 +1486,6 @@ function Invoke-StepAction {
 
                 $sawProgress = $false
                 $slider = $null
-                $expandEnabled = $false
                 $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 120000))
                 while ([DateTime]::UtcNow -lt $deadline) {
                     $tree = Get-UiTree -ProcessId $script:process.Id
@@ -1500,11 +1499,6 @@ function Invoke-StepAction {
                         $n.controlType -eq "Slider" -and $n.name -and ($n.name -eq "Vocals" -or $n.name -eq "Accompaniment") -and $n.isEnabled -eq $true
                     }
                     if ($null -ne $slider) { break }
-                    $expand = Find-Expand-Stems-Button -Tree $tree
-                    if ($null -ne $expand -and $expand.isEnabled -ne $false) {
-                        $expandEnabled = $true
-                        break
-                    }
                     Start-Sleep -Milliseconds 250
                 }
 
@@ -1516,8 +1510,7 @@ function Invoke-StepAction {
                         }
                         return $true
                     }
-                    if ($expandEnabled -or $stemsBefore) { return $true }
-                    return "stem mixer did not become enabled"
+                    return "stem mixer did not expose an enabled stem slider"
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
@@ -1875,6 +1868,7 @@ function Invoke-StepAction {
                     if ($btn.name -ne "Play") { return "Play/Pause button is '$($btn.name)' instead of Play" }
                     if ($null -eq $beforeSlider) { return "Seek slider was not found before stop" }
                     if ($null -eq $beforeValue) { return "Seek slider did not expose a RangeValue before stop" }
+                    if ([double]$beforeValue -le 0) { return "Seek RangeValue was not above 0 before stop" }
                     $slider = Find-Seek-Slider -Tree $t
                     if ($null -eq $slider) { return "Seek slider was not found after stop" }
                     if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue after stop" }

@@ -60,12 +60,7 @@ pub(crate) fn load_playback_source(
         // Remote stems must be fully materialized before synchronous decode.
         RemoteContent::new(app_data_dir)
             .ensure_stem_files_cached(library_root, connection, song, 0, || true)
-            .map_err(|e| {
-                PlaybackError::Internal(
-                    e.detail
-                        .expect("current stem materialization errors include detail"),
-                )
-            })?;
+            .map_err(|e| PlaybackError::Internal(e.detail.unwrap_or(e.code)))?;
         let (decoded_audio, stems) = RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
@@ -99,12 +94,7 @@ pub(crate) fn load_cached_stems_for_song(
     if song.is_remote_stems() {
         RemoteContent::new(app_data_dir)
             .ensure_stem_files_cached(library_root, connection, song, request_id, is_current)
-            .map_err(|e| {
-                PlaybackError::Internal(
-                    e.detail
-                        .expect("current stem materialization errors include detail"),
-                )
-            })?;
+            .map_err(|e| PlaybackError::Internal(e.detail.unwrap_or(e.code)))?;
         return RemoteContent::new(app_data_dir)
             .load_stems_playback_source(connection, library_root, song)
             .map(|(_, stems)| stems)
@@ -1038,14 +1028,13 @@ mod tests {
         std::fs::write(vocals, &wav).unwrap();
         std::fs::write(accompaniment, wav).unwrap();
 
-        let (decoded_audio, stems) = crate::remote::content::RemoteContent::new(None)
-            .load_stems_playback_source(&connection, &lib, &song)
+        let loaded = super::load_playback_source(None, &connection, &lib, &song)
             .expect("remote stems should decode");
 
-        assert!(!decoded_audio.samples.is_empty());
+        assert!(!loaded.decoded_audio.samples.is_empty());
         assert!(matches!(
-            stems,
-            crate::audio::playback::LoadedStems::TwoStem { .. }
+            loaded.stems,
+            Some(crate::audio::playback::LoadedStems::TwoStem { .. })
         ));
     }
 }
