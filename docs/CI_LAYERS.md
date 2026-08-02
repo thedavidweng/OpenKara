@@ -9,7 +9,7 @@ the full Nightly matrix on every PR or every main push.
 | --------- | ---------------------------------- | ----------------- |
 | PR        | Fast feedback on the change set    | 10–20 minutes     |
 | Main push | Path-aware integration after merge | 10–15 minutes     |
-| Nightly   | Full quality matrix (non-blocking) | 1–2 hours         |
+| Nightly   | Full release quality matrix        | 1–2 hours         |
 | Release   | Signed product + Windows #284 core | 30–45 minutes     |
 
 ## PR
@@ -39,7 +39,8 @@ platform. Manual `workflow_dispatch` still forces full CI.
 
 ## Nightly
 
-Full quality line. Does not block PR merge.
+Full quality line. It does not block PR merge. It blocks Release when the
+candidate commit has no green Nightly evidence from the last 24 hours.
 
 - four-arch separation (Linux x64/arm64, macOS AS/Intel)
 - three-platform installed-app
@@ -49,7 +50,7 @@ Full quality line. Does not block PR merge.
 
 ## Release
 
-Product packaging and the Windows #284 contract. Prefer reusing same-SHA
+Product packaging and the Windows #284 contract. Release requires same-SHA
 green Nightly evidence for:
 
 - full accessibility matrix

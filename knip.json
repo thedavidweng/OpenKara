@@ -1,7 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src-tauri/**/*.rs"],
-  "project": ["src/**/*.{ts,tsx}", "website/src/**/*.{ts,tsx}"],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "tests/**/*.{ts,tsx}",
+    "website/src/**/*.{ts,tsx}"
+  ],
   "exclude": ["exports", "types"],
   "ignoreBinaries": ["xcrun", "hdiutil", "pwsh"]
 }

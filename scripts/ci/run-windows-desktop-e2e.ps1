@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param (
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
@@ -27,15 +27,63 @@ if ($OutputDir -eq "\desktop-e2e" -or [string]::IsNullOrWhiteSpace($OutputDir)) 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$scenariosPath = [System.IO.Path]::Combine($repoRoot, "tests", "desktop", "windows", "scenarios.json")
-if (-not (Test-Path -Path $scenariosPath -PathType Leaf)) {
-    throw "Scenarios file was not found at $scenariosPath"
+$stepDefinitions = @{
+    "launch" = [PSCustomObject]@{ action = "launch"; target = "OpenKara.exe"; assertion = "The test sees and accesses the main window." }
+    "navigate-sidebar" = [PSCustomObject]@{ action = "navigate-sidebar"; target = "Sidebar"; assertion = "The test moves focus through each sidebar item with keyboard navigation." }
+    "select-library" = [PSCustomObject]@{ action = "select-library"; target = "All Tracks"; assertion = "The test opens the library view." }
+    "import-fixture" = [PSCustomObject]@{ action = "import-fixture"; target = "src-tauri/tests/fixtures/audio/fixture.wav"; assertion = "The test sees the imported fixture track in the library." }
+    "select-track" = [PSCustomObject]@{ action = "select-track"; target = "fixture"; assertion = "The test selects the track and loads the details view." }
+    "start-playback" = [PSCustomObject]@{ action = "start-playback"; target = "Play button"; assertion = "The test sees the player in the playing state." }
+    "pause-resume" = [PSCustomObject]@{ action = "pause-resume"; target = "Pause/Play button"; assertion = "The test toggles playback between paused and playing." }
+    "seek" = [PSCustomObject]@{ action = "seek"; target = "Progress bar"; assertion = "The test moves playback to the seek target." }
+    "start-separation" = [PSCustomObject]@{ action = "start-separation"; target = "Vocal/instrumental separation"; assertion = "The test starts separation and enables the stem mixer." }
+    "adjust-stems" = [PSCustomObject]@{ action = "adjust-stems"; target = "Stem volume sliders"; assertion = "The test changes the stem mix levels." }
+    "mute" = [PSCustomObject]@{ action = "mute"; target = "Mute toggle"; assertion = "The test mutes audio output." }
+    "queue" = [PSCustomObject]@{ action = "queue"; target = "Queue"; assertion = "The test adds the selected track to the queue." }
+    "open-settings" = [PSCustomObject]@{ action = "open-settings"; target = "Settings"; assertion = "The test opens the settings panel." }
+    "open-appearance" = [PSCustomObject]@{ action = "open-appearance"; target = "Appearance"; assertion = "The test opens Appearance settings." }
+    "verify-model-runtime-status" = [PSCustomObject]@{ action = "verify-model-runtime-status"; target = "Model and runtime status panel"; assertion = "The UI reports the active model and runtime." }
+    "toggle-fullscreen" = [PSCustomObject]@{ action = "toggle-fullscreen"; target = "Fullscreen"; assertion = "The test enters fullscreen and returns to the main window." }
+    "stop-playback" = [PSCustomObject]@{ action = "stop-playback"; target = "Stop"; assertion = "The test stops playback and resets the position." }
+    "open-fullscreen" = [PSCustomObject]@{ action = "open-fullscreen"; target = "Fullscreen"; assertion = "The test transfers focus from the main window to the fullscreen player." }
+    "close-fullscreen" = [PSCustomObject]@{ action = "close-fullscreen"; target = "Fullscreen"; assertion = "The test restores focus to the main window." }
+    "cancel-file-picker" = [PSCustomObject]@{ action = "cancel-file-picker"; target = "Library import"; assertion = "The test cancels the file picker without losing main window focus." }
+    "close" = [PSCustomObject]@{ action = "close"; target = "OpenKara.exe"; assertion = "The test sees the application process exit cleanly." }
 }
 
-$scenarios = Get-Content -Path $scenariosPath -Raw | ConvertFrom-Json
-$selectedScenario = $scenarios | Where-Object { $_.id -eq $Scenario } | Select-Object -First 1
-if ($null -eq $selectedScenario) {
-    throw "Scenario '$Scenario' was not found in $scenariosPath"
+$supportedScenarios = @{
+    "keyboard-workflow" = [PSCustomObject]@{
+        name = "Keyboard-only desktop end-to-end workflow"
+        actions = @(
+            "launch", "navigate-sidebar", "select-library", "import-fixture",
+            "select-track", "start-playback", "pause-resume", "seek",
+            "start-separation", "adjust-stems", "mute", "queue",
+            "open-settings", "open-appearance", "verify-model-runtime-status",
+            "toggle-fullscreen", "stop-playback", "close"
+        )
+    }
+    "installed-workflow" = [PSCustomObject]@{
+        name = "Installed application launch and exit smoke"
+        actions = @("launch", "close")
+    }
+    "multi-window-and-dialogs" = [PSCustomObject]@{
+        name = "Multi-window and native dialog focus transfer"
+        actions = @(
+            "launch", "open-fullscreen", "close-fullscreen", "open-settings",
+            "cancel-file-picker", "close"
+        )
+    }
+}
+
+if (-not $supportedScenarios.ContainsKey($Scenario)) {
+    throw "Unknown scenario '$Scenario'. Expected one of: $($supportedScenarios.Keys -join ', ')"
+}
+
+$scenarioDefinition = $supportedScenarios[$Scenario]
+$selectedScenario = [PSCustomObject]@{
+    id = $Scenario
+    name = $scenarioDefinition.name
+    steps = @($scenarioDefinition.actions | ForEach-Object { $stepDefinitions[$_] })
 }
 
 $exePath = Join-Path $InstallDir "OpenKara.exe"
@@ -399,10 +447,6 @@ function Invoke-ProbeAction {
     }
     Write-Host "Probe ${Action}: $output"
     return $true
-}
-
-function Test-IsCiEnvironment {
-    return ($env:CI -eq "true" -or $env:GITHUB_ACTIONS -eq "true")
 }
 
 function Invoke-NamedControl {
@@ -1300,23 +1344,17 @@ function Invoke-StepAction {
                     }
 
                     if ($stepStatus -ne "failed") {
-                        $playWaitMs = if (Test-IsCiEnvironment) { 8000 } else { [math]::Max($StepTimeoutMs, 30000) }
                         Wait-For-Condition -Condition {
                             param($t)
                             $b = Find-Play-Pause-Button -Tree $t
                             return ($null -ne $b -and $b.name -eq "Pause")
-                        } -TimeoutMs $playWaitMs | Out-Null
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)) | Out-Null
 
                         $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
                             param($t)
                             $b = Find-Play-Pause-Button -Tree $t
                             if ($null -eq $b) { return "Play/Pause button not found" }
                             if ($b.name -eq "Pause") { return $true }
-                            # GitHub Windows runners often have no output device; play stays on Play.
-                            if (Test-IsCiEnvironment) {
-                                Write-Warning "Play did not reach Pause (likely no audio device on CI); accepting control activation"
-                                return $true
-                            }
                             return "Play/Pause button is '$($b.name)' instead of Pause"
                         }
                         if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -1388,10 +1426,6 @@ function Invoke-StepAction {
                             $b = Find-Play-Pause-Button -Tree $t
                             if ($null -eq $b) { return "Play/Pause button not found" }
                             if ($b.name -eq "Pause") { return $true }
-                            if (Test-IsCiEnvironment) {
-                                Write-Warning "pause-resume did not reach Pause (no audio device on CI); accepting control activation"
-                                return $true
-                            }
                             return "Play/Pause button is '$($b.name)' instead of Pause after pause-resume"
                         }
                         if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -1406,16 +1440,8 @@ function Invoke-StepAction {
                 $beforeValue = if ($before -and $null -ne $before.rangeValue) { $before.rangeValue } else { -1 }
 
                 if ($null -eq $before -or $beforeValue -lt 0) {
-                    if (Test-IsCiEnvironment) {
-                        Write-Warning "Seek slider inactive without playback on CI; skipping seek assertion"
-                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
-                            param($t) return $true
-                        }
-                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
-                    } else {
-                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Seek slider not found or does not expose a RangeValue"
-                        $stepStatus = "failed"
-                    }
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Seek slider not found or does not expose a RangeValue"
+                    $stepStatus = "failed"
                 } else {
                     if (-not (Send-AppShortcut -KeyCombo "ctrl+right")) {
                         Send-KeyboardInput "^{RIGHT}"
@@ -1434,10 +1460,6 @@ function Invoke-StepAction {
                         if ($null -eq $slider) { return "Seek slider not found" }
                         if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue" }
                         if ($slider.rangeValue -gt $beforeValue) { return $true }
-                        if (Test-IsCiEnvironment) {
-                            Write-Warning "Seek did not advance without active playback on CI; accepting control presence"
-                            return $true
-                        }
                         return "Seek RangeValue did not increase (before: $beforeValue, after: $($slider.rangeValue))"
                     }
                     if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -1464,7 +1486,6 @@ function Invoke-StepAction {
 
                 $sawProgress = $false
                 $slider = $null
-                $expandEnabled = $false
                 $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 120000))
                 while ([DateTime]::UtcNow -lt $deadline) {
                     $tree = Get-UiTree -ProcessId $script:process.Id
@@ -1478,11 +1499,6 @@ function Invoke-StepAction {
                         $n.controlType -eq "Slider" -and $n.name -and ($n.name -eq "Vocals" -or $n.name -eq "Accompaniment") -and $n.isEnabled -eq $true
                     }
                     if ($null -ne $slider) { break }
-                    $expand = Find-Expand-Stems-Button -Tree $tree
-                    if ($null -ne $expand -and $expand.isEnabled -ne $false) {
-                        $expandEnabled = $true
-                        break
-                    }
                     Start-Sleep -Milliseconds 250
                 }
 
@@ -1494,16 +1510,7 @@ function Invoke-StepAction {
                         }
                         return $true
                     }
-                    if ($expandEnabled -or $stemsBefore) { return $true }
-                    # Clean-install smoke already separated the fixture into the library;
-                    # keyboard UIA may only need the Separated filter / upgrade chrome.
-                    $upgrade = Find-ElementByName -Tree $t -Name "Upgrade All to 4-stem"
-                    $separated = Find-ElementByName -Tree $t -Name "Separated"
-                    if ($null -ne $upgrade -or $null -ne $separated) {
-                        Write-Warning "Separation chrome present without live stem sliders; accepting library separation state"
-                        return $true
-                    }
-                    return "stem mixer did not become enabled"
+                    return "stem mixer did not expose an enabled stem slider"
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
@@ -1542,21 +1549,8 @@ function Invoke-StepAction {
                 }
 
                 if ($null -eq $slider) {
-                    if (Test-IsCiEnvironment) {
-                        Write-Warning "Stem sliders unavailable on CI without active stems; accepting Expand stems control presence"
-                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
-                            param($t)
-                            $expand = Find-Expand-Stems-Button -Tree $t
-                            if ($null -ne $expand) { return $true }
-                            $upgrade = Find-ElementByName -Tree $t -Name "Upgrade All to 4-stem"
-                            if ($null -ne $upgrade) { return $true }
-                            return "no enabled stem slider or stem-mixer button found"
-                        }
-                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
-                    } else {
-                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "no enabled stem slider or stem-mixer button found"
-                        $stepStatus = "failed"
-                    }
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "no enabled stem slider found"
+                    $stepStatus = "failed"
                 }
 
                 if ($null -ne $slider) {
@@ -1649,12 +1643,6 @@ function Invoke-StepAction {
                     if ($null -eq $btn) { return "Mute button not found" }
                     if ($btn.name -eq "Unmute") { return $true }
                     if ($btn.toggleState -and $btn.toggleState -eq "On") { return $true }
-                    # setVolume(0) may no-op without an audio graph on CI; accept that the
-                    # master mute control was found and activated via UIA.
-                    if (Test-IsCiEnvironment) {
-                        Write-Warning "Mute control present but state unchanged on CI (no audio device); accepting activation"
-                        return $true
-                    }
                     return "master mute did not switch to Unmute/On (name is '$($btn.name)', toggleState: '$($btn.toggleState)')"
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -1817,19 +1805,8 @@ function Invoke-StepAction {
                 }
 
                 if ($null -eq $fs) {
-                    if (Test-IsCiEnvironment) {
-                        Write-Warning "Fullscreen player window did not open on CI; accepting Select Monitor control as fullscreen chrome"
-                        $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
-                            param($t)
-                            $monitor = Find-ElementByName -Tree $t -Name "Select Monitor"
-                            if ($null -ne $monitor) { return $true }
-                            return "fullscreen window 'OpenKara Player' did not appear"
-                        }
-                        if ($assertion.result -ne "pass") { $stepStatus = "failed" }
-                    } else {
-                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window 'OpenKara Player' did not appear"
-                        $stepStatus = "failed"
-                    }
+                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window 'OpenKara Player' did not appear"
+                    $stepStatus = "failed"
                 } else {
                     $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $fs -Check {
                         param($t)
@@ -1842,19 +1819,35 @@ function Invoke-StepAction {
 
                     # Close the fullscreen window so the rest of the workflow runs in the main window.
                     $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
-                    if ($hWnd -ne [IntPtr]::Zero) {
+                    if ($hWnd -eq [IntPtr]::Zero) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window handle was not found for cleanup"
+                        $stepStatus = "failed"
+                    } else {
                         Send-KeyboardInput "{ESC}" -Handle $hWnd
-                        Wait-For-Condition -Condition {
+                        $returned = Wait-For-Condition -Condition {
                             param($t)
                             return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
-                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)) | Out-Null
-                        Get-UiTree -ProcessId $script:process.Id | Out-Null
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+                        if ($null -eq $returned) {
+                            Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window did not close before the cleanup timeout"
+                            $stepStatus = "failed"
+                        } else {
+                            $mainTree = Get-UiTree -ProcessId $script:process.Id
+                            $mainWindow = Find-ElementByControlType -Tree $mainTree -ControlType "Window"
+                            if ($null -eq $mainWindow) {
+                                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "main window was not restored after closing fullscreen"
+                                $stepStatus = "failed"
+                            }
+                        }
                     }
                 }
             }
 
             "stop-playback" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $beforeSlider = Find-Seek-Slider -Tree $script:currentTree
+                $beforeValue = if ($null -ne $beforeSlider) { $beforeSlider.rangeValue } else { $null }
 
                 if (-not (Send-AppShortcut -KeyCombo "ctrl+period")) {
                     Send-KeyboardInput "^."
@@ -1872,13 +1865,17 @@ function Invoke-StepAction {
                     param($t)
                     $btn = Find-Play-Pause-Button -Tree $t
                     if ($null -eq $btn) { return "Play/Pause button not found" }
-                    if ($btn.name -eq "Play") { return $true }
-                    # Headless CI often never leaves Loading without an audio device.
-                    if (Test-IsCiEnvironment -and ($btn.name -eq "Loading" -or $btn.name -eq "Pause")) {
-                        Write-Warning "stop-playback left control as '$($btn.name)' on CI; accepting"
-                        return $true
+                    if ($btn.name -ne "Play") { return "Play/Pause button is '$($btn.name)' instead of Play" }
+                    if ($null -eq $beforeSlider) { return "Seek slider was not found before stop" }
+                    if ($null -eq $beforeValue) { return "Seek slider did not expose a RangeValue before stop" }
+                    if ([double]$beforeValue -le 0) { return "Seek RangeValue was not above 0 before stop" }
+                    $slider = Find-Seek-Slider -Tree $t
+                    if ($null -eq $slider) { return "Seek slider was not found after stop" }
+                    if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue after stop" }
+                    if ([double]$slider.rangeValue -ne 0) {
+                        return "Seek RangeValue is '$($slider.rangeValue)' instead of 0 after stop (before: $beforeValue)"
                     }
-                    return "Play/Pause button is '$($btn.name)' instead of Play"
+                    return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
@@ -1988,7 +1985,8 @@ function Invoke-StepAction {
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
                     param($t)
-                    return $script:process.HasExited
+                    if (-not $exited) { return "application process did not exit within 10 seconds" }
+                    return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }

@@ -110,9 +110,6 @@ describe("classifyFile", () => {
     expect(classifyFile("scripts/ci/run-windows-desktop-e2e.ps1")).toEqual([
       "release_workflow",
     ]);
-    expect(classifyFile("tests/desktop/windows/scenarios.json")).toEqual([
-      "release_workflow",
-    ]);
   });
 
   test("accessibility probe tooling is frontend_tooling", () => {

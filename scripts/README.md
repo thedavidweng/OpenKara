@@ -1,5 +1,24 @@
 # Scripts
 
+## `ci/nightly-evidence.mjs`
+
+The script creates and verifies the Nightly release-gate manifest.
+
+- **Create the manifest:** `node scripts/ci/nightly-evidence.mjs create --commit <sha> --run-id <id> --needs-json <json> --output nightly-evidence.json`
+- **Verify the manifest:** `node scripts/ci/nightly-evidence.mjs verify --input nightly-evidence.json --commit <sha> --max-age-hours 24`
+- **Write the artifact:** `nightly-evidence.json` in the `nightly-evidence` workflow artifact
+- **Run the contract tests:** `tests/nightly-evidence.test.ts`
+
+## `ci/run-accessibility-matrix.mjs`
+
+The script runs the extended Playwright accessibility matrix on Windows, macOS,
+and Linux.
+
+- **Run the matrix:** `pnpm test:a11y:matrix`
+- **Write the reports:** Playwright console, HTML, JSON, trace, and screenshot reports
+- **Report path:** `playwright-report/`
+- **Test path:** `tests/e2e/accessibility/`
+
 ## `openkara_release_evidence`
 
 Builds and validates the canonical release evidence files from the Rust

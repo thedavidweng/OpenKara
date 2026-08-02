@@ -42,14 +42,50 @@ export default defineConfig({
 
   projects: [
     {
-      name: "chromium",
+      name: "chromium-accessibility",
+      testMatch: "accessibility/**/*.spec.ts",
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 },
       },
     },
     {
-      name: "webkit",
+      name: "webkit-accessibility",
+      testMatch: "accessibility/**/*.spec.ts",
+      use: {
+        ...devices["Desktop Safari"],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "chromium-smoke",
+      testMatch: "smoke.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "webkit-smoke",
+      testMatch: "smoke.spec.ts",
+      use: {
+        ...devices["Desktop Safari"],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "chromium-ui",
+      testMatch: "*.spec.ts",
+      testIgnore: ["accessibility/**/*.spec.ts", "smoke.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "webkit-ui",
+      testMatch: "*.spec.ts",
+      testIgnore: ["accessibility/**/*.spec.ts", "smoke.spec.ts"],
       use: {
         ...devices["Desktop Safari"],
         viewport: { width: 1280, height: 800 },

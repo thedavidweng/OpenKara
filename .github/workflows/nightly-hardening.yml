@@ -23,11 +23,8 @@ jobs:
       matrix:
         include:
           - test: accessibility
-            files: tests/e2e/accessibility.spec.ts
           - test: smoke
-            files: tests/e2e/smoke.spec.ts
           - test: ui
-            files: tests/e2e
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -57,25 +54,23 @@ jobs:
         shell: pwsh
         env:
           TEST_TYPE: ${{ matrix.test }}
-          TEST_FILES: ${{ matrix.files }}
+          OKA_ACCESSIBILITY_MATRIX: ${{ matrix.test == 'accessibility' && '1' || '0' }}
         run: |
-          $ErrorActionPreference = "Stop"
-          $base = "tests/e2e"
           switch ($env:TEST_TYPE) {
-            "accessibility" {
-              pnpm exec playwright test $env:TEST_FILES
-            }
-            "smoke" {
-              pnpm exec playwright test $env:TEST_FILES
-            }
-            "ui" {
-              $files = (Get-ChildItem -Path $base -Filter "*.spec.ts" | Where-Object { $_.Name -ne "accessibility.spec.ts" -and $_.Name -ne "smoke.spec.ts" }).FullName
-              pnpm exec playwright test $files
-            }
-            default {
-              throw "Unknown test type: $env:TEST_TYPE"
-            }
+            "accessibility" { pnpm test:a11y:matrix }
+            "smoke" { pnpm exec playwright test --project=chromium-smoke --project=webkit-smoke }
+            "ui" { pnpm exec playwright test --project=chromium-ui --project=webkit-ui }
+            default { throw "Unknown test type: $env:TEST_TYPE" }
           }
+
+      - name: Upload ${{ matrix.test }} report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-windows-ui-${{ matrix.test }}
+          path: playwright-report
+          if-no-files-found: error
+          retention-days: 7
 
   # Full quality matrix (docs/CI_LAYERS.md). Release reuses recent green
   # Nightly evidence and only re-runs product packaging + Windows #284 core.
@@ -164,9 +159,10 @@ jobs:
       retention_days: 7
 
   aggregate-reports:
-    name: Aggregate nightly reports
+    name: Create Nightly evidence
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    if: always()
     needs:
       - windows-matrix
       - separation-smoke
@@ -179,50 +175,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download all nightly reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: ${{ runner.temp }}/nightly-reports
-          pattern: nightly-*
-
-      - name: Aggregate reports
-        shell: pwsh
+      - name: Create commit-bound Nightly evidence
         env:
-          REPORTS_DIR: ${{ runner.temp }}/nightly-reports
+          NEEDS_JSON: ${{ toJson(needs) }}
         run: |
-          $ErrorActionPreference = "Stop"
-          $aggregate = @()
+          node scripts/ci/nightly-evidence.mjs create \
+            --commit "${GITHUB_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --needs-json "${NEEDS_JSON}" \
+            --output nightly-evidence.json
 
-          $validationFiles = Get-ChildItem -Path $env:REPORTS_DIR -Recurse -Filter "installed-app-smoke-validation.json"
-          foreach ($file in $validationFiles) {
-            $validation = Get-Content $file.FullName | ConvertFrom-Json
-            $aggregate += [ordered]@{
-              kind = "windows-installed-app"
-              path = $file.FullName
-              pass_count = $validation.pass_count
-              fail_count = $validation.fail_count
-              total = $validation.assertions.Count
-            }
-          }
-
-          $localAudioFiles = Get-ChildItem -Path $env:REPORTS_DIR -Recurse -Filter "local-audio-smoke-report.json"
-          foreach ($file in $localAudioFiles) {
-            $report = Get-Content $file.FullName | ConvertFrom-Json
-            $aggregate += [ordered]@{
-              kind = "local-audio-smoke"
-              path = $file.FullName
-              separation_passed = $report.summary.separation_passed
-              separation_failed = $report.summary.separation_failed
-            }
-          }
-
-          $aggregate | ConvertTo-Json -AsArray -Depth 10 | Set-Content -Path "nightly-aggregate.json" -Encoding utf8
-
-      - name: Upload nightly aggregate
-        if: always()
+      - name: Upload Nightly evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nightly-aggregate
-          path: nightly-aggregate.json
-          if-no-files-found: warn
-          retention-days: 7
+          name: nightly-evidence
+          path: nightly-evidence.json
+          if-no-files-found: error
+          retention-days: 30

@@ -83,6 +83,56 @@ jobs:
           fi
           echo "Verified draft release ${release_id} for ${RELEASE_TAG}."
 
+  verify-nightly-evidence:
+    name: Verify Nightly evidence
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # Downloads same-commit Nightly evidence.
+      contents: read # Checks out the evidence verifier.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false # Release workflow: disable cache to prevent poisoning.
+
+      - name: Download Nightly evidence for the candidate commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list \
+            --repo "${GH_REPO}" \
+            --workflow nightly-hardening.yml \
+            --commit "${GITHUB_SHA}" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [ -z "${run_id}" ]; then
+            echo "::error::No successful Nightly run exists for candidate commit ${GITHUB_SHA}."
+            exit 1
+          fi
+          gh run download "${run_id}" \
+            --repo "${GH_REPO}" \
+            --name nightly-evidence \
+            --dir "${RUNNER_TEMP}/nightly-evidence"
+
+      - name: Verify candidate Nightly evidence
+        run: |
+          node scripts/ci/nightly-evidence.mjs verify \
+            --input "${RUNNER_TEMP}/nightly-evidence/nightly-evidence.json" \
+            --commit "${GITHUB_SHA}" \
+            --max-age-hours 24
+
   # Release gate profile (docs/CI_LAYERS.md):
   # - Windows: full clean/upgrade + #284 fault recovery + separation after heal
   # - macOS/Linux installed-app: install lifecycle on primary arch only
@@ -91,7 +141,7 @@ jobs:
   # - publish: multi-arch signed packages + updater + checksums
   release-separation-smoke:
     name: Release separation smoke (${{ matrix.name }})
-    needs: prepare-release
+    needs: [prepare-release, verify-nightly-evidence]
     strategy:
       fail-fast: false
       matrix:
@@ -116,7 +166,7 @@ jobs:
     # Release-only lifecycle proof on Windows (NSIS + UIA + upgrade + faults).
     # Display scaling matrix stays on Nightly to keep release wall-clock shorter.
     name: Release Windows installed-app smoke
-    needs: prepare-release
+    needs: [prepare-release, verify-nightly-evidence]
     uses: ./.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
@@ -140,7 +190,7 @@ jobs:
   release-macos-installed-smoke:
     # One arch for install lifecycle. Publish still builds Intel + AS installers.
     name: Release macOS installed-app smoke (Apple Silicon)
-    needs: prepare-release
+    needs: [prepare-release, verify-nightly-evidence]
     uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
@@ -162,7 +212,7 @@ jobs:
 
   release-macos-intel-installed-smoke:
     name: Release macOS installed-app smoke (Intel)
-    needs: prepare-release
+    needs: [prepare-release, verify-nightly-evidence]
     uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
@@ -184,7 +234,7 @@ jobs:
 
   release-linux-installed-smoke:
     name: Release Linux installed-app smoke (x64)
-    needs: prepare-release
+    needs: [prepare-release, verify-nightly-evidence]
     uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
