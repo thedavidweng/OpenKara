@@ -254,10 +254,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $bundleDir = "src-tauri/target/release/bundle"
-          $installer = Get-ChildItem -Path $bundleDir -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
-          $signature = Get-ChildItem -Path $bundleDir -Filter "*setup.exe.sig" -File -Recurse | Select-Object -First 1
-          if ($null -eq $installer) { throw "No Windows updater installer was produced." }
-          if ($null -eq $signature) { throw "No Windows updater signature was produced." }
+          $installers = @(Get-ChildItem -Path $bundleDir -Filter "*setup.exe" -File -Recurse)
+          if ($installers.Count -eq 0) { throw "No Windows updater installer was produced." }
+          foreach ($installer in $installers) {
+            $signaturePath = "$($installer.FullName).sig"
+            if (-not (Test-Path -Path $signaturePath -PathType Leaf)) {
+              throw "No Windows updater signature was produced for $($installer.Name)."
+            }
+          }
 
       - name: Upload Windows updater artifacts
         if: ${{ inputs.release_build }}
@@ -398,7 +402,7 @@ jobs:
             "--scenario", $env:RELEASE_SCENARIO,
             "--artifact", "installer:$($env:RELEASE_PLATFORM):$($installer.FullName)"
           )
-          $updaterFiles = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "updater") -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*setup.exe" -or $_.Name -like "*setup.exe.sig" })
+          $updaterFiles = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP "updater") -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*setup.exe.sig" })
           foreach ($file in $updaterFiles) {
             $arguments += @("--artifact", "updater-$($file.Name):$($env:RELEASE_PLATFORM):$($file.FullName)")
           }

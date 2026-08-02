@@ -131,9 +131,7 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("src-tauri/tauri.release.conf.json");
     expect(reusableWorkflow).toContain("${{ inputs.artifact_prefix }}-updater");
     expect(reusableWorkflow).toContain("*setup.exe.sig");
-    expect(releaseWorkflow).toContain(
-      '$_.Name -like "*setup.exe" -or $_.Name -like "*setup.exe.sig"',
-    );
+    expect(releaseWorkflow).toContain('$_.Name -like "*setup.exe.sig"');
 
     // Build-path speed: non-release smoke must not re-key the rust cache per
     // commit, and must thin-LTO + opt-level=1 the release profile so driver+app
@@ -251,12 +249,15 @@ describe("release workflow", () => {
     );
     expect(windowsValidationStep).toContain("if: ${{ inputs.release_build }}");
     expect(windowsValidationStep).toContain('-Filter "*setup.exe"');
-    expect(windowsValidationStep).toContain('-Filter "*setup.exe.sig"');
+    expect(windowsValidationStep).toContain('"$($installer.FullName).sig"');
+    expect(windowsValidationStep).toContain(
+      "foreach ($installer in $installers)",
+    );
     expect(windowsValidationStep).toContain(
       "No Windows updater installer was produced.",
     );
     expect(windowsValidationStep).toContain(
-      "No Windows updater signature was produced.",
+      "No Windows updater signature was produced for",
     );
 
     const macOSUpdaterStep = readWorkflowStep(
@@ -294,6 +295,20 @@ describe("release workflow", () => {
       "src-tauri/target/release/bundle/**/*setup.exe.sig",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
+  });
+
+  test("requires a matching signature for each Windows installer", () => {
+    const installer = "OpenKara_0.12.0_x64-setup.exe";
+    const installers = [installer];
+    const matchingSignatures = [`${installer}.sig`];
+    const mismatchedSignatures = ["OpenKara_0.12.0_arm64-setup.exe.sig"];
+
+    expect(
+      installers.every((name) => matchingSignatures.includes(`${name}.sig`)),
+    ).toBe(true);
+    expect(
+      installers.every((name) => mismatchedSignatures.includes(`${name}.sig`)),
+    ).toBe(false);
   });
 
   test("fails fast when the release tag and package.json version disagree", () => {
