@@ -4,9 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useLibraryStore } from "@/stores/library-store";
+import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { createRecordingRuntimeEventSource } from "@/runtime/event-source";
 import type {
   CommandError,
@@ -62,11 +64,15 @@ function completedSeparationStatus(
 }
 
 const {
+  mockGetPlaybackState,
+  mockGetSettings,
   mockSetPreloadCandidate,
   mockNotifyError,
   mockNotifySuccess,
   mockNotifyWhenUnfocused,
 } = vi.hoisted(() => ({
+  mockGetPlaybackState: vi.fn(),
+  mockGetSettings: vi.fn(),
   mockSetPreloadCandidate: vi.fn(),
   mockNotifyError: vi.fn(),
   mockNotifySuccess: vi.fn(),
@@ -77,6 +83,8 @@ vi.mock("@/lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/tauri")>();
   return {
     ...actual,
+    getPlaybackState: mockGetPlaybackState,
+    getSettings: mockGetSettings,
     setPreloadCandidate: mockSetPreloadCandidate,
   };
 });
@@ -92,6 +100,8 @@ vi.mock("@/lib/notifications", () => ({
 
 const initialPlayerActions = usePlayerStore.getState();
 const initialLibraryActions = useLibraryStore.getState();
+const initialLyricsActions = useLyricsStore.getState();
+const initialSettingsActions = useSettingsStore.getState();
 type RecordingRuntimeEventSource = ReturnType<
   typeof createRecordingRuntimeEventSource
 >;
@@ -101,6 +111,8 @@ const unmountFns: Array<() => void> = [];
 
 beforeEach(() => {
   runtimeSource = createRecordingRuntimeEventSource();
+  mockGetPlaybackState.mockReset();
+  mockGetSettings.mockReset();
   mockSetPreloadCandidate.mockReset();
   mockSetPreloadCandidate.mockResolvedValue(undefined);
   mockNotifyError.mockReset();
@@ -121,6 +133,13 @@ beforeEach(() => {
     updateSeparationStatus: initialLibraryActions.updateSeparationStatus,
     updateUploadStatus: initialLibraryActions.updateUploadStatus,
     clearUploadStatus: initialLibraryActions.clearUploadStatus,
+  });
+  useLyricsStore.setState({
+    songId: null,
+    fetchLyrics: initialLyricsActions.fetchLyrics,
+  });
+  useSettingsStore.setState({
+    hydrateAppSettings: initialSettingsActions.hydrateAppSettings,
   });
   useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
   useRemotePlaybackStore.getState().reset();
@@ -214,6 +233,37 @@ describe("runtime event subscription cleanup", () => {
   });
 });
 
+describe("lyrics auto-fetch", () => {
+  test("fetches lyrics when the current song changes", async () => {
+    const fetchLyrics = vi.fn().mockResolvedValue(undefined);
+    useLyricsStore.setState({ fetchLyrics });
+    usePlayerStore.setState({ snapshot: playbackSnapshot("song-a") });
+
+    const { useLyricsAutoFetch } = await import("./use-playback-runtime");
+    await renderHook(() => useLyricsAutoFetch());
+
+    expect(fetchLyrics).toHaveBeenCalledWith("song-a");
+
+    await act(async () => {
+      usePlayerStore.setState({ snapshot: playbackSnapshot("song-b") });
+      await Promise.resolve();
+    });
+
+    expect(fetchLyrics).toHaveBeenNthCalledWith(2, "song-b");
+  });
+
+  test("does not fetch lyrics while disabled", async () => {
+    const fetchLyrics = vi.fn().mockResolvedValue(undefined);
+    useLyricsStore.setState({ fetchLyrics });
+    usePlayerStore.setState({ snapshot: playbackSnapshot("song-a") });
+
+    const { useLyricsAutoFetch } = await import("./use-playback-runtime");
+    await renderHook(() => useLyricsAutoFetch(false));
+
+    expect(fetchLyrics).not.toHaveBeenCalled();
+  });
+});
+
 describe("usePreloadCandidateEffect", () => {
   test("selects the next queue item for preload", async () => {
     useQueueStore.setState({ queue: ["song-a", "song-b"] });
@@ -282,6 +332,30 @@ describe("playback event modules", () => {
 
     expect(applyPlaybackPositionEvent).toHaveBeenCalledWith(event);
   });
+
+  test("retries playback errors and advances ended tracks", async () => {
+    const playSong = vi.fn().mockResolvedValue(undefined);
+    const playNextFromQueue = vi.fn().mockResolvedValue(undefined);
+    usePlayerStore.setState({ playSong, playNextFromQueue });
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true, runtimeSource));
+
+    runtimeSource.emit("playback-error", {
+      song_id: "song-a",
+      error: commandError("decode failed"),
+    });
+    runtimeSource.emit("playback-ended", { song_id: "song-a" });
+
+    const retryAction = mockNotifyError.mock.calls[0]?.[1];
+    expect(retryAction).toEqual(expect.any(Function));
+    if (typeof retryAction === "function") {
+      retryAction();
+    }
+
+    expect(playSong).toHaveBeenCalledWith("song-a");
+    expect(playNextFromQueue).toHaveBeenCalledWith("song-a");
+  });
 });
 
 describe("separation event modules", () => {
@@ -326,6 +400,55 @@ describe("separation event modules", () => {
     expect(loadStems).not.toHaveBeenCalled();
   });
 
+  test("reports a stem loading failure for the current song", async () => {
+    const loadError = new Error("stem load failed");
+    const loadStems = vi.fn().mockRejectedValue(loadError);
+    const updateSeparationStatus = vi.fn();
+    usePlayerStore.setState({
+      snapshot: playbackSnapshot("song-a"),
+      loadStems,
+    });
+    useLibraryStore.setState({
+      songs: [
+        {
+          hash: "song-a",
+          file_path: "/music/song-a.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Song A",
+          artist: null,
+          album: null,
+          duration_ms: 0,
+          cover_art: null,
+          has_cover_art: false,
+          artwork_thumb_path: null,
+          imported_at: 0,
+          original_ext: "mp3",
+        },
+      ],
+      updateSeparationStatus,
+    });
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true, runtimeSource));
+    await act(async () => {
+      runtimeSource.emit("separation-complete", {
+        song_id: "song-a",
+        status: completedSeparationStatus("song-a", false),
+      });
+      await Promise.resolve();
+    });
+
+    expect(mockNotifyWhenUnfocused).toHaveBeenCalledWith(
+      expect.any(String),
+      "Song A",
+    );
+    expect(mockNotifyError).toHaveBeenCalledWith(loadError);
+  });
+
   test("notifies on separation errors and records cancellation", async () => {
     const updateSeparationStatus = vi.fn();
     useLibraryStore.setState({ updateSeparationStatus });
@@ -361,6 +484,122 @@ describe("separation event modules", () => {
     expect(updateSeparationStatus).toHaveBeenCalledWith(
       expect.objectContaining({ song_id: "song-a", state: "running" }),
     );
+  });
+
+  test("routes batch separation progress and terminal events", async () => {
+    vi.useFakeTimers();
+    try {
+      const updateBatchProgress = vi.fn();
+      const clearBatchSeparation = vi.fn();
+      useLibraryStore.setState({ updateBatchProgress, clearBatchSeparation });
+
+      const { useEventListeners } = await import("./use-playback-runtime");
+      await renderHook(() => useEventListeners(true, runtimeSource));
+
+      const progress = {
+        total: 2,
+        completed: 1,
+        skipped: 0,
+        failed: 0,
+        current_song_id: "song-a",
+        current_percent: 50,
+      };
+      runtimeSource.emit("batch-separation-progress", progress);
+      runtimeSource.emit("batch-separation-complete", {
+        ...progress,
+        completed: 2,
+        current_song_id: null,
+        current_percent: 100,
+      });
+      runtimeSource.emit("batch-separation-cancelled", {
+        ...progress,
+        failed: 1,
+        current_song_id: null,
+        current_percent: 0,
+      });
+
+      expect(updateBatchProgress).toHaveBeenCalledTimes(3);
+      expect(mockNotifyWhenUnfocused).toHaveBeenCalledOnce();
+
+      vi.advanceTimersByTime(3_000);
+      expect(clearBatchSeparation).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("fullscreen playback runtime", () => {
+  test("hydrates state and subscribes to playback positions", async () => {
+    const snapshot = playbackSnapshot("song-a");
+    const settings = {
+      stem_mode: "four_stem" as const,
+      model_variant: "htdemucs" as const,
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      hide_upgrade_all: false,
+      lyrics_font_step: 0,
+      execution_provider: "cpu" as const,
+      available_execution_providers: ["cpu" as const],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
+      library_sort_mode: "recently_imported" as const,
+      theme_preference: "dark" as const,
+      update_policy: "notify" as const,
+    };
+    const updateSnapshot = vi.fn();
+    const applyPlaybackPositionEvent = vi.fn();
+    const hydrateAppSettings = vi.fn();
+    usePlayerStore.setState({ updateSnapshot, applyPlaybackPositionEvent });
+    useSettingsStore.setState({ hydrateAppSettings });
+    mockGetPlaybackState.mockResolvedValue(snapshot);
+    mockGetSettings.mockResolvedValue(settings);
+
+    const { useFullscreenPlaybackRuntime } =
+      await import("./use-playback-runtime");
+    await renderHook(() => useFullscreenPlaybackRuntime(runtimeSource));
+    await vi.waitFor(() => {
+      expect(updateSnapshot).toHaveBeenCalledWith(snapshot);
+      expect(hydrateAppSettings).toHaveBeenCalledWith(settings);
+    });
+
+    const event: PlaybackPositionEvent = {
+      ms: 2_000,
+      transport_generation: 1,
+      snapshot: { ...snapshot, position_ms: 2_000 },
+    };
+    runtimeSource.emit("playback-position", event);
+
+    expect(applyPlaybackPositionEvent).toHaveBeenCalledWith(event);
+  });
+});
+
+describe("upload event module", () => {
+  test("clears an upload status after completion", async () => {
+    vi.useFakeTimers();
+    try {
+      const updateUploadStatus = vi.fn();
+      const clearUploadStatus = vi.fn();
+      useLibraryStore.setState({ updateUploadStatus, clearUploadStatus });
+
+      const { useEventListeners } = await import("./use-playback-runtime");
+      await renderHook(() => useEventListeners(true, runtimeSource));
+      runtimeSource.emit("upload-complete", {
+        song_id: "song-a",
+        remote_library_id: "remote-1",
+      });
+
+      expect(updateUploadStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ song_id: "song-a", state: "completed" }),
+      );
+      vi.advanceTimersByTime(3_000);
+      expect(clearUploadStatus).toHaveBeenCalledWith("song-a");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
