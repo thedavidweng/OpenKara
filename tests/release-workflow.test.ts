@@ -9,6 +9,25 @@ function readProjectFile(path: string) {
   return readFileSync(join(projectRoot, path), "utf8");
 }
 
+function readWorkflowStep(workflow: string, name: string) {
+  const marker = `      - name: ${name}`;
+  const start = workflow.indexOf(marker);
+  if (start === -1) {
+    return "";
+  }
+
+  const bodyStart = start + marker.length;
+  const nextStep = workflow.indexOf("\n      - name:", bodyStart);
+  const nextJobOffset = workflow.slice(bodyStart).search(/\n  [A-Za-z0-9_-]+:/);
+  const nextJob = nextJobOffset === -1 ? -1 : bodyStart + nextJobOffset;
+  const end =
+    [nextStep, nextJob]
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right)[0] ?? workflow.length;
+
+  return workflow.slice(start, end);
+}
+
 describe("release workflow", () => {
   test("gates release publishing on release-only native and installed-app smoke", () => {
     const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
@@ -176,6 +195,102 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?release_build:\s*true/,
     );
+  });
+
+  test("builds and requires macOS updater artifacts in release smoke", () => {
+    const macOSWorkflow = readProjectFile(
+      ".github/workflows/reusable-macos-installed-app-smoke.yml",
+    );
+    const linuxWorkflow = readProjectFile(
+      ".github/workflows/reusable-linux-installed-app-smoke.yml",
+    );
+    const windowsWorkflow = readProjectFile(
+      ".github/workflows/reusable-windows-installed-app.yml",
+    );
+
+    expect(macOSWorkflow).toContain(
+      'tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}"',
+    );
+    expect(macOSWorkflow).toContain(
+      "name: ${{ inputs.artifact_prefix }}-updater",
+    );
+    const macOSValidationStep = readWorkflowStep(
+      macOSWorkflow,
+      "Validate macOS updater artifacts",
+    );
+    expect(macOSValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(macOSValidationStep).toContain('-name "*.tar.gz"');
+    expect(macOSValidationStep).toContain('-name "*.sig"');
+    expect(macOSValidationStep).toContain(
+      "No macOS updater archive was produced.",
+    );
+    expect(macOSValidationStep).toContain(
+      "No macOS updater signature was produced.",
+    );
+
+    const linuxValidationStep = readWorkflowStep(
+      linuxWorkflow,
+      "Validate Linux updater artifacts",
+    );
+    expect(linuxValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(linuxValidationStep).toContain('-name "*.tar.gz"');
+    expect(linuxValidationStep).toContain('-name "*.sig"');
+    expect(linuxValidationStep).toContain(
+      "No Linux updater archive was produced.",
+    );
+    expect(linuxValidationStep).toContain(
+      "No Linux updater signature was produced.",
+    );
+
+    const windowsValidationStep = readWorkflowStep(
+      windowsWorkflow,
+      "Validate Windows updater artifacts",
+    );
+    expect(windowsValidationStep).toContain("if: ${{ inputs.release_build }}");
+    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip"');
+    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip.sig"');
+    expect(windowsValidationStep).toContain(
+      "No Windows updater archive was produced.",
+    );
+    expect(windowsValidationStep).toContain(
+      "No Windows updater signature was produced.",
+    );
+
+    const macOSUpdaterStep = readWorkflowStep(
+      macOSWorkflow,
+      "Upload macOS updater artifacts",
+    );
+    expect(macOSUpdaterStep).toContain(
+      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz",
+    );
+    expect(macOSUpdaterStep).toContain(
+      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig",
+    );
+    expect(macOSUpdaterStep).toContain("if-no-files-found: error");
+
+    const linuxUpdaterStep = readWorkflowStep(
+      linuxWorkflow,
+      "Upload Linux updater artifacts",
+    );
+    expect(linuxUpdaterStep).toContain(
+      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz",
+    );
+    expect(linuxUpdaterStep).toContain(
+      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig",
+    );
+    expect(linuxUpdaterStep).toContain("if-no-files-found: error");
+
+    const windowsUpdaterStep = readWorkflowStep(
+      windowsWorkflow,
+      "Upload Windows updater artifacts",
+    );
+    expect(windowsUpdaterStep).toContain(
+      "src-tauri/target/release/bundle/**/*.nsis.zip",
+    );
+    expect(windowsUpdaterStep).toContain(
+      "src-tauri/target/release/bundle/**/*.nsis.zip.sig",
+    );
+    expect(windowsUpdaterStep).toContain("if-no-files-found: error");
   });
 
   test("fails fast when the release tag and package.json version disagree", () => {

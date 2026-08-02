@@ -201,6 +201,23 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
+      - name: Validate Linux updater artifacts
+        if: ${{ inputs.release_build }}
+        env:
+          BUNDLE_DIR: src-tauri/target/${{ inputs.rust_target }}/release/bundle
+        run: |
+          set -euo pipefail
+          archive="$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" -print -quit)"
+          signature="$(find "$BUNDLE_DIR" -type f -name "*.sig" -print -quit)"
+          if [ -z "$archive" ]; then
+            echo "::error::No Linux updater archive was produced."
+            exit 1
+          fi
+          if [ -z "$signature" ]; then
+            echo "::error::No Linux updater signature was produced."
+            exit 1
+          fi
+
       - name: Upload Linux updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -209,7 +226,7 @@ jobs:
           path: |
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
   clean-install:

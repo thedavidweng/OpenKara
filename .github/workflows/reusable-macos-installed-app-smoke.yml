@@ -134,7 +134,7 @@ jobs:
           # enable automation-driver: Tauri would pack that second binary into
           # the DMG. Driver is a separate CI artifact in the next step.
           if [ "${RELEASE_BUILD}" = "true" ]; then
-            pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+            pnpm tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
           else
             pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
           fi
@@ -172,6 +172,23 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
+      - name: Validate macOS updater artifacts
+        if: ${{ inputs.release_build }}
+        env:
+          BUNDLE_DIR: src-tauri/target/${{ inputs.rust_target }}/release/bundle
+        run: |
+          set -euo pipefail
+          archive="$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" -print -quit)"
+          signature="$(find "$BUNDLE_DIR" -type f -name "*.sig" -print -quit)"
+          if [ -z "$archive" ]; then
+            echo "::error::No macOS updater archive was produced."
+            exit 1
+          fi
+          if [ -z "$signature" ]; then
+            echo "::error::No macOS updater signature was produced."
+            exit 1
+          fi
+
       - name: Upload macOS updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -180,7 +197,7 @@ jobs:
           path: |
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
             src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
   clean-install:
