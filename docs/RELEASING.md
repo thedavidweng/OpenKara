@@ -7,26 +7,23 @@ every push to `main` and maintains a running release PR that bumps
 `.release-please-manifest.json`.
 
 When the release PR is merged, release-please opens a **draft** GitHub
-Release with changelog notes. The Release Please workflow binds that draft to
-the final tag, applies the installation section, and dispatches the Release
-workflow. The Release workflow also supports manual dispatch for an existing
-draft release. The Release Please workflow then:
+Release with changelog notes. The Release Please workflow creates the final
+tag, ensures the draft release is bound to that tag, applies the installation
+section, and dispatches the Release workflow. The Release workflow also
+supports manual dispatch for an existing draft release.
+
+The Release Please workflow:
 
 1. Syncs native manifests (`Cargo.toml`, `tauri.conf.json`, …) via
    `scripts/sync-version.mjs`.
 2. Ensures the git tag `vX.Y.Z` exists (draft releases can land untagged
    when only `GITHUB_TOKEN` is used).
-3. Dispatches the [`Release` workflow](../.github/workflows/release.yml)
+3. Creates a formal draft when the provider leaves only an untagged draft.
+4. Applies `.github/release-notes-installation.md`. The template includes
+   Homebrew and WinGet install commands.
+5. Dispatches the [`Release` workflow](../.github/workflows/release.yml)
    with `workflow_dispatch`. Tag pushes from `GITHUB_TOKEN` do not start
    other workflows, so this explicit dispatch is required.
-
-The Release workflow:
-
-1. Creates or updates the release PR and, after merge, binds the draft release
-   to `vX.Y.Z`.
-2. Applies `.github/release-notes-installation.md`. The template includes
-   Homebrew and WinGet install commands.
-3. Dispatches the Release workflow after the tag and draft release are ready.
 
 The Release workflow then:
 
@@ -46,10 +43,11 @@ gates are the automated quality gate. There is no separate manual Publish
 click on the GitHub Release page for plain version tags.
 
 Release Please owns the version, changelog text, draft release, and final
-release body. The Release workflow owns the tested asset pipeline. Keep the
-installation section in the checked-in template file and apply it from the
-Release Please workflow. The release-please config has no static release-body
-template setting.
+release body. The Release workflow owns the tested asset pipeline. Set
+`force-tag-creation` so a draft release has its real tag. Keep the installation
+section in the checked-in template file and apply it from the Release Please
+workflow. The release-please config has no static release-body template
+setting.
 
 [release-please]: https://github.com/googleapis/release-please
 

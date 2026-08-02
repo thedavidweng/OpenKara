@@ -342,6 +342,7 @@ describe("release workflow", () => {
     const releasePleaseWorkflow = readProjectFile(
       ".github/workflows/release-please.yml",
     );
+    const releasePleaseConfig = readProjectFile("release-please-config.json");
     const installationTemplate = readProjectFile(
       ".github/release-notes-installation.md",
     );
@@ -365,6 +366,7 @@ describe("release workflow", () => {
       'gh api --method PATCH "${release_endpoint}"',
     );
     expect(releasePleaseWorkflow).toContain('-F "body=@RELEASE_NOTES.md"');
+    expect(releasePleaseConfig).toContain('"force-tag-creation": true');
     expect(releaseWorkflow).toContain("name: Verify draft release");
     expect(releaseWorkflow).not.toContain("release-notes-installation.md");
     expect(releaseWorkflow).not.toContain("RELEASE_NOTES.md");
@@ -372,8 +374,9 @@ describe("release workflow", () => {
 
   test("release-please ensures a git tag and dispatches the Release workflow", () => {
     // GITHUB_TOKEN tag/release events do not start other workflows. The
-    // release-please path must create a missing tag, rebind the draft release,
-    // and workflow_dispatch release.yml so installed-app smokes and publish run.
+    // release-please path must create a missing tag, create a formal draft
+    // release, and workflow_dispatch release.yml so installed-app smokes and
+    // publish run.
     const releasePleaseWorkflow = readProjectFile(
       ".github/workflows/release-please.yml",
     );
@@ -391,6 +394,12 @@ describe("release workflow", () => {
     expect(releasePleaseWorkflow).toContain("untagged-*");
     expect(releasePleaseWorkflow).toContain(".tag_name ==");
     expect(releasePleaseWorkflow).toContain(".name ==");
+    expect(releasePleaseWorkflow).toContain(
+      'gh api --method POST "repos/${GH_REPO}/releases"',
+    );
+    expect(releasePleaseWorkflow).toContain(
+      "GitHub does not support changing an existing draft's tag in place",
+    );
     expect(releasePleaseWorkflow).toContain(
       "No draft GitHub Release was found",
     );
