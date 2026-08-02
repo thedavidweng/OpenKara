@@ -7,30 +7,61 @@ import { MonitorPicker } from "./MonitorPicker";
 
 const {
   mockGetMonitors,
+  mockLanguage,
   mockOpenFullscreenPlayer,
   mockSyncAirPlayAudienceState,
 } = vi.hoisted(() => ({
   mockGetMonitors: vi.fn(),
+  mockLanguage: { current: "en" as "en" | "zh" },
   mockOpenFullscreenPlayer: vi.fn(),
   mockSyncAirPlayAudienceState: vi.fn(),
 }));
 
-const mockTranslate = vi.hoisted(
-  () => (key: string, options?: { index?: number }) =>
-    ({
-      "player.selectMonitor": "Select Monitor",
-      "player.localDisplayOutput": "Local Display Output",
-      "player.noDisplaysFound": "No displays found yet.",
-      "player.monitor": `Monitor ${options?.index ?? ""}`.trim(),
-      "player.unnamedMonitor": `Unnamed monitor ${options?.index ?? ""}`.trim(),
-    })[key as keyof Record<string, string>] ?? key,
-);
+const getMockTranslate = vi.hoisted(() => {
+  const translators = new Map<
+    string,
+    (key: string, options?: { index?: number }) => string
+  >();
+
+  return () => {
+    const language = mockLanguage.current;
+    const existing = translators.get(language);
+    if (existing) {
+      return existing;
+    }
+
+    const translate = (key: string, options?: { index?: number }) => {
+      const index = options?.index ?? "";
+      const strings: Record<string, string> =
+        language === "zh"
+          ? {
+              "player.selectMonitor": "选择显示器",
+              "player.localDisplayOutput": "本地显示输出",
+              "player.noDisplaysFound": "暂未找到显示器。",
+              "player.monitor": `显示器 ${index}`.trim(),
+              "player.unnamedMonitor": `未命名显示器 ${index}`.trim(),
+            }
+          : {
+              "player.selectMonitor": "Select Monitor",
+              "player.localDisplayOutput": "Local Display Output",
+              "player.noDisplaysFound": "No displays found yet.",
+              "player.monitor": `Monitor ${index}`.trim(),
+              "player.unnamedMonitor": `Unnamed monitor ${index}`.trim(),
+            };
+
+      return strings[key] ?? key;
+    };
+
+    translators.set(language, translate);
+    return translate;
+  };
+});
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
   return {
     ...actual,
-    useTranslation: () => ({ t: mockTranslate }),
+    useTranslation: () => ({ t: getMockTranslate() }),
   };
 });
 
@@ -47,6 +78,7 @@ interface MockMonitor {
   name: string | null;
   size: { width: number; height: number };
   position: { x: number; y: number };
+  scaleFactor: number;
 }
 
 function buildMonitor(
@@ -58,6 +90,7 @@ function buildMonitor(
     name,
     size: { width: 1920, height: 1080 },
     position: { x: 1920 * index, y: 0 },
+    scaleFactor: 1,
     ...overrides,
   };
 }
@@ -71,6 +104,7 @@ async function flushEffects() {
 describe("MonitorPicker", () => {
   beforeEach(() => {
     mockGetMonitors.mockReset();
+    mockLanguage.current = "en";
     mockOpenFullscreenPlayer.mockReset();
     mockSyncAirPlayAudienceState.mockReset();
     mockGetMonitors.mockResolvedValue([buildMonitor("Studio Display", 0)]);
@@ -167,6 +201,53 @@ describe("MonitorPicker", () => {
     const option = document.querySelector('[role="option"]');
     expect(option?.textContent).toContain("Unnamed monitor 1");
     expect(option?.textContent).toContain("Monitor 1");
+
+    await act(async () => root.unmount());
+    anchor.remove();
+    container.remove();
+  });
+
+  test("preserves the focused option when the language changes", async () => {
+    mockGetMonitors.mockResolvedValue([
+      buildMonitor("", 0, { name: null }),
+      buildMonitor("", 1, { name: null }),
+    ]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+
+    await act(async () => {
+      root.render(
+        <MonitorPicker onClose={() => {}} anchorRef={{ current: anchor }} />,
+      );
+    });
+    await flushEffects();
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    const options = document.querySelectorAll('[role="option"]');
+    await act(async () => {
+      listbox.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    const focusedOption = options[1];
+    expect(document.activeElement).toBe(focusedOption);
+
+    mockLanguage.current = "zh";
+    await act(async () => {
+      root.render(
+        <MonitorPicker onClose={() => {}} anchorRef={{ current: anchor }} />,
+      );
+    });
+    await flushEffects();
+
+    const updatedOptions = document.querySelectorAll('[role="option"]');
+    expect(updatedOptions[1]).toBe(focusedOption);
+    expect(updatedOptions[1].textContent).toContain("未命名显示器 2");
+    expect(updatedOptions[1].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(focusedOption);
 
     await act(async () => root.unmount());
     anchor.remove();

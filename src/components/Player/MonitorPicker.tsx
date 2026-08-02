@@ -7,6 +7,7 @@ import { getMonitors, openFullscreenPlayer } from "@/lib/fullscreen-player";
 import { syncAirPlayAudienceState } from "@/lib/tauri";
 
 interface MonitorInfo {
+  id: string;
   name: string;
   width: number;
   height: number;
@@ -56,6 +57,15 @@ function normalizeMonitors(
   getFallbackName: (index: number) => string,
 ): MonitorInfo[] {
   return monitors.map((monitor, index) => ({
+    id: [
+      monitor.name ?? "",
+      monitor.position.x,
+      monitor.position.y,
+      monitor.size.width,
+      monitor.size.height,
+      monitor.scaleFactor,
+      index,
+    ].join(":"),
     name: monitor.name ?? getFallbackName(index),
     width: monitor.size.width,
     height: monitor.size.height,
@@ -268,7 +278,7 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
       >
         {monitors.map((monitor, index) => (
           <button
-            key={`${monitor.name}-${monitor.width}-${monitor.height}-${index}`}
+            key={monitor.id}
             ref={(el) => {
               optionRefs.current[index] = el;
             }}

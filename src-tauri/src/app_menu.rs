@@ -5,7 +5,7 @@ use tauri::{
 };
 
 #[cfg(target_os = "macos")]
-use tauri::{menu::MenuItemKind, Manager};
+use tauri::menu::MenuItemKind;
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const MENU_ACTION_EVENT: &str = "openkara://menu-action";
@@ -303,10 +303,7 @@ pub fn set_native_app_menu_labels(
     labels: NativeAppMenuLabels,
 ) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
-    if let Some(menu) = app_handle
-        .get_webview_window("main")
-        .and_then(|window| window.menu())
-    {
+    if let Some(menu) = app_handle.menu() {
         set_root_menu_item_text(&menu, MENU_SUBMENU_FILE, &labels.file)?;
         set_root_menu_item_text(&menu, MENU_SUBMENU_EDIT, &labels.edit)?;
         set_root_menu_item_text(&menu, MENU_SUBMENU_VIEW, &labels.view)?;
@@ -371,6 +368,7 @@ mod tests {
         assert_eq!(MENU_ACTION_OPEN_SETTINGS, "open-settings");
         assert_eq!(MENU_ACTION_SWITCH_LIBRARY, "switch-library");
         assert_eq!(MENU_ACTION_TOGGLE_SIDEBAR, "toggle-sidebar");
+        assert_eq!(MENU_ACTION_COPY_DEBUG_INFO, "copy-debug-info");
     }
 
     #[test]
