@@ -199,11 +199,16 @@ pub fn play<R: Runtime>(
         .map_err(|error| PlaybackError::Internal(error.message))?;
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-    let request_id = state
-        .playback
-        .playback_request_id
-        .fetch_add(1, Ordering::SeqCst)
-        + 1;
+    let request_id = {
+        let _playback = state.playback.playback.lock().map_err(|_| {
+            PlaybackError::Internal("playback controller lock was poisoned".to_owned())
+        })?;
+        state
+            .playback
+            .playback_request_id
+            .fetch_add(1, Ordering::SeqCst)
+            + 1
+    };
     let song = cache::get_song_by_hash(&connection, song_id)
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
