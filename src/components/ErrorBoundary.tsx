@@ -29,6 +29,20 @@ export class ErrorBoundary extends Component<
     void windowReady();
   }
 
+  componentDidMount() {
+    i18next.on("languageChanged", this.handleLanguageChanged);
+  }
+
+  componentWillUnmount() {
+    i18next.off("languageChanged", this.handleLanguageChanged);
+  }
+
+  private handleLanguageChanged = () => {
+    if (this.state.hasError) {
+      this.forceUpdate();
+    }
+  };
+
   private handleReload = () => {
     this.setState({ hasError: false, error: null });
     window.location.reload();
@@ -46,6 +60,7 @@ export class ErrorBoundary extends Component<
               i18next.t("errors.somethingWentWrong")}
           </p>
           <button
+            type="button"
             onClick={this.handleReload}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent-hover)]"
           >

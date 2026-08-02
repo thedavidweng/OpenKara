@@ -15,21 +15,22 @@ const {
   mockSyncAirPlayAudienceState: vi.fn(),
 }));
 
+const mockTranslate = vi.hoisted(
+  () => (key: string, options?: { index?: number }) =>
+    ({
+      "player.selectMonitor": "Select Monitor",
+      "player.localDisplayOutput": "Local Display Output",
+      "player.noDisplaysFound": "No displays found yet.",
+      "player.monitor": `Monitor ${options?.index ?? ""}`.trim(),
+      "player.unnamedMonitor": `Unnamed monitor ${options?.index ?? ""}`.trim(),
+    })[key as keyof Record<string, string>] ?? key,
+);
+
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
   return {
     ...actual,
-    useTranslation: () => ({
-      t: (key: string, options?: { index?: number }) =>
-        (
-          ({
-            "player.selectMonitor": "Select Monitor",
-            "player.localDisplayOutput": "Local Display Output",
-            "player.noDisplaysFound": "No displays found yet.",
-            "player.monitor": `Monitor ${options?.index ?? ""}`.trim(),
-          }) as const
-        )[key] ?? key,
-    }),
+    useTranslation: () => ({ t: mockTranslate }),
   };
 });
 
@@ -144,6 +145,30 @@ describe("MonitorPicker", () => {
     await act(async () => {
       root.unmount();
     });
+    anchor.remove();
+    container.remove();
+  });
+
+  test("uses a distinct translated fallback name for unnamed displays", async () => {
+    mockGetMonitors.mockResolvedValue([buildMonitor("", 0, { name: null })]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+
+    await act(async () => {
+      root.render(
+        <MonitorPicker onClose={() => {}} anchorRef={{ current: anchor }} />,
+      );
+    });
+    await flushEffects();
+
+    const option = document.querySelector('[role="option"]');
+    expect(option?.textContent).toContain("Unnamed monitor 1");
+    expect(option?.textContent).toContain("Monitor 1");
+
+    await act(async () => root.unmount());
     anchor.remove();
     container.remove();
   });

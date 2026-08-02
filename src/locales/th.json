@@ -202,6 +202,7 @@
     "seek": "เลื่อนตำแหน่ง",
     "selectMonitor": "เลือกจอภาพ",
     "monitor": "จอภาพ {{index}}",
+    "unnamedMonitor": "จอภาพไม่มีชื่อ {{index}}",
     "localDisplayOutput": "เอาต์พุตจอภาพในเครื่อง",
     "airPlayOutput": "เอาต์พุต AirPlay",
     "noDisplaysFound": "ยังไม่พบจอภาพ",
@@ -688,6 +689,7 @@
     "singer": "นักร้อง",
     "singerName": "ชื่อนักร้อง",
     "removeSinger": "ลบนักร้อง",
+    "removeSingerAriaLabel": "ลบ {{name}}",
     "confirmRemoveSinger": "ลบนักร้อง",
     "confirmRemoveSingerMessage": "นักร้องคนนี้ถูกกำหนดให้กับเพลงในคิว การลบออกจะลบเพลงเหล่านั้นออกจากคิวด้วย"
   },

@@ -187,7 +187,6 @@ export function useAppMenuRuntime(enabled: boolean): void {
   useEffect(() => {
     void api
       .setNativeAppMenuLabels({
-        appName: t("app.name"),
         file: t("windowChrome.file"),
         edit: t("windowChrome.edit"),
         view: t("windowChrome.view"),

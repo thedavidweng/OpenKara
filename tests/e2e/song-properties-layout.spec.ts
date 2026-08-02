@@ -29,8 +29,13 @@ test.describe("Song Properties layout", () => {
         .getByRole("button", { name: label, exact: true })
         .boundingBox();
       expect(buttonBox).not.toBeNull();
+      expect(buttonBox!.x).toBeGreaterThanOrEqual(dialogBox!.x);
+      expect(buttonBox!.y).toBeGreaterThanOrEqual(dialogBox!.y);
       expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(
         dialogBox!.x + dialogBox!.width,
+      );
+      expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(
+        dialogBox!.y + dialogBox!.height,
       );
     }
   });

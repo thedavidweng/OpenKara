@@ -202,6 +202,7 @@
     "seek": "탐색",
     "selectMonitor": "모니터 선택",
     "monitor": "모니터 {{index}}",
+    "unnamedMonitor": "이름 없는 모니터 {{index}}",
     "localDisplayOutput": "로컬 디스플레이 출력",
     "airPlayOutput": "AirPlay 출력",
     "noDisplaysFound": "아직 발견된 디스플레이가 없어요.",
@@ -688,6 +689,7 @@
     "singer": "가수",
     "singerName": "가수 이름",
     "removeSinger": "가수 제거",
+    "removeSingerAriaLabel": "{{name}} 제거",
     "confirmRemoveSinger": "가수 제거",
     "confirmRemoveSingerMessage": "이 가수는 대기열의 노래에 지정되어 있어요. 가수를 제거하면 해당 노래도 대기열에서 함께 제거돼요."
   },

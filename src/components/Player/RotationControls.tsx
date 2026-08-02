@@ -94,7 +94,7 @@ function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
         type="button"
         onClick={onRemove}
         className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-[var(--color-hover)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-        aria-label={t("rotation.removeSinger")}
+        aria-label={t("rotation.removeSingerAriaLabel", { name })}
       >
         <X size={12} />
       </button>

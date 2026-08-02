@@ -15,7 +15,6 @@ import type {
 } from "@/types/ipc";
 
 export interface NativeAppMenuLabels {
-  appName: string;
   file: string;
   edit: string;
   view: string;

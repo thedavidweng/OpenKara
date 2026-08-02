@@ -329,7 +329,6 @@ describe("tauri API wrappers", () => {
   test("syncs localized native app menu labels through the shell command", async () => {
     const { setNativeAppMenuLabels } = await import("./tauri");
     const labels = {
-      appName: "OpenKara",
       file: "File",
       edit: "Edit",
       view: "View",

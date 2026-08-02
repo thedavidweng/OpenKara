@@ -6,6 +6,12 @@ import { describe, expect, test, vi } from "vitest";
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "@/stores/layout-store";
 import { SidebarRail } from "./SidebarRail";
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => (key === "sidebar.resize" ? "Resize sidebar" : key),
+  }),
+}));
+
 describe("SidebarRail", () => {
   test("keeps the rail mounted with a zero-width shell when hidden", () => {
     const markup = renderToStaticMarkup(
@@ -63,7 +69,7 @@ describe("SidebarRail", () => {
     );
 
     const separator = screen.getByRole("separator", {
-      name: "sidebar.resize",
+      name: "Resize sidebar",
     });
     fireEvent.keyDown(separator, { key: "ArrowRight" });
     fireEvent.keyDown(separator, { key: "ArrowLeft" });

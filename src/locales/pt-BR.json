@@ -204,6 +204,7 @@
     "seek": "Posição",
     "selectMonitor": "Selecionar monitor",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Monitor sem nome {{index}}",
     "localDisplayOutput": "Saída de tela local",
     "airPlayOutput": "Saída AirPlay",
     "noDisplaysFound": "Nenhuma tela encontrada ainda.",
@@ -690,6 +691,7 @@
     "singer": "Cantor",
     "singerName": "Nome do cantor",
     "removeSinger": "Remover cantor",
+    "removeSingerAriaLabel": "Remover {{name}}",
     "confirmRemoveSinger": "Remover cantor",
     "confirmRemoveSingerMessage": "Este cantor está atribuído a músicas na fila. Removê-lo também removerá essas músicas da fila."
   },

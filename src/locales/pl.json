@@ -205,6 +205,7 @@
     "seek": "Przewiń",
     "selectMonitor": "Wybierz monitor",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Nienazwany monitor {{index}}",
     "localDisplayOutput": "Wyjście na lokalny ekran",
     "airPlayOutput": "Wyjście AirPlay",
     "noDisplaysFound": "Nie znaleziono jeszcze żadnych ekranów.",
@@ -691,6 +692,7 @@
     "singer": "Śpiewający",
     "singerName": "Imię śpiewającego",
     "removeSinger": "Usuń śpiewającego",
+    "removeSingerAriaLabel": "Usuń {{name}}",
     "confirmRemoveSinger": "Usuń śpiewającego",
     "confirmRemoveSingerMessage": "Ten śpiewający jest przypisany do utworów w kolejce. Jego usunięcie spowoduje również usunięcie tych utworów z kolejki."
   },

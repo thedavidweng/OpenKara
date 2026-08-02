@@ -203,6 +203,7 @@
     "seek": "进度",
     "selectMonitor": "选择显示器",
     "monitor": "显示器 {{index}}",
+    "unnamedMonitor": "未命名显示器 {{index}}",
     "localDisplayOutput": "本地显示器输出",
     "airPlayOutput": "AirPlay 输出",
     "noDisplaysFound": "暂未发现可用显示器。",
@@ -689,6 +690,7 @@
     "singer": "歌手",
     "singerName": "歌手姓名",
     "removeSinger": "移除歌手",
+    "removeSingerAriaLabel": "移除 {{name}}",
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },

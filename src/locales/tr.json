@@ -203,6 +203,7 @@
     "seek": "İlerleme",
     "selectMonitor": "Monitör Seç",
     "monitor": "Monitör {{index}}",
+    "unnamedMonitor": "Adsız monitör {{index}}",
     "localDisplayOutput": "Yerel Ekran Çıkışı",
     "airPlayOutput": "AirPlay Çıkışı",
     "noDisplaysFound": "Henüz ekran bulunamadı.",
@@ -689,6 +690,7 @@
     "singer": "Şarkıcı",
     "singerName": "Şarkıcı adı",
     "removeSinger": "Şarkıcıyı kaldır",
+    "removeSingerAriaLabel": "{{name}} adlı kişiyi kaldır",
     "confirmRemoveSinger": "Şarkıcıyı Kaldır",
     "confirmRemoveSingerMessage": "Bu şarkıcı, kuyruktaki şarkılara atanmış. Şarkıcıyı kaldırmak, bu şarkıları da kuyruktan kaldırır."
   },

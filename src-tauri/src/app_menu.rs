@@ -1,8 +1,11 @@
 use serde::Deserialize;
 use tauri::{
     menu::{AboutMetadata, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
-    AppHandle, Emitter, Manager, Runtime,
+    AppHandle, Emitter, Runtime,
 };
+
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const MENU_ACTION_EVENT: &str = "openkara://menu-action";
@@ -26,7 +29,19 @@ const MENU_ITEM_SWITCH_LIBRARY: &str = "app.switch-library";
 const MENU_ITEM_TOGGLE_SIDEBAR: &str = "view.toggle-sidebar";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const MENU_ITEM_COPY_DEBUG_INFO: &str = "help.copy-debug-info";
-const MENU_LABEL_PLACEHOLDER: &str = "";
+const MENU_LABEL_FILE: &str = "File";
+const MENU_LABEL_EDIT: &str = "Edit";
+const MENU_LABEL_WINDOW: &str = "Window";
+const MENU_LABEL_HELP: &str = "Help";
+const MENU_LABEL_IMPORT: &str = "Import";
+const MENU_LABEL_COPY_DEBUG_INFO: &str = "Copy debug info";
+const MENU_LABEL_SWITCH_LIBRARY: &str = "Switch Library…";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_LABEL_SETTINGS: &str = "Settings";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_LABEL_VIEW: &str = "View";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MENU_LABEL_TOGGLE_SIDEBAR: &str = "Toggle Sidebar";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const MENU_SUBMENU_APP: &str = "app.menu";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -44,10 +59,10 @@ const ABOUT_AUTHOR_CREDIT: &str = "@David Weng";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const ABOUT_REPOSITORY_URL: &str = "https://github.com/thedavidweng/OpenKara";
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeAppMenuLabels {
-    pub app_name: String,
     pub file: String,
     pub edit: String,
     pub view: String,
@@ -82,11 +97,13 @@ fn build_about_metadata<R: Runtime>(app_handle: &AppHandle<R>) -> AboutMetadata<
 pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     #[cfg(target_os = "macos")]
     let about_metadata = build_about_metadata(app_handle);
+    #[cfg(target_os = "macos")]
+    let app_menu_label = app_handle.package_info().name.as_str();
 
     let import_item = MenuItem::with_id(
         app_handle,
         MENU_ITEM_IMPORT_FILES,
-        MENU_LABEL_PLACEHOLDER,
+        MENU_LABEL_IMPORT,
         true,
         Some("CmdOrCtrl+O"),
     )?;
@@ -94,7 +111,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
     let window_menu = Submenu::with_id_and_items(
         app_handle,
         MENU_SUBMENU_WINDOW,
-        MENU_LABEL_PLACEHOLDER,
+        MENU_LABEL_WINDOW,
         true,
         &[
             &PredefinedMenuItem::minimize(app_handle, None)?,
@@ -108,7 +125,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
     let copy_debug_info_item = MenuItem::with_id(
         app_handle,
         MENU_ITEM_COPY_DEBUG_INFO,
-        MENU_LABEL_PLACEHOLDER,
+        MENU_LABEL_COPY_DEBUG_INFO,
         true,
         None::<&str>,
     )?;
@@ -116,7 +133,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
     let help_menu = Submenu::with_id_and_items(
         app_handle,
         MENU_SUBMENU_HELP,
-        MENU_LABEL_PLACEHOLDER,
+        MENU_LABEL_HELP,
         true,
         &[
             &copy_debug_info_item,
@@ -132,7 +149,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
             &Submenu::with_id_and_items(
                 app_handle,
                 MENU_SUBMENU_APP,
-                MENU_LABEL_PLACEHOLDER,
+                app_menu_label,
                 true,
                 &[
                     &PredefinedMenuItem::about(app_handle, None, Some(about_metadata.clone()))?,
@@ -140,14 +157,14 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_OPEN_SETTINGS,
-                        MENU_LABEL_PLACEHOLDER,
+                        MENU_LABEL_SETTINGS,
                         true,
                         Some("CmdOrCtrl+,"),
                     )?,
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_SWITCH_LIBRARY,
-                        MENU_LABEL_PLACEHOLDER,
+                        MENU_LABEL_SWITCH_LIBRARY,
                         true,
                         None::<&str>,
                     )?,
@@ -163,7 +180,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
             &Submenu::with_id_and_items(
                 app_handle,
                 MENU_SUBMENU_FILE,
-                MENU_LABEL_PLACEHOLDER,
+                MENU_LABEL_FILE,
                 true,
                 &[
                     &import_item,
@@ -172,7 +189,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_SWITCH_LIBRARY,
-                        MENU_LABEL_PLACEHOLDER,
+                        MENU_LABEL_SWITCH_LIBRARY,
                         true,
                         None::<&str>,
                     )?,
@@ -186,7 +203,7 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
             &Submenu::with_id_and_items(
                 app_handle,
                 MENU_SUBMENU_EDIT,
-                MENU_LABEL_PLACEHOLDER,
+                MENU_LABEL_EDIT,
                 true,
                 &[
                     &PredefinedMenuItem::undo(app_handle, None)?,
@@ -202,13 +219,13 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
             &Submenu::with_id_and_items(
                 app_handle,
                 MENU_SUBMENU_VIEW,
-                MENU_LABEL_PLACEHOLDER,
+                MENU_LABEL_VIEW,
                 true,
                 &[
                     &MenuItem::with_id(
                         app_handle,
                         MENU_ITEM_TOGGLE_SIDEBAR,
-                        MENU_LABEL_PLACEHOLDER,
+                        MENU_LABEL_TOGGLE_SIDEBAR,
                         true,
                         Some("CmdOrCtrl+B"),
                     )?,
@@ -290,7 +307,6 @@ pub fn set_native_app_menu_labels(
         .get_webview_window("main")
         .and_then(|window| window.menu())
     {
-        set_root_menu_item_text(&menu, MENU_SUBMENU_APP, &labels.app_name)?;
         set_root_menu_item_text(&menu, MENU_SUBMENU_FILE, &labels.file)?;
         set_root_menu_item_text(&menu, MENU_SUBMENU_EDIT, &labels.edit)?;
         set_root_menu_item_text(&menu, MENU_SUBMENU_VIEW, &labels.view)?;

@@ -203,6 +203,7 @@
     "seek": "Seek",
     "selectMonitor": "Select Monitor",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Unnamed monitor {{index}}",
     "localDisplayOutput": "Local Display Output",
     "airPlayOutput": "AirPlay Output",
     "noDisplaysFound": "No displays found yet.",
@@ -689,6 +690,7 @@
     "singer": "Singer",
     "singerName": "Singer name",
     "removeSinger": "Remove singer",
+    "removeSingerAriaLabel": "Remove {{name}}",
     "confirmRemoveSinger": "Remove Singer",
     "confirmRemoveSingerMessage": "This singer is assigned to songs in the queue. Removing them will also remove those songs from the queue."
   },

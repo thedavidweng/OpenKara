@@ -68,6 +68,7 @@ export function SettingsRemoteDiagnosticsSection() {
           </p>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => void resolveConflict("keep_local")}
               disabled={resolving}
               className="rounded-md border border-[var(--color-border-light)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-60"
@@ -75,6 +76,7 @@ export function SettingsRemoteDiagnosticsSection() {
               {t("settings.remoteDiagnostics.conflictKeepLocal")}
             </button>
             <button
+              type="button"
               onClick={() => void resolveConflict("use_remote")}
               disabled={resolving}
               className="rounded-md border border-[var(--color-border-light)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-60"

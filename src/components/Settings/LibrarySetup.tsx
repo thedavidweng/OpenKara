@@ -107,6 +107,11 @@ interface LibrarySetupProps {
   onComplete: () => void;
 }
 
+const WEBDAV_SERVER_URL_ID = "library-setup-webdav-server-url";
+const WEBDAV_LIBRARY_PATH_ID = "library-setup-webdav-library-path";
+const WEBDAV_USERNAME_ID = "library-setup-webdav-username";
+const WEBDAV_PASSWORD_ID = "library-setup-webdav-password";
+
 function StepIndicator({ current }: { current: Step }) {
   const steps: Step[] = ["language", "library", "stemMode"];
   const currentIndex = steps.indexOf(
@@ -605,10 +610,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
+                  <label
+                    htmlFor={WEBDAV_SERVER_URL_ID}
+                    className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                  >
                     {t("settings.library.webdavServerUrl")}
                   </label>
                   <input
+                    id={WEBDAV_SERVER_URL_ID}
                     value={remoteServerUrl}
                     onChange={(event) => setRemoteServerUrl(event.target.value)}
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
@@ -617,10 +626,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
+                  <label
+                    htmlFor={WEBDAV_LIBRARY_PATH_ID}
+                    className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                  >
                     {t("settings.library.webdavLibraryPath")}
                   </label>
                   <input
+                    id={WEBDAV_LIBRARY_PATH_ID}
                     value={remoteRootPath}
                     onChange={(event) => setRemoteRootPath(event.target.value)}
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
@@ -633,10 +646,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
+                    <label
+                      htmlFor={WEBDAV_USERNAME_ID}
+                      className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                    >
                       {t("settings.library.webdavUsername")}
                     </label>
                     <input
+                      id={WEBDAV_USERNAME_ID}
                       value={remoteUsername}
                       onChange={(event) =>
                         setRemoteUsername(event.target.value)
@@ -646,10 +663,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
+                    <label
+                      htmlFor={WEBDAV_PASSWORD_ID}
+                      className="mb-1 block text-[12px] font-medium text-[var(--color-text)]"
+                    >
                       {t("settings.library.webdavPassword")}
                     </label>
                     <input
+                      id={WEBDAV_PASSWORD_ID}
                       type="password"
                       value={remotePassword}
                       onChange={(event) =>

@@ -205,6 +205,7 @@
     "seek": "Перемотка",
     "selectMonitor": "Выбрать монитор",
     "monitor": "Монитор {{index}}",
+    "unnamedMonitor": "Монитор без имени {{index}}",
     "localDisplayOutput": "Вывод на локальный дисплей",
     "airPlayOutput": "Вывод через AirPlay",
     "noDisplaysFound": "Дисплеи пока не найдены.",
@@ -691,6 +692,7 @@
     "singer": "Певец",
     "singerName": "Имя певца",
     "removeSinger": "Удалить певца",
+    "removeSingerAriaLabel": "Удалить {{name}}",
     "confirmRemoveSinger": "Удалить певца",
     "confirmRemoveSingerMessage": "Этот певец назначен на песни в очереди. При его удалении эти песни также будут убраны из очереди."
   },

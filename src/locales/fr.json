@@ -204,6 +204,7 @@
     "seek": "Position de lecture",
     "selectMonitor": "Sélectionner l'écran",
     "monitor": "Écran {{index}}",
+    "unnamedMonitor": "Écran sans nom {{index}}",
     "localDisplayOutput": "Sortie sur écran local",
     "airPlayOutput": "Sortie AirPlay",
     "noDisplaysFound": "Aucun écran détecté pour l'instant.",
@@ -690,6 +691,7 @@
     "singer": "Chanteur",
     "singerName": "Nom du chanteur",
     "removeSinger": "Retirer le chanteur",
+    "removeSingerAriaLabel": "Retirer {{name}}",
     "confirmRemoveSinger": "Retirer le chanteur",
     "confirmRemoveSingerMessage": "Ce chanteur est attribué à des chansons de la file. Le retirer supprimera également ces chansons de la file."
   },

@@ -202,6 +202,7 @@
     "seek": "Tua",
     "selectMonitor": "Chọn màn hình",
     "monitor": "Màn hình {{index}}",
+    "unnamedMonitor": "Màn hình chưa đặt tên {{index}}",
     "localDisplayOutput": "Xuất ra màn hình cục bộ",
     "airPlayOutput": "Xuất qua AirPlay",
     "noDisplaysFound": "Chưa tìm thấy màn hình nào.",
@@ -688,6 +689,7 @@
     "singer": "Ca sĩ",
     "singerName": "Tên ca sĩ",
     "removeSinger": "Xóa ca sĩ",
+    "removeSingerAriaLabel": "Xóa {{name}}",
     "confirmRemoveSinger": "Xóa ca sĩ",
     "confirmRemoveSingerMessage": "Ca sĩ này đang được gán cho các bài hát trong hàng chờ. Xóa họ cũng sẽ xóa những bài hát đó khỏi hàng chờ."
   },

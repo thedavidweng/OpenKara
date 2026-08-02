@@ -202,6 +202,7 @@
     "seek": "Cari posisi",
     "selectMonitor": "Pilih Monitor",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Monitor tanpa nama {{index}}",
     "localDisplayOutput": "Output Layar Lokal",
     "airPlayOutput": "Output AirPlay",
     "noDisplaysFound": "Belum ada layar yang ditemukan.",
@@ -688,6 +689,7 @@
     "singer": "Penyanyi",
     "singerName": "Nama penyanyi",
     "removeSinger": "Hapus penyanyi",
+    "removeSingerAriaLabel": "Hapus {{name}}",
     "confirmRemoveSinger": "Hapus Penyanyi",
     "confirmRemoveSingerMessage": "Penyanyi ini ditetapkan ke lagu di antrean. Menghapusnya juga akan menghapus lagu-lagu tersebut dari antrean."
   },

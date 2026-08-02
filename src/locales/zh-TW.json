@@ -202,6 +202,7 @@
     "seek": "進度",
     "selectMonitor": "選擇螢幕",
     "monitor": "螢幕 {{index}}",
+    "unnamedMonitor": "未命名螢幕 {{index}}",
     "localDisplayOutput": "本機螢幕輸出",
     "airPlayOutput": "AirPlay 輸出",
     "noDisplaysFound": "尚未找到可用的螢幕。",
@@ -688,6 +689,7 @@
     "singer": "歌手",
     "singerName": "歌手名稱",
     "removeSinger": "移除歌手",
+    "removeSingerAriaLabel": "移除 {{name}}",
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "這位歌手已被指派到佇列中的歌曲。移除歌手時，也會將這些歌曲從佇列中移除。"
   },

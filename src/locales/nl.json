@@ -203,6 +203,7 @@
     "seek": "Positie",
     "selectMonitor": "Monitor selecteren",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Naamloze monitor {{index}}",
     "localDisplayOutput": "Lokale beelduitvoer",
     "airPlayOutput": "AirPlay-uitvoer",
     "noDisplaysFound": "Nog geen beeldschermen gevonden.",
@@ -689,6 +690,7 @@
     "singer": "Zanger",
     "singerName": "Naam zanger",
     "removeSinger": "Zanger verwijderen",
+    "removeSingerAriaLabel": "{{name}} verwijderen",
     "confirmRemoveSinger": "Zanger verwijderen",
     "confirmRemoveSingerMessage": "Deze zanger is toegewezen aan nummers in de wachtrij. Als je de zanger verwijdert, worden ook die nummers uit de wachtrij verwijderd."
   },

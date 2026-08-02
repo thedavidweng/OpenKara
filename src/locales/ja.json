@@ -202,6 +202,7 @@
     "seek": "シーク",
     "selectMonitor": "モニターを選択",
     "monitor": "モニター {{index}}",
+    "unnamedMonitor": "名前のないモニター {{index}}",
     "localDisplayOutput": "ローカルディスプレイ出力",
     "airPlayOutput": "AirPlay 出力",
     "noDisplaysFound": "ディスプレイがまだ見つかりません。",
@@ -688,6 +689,7 @@
     "singer": "シンガー",
     "singerName": "シンガー名",
     "removeSinger": "シンガーを削除",
+    "removeSingerAriaLabel": "{{name}}を削除",
     "confirmRemoveSinger": "シンガーを削除",
     "confirmRemoveSingerMessage": "このシンガーはキュー内の曲に割り当てられています。削除すると、それらの曲もキューから削除されます。"
   },

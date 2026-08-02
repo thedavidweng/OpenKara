@@ -203,6 +203,7 @@
     "seek": "Wiedergabeposition",
     "selectMonitor": "Monitor auswählen",
     "monitor": "Monitor {{index}}",
+    "unnamedMonitor": "Unbenannter Monitor {{index}}",
     "localDisplayOutput": "Lokale Anzeigeausgabe",
     "airPlayOutput": "AirPlay-Ausgabe",
     "noDisplaysFound": "Noch keine Bildschirme gefunden.",
@@ -689,6 +690,7 @@
     "singer": "Sänger",
     "singerName": "Name des Sängers",
     "removeSinger": "Sänger entfernen",
+    "removeSingerAriaLabel": "{{name}} entfernen",
     "confirmRemoveSinger": "Sänger entfernen",
     "confirmRemoveSingerMessage": "Diesem Sänger sind Songs in der Warteschlange zugewiesen. Beim Entfernen werden auch diese Songs aus der Warteschlange entfernt."
   },

@@ -34,7 +34,6 @@ interface WindowShellStateSnapshot {
 }
 
 interface NativeAppMenuLabels {
-  appName: string;
   file: string;
   edit: string;
   view: string;
@@ -72,7 +71,8 @@ interface NativeAppMenuLabels {
 - Windows/Linux return `desktop` values unless their shell design changes intentionally.
 - Native visual work happens in shared components and CSS tokens. The host tier only supplies metric tokens.
 - `set_native_app_menu_labels` receives labels from the shared React i18n
-  runtime. macOS uses them for its global application menu. Other platforms
+  runtime. macOS uses them for its global application menu except for the
+  application-menu title, which comes from the bundle name. Other platforms
   accept the command as a no-op so the shared runtime has one contract.
 
 ## Sidebar Visibility Sync
