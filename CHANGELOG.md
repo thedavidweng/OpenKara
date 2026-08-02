@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0](https://github.com/thedavidweng/OpenKara/compare/v0.11.0...v0.12.0) (2026-08-02)
+
+
+### Features
+
+* **release:** auto-publish after assets, then submit distribution PRs ([#309](https://github.com/thedavidweng/OpenKara/issues/309)) ([83a9481](https://github.com/thedavidweng/OpenKara/commit/83a9481f5955250962c8df7c23f9b7a222449519))
+
+
+### Bug Fixes
+
+* **ci:** stop silent release-please tag failures after merge ([#308](https://github.com/thedavidweng/OpenKara/issues/308)) ([72b0fc8](https://github.com/thedavidweng/OpenKara/commit/72b0fc807d1d82d158293c51f855b05630d22c77))
+* **i18n:** route user-facing copy through translations ([#312](https://github.com/thedavidweng/OpenKara/issues/312)) ([c0894d7](https://github.com/thedavidweng/OpenKara/commit/c0894d73c71570cc39d22e5ff2753ef9830b1bfd))
+* **release:** apply installation template to draft releases ([#313](https://github.com/thedavidweng/OpenKara/issues/313)) ([ee00738](https://github.com/thedavidweng/OpenKara/commit/ee00738b1af2c7aa0e43c9cdccb02106c57d453b))
+
 ## [0.11.0](https://github.com/thedavidweng/OpenKara/compare/v0.10.0...v0.11.0) (2026-08-01)
 
 ### Features
