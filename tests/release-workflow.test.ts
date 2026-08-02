@@ -234,13 +234,13 @@ describe("release workflow", () => {
       "Validate Linux updater artifacts",
     );
     expect(linuxValidationStep).toContain("if: ${{ inputs.release_build }}");
-    expect(linuxValidationStep).toContain('-name "*.tar.gz"');
-    expect(linuxValidationStep).toContain('-name "*.sig"');
+    expect(linuxValidationStep).toContain('-name "*.AppImage"');
+    expect(linuxValidationStep).toContain('signature="${appimage}.sig"');
     expect(linuxValidationStep).toContain(
-      "No Linux updater archive was produced.",
+      "No Linux updater AppImage was produced.",
     );
     expect(linuxValidationStep).toContain(
-      "No Linux updater signature was produced.",
+      "No Linux updater signature was produced for",
     );
 
     const windowsValidationStep = readWorkflowStep(
@@ -277,12 +277,18 @@ describe("release workflow", () => {
       "Upload Linux updater artifacts",
     );
     expect(linuxUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz",
-    );
-    expect(linuxUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig",
+      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage.sig",
     );
     expect(linuxUpdaterStep).toContain("if-no-files-found: error");
+
+    const linuxEvidenceStep = readWorkflowStep(
+      linuxWorkflow,
+      "Generate Rust release evidence fragment",
+    );
+    expect(linuxEvidenceStep).toContain(
+      'find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig"',
+    );
+    expect(linuxEvidenceStep).not.toContain('name "*.tar.gz"');
 
     const windowsUpdaterStep = readWorkflowStep(
       windowsWorkflow,

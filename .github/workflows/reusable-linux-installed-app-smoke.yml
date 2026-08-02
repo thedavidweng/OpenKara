@@ -207,14 +207,14 @@ jobs:
           BUNDLE_DIR: src-tauri/target/${{ inputs.rust_target }}/release/bundle
         run: |
           set -euo pipefail
-          archive="$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" -print -quit)"
-          signature="$(find "$BUNDLE_DIR" -type f -name "*.sig" -print -quit)"
-          if [ -z "$archive" ]; then
-            echo "::error::No Linux updater archive was produced."
+          appimage="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
+          if [ -z "$appimage" ]; then
+            echo "::error::No Linux updater AppImage was produced."
             exit 1
           fi
-          if [ -z "$signature" ]; then
-            echo "::error::No Linux updater signature was produced."
+          signature="${appimage}.sig"
+          if [ ! -f "$signature" ]; then
+            echo "::error::No Linux updater signature was produced for $(basename "$appimage")."
             exit 1
           fi
 
@@ -223,9 +223,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_prefix }}-updater
-          path: |
-            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz
-            src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig
+          path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
@@ -404,7 +402,7 @@ jobs:
           artifact_args+=(--artifact "deb:${RELEASE_PLATFORM}:${candidate_deb}")
           while IFS= read -r -d '' artifact; do
             artifact_args+=(--artifact "updater-${artifact##*/}:${RELEASE_PLATFORM}:${artifact}")
-          done < <(find "${RUNNER_TEMP}/updater" -type f \( -name "*.tar.gz" -o -name "*.sig" \) -print0)
+          done < <(find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig" -print0)
           "$evidence_driver" fragment-from-automation-report \
             --input "$SMOKE_ROOT/automation-report.json" \
             --repository "$GITHUB_REPOSITORY" \
