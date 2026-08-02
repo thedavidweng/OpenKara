@@ -88,6 +88,9 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain("verify-assets");
     expect(releaseWorkflow).toContain("--output latest.json");
     expect(releaseWorkflow).toContain("--output SHA256SUMS");
+    expect(releaseWorkflow).toContain(
+      'gh release download "${RELEASE_TAG}" --pattern "OpenKara*"',
+    );
     expect(releaseWorkflow).toContain("gh release upload");
     expect(releaseWorkflow).toContain("--clobber");
     expect(releaseWorkflow).toContain("updater_target: windows-x86_64");
