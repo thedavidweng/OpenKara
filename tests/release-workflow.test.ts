@@ -130,7 +130,8 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(reusableWorkflow).toContain("src-tauri/tauri.release.conf.json");
     expect(reusableWorkflow).toContain("${{ inputs.artifact_prefix }}-updater");
-    expect(reusableWorkflow).toContain("*.nsis.zip.sig");
+    expect(reusableWorkflow).toContain("*setup.exe.sig");
+    expect(releaseWorkflow).toContain('$_.Name -like "*setup.exe.sig"');
 
     // Build-path speed: non-release smoke must not re-key the rust cache per
     // commit, and must thin-LTO + opt-level=1 the release profile so driver+app
@@ -247,13 +248,16 @@ describe("release workflow", () => {
       "Validate Windows updater artifacts",
     );
     expect(windowsValidationStep).toContain("if: ${{ inputs.release_build }}");
-    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip"');
-    expect(windowsValidationStep).toContain('-Filter "*.nsis.zip.sig"');
+    expect(windowsValidationStep).toContain('-Filter "*setup.exe"');
+    expect(windowsValidationStep).toContain('"$($installer.FullName).sig"');
     expect(windowsValidationStep).toContain(
-      "No Windows updater archive was produced.",
+      "foreach ($installer in $installers)",
     );
     expect(windowsValidationStep).toContain(
-      "No Windows updater signature was produced.",
+      "No Windows updater installer was produced.",
+    );
+    expect(windowsValidationStep).toContain(
+      "No Windows updater signature was produced for",
     );
 
     const macOSUpdaterStep = readWorkflowStep(
@@ -285,12 +289,32 @@ describe("release workflow", () => {
       "Upload Windows updater artifacts",
     );
     expect(windowsUpdaterStep).toContain(
-      "src-tauri/target/release/bundle/**/*.nsis.zip",
+      "src-tauri/target/release/bundle/**/*setup.exe",
     );
     expect(windowsUpdaterStep).toContain(
-      "src-tauri/target/release/bundle/**/*.nsis.zip.sig",
+      "src-tauri/target/release/bundle/**/*setup.exe.sig",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
+  });
+
+  test("requires a matching signature for each Windows installer", () => {
+    const installers = [
+      "OpenKara_0.12.0_x64-setup.exe",
+      "OpenKara_0.12.0_arm64-setup.exe",
+    ];
+    const matchingSignatures = installers.map((name) => `${name}.sig`);
+    const partialSignatures = [`${installers[0]}.sig`];
+    const mismatchedSignatures = ["OpenKara_0.12.0_x86-setup.exe.sig"];
+
+    expect(
+      installers.every((name) => matchingSignatures.includes(`${name}.sig`)),
+    ).toBe(true);
+    expect(
+      installers.every((name) => partialSignatures.includes(`${name}.sig`)),
+    ).toBe(false);
+    expect(
+      installers.every((name) => mismatchedSignatures.includes(`${name}.sig`)),
+    ).toBe(false);
   });
 
   test("fails fast when the release tag and package.json version disagree", () => {

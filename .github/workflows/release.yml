@@ -580,7 +580,7 @@ jobs:
           $installer = Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-installer" -Filter "*setup.exe" -File -Recurse | Select-Object -First 1
           if ($null -eq $installer) { throw "No Windows installer artifact found" }
 
-          $updaterFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -File -Recurse | Where-Object { $_.Name -like "*.nsis.zip" -or $_.Name -like "*.nsis.zip.sig" })
+          $updaterFiles = @(Get-ChildItem -Path "${env:RUNNER_TEMP}\windows-smoke\release-windows-installed-app-updater" -File -Recurse | Where-Object { $_.Name -like "*setup.exe.sig" })
           if ($updaterFiles.Count -eq 0) { throw "No Windows updater artifacts found" }
 
           gh release upload $env:RELEASE_TAG --repo $env:GH_REPO $installer.FullName --clobber
