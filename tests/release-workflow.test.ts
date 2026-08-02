@@ -234,14 +234,23 @@ describe("release workflow", () => {
       "Validate Linux updater artifacts",
     );
     expect(linuxValidationStep).toContain("if: ${{ inputs.release_build }}");
-    expect(linuxValidationStep).toContain('-name "*.tar.gz"');
-    expect(linuxValidationStep).toContain('-name "*.sig"');
+    expect(linuxValidationStep).toContain('-name "*.AppImage"');
+    expect(linuxValidationStep).toContain("mapfile -d '' appimages");
+    expect(linuxValidationStep).toContain("${#appimages[@]} != 1");
+    expect(linuxValidationStep).toContain("mapfile -d '' signatures");
+    expect(linuxValidationStep).toContain("${#signatures[@]} != 1");
     expect(linuxValidationStep).toContain(
-      "No Linux updater archive was produced.",
+      '"${signatures[0]}" != "${appimage}.sig"',
     );
     expect(linuxValidationStep).toContain(
-      "No Linux updater signature was produced.",
+      "Expected exactly one Linux updater AppImage",
     );
+    expect(linuxValidationStep).toContain(
+      "Expected exactly one Linux updater signature matching",
+    );
+    expect(linuxValidationStep).toContain('cp "$signature" "$updater_dir/"');
+    expect(linuxValidationStep).not.toContain("tar.gz");
+    expect(linuxValidationStep).not.toContain('name "*.sig"');
 
     const windowsValidationStep = readWorkflowStep(
       windowsWorkflow,
@@ -277,12 +286,21 @@ describe("release workflow", () => {
       "Upload Linux updater artifacts",
     );
     expect(linuxUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.tar.gz",
-    );
-    expect(linuxUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/**/*.sig",
+      "path: ${{ runner.temp }}/linux-updater",
     );
     expect(linuxUpdaterStep).toContain("if-no-files-found: error");
+    expect(linuxUpdaterStep).not.toContain("tar.gz");
+    expect(linuxUpdaterStep).not.toContain("*.sig");
+
+    const linuxEvidenceStep = readWorkflowStep(
+      linuxWorkflow,
+      "Generate Rust release evidence fragment",
+    );
+    expect(linuxEvidenceStep).toContain(
+      'find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig"',
+    );
+    expect(linuxEvidenceStep).not.toContain('name "*.tar.gz"');
+    expect(linuxEvidenceStep).not.toContain('name "*.sig"');
 
     const windowsUpdaterStep = readWorkflowStep(
       windowsWorkflow,
