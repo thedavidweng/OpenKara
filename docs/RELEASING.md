@@ -7,8 +7,10 @@ every push to `main` and maintains a running release PR that bumps
 `.release-please-manifest.json`.
 
 When the release PR is merged, release-please opens a **draft** GitHub
-Release with changelog notes. The Release workflow also supports manual
-dispatch and creates the draft when it is missing. The same workflow then:
+Release with changelog notes. The Release Please workflow binds that draft to
+the final tag, applies the installation section, and dispatches the Release
+workflow. The Release workflow also supports manual dispatch for an existing
+draft release. The Release Please workflow then:
 
 1. Syncs native manifests (`Cargo.toml`, `tauri.conf.json`, …) via
    `scripts/sync-version.mjs`.
@@ -20,9 +22,15 @@ dispatch and creates the draft when it is missing. The same workflow then:
 
 The Release workflow:
 
-1. Creates or updates the draft release and applies
-   `.github/release-notes-installation.md`. The template includes Homebrew and
-   WinGet install commands.
+1. Creates or updates the release PR and, after merge, binds the draft release
+   to `vX.Y.Z`.
+2. Applies `.github/release-notes-installation.md`. The template includes
+   Homebrew and WinGet install commands.
+3. Dispatches the Release workflow after the tag and draft release are ready.
+
+The Release workflow then:
+
+1. Verifies that the draft release is bound to the requested tag.
 2. Builds every platform bundle.
 3. Runs the release-only separation and installed-app smoke tests.
 4. Uploads the tested signed assets and canonical `release-evidence.json` to
@@ -37,10 +45,11 @@ The Release workflow:
 gates are the automated quality gate. There is no separate manual Publish
 click on the GitHub Release page for plain version tags.
 
-Release Please owns the version and changelog text. The Release workflow owns
-the final GitHub Release body because it also creates and publishes release
-assets. Keep the installation section in the checked-in template file instead
-of adding it to `release-please-config.json`.
+Release Please owns the version, changelog text, draft release, and final
+release body. The Release workflow owns the tested asset pipeline. Keep the
+installation section in the checked-in template file and apply it from the
+Release Please workflow. The release-please config has no static release-body
+template setting.
 
 [release-please]: https://github.com/googleapis/release-please
 

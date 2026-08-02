@@ -75,8 +75,9 @@ jobs:
           git push
 
   # GITHUB_TOKEN events do not start other workflows. release-please may also
-  # leave a draft release without a git tag. Ensure the tag exists, bind the
-  # draft release to it, then dispatch Release explicitly.
+  # leave a draft release with an untagged-* placeholder. Ensure the tag
+  # exists, bind the draft release to it, apply the release footer, then
+  # dispatch Release explicitly.
   ensure-tag-and-dispatch-release:
     name: Ensure tag and dispatch Release
     needs: [release-please, sync-native-versions]
@@ -94,7 +95,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Ensure git tag and draft release binding
+      - name: Ensure git tag, draft release binding, and release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -131,14 +132,34 @@ jobs:
             git push origin "refs/tags/${TAG_NAME}"
           fi
 
-          # Draft releases created without a git ref show as untagged-*. Rebind
-          # the release to the real tag so assets and /releases/tag/vX.Y.Z work.
-          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release edit "${TAG_NAME}" --tag "${TAG_NAME}" --target "${target_sha}" --draft=true
-            echo "Rebound draft release ${TAG_NAME} to ${target_sha}"
-          else
-            echo "::warning::No GitHub release found for ${TAG_NAME}; Release workflow may create assets only after a draft exists"
+          # Draft releases created without a git ref show as untagged-*. Find
+          # the release by its exact tag first, then by the name release-please
+          # uses for an untagged draft. The tag endpoint cannot find the latter.
+          release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq "[.[] | select(.draft == true and .tag_name == \"${TAG_NAME}\")] | .[0].id // empty")"
+          if [ -z "${release_id}" ]; then
+            release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
+              --jq "[.[] | select(.draft == true and (.name == \"${TAG_NAME}\" or .name == \"OpenKara ${TAG_NAME}\"))] | .[0].id // empty")"
           fi
+          if [ -z "${release_id}" ]; then
+            echo "::error::No draft GitHub Release was found for ${TAG_NAME}."
+            exit 1
+          fi
+
+          release_endpoint="repos/${GH_REPO}/releases/${release_id}"
+          gh api "${release_endpoint}" --jq '.body // empty' > RELEASE_NOTES.md
+          if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
+            printf '\n\n' >> RELEASE_NOTES.md
+            cat .github/release-notes-installation.md >> RELEASE_NOTES.md
+          fi
+
+          gh api --method PATCH "${release_endpoint}" \
+            -f "tag_name=${TAG_NAME}" \
+            -f "target_commitish=${target_sha}" \
+            -F "draft=true" \
+            -F "body=@RELEASE_NOTES.md" >/dev/null
+          echo "Bound draft release ${release_id} to ${TAG_NAME} at ${target_sha}"
+          echo "Applied release installation notes to ${TAG_NAME}"
 
       - name: Dispatch Release workflow
         env:
