@@ -237,13 +237,18 @@ describe("release workflow", () => {
     expect(linuxValidationStep).toContain('-name "*.AppImage"');
     expect(linuxValidationStep).toContain("mapfile -d '' appimages");
     expect(linuxValidationStep).toContain("${#appimages[@]} != 1");
-    expect(linuxValidationStep).toContain('signature="${appimage}.sig"');
+    expect(linuxValidationStep).toContain("mapfile -d '' signatures");
+    expect(linuxValidationStep).toContain("${#signatures[@]} != 1");
+    expect(linuxValidationStep).toContain(
+      '"${signatures[0]}" != "${appimage}.sig"',
+    );
     expect(linuxValidationStep).toContain(
       "Expected exactly one Linux updater AppImage",
     );
     expect(linuxValidationStep).toContain(
-      "No Linux updater signature was produced for",
+      "Expected exactly one Linux updater signature matching",
     );
+    expect(linuxValidationStep).toContain('cp "$signature" "$updater_dir/"');
     expect(linuxValidationStep).not.toContain("tar.gz");
     expect(linuxValidationStep).not.toContain('name "*.sig"');
 
@@ -281,7 +286,7 @@ describe("release workflow", () => {
       "Upload Linux updater artifacts",
     );
     expect(linuxUpdaterStep).toContain(
-      "src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage.sig",
+      "path: ${{ runner.temp }}/linux-updater",
     );
     expect(linuxUpdaterStep).toContain("if-no-files-found: error");
     expect(linuxUpdaterStep).not.toContain("tar.gz");

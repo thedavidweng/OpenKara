@@ -213,18 +213,22 @@ jobs:
             exit 1
           fi
           appimage="${appimages[0]}"
-          signature="${appimage}.sig"
-          if [ ! -f "$signature" ]; then
-            echo "::error::No Linux updater signature was produced for $(basename "$appimage")."
+          mapfile -d '' signatures < <(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name "*.AppImage.sig" -print0)
+          if ((${#signatures[@]} != 1)) || [[ "${signatures[0]}" != "${appimage}.sig" ]]; then
+            echo "::error::Expected exactly one Linux updater signature matching $(basename "$appimage")."
             exit 1
           fi
+          signature="${signatures[0]}"
+          updater_dir="${RUNNER_TEMP}/linux-updater"
+          mkdir -p "$updater_dir"
+          cp "$signature" "$updater_dir/"
 
       - name: Upload Linux updater artifacts
         if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_prefix }}-updater
-          path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage.sig
+          path: ${{ runner.temp }}/linux-updater
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
