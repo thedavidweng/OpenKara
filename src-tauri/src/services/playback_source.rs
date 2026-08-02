@@ -94,10 +94,11 @@ pub(crate) fn load_cached_stems_for_song(
     library_root: &LibraryRoot,
     song: &Song,
     request_id: u64,
+    is_current: impl Fn() -> bool,
 ) -> Result<LoadedStems, PlaybackError> {
     if song.is_remote_stems() {
         RemoteContent::new(app_data_dir)
-            .ensure_stem_files_cached(library_root, connection, song, request_id, || true)
+            .ensure_stem_files_cached(library_root, connection, song, request_id, is_current)
             .map_err(|e| {
                 PlaybackError::Internal(
                     e.detail

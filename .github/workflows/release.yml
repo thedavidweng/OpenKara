@@ -89,13 +89,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      actions: read
-      contents: read
+      actions: read # Downloads same-commit Nightly evidence.
+      contents: read # Checks out the evidence verifier.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false # Release workflow: disable cache to prevent poisoning.
 
       - name: Download Nightly evidence for the candidate commit
         env:

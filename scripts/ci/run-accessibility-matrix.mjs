@@ -12,4 +12,7 @@ const result = spawnSync(command, ["test:a11y"], {
 if (result.error) {
   throw result.error;
 }
+if (result.status === null) {
+  throw new Error("Accessibility matrix process exited without a status code");
+}
 process.exitCode = result.status;

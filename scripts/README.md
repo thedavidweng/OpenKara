@@ -2,21 +2,21 @@
 
 ## `ci/nightly-evidence.mjs`
 
-Creates and verifies the Nightly release-gate manifest.
+The script creates and verifies the Nightly release-gate manifest.
 
-- **Create:** `node scripts/ci/nightly-evidence.mjs create --commit <sha> --run-id <id> --needs-json <json> --output nightly-evidence.json`
-- **Verify:** `node scripts/ci/nightly-evidence.mjs verify --input nightly-evidence.json --commit <sha> --max-age-hours 24`
-- **Output:** `nightly-evidence.json` in the `nightly-evidence` workflow artifact
-- **Contract tests:** `tests/nightly-evidence.test.ts`
+- **Create the manifest:** `node scripts/ci/nightly-evidence.mjs create --commit <sha> --run-id <id> --needs-json <json> --output nightly-evidence.json`
+- **Verify the manifest:** `node scripts/ci/nightly-evidence.mjs verify --input nightly-evidence.json --commit <sha> --max-age-hours 24`
+- **Write the artifact:** `nightly-evidence.json` in the `nightly-evidence` workflow artifact
+- **Run the contract tests:** `tests/nightly-evidence.test.ts`
 
 ## `ci/run-accessibility-matrix.mjs`
 
-Runs the extended Playwright accessibility matrix on Windows, macOS, and
-Linux.
+The script runs the extended Playwright accessibility matrix on Windows, macOS,
+and Linux.
 
-- **Run:** `pnpm test:a11y:matrix`
-- **Output:** Playwright console, HTML, JSON, trace, and screenshot reports
-- **Owner:** `tests/e2e/accessibility/`
+- **Run the matrix:** `pnpm test:a11y:matrix`
+- **Write the reports:** Playwright console, HTML, JSON, trace, and screenshot reports
+- **Keep the tests in:** `tests/e2e/accessibility/`
 
 ## `openkara_release_evidence`
 

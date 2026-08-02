@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param (
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
@@ -28,27 +28,27 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $stepDefinitions = @{
-    "launch" = [PSCustomObject]@{ action = "launch"; target = "OpenKara.exe"; assertion = "The main window is visible and accessible." }
-    "navigate-sidebar" = [PSCustomObject]@{ action = "navigate-sidebar"; target = "Sidebar"; assertion = "Focus moves through each sidebar item with keyboard navigation." }
-    "select-library" = [PSCustomObject]@{ action = "select-library"; target = "All Tracks"; assertion = "The library view becomes active." }
-    "import-fixture" = [PSCustomObject]@{ action = "import-fixture"; target = "src-tauri/tests/fixtures/audio/fixture.wav"; assertion = "The imported fixture track appears in the library." }
-    "select-track" = [PSCustomObject]@{ action = "select-track"; target = "fixture"; assertion = "The track is selected and the details view loads." }
-    "start-playback" = [PSCustomObject]@{ action = "start-playback"; target = "Play button"; assertion = "Playback state is playing." }
-    "pause-resume" = [PSCustomObject]@{ action = "pause-resume"; target = "Pause/Play button"; assertion = "Playback toggles between paused and playing." }
-    "seek" = [PSCustomObject]@{ action = "seek"; target = "Progress bar"; assertion = "The playback position updates to the seek target." }
-    "start-separation" = [PSCustomObject]@{ action = "start-separation"; target = "Vocal/instrumental separation"; assertion = "The separation process starts and the stem mixer becomes enabled." }
-    "adjust-stems" = [PSCustomObject]@{ action = "adjust-stems"; target = "Stem volume sliders"; assertion = "The stem mix levels change." }
-    "mute" = [PSCustomObject]@{ action = "mute"; target = "Mute toggle"; assertion = "Audio output is muted." }
-    "queue" = [PSCustomObject]@{ action = "queue"; target = "Queue"; assertion = "The selected track is added to the queue." }
-    "open-settings" = [PSCustomObject]@{ action = "open-settings"; target = "Settings"; assertion = "The settings panel opens." }
-    "open-appearance" = [PSCustomObject]@{ action = "open-appearance"; target = "Appearance"; assertion = "Appearance settings are visible." }
-    "verify-model-runtime-status" = [PSCustomObject]@{ action = "verify-model-runtime-status"; target = "Model and runtime status panel"; assertion = "The active model and runtime are reported." }
-    "toggle-fullscreen" = [PSCustomObject]@{ action = "toggle-fullscreen"; target = "Fullscreen"; assertion = "The main window enters fullscreen and returns." }
-    "stop-playback" = [PSCustomObject]@{ action = "stop-playback"; target = "Stop"; assertion = "Playback stops and the position resets." }
-    "open-fullscreen" = [PSCustomObject]@{ action = "open-fullscreen"; target = "Fullscreen"; assertion = "Main window to fullscreen player focus transfer is recorded." }
-    "close-fullscreen" = [PSCustomObject]@{ action = "close-fullscreen"; target = "Fullscreen"; assertion = "Focus is restored to the main window." }
-    "cancel-file-picker" = [PSCustomObject]@{ action = "cancel-file-picker"; target = "Library import"; assertion = "The file picker can be cancelled without losing main window focus." }
-    "close" = [PSCustomObject]@{ action = "close"; target = "OpenKara.exe"; assertion = "The application process exits cleanly." }
+    "launch" = [PSCustomObject]@{ action = "launch"; target = "OpenKara.exe"; assertion = "The test sees and accesses the main window." }
+    "navigate-sidebar" = [PSCustomObject]@{ action = "navigate-sidebar"; target = "Sidebar"; assertion = "The test moves focus through each sidebar item with keyboard navigation." }
+    "select-library" = [PSCustomObject]@{ action = "select-library"; target = "All Tracks"; assertion = "The test opens the library view." }
+    "import-fixture" = [PSCustomObject]@{ action = "import-fixture"; target = "src-tauri/tests/fixtures/audio/fixture.wav"; assertion = "The test sees the imported fixture track in the library." }
+    "select-track" = [PSCustomObject]@{ action = "select-track"; target = "fixture"; assertion = "The test selects the track and loads the details view." }
+    "start-playback" = [PSCustomObject]@{ action = "start-playback"; target = "Play button"; assertion = "The test sees the player in the playing state." }
+    "pause-resume" = [PSCustomObject]@{ action = "pause-resume"; target = "Pause/Play button"; assertion = "The test toggles playback between paused and playing." }
+    "seek" = [PSCustomObject]@{ action = "seek"; target = "Progress bar"; assertion = "The test moves playback to the seek target." }
+    "start-separation" = [PSCustomObject]@{ action = "start-separation"; target = "Vocal/instrumental separation"; assertion = "The test starts separation and enables the stem mixer." }
+    "adjust-stems" = [PSCustomObject]@{ action = "adjust-stems"; target = "Stem volume sliders"; assertion = "The test changes the stem mix levels." }
+    "mute" = [PSCustomObject]@{ action = "mute"; target = "Mute toggle"; assertion = "The test mutes audio output." }
+    "queue" = [PSCustomObject]@{ action = "queue"; target = "Queue"; assertion = "The test adds the selected track to the queue." }
+    "open-settings" = [PSCustomObject]@{ action = "open-settings"; target = "Settings"; assertion = "The test opens the settings panel." }
+    "open-appearance" = [PSCustomObject]@{ action = "open-appearance"; target = "Appearance"; assertion = "The test opens Appearance settings." }
+    "verify-model-runtime-status" = [PSCustomObject]@{ action = "verify-model-runtime-status"; target = "Model and runtime status panel"; assertion = "The UI reports the active model and runtime." }
+    "toggle-fullscreen" = [PSCustomObject]@{ action = "toggle-fullscreen"; target = "Fullscreen"; assertion = "The test enters fullscreen and returns to the main window." }
+    "stop-playback" = [PSCustomObject]@{ action = "stop-playback"; target = "Stop"; assertion = "The test stops playback and resets the position." }
+    "open-fullscreen" = [PSCustomObject]@{ action = "open-fullscreen"; target = "Fullscreen"; assertion = "The test transfers focus from the main window to the fullscreen player." }
+    "close-fullscreen" = [PSCustomObject]@{ action = "close-fullscreen"; target = "Fullscreen"; assertion = "The test restores focus to the main window." }
+    "cancel-file-picker" = [PSCustomObject]@{ action = "cancel-file-picker"; target = "Library import"; assertion = "The test cancels the file picker without losing main window focus." }
+    "close" = [PSCustomObject]@{ action = "close"; target = "OpenKara.exe"; assertion = "The test sees the application process exit cleanly." }
 }
 
 $supportedScenarios = @{
@@ -1826,19 +1826,35 @@ function Invoke-StepAction {
 
                     # Close the fullscreen window so the rest of the workflow runs in the main window.
                     $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
-                    if ($hWnd -ne [IntPtr]::Zero) {
+                    if ($hWnd -eq [IntPtr]::Zero) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window handle was not found for cleanup"
+                        $stepStatus = "failed"
+                    } else {
                         Send-KeyboardInput "{ESC}" -Handle $hWnd
-                        Wait-For-Condition -Condition {
+                        $returned = Wait-For-Condition -Condition {
                             param($t)
                             return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
-                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000)) | Out-Null
-                        Get-UiTree -ProcessId $script:process.Id | Out-Null
+                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
+                        if ($null -eq $returned) {
+                            Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window did not close before the cleanup timeout"
+                            $stepStatus = "failed"
+                        } else {
+                            $mainTree = Get-UiTree -ProcessId $script:process.Id
+                            $mainWindow = Find-ElementByControlType -Tree $mainTree -ControlType "Window"
+                            if ($null -eq $mainWindow) {
+                                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "main window was not restored after closing fullscreen"
+                                $stepStatus = "failed"
+                            }
+                        }
                     }
                 }
             }
 
             "stop-playback" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                $beforeSlider = Find-Seek-Slider -Tree $script:currentTree
+                $beforeValue = if ($null -ne $beforeSlider) { $beforeSlider.rangeValue } else { $null }
 
                 if (-not (Send-AppShortcut -KeyCombo "ctrl+period")) {
                     Send-KeyboardInput "^."
@@ -1856,8 +1872,16 @@ function Invoke-StepAction {
                     param($t)
                     $btn = Find-Play-Pause-Button -Tree $t
                     if ($null -eq $btn) { return "Play/Pause button not found" }
-                    if ($btn.name -eq "Play") { return $true }
-                    return "Play/Pause button is '$($btn.name)' instead of Play"
+                    if ($btn.name -ne "Play") { return "Play/Pause button is '$($btn.name)' instead of Play" }
+                    if ($null -eq $beforeSlider) { return "Seek slider was not found before stop" }
+                    if ($null -eq $beforeValue) { return "Seek slider did not expose a RangeValue before stop" }
+                    $slider = Find-Seek-Slider -Tree $t
+                    if ($null -eq $slider) { return "Seek slider was not found after stop" }
+                    if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue after stop" }
+                    if ([double]$slider.rangeValue -ne 0) {
+                        return "Seek RangeValue is '$($slider.rangeValue)' instead of 0 after stop (before: $beforeValue)"
+                    }
+                    return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
@@ -1967,7 +1991,8 @@ function Invoke-StepAction {
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
                     param($t)
-                    return $script:process.HasExited
+                    if (-not $exited) { return "application process did not exit within 10 seconds" }
+                    return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }

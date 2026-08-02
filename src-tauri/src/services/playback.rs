@@ -893,12 +893,16 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
 
     // Decode stems before sending the command — expensive work stays
     // outside the coordinator.
+    let request_id_for_guard = request_id;
+    let request_id_atom = Arc::clone(&state.playback.playback_request_id);
+    let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
     let loaded_stems = load_cached_stems_for_song(
         Some(&state.shell.app_data_dir),
         &connection,
         &library_root,
         &song,
         request_id,
+        is_current,
     )?;
 
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
