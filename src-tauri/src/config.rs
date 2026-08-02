@@ -188,13 +188,22 @@ impl ExecutionProviderPreference {
     /// issue): XNNPACK wins on Apple Silicon (warm 2.15 s vs 2.39 s on CI,
     /// 2.67 s vs 5.08 s on an M-series dev machine) but LOSES to the ORT CPU
     /// EP by ~1.6–2.1x on Linux x64/arm64 and Intel macOS (e.g. Linux x64
-    /// warm 6.27 s vs 3.01 s). Windows keeps DirectML: with a GPU it
-    /// accelerates, and the measured no-GPU fallback is cost-free
-    /// (identical numbers to the CPU EP). Tuning never changes StemMode or
-    /// overlap (#173).
+    /// warm 6.27 s vs 3.01 s). Windows uses DirectML only when a hardware
+    /// D3D12 adapter is available. Tuning never changes StemMode or overlap
+    /// (#173).
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
+        let directml_available = matches!(platform, ExecutionProviderPlatform::Windows)
+            && crate::platform_capabilities::directml_available();
+        Self::default_for_capability(platform, directml_available)
+    }
+
+    fn default_for_capability(
+        platform: ExecutionProviderPlatform,
+        directml_available: bool,
+    ) -> Self {
         match platform {
-            ExecutionProviderPlatform::Windows => Self::DirectMl,
+            ExecutionProviderPlatform::Windows if directml_available => Self::DirectMl,
+            ExecutionProviderPlatform::Windows => Self::Cpu,
             ExecutionProviderPlatform::MacosAppleSilicon => Self::Xnnpack,
             ExecutionProviderPlatform::MacosIntel
             | ExecutionProviderPlatform::Linux
@@ -881,7 +890,13 @@ mod tests {
 
         // Measured defaults (#170): XNNPACK wins only on Apple Silicon.
         assert_eq!(Ep::default_for(Platform::MacosAppleSilicon), Ep::Xnnpack);
-        assert_eq!(Ep::default_for(Platform::Windows), Ep::DirectMl);
+        assert_eq!(
+            Ep::default_for(Platform::Windows),
+            Ep::default_for_capability(
+                Platform::Windows,
+                crate::platform_capabilities::directml_available()
+            )
+        );
         for platform in [Platform::MacosIntel, Platform::Linux, Platform::Other] {
             assert_eq!(
                 Ep::default_for(platform),
@@ -899,6 +914,19 @@ mod tests {
         ] {
             assert!(Ep::default_for(platform).is_available_for(platform));
         }
+    }
+
+    #[test]
+    fn windows_auto_selection_requires_a_hardware_capability() {
+        use ExecutionProviderPlatform::Windows;
+        use ExecutionProviderPreference as Ep;
+
+        assert_eq!(Ep::default_for_capability(Windows, true), Ep::DirectMl);
+        assert_eq!(Ep::default_for_capability(Windows, false), Ep::Cpu);
+        assert_eq!(
+            Ep::default_for_capability(ExecutionProviderPlatform::Linux, true),
+            Ep::Cpu
+        );
     }
 
     #[test]
@@ -1098,12 +1126,12 @@ mod tests {
         let config = AppConfig::default();
 
         // Host-conditional expectations mirror the measured policy table
-        // (issue #170): Windows -> DirectML, Apple Silicon -> XNNPACK,
-        // everything else -> the ORT CPU EP.
+        // (issue #170): Windows selects DirectML only with a D3D12 hardware
+        // adapter, Apple Silicon selects XNNPACK, and other hosts use CPU.
         #[cfg(target_os = "windows")]
         assert_eq!(
             config.effective_execution_provider(),
-            ExecutionProviderPreference::DirectMl
+            ExecutionProviderPreference::default_for_current_platform()
         );
 
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -1327,7 +1355,7 @@ mod tests {
         );
         assert_eq!(
             config.effective_execution_provider_for(Windows),
-            ExecutionProviderPreference::DirectMl
+            ExecutionProviderPreference::default_for(Windows)
         );
         assert_eq!(
             config.effective_execution_provider_for(MacosIntel),

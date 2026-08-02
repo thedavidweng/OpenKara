@@ -24,6 +24,7 @@ pub mod lyrics;
 pub mod media_g;
 pub mod metadata;
 pub mod perf;
+mod platform_capabilities;
 pub mod release_evidence;
 pub mod remote;
 pub mod separator;

@@ -219,7 +219,8 @@ fn spectral_candidate_bench() {
     let artifact_bytes = fs::metadata(&model_path).expect("model metadata").len();
 
     // Baseline (CPU EP) plus the product's platform default (XNNPACK on
-    // unix, DirectML on Windows) — measured side by side so per-target
+    // Apple Silicon, DirectML on capable Windows hosts) — measured side by
+    // side so per-target
     // provider selection (#170) is data-driven from every dispatch of the
     // cross-target workflow, with no manual experiments. On machines
     // without the accelerator the default preference measures its fallback

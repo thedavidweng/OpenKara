@@ -15,7 +15,7 @@ Field or command semantic changes must update this document before changing UI c
 | `cover_art_backdrop` | `boolean` | Show blurred cover-art backdrop in player |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
-| `execution_provider` | `string` | Active ONNX Runtime execution provider |
+| `execution_provider` | `string` | Active ONNX Runtime execution provider. When unset, Windows selects DirectML only with a usable D3D12 hardware adapter; otherwise it selects CPU. |
 | `available_execution_providers` | `Vec<string>` | Providers available on current platform |
 | `eq_enabled` | `bool` | Whether the five-band equalizer is enabled |
 | `eq_gains_db` | `[f32; 5]` | Per-band dB gains, each clamped to `[-12, 12]` |
