@@ -50,6 +50,7 @@ vi.mock("@/stores/settings-store", () => ({
           lyricsFontStep: 0,
           executionProvider: "xnnpack" as const,
           availableExecutionProviders: ["cpu" as const, "xnnpack" as const],
+          compatibleExecutionProviders: ["cpu" as const, "xnnpack" as const],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
           crossfadeEnabled: false,
@@ -372,6 +373,7 @@ describe("SettingsExecutionProviderSection rendering", () => {
       state: {
         executionProvider: "xnnpack",
         availableExecutionProviders: ["cpu", "xnnpack"],
+        compatibleExecutionProviders: ["cpu", "xnnpack"],
       },
     });
 
@@ -393,6 +395,7 @@ describe("SettingsExecutionProviderSection rendering", () => {
       state: {
         executionProvider: "directml",
         availableExecutionProviders: ["cpu", "xnnpack", "directml"],
+        compatibleExecutionProviders: ["cpu", "xnnpack"],
       },
     });
 
@@ -409,6 +412,8 @@ describe("SettingsExecutionProviderSection rendering", () => {
     ).toBe(1);
     expect(markup).toContain("settings.executionProvider.cpu");
     expect(markup).toContain("settings.executionProvider.xnnpack");
+    expect(markup).toContain("settings.executionProvider.incompatibleWarning");
+    expect(markup).toContain('data-incompatible="true"');
   });
 
   test("safe fallback selection renders exactly one selected option from the list", () => {
@@ -417,6 +422,7 @@ describe("SettingsExecutionProviderSection rendering", () => {
         // Stale directml normalized to xnnpack by the backend.
         executionProvider: "xnnpack",
         availableExecutionProviders: ["cpu", "xnnpack"],
+        compatibleExecutionProviders: ["cpu", "xnnpack"],
       },
     });
 

@@ -57,3 +57,4 @@ Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. 
 - [0017 — Release evidence binds publication to tested bytes](./0017-release-evidence-binds-publication-to-tested-bytes.md)
 - [0018 — Remote Repository modules own complete lifecycles](./0018-remote-repository-module-ownership.md)
 - [0019 — Execution provider selection uses host capability](./0019-execution-provider-selection-uses-host-capability.md)
+- [0020 — Validate execution provider compatibility before separation](./0020-validate-execution-provider-compatibility.md)

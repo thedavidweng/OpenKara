@@ -302,7 +302,11 @@ export function createLibrarySettingsActions(
       try {
         const settings = await dependencies.api.setExecutionProvider(provider);
         dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({ executionProvider: settings.execution_provider });
+        patchState({
+          executionProvider: settings.execution_provider,
+          availableExecutionProviders: settings.available_execution_providers,
+          compatibleExecutionProviders: settings.compatible_execution_providers,
+        });
       } catch (error) {
         dependencies.notifyError(error);
       }

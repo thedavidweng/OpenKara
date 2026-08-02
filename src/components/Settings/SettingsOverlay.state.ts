@@ -56,6 +56,8 @@ export function createInitialSettingsOverlaySnapshot(
       hideUpgradeAll: initialSettings.hideUpgradeAll,
       executionProvider: initialSettings.executionProvider,
       availableExecutionProviders: initialSettings.availableExecutionProviders,
+      compatibleExecutionProviders:
+        initialSettings.compatibleExecutionProviders,
       eqEnabled: initialSettings.eqEnabled,
       eqGainsDb: initialSettings.eqGainsDb,
       crossfadeEnabled: initialSettings.crossfadeEnabled,
@@ -341,6 +343,8 @@ export function createSettingsOverlayActions(
           executionProvider: settingsResult.value.execution_provider,
           availableExecutionProviders:
             settingsResult.value.available_execution_providers,
+          compatibleExecutionProviders:
+            settingsResult.value.compatible_execution_providers,
           eqEnabled: settingsResult.value.eq_enabled,
           eqGainsDb: settingsResult.value.eq_gains_db,
           crossfadeEnabled: settingsResult.value.crossfade_enabled,

@@ -49,6 +49,7 @@ describe("app runtime settings hydration", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      compatible_execution_providers: ["cpu", "xnnpack"],
       theme_preference: "dark",
     });
     const hydrateAppSettings = vi.fn();

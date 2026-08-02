@@ -527,6 +527,10 @@
       "xnnpackDescription": "SIMD 加速的 CPU——在 Apple Silicon 與現代 x86 上更快",
       "directml": "DirectML",
       "directmlDescription": "適用於 Windows 的 DirectX 12 GPU 加速",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Silicon 神經引擎與 GPU 加速",
+      "incompatible": "不相容",
+      "incompatibleWarning": "選取的提供者與此裝置不相容。請在設定中切換至 CPU。",
       "note": "變更將於下次分離時生效。"
     },
     "integrity": {
@@ -652,6 +656,8 @@
     "lyrics_not_ready": "歌詞無法使用",
     "network_unavailable": "網路錯誤",
     "invalid_playback_state": "播放錯誤",
+    "execution_provider_unavailable": "執行提供者無法使用",
+    "executionProviderUnavailableMessage": "選取的提供者與此裝置不相容。請在設定中切換至 CPU。",
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
     "remote_repository_unavailable": "遠端儲存庫無法使用",

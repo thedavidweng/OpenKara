@@ -432,6 +432,7 @@ describe("settings", () => {
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
+    compatible_execution_providers: ["cpu" as const],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
     crossfade_enabled: false,

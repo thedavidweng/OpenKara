@@ -10,6 +10,7 @@ export type ErrorCode =
   | "lyrics_not_ready"
   | "network_unavailable"
   | "invalid_playback_state"
+  | "execution_provider_unavailable"
   | "separation_failed"
   | "internal";
 
@@ -213,7 +214,7 @@ export interface ImportLyricsResult {
 
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
-export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
+export type ExecutionProvider = "cpu" | "xnnpack" | "coreml" | "directml";
 export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -229,6 +230,7 @@ export interface AppSettings {
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;
   available_execution_providers: ExecutionProvider[];
+  compatible_execution_providers: ExecutionProvider[];
   eq_enabled: boolean;
   eq_gains_db: [number, number, number, number, number];
   crossfade_enabled: boolean;

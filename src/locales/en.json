@@ -528,6 +528,10 @@
       "xnnpackDescription": "SIMD-accelerated CPU — faster on Apple Silicon and modern x86",
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU acceleration for Windows",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Neural Engine and GPU acceleration for Apple Silicon",
+      "incompatible": "Not compatible",
+      "incompatibleWarning": "This provider is not compatible with this device. Switch to CPU in Settings.",
       "note": "Changes take effect on the next separation."
     },
     "integrity": {
@@ -653,6 +657,8 @@
     "lyrics_not_ready": "Lyrics Unavailable",
     "network_unavailable": "Network Error",
     "invalid_playback_state": "Playback Error",
+    "execution_provider_unavailable": "Execution Provider Unavailable",
+    "executionProviderUnavailableMessage": "The selected provider is not compatible with this device. Switch to CPU in Settings.",
     "separation_failed": "Separation Failed",
     "internal": "Internal Error",
     "remote_repository_unavailable": "Remote Repository Unavailable",

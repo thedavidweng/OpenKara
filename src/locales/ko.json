@@ -523,6 +523,10 @@
       "xnnpackDescription": "SIMD 가속 CPU — Apple Silicon과 최신 x86에서 더 빠름",
       "directml": "DirectML",
       "directmlDescription": "Windows용 DirectX 12 GPU 가속",
+      "coreml": "CoreML",
+      "coremlDescription": "Apple Silicon Neural Engine 및 GPU 가속",
+      "incompatible": "호환되지 않음",
+      "incompatibleWarning": "이 제공자는 이 기기와 호환되지 않습니다. 설정에서 CPU로 전환하세요.",
       "note": "변경 사항은 다음 분리부터 적용돼요."
     },
     "integrity": {
@@ -652,6 +656,8 @@
     "lyrics_not_ready": "가사 사용 불가",
     "network_unavailable": "네트워크 오류",
     "invalid_playback_state": "재생 오류",
+    "execution_provider_unavailable": "실행 제공자를 사용할 수 없음",
+    "executionProviderUnavailableMessage": "선택한 제공자는 이 기기와 호환되지 않습니다. 설정에서 CPU로 전환하세요.",
     "separation_failed": "분리 실패",
     "internal": "내부 오류",
     "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",

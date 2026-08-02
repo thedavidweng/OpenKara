@@ -93,7 +93,7 @@ fn describes_xnnpack_fallback_provider_path() {
 fn describes_directml_full_fallback_provider_path() {
     assert_eq!(
         model::provider_diagnostic_summary(ExecutionProviderPreference::DirectMl),
-        "directml -> xnnpack -> cpu"
+        "directml -> cpu"
     );
 }
 

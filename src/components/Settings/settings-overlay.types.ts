@@ -80,6 +80,7 @@ export interface SettingsOverlayState {
   hideUpgradeAll: boolean;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  compatibleExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
   crossfadeEnabled: boolean;

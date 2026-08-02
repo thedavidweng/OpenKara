@@ -113,6 +113,7 @@ export const MOCK_DATA: MockData = {
     lyrics_font_step: 0,
     execution_provider: "cpu",
     available_execution_providers: ["cpu"],
+    compatible_execution_providers: ["cpu"],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
     crossfade_enabled: false,

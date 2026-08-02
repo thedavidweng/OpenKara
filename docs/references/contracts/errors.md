@@ -42,6 +42,7 @@
 - `lyrics_not_ready`
 - `network_unavailable`
 - `invalid_playback_state`
+- `execution_provider_unavailable`
 - `separation_failed`
 - `internal`
 
@@ -99,19 +100,24 @@
 
 ### Separation
 
-1. 分离 worker 失败：
+1. The saved execution provider is not compatible with the current host:
+   - `code = execution_provider_unavailable`
+   - `fallback = keep_current_state`
+   - The Settings screen marks the saved provider and asks the user to switch
+     to CPU.
+2. 分离 worker 失败：
    - `code = separation_failed`
    - `fallback = retry`
-2. 分离输入歌曲已丢失：
+3. 分离输入歌曲已丢失：
    - `code = song_not_found`
    - `fallback = refresh_library`
-3. 分离前解码失败：
+4. 分离前解码失败：
    - `code = audio_decode_failed`
    - `fallback = reimport_song`
-4. 运行时模型校验失败、bootstrap 已失败或旧模型需要用户删除：
+5. 运行时模型校验失败、bootstrap 已失败或旧模型需要用户删除：
    - `code = model_unavailable`
    - `fallback = retry`
-5. ONNX Runtime 下载、校验或加载失败：
+6. ONNX Runtime 下载、校验或加载失败：
    - `code = model_unavailable`
    - `fallback = retry`
    - 触发场景：`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate` 的后台前置 bootstrap 失败，或 `download_model` 命令在 Runtime 未就绪时返回此错误

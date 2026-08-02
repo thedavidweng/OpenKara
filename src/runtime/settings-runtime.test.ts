@@ -42,6 +42,7 @@ describe("loadStartupSettings", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      compatible_execution_providers: ["cpu", "xnnpack"],
     };
 
     const getSettings = vi.fn().mockResolvedValue(settings);
@@ -72,6 +73,7 @@ describe("loadStartupSettings", () => {
       lyrics_font_step: 2,
       execution_provider: "cpu",
       available_execution_providers: ["cpu"],
+      compatible_execution_providers: ["cpu"],
     };
 
     const getSettings = vi.fn().mockResolvedValue(settings);

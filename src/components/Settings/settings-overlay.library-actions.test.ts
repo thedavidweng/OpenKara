@@ -78,6 +78,7 @@ function createAppSettings() {
     lyrics_font_step: 0,
     execution_provider: "xnnpack" as const,
     available_execution_providers: ["cpu", "xnnpack"] as const,
+    compatible_execution_providers: ["cpu", "xnnpack"] as const,
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
     crossfade_enabled: false,
@@ -113,6 +114,7 @@ function createHarness(overrides?: {
       hideUpgradeAll: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      compatibleExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       crossfadeEnabled: false,
@@ -210,6 +212,7 @@ function createHarness(overrides?: {
         lyricsFontStep: 0,
         executionProvider: "xnnpack" as const,
         availableExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
+        compatibleExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0] as [number, number, number, number, number],
         crossfadeEnabled: false,
@@ -691,6 +694,8 @@ describe("createLibrarySettingsActions", () => {
       ).toHaveBeenCalledWith(appSettings);
       expect(harness.patchState).toHaveBeenCalledWith({
         executionProvider: "xnnpack",
+        availableExecutionProviders: ["cpu", "xnnpack"],
+        compatibleExecutionProviders: ["cpu", "xnnpack"],
       });
     });
 

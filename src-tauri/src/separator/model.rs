@@ -520,6 +520,7 @@ fn build_execution_provider_list(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
             )
             .build()],
+        ExecutionProviderPreference::CoreMl => vec![ep::CoreML::default().build()],
         ExecutionProviderPreference::DirectMl => vec![ep::DirectML::default().build()],
     }
 }
@@ -533,10 +534,14 @@ fn execution_provider_chain(
             ExecutionProviderPreference::Xnnpack,
             ExecutionProviderPreference::Cpu,
         ],
-        // If DirectML fails, retry with XNNPACK SIMD before bare CPU.
+        // The Windows runtime artifact contains DirectML and CPU only.
         ExecutionProviderPreference::DirectMl => vec![
             ExecutionProviderPreference::DirectMl,
-            ExecutionProviderPreference::Xnnpack,
+            ExecutionProviderPreference::Cpu,
+        ],
+        // The Apple Silicon runtime artifact contains CoreML and CPU only.
+        ExecutionProviderPreference::CoreMl => vec![
+            ExecutionProviderPreference::CoreMl,
             ExecutionProviderPreference::Cpu,
         ],
         resolved => vec![resolved],
@@ -724,12 +729,22 @@ mod tests {
     }
 
     #[test]
-    fn provider_chain_includes_xnnpack_between_directml_and_cpu() {
+    fn provider_chain_keeps_directml_cpu_fallback() {
         assert_eq!(
             execution_provider_chain(ExecutionProviderPreference::DirectMl),
             vec![
                 ExecutionProviderPreference::DirectMl,
-                ExecutionProviderPreference::Xnnpack,
+                ExecutionProviderPreference::Cpu,
+            ]
+        );
+    }
+
+    #[test]
+    fn provider_chain_keeps_coreml_cpu_fallback() {
+        assert_eq!(
+            execution_provider_chain(ExecutionProviderPreference::CoreMl),
+            vec![
+                ExecutionProviderPreference::CoreMl,
                 ExecutionProviderPreference::Cpu,
             ]
         );
