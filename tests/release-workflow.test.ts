@@ -198,6 +198,46 @@ describe("release workflow", () => {
     );
   });
 
+  test("applies the installation template to an existing draft release", () => {
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const installationTemplate = readProjectFile(
+      ".github/release-notes-installation.md",
+    );
+
+    expect(releaseWorkflow).toContain(
+      'grep -Fq "## Installation" RELEASE_NOTES.md',
+    );
+    expect(releaseWorkflow).toContain("printf '\\n\\n' >> RELEASE_NOTES.md");
+    expect(releaseWorkflow).toContain(
+      "cat .github/release-notes-installation.md >> RELEASE_NOTES.md",
+    );
+    expect(installationTemplate).toMatch(
+      /^<!-- markdownlint-disable MD041 -->\n\n---\n/,
+    );
+    expect(installationTemplate).toContain(
+      "brew install thedavidweng/tap/openkara",
+    );
+    expect(installationTemplate).toContain(
+      "winget install thedavidweng.OpenKara",
+    );
+    expect(releaseWorkflow).toContain(
+      'gh api --method PATCH "repos/${GH_REPO}/releases/${release_id}"',
+    );
+    expect(releaseWorkflow).toContain('-F "body=@RELEASE_NOTES.md"');
+    expect(releaseWorkflow).toMatch(
+      /Build release notes[\s\S]*?gh release create "\$\{RELEASE_TAG\}"[\s\S]*?--notes-file RELEASE_NOTES\.md/,
+    );
+    expect(releaseWorkflow).not.toContain(
+      "RELEASE_BODY: ${{ needs.prepare-release.outputs.release_body }}",
+    );
+
+    const releaseBodyWithoutTrailingNewline = "## Release v0.12.0";
+    const composedNotes = `${releaseBodyWithoutTrailingNewline}\n\n${installationTemplate}`;
+    expect(composedNotes).toContain(
+      `${releaseBodyWithoutTrailingNewline}\n\n<!-- markdownlint-disable MD041 -->\n\n---`,
+    );
+  });
+
   test("release-please ensures a git tag and dispatches the Release workflow", () => {
     // GITHUB_TOKEN tag/release events do not start other workflows. The
     // release-please path must create a missing tag, rebind the draft release,
