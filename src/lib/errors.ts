@@ -26,6 +26,9 @@ function getCommandErrorMessage(error: CommandError): string {
   if (error.code === "execution_provider_unavailable") {
     return i18next.t("errors.executionProviderUnavailableMessage");
   }
+  if (error.code === "model_unavailable") {
+    return i18next.t("errors.model_unavailable");
+  }
   return error.message;
 }
 
