@@ -52,6 +52,7 @@ export function SettingsOverlay() {
           </h2>
           <button
             ref={closeButtonRef}
+            id="settings-close"
             type="button"
             onClick={closeSettings}
             aria-label={t("common.close")}

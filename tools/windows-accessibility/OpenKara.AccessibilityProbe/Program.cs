@@ -67,6 +67,7 @@ class Program
         string action = "snapshot";
         string? targetName = null;
         string? controlTypeFilter = null;
+        string? automationIdFilter = null;
         string? valueText = null;
         string? keyName = null;
         int timeoutMs = 0;
@@ -116,6 +117,10 @@ class Program
             {
                 controlTypeFilter = args[++i];
             }
+            else if (arg == "--automation-id" && i + 1 < args.Length)
+            {
+                automationIdFilter = args[++i];
+            }
             else if (arg == "--value" && i + 1 < args.Length)
             {
                 valueText = args[++i];
@@ -130,8 +135,8 @@ class Program
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
                     "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
-                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] [--name <substring>] " +
-                    "[--control-type <type>] [--value <text>] [--key <name>]");
+                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] " +
+                    "[--name <substring>] [--automation-id <id>] [--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
             }
         }
@@ -151,9 +156,9 @@ class Program
 
         if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "click" or "double-click")
         {
-            if (string.IsNullOrWhiteSpace(targetName))
+            if (string.IsNullOrWhiteSpace(targetName) && string.IsNullOrWhiteSpace(automationIdFilter))
             {
-                Console.Error.WriteLine($"Action '{action}' requires --name <substring>.");
+                Console.Error.WriteLine($"Action '{action}' requires --name <substring> or --automation-id <id>.");
                 return 1;
             }
         }
@@ -196,13 +201,16 @@ class Program
         if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click")
         {
             AutomationElement? target = null;
-            if (!string.IsNullOrWhiteSpace(targetName))
+            if (!string.IsNullOrWhiteSpace(targetName) || !string.IsNullOrWhiteSpace(automationIdFilter))
             {
-                target = FindNamedElement(root, targetName!, controlTypeFilter);
+                target = FindNamedElement(root, targetName ?? string.Empty, controlTypeFilter, automationIdFilter);
                 if (target is null)
                 {
+                    var targetDescription = string.IsNullOrWhiteSpace(automationIdFilter)
+                        ? $"name '{targetName}'"
+                        : $"automation-id '{automationIdFilter}'";
                     Console.Error.WriteLine(
-                        $"No matching element for name '{targetName}'" +
+                        $"No matching element for {targetDescription}" +
                         (string.IsNullOrWhiteSpace(controlTypeFilter) ? "" : $" control-type '{controlTypeFilter}'") +
                         ".");
                     return 2;
@@ -367,10 +375,11 @@ class Program
     private static AutomationElement? FindNamedElement(
         AutomationElement root,
         string nameSubstring,
-        string? controlTypeFilter)
+        string? controlTypeFilter,
+        string? automationIdFilter)
     {
         var matches = new List<(AutomationElement Element, int Score)>();
-        CollectNamedMatches(root, nameSubstring, controlTypeFilter, matches);
+        CollectNamedMatches(root, nameSubstring, controlTypeFilter, automationIdFilter, matches);
         if (matches.Count == 0)
         {
             return null;
@@ -392,6 +401,7 @@ class Program
         AutomationElement? element,
         string nameSubstring,
         string? controlTypeFilter,
+        string? automationIdFilter,
         List<(AutomationElement Element, int Score)> matches)
     {
         if (element is null || IsStale(element))
@@ -401,15 +411,19 @@ class Program
 
         var current = TryGetCurrent(element);
         string name = current.Name ?? string.Empty;
+        string automationId = current.AutomationId ?? string.Empty;
         string controlType = GetControlTypeName(current.ControlType);
+        bool nameMatches = !string.IsNullOrWhiteSpace(nameSubstring) &&
+            name.IndexOf(nameSubstring, StringComparison.OrdinalIgnoreCase) >= 0;
+        bool automationIdMatches = !string.IsNullOrWhiteSpace(automationIdFilter) &&
+            automationId.Equals(automationIdFilter, StringComparison.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(name) &&
-            name.IndexOf(nameSubstring, StringComparison.OrdinalIgnoreCase) >= 0 &&
+        if ((nameMatches || automationIdMatches) &&
             (string.IsNullOrWhiteSpace(controlTypeFilter) ||
              controlType.Equals(controlTypeFilter, StringComparison.OrdinalIgnoreCase)) &&
-            current.IsOffscreen == false)
+            (current.IsOffscreen == false || automationIdMatches))
         {
-            int score = name.Equals(nameSubstring, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int score = automationIdMatches || name.Equals(nameSubstring, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             // Prefer keyboard-focusable interactive controls when set-focusing.
             if (!current.IsKeyboardFocusable)
             {
@@ -434,7 +448,7 @@ class Program
 
         for (int i = 0; i < children.Count; i++)
         {
-            CollectNamedMatches(children[i], nameSubstring, controlTypeFilter, matches);
+            CollectNamedMatches(children[i], nameSubstring, controlTypeFilter, automationIdFilter, matches);
         }
     }
 

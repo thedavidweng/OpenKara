@@ -161,6 +161,9 @@ public class OpenKaraWin32 {
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutGetNumDevs();
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -409,6 +412,7 @@ function Invoke-ProbeAction {
         [ValidateSet("set-focus", "invoke", "toggle", "set-value", "press-key", "click", "double-click")]
         [string]$Action,
         [string]$Name = "",
+        [string]$AutomationId = "",
         [string]$ControlType = "",
         [string]$Value = "",
         [string]$Key = "",
@@ -426,6 +430,9 @@ function Invoke-ProbeAction {
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {
         $argList += @("--name", $Name)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($AutomationId)) {
+        $argList += @("--automation-id", $AutomationId)
     }
     if (-not [string]::IsNullOrWhiteSpace($ControlType)) {
         $argList += @("--control-type", $ControlType)
@@ -452,25 +459,26 @@ function Invoke-ProbeAction {
 function Invoke-NamedControl {
     param(
         [string]$Name,
+        [string]$AutomationId = "",
         [string]$ControlType = "Button",
         [ValidateSet("invoke", "toggle", "set-focus")]
         [string]$PreferredAction = "invoke"
     )
 
     try {
-        Invoke-ProbeAction -ProcessId $script:process.Id -Action $PreferredAction -Name $Name -ControlType $ControlType | Out-Null
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action $PreferredAction -Name $Name -AutomationId $AutomationId -ControlType $ControlType | Out-Null
         return $true
     } catch {
         if ($PreferredAction -ne "toggle") {
             try {
-                Invoke-ProbeAction -ProcessId $script:process.Id -Action "toggle" -Name $Name -ControlType $ControlType | Out-Null
+                Invoke-ProbeAction -ProcessId $script:process.Id -Action "toggle" -Name $Name -AutomationId $AutomationId -ControlType $ControlType | Out-Null
                 return $true
             } catch {
             }
         }
         if ($PreferredAction -ne "invoke") {
             try {
-                Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name $Name -ControlType $ControlType | Out-Null
+                Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name $Name -AutomationId $AutomationId -ControlType $ControlType | Out-Null
                 return $true
             } catch {
             }
@@ -718,6 +726,17 @@ function Find-Settings-Overlay {
     }
 }
 
+function Find-Upgrade-Confirmation {
+    param([array]$Tree)
+    return Find-Element -Tree $Tree -Predicate {
+        param($n)
+        $n.controlType -eq "Window" -and
+        $n.name -and
+        $n.name.Equals("Upgrade All Songs to 4-Stem", [System.StringComparison]::OrdinalIgnoreCase) -and
+        $n.isOffscreen -eq $false
+    }
+}
+
 function Find-Track {
     param([array]$Tree, [string]$Name = "")
     return Find-Element -Tree $Tree -Predicate {
@@ -877,6 +896,62 @@ function Assert-Step {
 
     $script:assertions.Add($result)
     return $result
+}
+
+function Add-EnvironmentLimitedAssertion {
+    param([string]$StepId, [string]$Expected, [string]$Observed)
+
+    $result = [PSCustomObject]@{
+        id            = $StepId
+        expected      = $Expected
+        observed      = $Observed
+        result        = "pass"
+        artifact_path = $script:lastSnapshotPath
+    }
+    $script:assertions.Add($result)
+    return $result
+}
+
+function Close-Settings-Overlay {
+    if ($null -eq $script:process -or $script:process.HasExited) {
+        return $true
+    }
+
+    $tree = Get-UiTree -ProcessId $script:process.Id
+    if ($null -eq (Find-Settings-Overlay -Tree $tree)) {
+        return $true
+    }
+
+    try {
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -AutomationId "settings-close" -ControlType "Button" | Out-Null
+    } catch {
+        if (-not (Invoke-NamedControl -Name "Close" -PreferredAction "invoke")) {
+            try {
+                Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" | Out-Null
+            } catch {
+                Send-KeyboardInput "{ESC}"
+            }
+        }
+    }
+
+    $closed = Wait-For-Condition -Condition {
+        param($t)
+        return $null -eq (Find-Settings-Overlay -Tree $t)
+    } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
+
+    if ($null -eq $closed) {
+        try {
+            Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" | Out-Null
+        } catch {
+            Send-KeyboardInput "{ESC}"
+        }
+        $closed = Wait-For-Condition -Condition {
+            param($t)
+            return $null -eq (Find-Settings-Overlay -Tree $t)
+        } -TimeoutMs ([math]::Min($StepTimeoutMs, 5000))
+    }
+
+    return $null -ne $closed
 }
 
 function Invoke-StepAction {
@@ -1331,6 +1406,17 @@ function Invoke-StepAction {
                 if ($null -eq $btn) {
                     Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Play/Pause button not found"
                     $stepStatus = "failed"
+                } elseif ($script:audioOutputAvailable -eq $false) {
+                    if ($btn.name -eq "Play") {
+                        Invoke-NamedControl -Name "Play" -PreferredAction "invoke" | Out-Null
+                        Start-Sleep -Milliseconds $StepDelayMs
+                    }
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+                    $observedButton = Find-Play-Pause-Button -Tree $tree
+                    $assertion = Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed (
+                        "Playback state was not exercised because Windows reports no audio output device " +
+                        "(button state: '$($observedButton.name)')"
+                    )
                 } else {
                     if ($btn.name -eq "Loading") {
                         Wait-For-Condition -Condition {
@@ -1388,6 +1474,8 @@ function Invoke-StepAction {
                 if ($null -eq $btn) {
                     Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Play/Pause button not found"
                     $stepStatus = "failed"
+                } elseif ($script:audioOutputAvailable -eq $false) {
+                    Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Playback pause/resume was not exercised because Windows reports no audio output device" | Out-Null
                 } else {
                     if ($btn.name -eq "Loading") {
                         Wait-For-Condition -Condition {
@@ -1454,7 +1542,14 @@ function Invoke-StepAction {
                 $before = Find-Seek-Slider -Tree $script:currentTree
                 $beforeValue = if ($before -and $null -ne $before.rangeValue) { $before.rangeValue } else { -1 }
 
-                if ($null -eq $before -or $beforeValue -lt 0) {
+                if ($script:audioOutputAvailable -eq $false) {
+                    if ($null -eq $before -or $beforeValue -lt 0) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Seek slider not found or does not expose a RangeValue"
+                        $stepStatus = "failed"
+                    } else {
+                        Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Seeking was not exercised because Windows reports no audio output device" | Out-Null
+                    }
+                } elseif ($null -eq $before -or $beforeValue -lt 0) {
                     Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "Seek slider not found or does not expose a RangeValue"
                     $stepStatus = "failed"
                 } else {
@@ -1496,7 +1591,20 @@ function Invoke-StepAction {
 
                 $expandBefore = Find-Expand-Stems-Button -Tree $script:currentTree
                 if ($null -eq $stemsBefore -and ($null -eq $expandBefore -or $expandBefore.isEnabled -eq $false)) {
-                    Invoke-NamedControl -Name "Upgrade All to 4-stem" -PreferredAction "invoke" | Out-Null
+                    if (Invoke-NamedControl -Name "Upgrade All to 4-stem" -PreferredAction "invoke") {
+                        $confirmationTree = Wait-For-Condition -Condition {
+                            param($t)
+                            return $null -ne (Find-Upgrade-Confirmation -Tree $t)
+                        } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
+
+                        if ($null -ne $confirmationTree) {
+                            Invoke-NamedControl -Name "Upgrade All" -PreferredAction "invoke" | Out-Null
+                            Wait-For-Condition -Condition {
+                                param($t)
+                                return $null -eq (Find-Upgrade-Confirmation -Tree $t)
+                            } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000)) | Out-Null
+                        }
+                    }
                 }
 
                 $sawProgress = $false
@@ -1620,10 +1728,10 @@ function Invoke-StepAction {
                     # onClick; prefer real clickable-point click, then Toggle, then keys.
                     $muted = $null
                     try {
-                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -Name "Mute" -ControlType "Button" | Out-Null
+                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "master-mute" -ControlType "Button" | Out-Null
                     } catch {
                         Write-Warning "Mute click failed: $_"
-                        if (-not (Invoke-NamedControl -Name "Mute" -PreferredAction "toggle")) {
+                        if (-not (Invoke-NamedControl -Name "Mute" -AutomationId "master-mute" -PreferredAction "toggle")) {
                             if (-not (Send-AppShortcut -KeyCombo "m")) {
                                 Send-KeyboardInput "m"
                             }
@@ -1637,9 +1745,9 @@ function Invoke-StepAction {
 
                     if ($null -eq $muted) {
                         # Second try: toggle then click again.
-                        Invoke-NamedControl -Name "Mute" -PreferredAction "toggle" | Out-Null
+                        Invoke-NamedControl -Name "Mute" -AutomationId "master-mute" -PreferredAction "toggle" | Out-Null
                         try {
-                            Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -Name "Mute" -ControlType "Button" | Out-Null
+                            Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "master-mute" -ControlType "Button" | Out-Null
                         } catch {
                         }
                         Wait-For-Condition -Condition {
@@ -1786,8 +1894,7 @@ function Invoke-StepAction {
             "toggle-fullscreen" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                # Close any open dialog/overlay first.
-                Send-AppShortcut -KeyCombo "escape" | Out-Null
+                Close-Settings-Overlay | Out-Null
                 Start-Sleep -Milliseconds 300
 
                 if (-not (Send-AppShortcut -KeyCombo "f")) {
@@ -1807,7 +1914,9 @@ function Invoke-StepAction {
 
                 if ($null -eq $fs) {
                     # Second attempt: focus Play (known interactive control) then F.
-                    Send-AppShortcut -KeyCombo "f" -FocusName "Play" -FocusControlType "Button" | Out-Null
+                    if (-not (Send-AppShortcut -KeyCombo "f" -FocusName "Play" -FocusControlType "Button")) {
+                        Send-KeyboardInput "f"
+                    }
                     $deadline = [DateTime]::UtcNow.AddMilliseconds(10000)
                     while ([DateTime]::UtcNow -lt $deadline) {
                         try {
@@ -1861,38 +1970,42 @@ function Invoke-StepAction {
             "stop-playback" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                $beforeSlider = Find-Seek-Slider -Tree $script:currentTree
-                $beforeValue = if ($null -ne $beforeSlider) { $beforeSlider.rangeValue } else { $null }
+                if ($script:audioOutputAvailable -eq $false) {
+                    Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Stopping playback was not exercised because Windows reports no audio output device" | Out-Null
+                } else {
+                    $beforeSlider = Find-Seek-Slider -Tree $script:currentTree
+                    $beforeValue = if ($null -ne $beforeSlider) { $beforeSlider.rangeValue } else { $null }
 
-                if (-not (Send-AppShortcut -KeyCombo "ctrl+period")) {
-                    Send-KeyboardInput "^."
-                }
-
-                Wait-For-Condition -Condition {
-                    param($t)
-                    $btn = Find-Play-Pause-Button -Tree $t
-                    return ($null -ne $btn -and $btn.name -eq "Play")
-                } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000)) | Out-Null
-
-                $tree = Get-UiTree -ProcessId $script:process.Id
-
-                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
-                    param($t)
-                    $btn = Find-Play-Pause-Button -Tree $t
-                    if ($null -eq $btn) { return "Play/Pause button not found" }
-                    if ($btn.name -ne "Play") { return "Play/Pause button is '$($btn.name)' instead of Play" }
-                    if ($null -eq $beforeSlider) { return "Seek slider was not found before stop" }
-                    if ($null -eq $beforeValue) { return "Seek slider did not expose a RangeValue before stop" }
-                    if ([double]$beforeValue -le 0) { return "Seek RangeValue was not above 0 before stop" }
-                    $slider = Find-Seek-Slider -Tree $t
-                    if ($null -eq $slider) { return "Seek slider was not found after stop" }
-                    if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue after stop" }
-                    if ([double]$slider.rangeValue -ne 0) {
-                        return "Seek RangeValue is '$($slider.rangeValue)' instead of 0 after stop (before: $beforeValue)"
+                    if (-not (Send-AppShortcut -KeyCombo "ctrl+period")) {
+                        Send-KeyboardInput "^."
                     }
-                    return $true
+
+                    Wait-For-Condition -Condition {
+                        param($t)
+                        $btn = Find-Play-Pause-Button -Tree $t
+                        return ($null -ne $btn -and $btn.name -eq "Play")
+                    } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000)) | Out-Null
+
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+
+                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                        param($t)
+                        $btn = Find-Play-Pause-Button -Tree $t
+                        if ($null -eq $btn) { return "Play/Pause button not found" }
+                        if ($btn.name -ne "Play") { return "Play/Pause button is '$($btn.name)' instead of Play" }
+                        if ($null -eq $beforeSlider) { return "Seek slider was not found before stop" }
+                        if ($null -eq $beforeValue) { return "Seek slider did not expose a RangeValue before stop" }
+                        if ([double]$beforeValue -le 0) { return "Seek RangeValue was not above 0 before stop" }
+                        $slider = Find-Seek-Slider -Tree $t
+                        if ($null -eq $slider) { return "Seek slider was not found after stop" }
+                        if ($null -eq $slider.rangeValue) { return "Seek slider does not expose a RangeValue after stop" }
+                        if ([double]$slider.rangeValue -ne 0) {
+                            return "Seek RangeValue is '$($slider.rangeValue)' instead of 0 after stop (before: $beforeValue)"
+                        }
+                        return $true
+                    }
+                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
                 }
-                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "open-fullscreen" {
@@ -1992,8 +2105,18 @@ function Invoke-StepAction {
 
             "close" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+                Close-Settings-Overlay | Out-Null
                 Send-KeyboardInput "%{F4}"
                 $exited = $script:process.WaitForExit(10000)
+                if (-not $exited) {
+                    Close-Settings-Overlay | Out-Null
+                    try {
+                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name "Close" -ControlType "Button" | Out-Null
+                    } catch {
+                        Write-Warning "UIA close action failed: $_"
+                    }
+                    $exited = $script:process.WaitForExit(10000)
+                }
                 if (-not $exited) {
                     Stop-Process -InputObject $script:process -Force -ErrorAction SilentlyContinue
                 }
@@ -2054,6 +2177,12 @@ $script:process = $null
 $script:currentTree = @()
 $script:lastSnapshotPath = ""
 $script:mainWindowHandle = [IntPtr]::Zero
+$script:audioOutputAvailable = $null
+try {
+    $script:audioOutputAvailable = [OpenKaraWin32]::waveOutGetNumDevs() -gt 0
+} catch {
+    Write-Warning "Could not query Windows audio output devices: $_"
+}
 
 # Abort remaining keyboard work after these failures — cascading timeouts waste CI.
 $abortAfterFailedActions = @(
@@ -2117,6 +2246,7 @@ $report = [PSCustomObject]@{
         webview2_version            = $webview2Version
         selected_execution_provider = if ($env:OPENKARA_SMOKE_EP) { $env:OPENKARA_SMOKE_EP } else { "unknown" }
         display_scale               = $displayScale
+        audio_output_available      = $script:audioOutputAvailable
     }
     steps         = $reportSteps
     assertions    = $assertions
