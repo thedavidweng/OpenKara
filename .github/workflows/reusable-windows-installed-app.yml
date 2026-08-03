@@ -580,6 +580,10 @@ jobs:
           # Leave language unset so the installed-app check exercises the
           # system-language detector on the English Windows runner.
           $config.Remove("language")
+          # The smoke database contains verified two-stem artifacts. Keep the
+          # UIA fixture on that mode so current-song separation can reuse the
+          # cache instead of starting an unrelated four-stem bulk upgrade.
+          $config["stem_mode"] = "two_stem"
           $config["library_path"] = $null
           $config["libraries"] = @(
             [ordered]@{

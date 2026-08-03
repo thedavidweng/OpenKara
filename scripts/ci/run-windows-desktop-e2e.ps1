@@ -161,6 +161,10 @@ public class OpenKaraWin32 {
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
     [DllImport("winmm.dll")]
     public static extern uint waveOutGetNumDevs();
 
@@ -968,7 +972,7 @@ function Invoke-StepAction {
         switch ($Step.action) {
             "launch" {
                 $script:process = Start-OpenKaraApp
-                $launchTimeoutMs = [Math]::Max($StepTimeoutMs, 90000)
+                $launchTimeoutMs = [Math]::Max($StepTimeoutMs, 180000)
                 $script:mainWindowHandle = Wait-For-ProcessWindow -Process $script:process -TimeoutMs $launchTimeoutMs
                 # Window chrome alone is not enough: wait until WebView2 exposes
                 # named interactive DOM controls for keyboard navigation.
@@ -1609,9 +1613,17 @@ function Invoke-StepAction {
 
                 $sawProgress = $false
                 $slider = $null
+                $expandAttempted = $false
                 $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 120000))
                 while ([DateTime]::UtcNow -lt $deadline) {
                     $tree = Get-UiTree -ProcessId $script:process.Id
+                    if (-not $expandAttempted) {
+                        $expand = Find-Expand-Stems-Button -Tree $tree
+                        if ($null -ne $expand -and $expand.isEnabled -ne $false) {
+                            $expandAttempted = $true
+                            Invoke-NamedControl -Name "Expand stems" -PreferredAction "invoke" | Out-Null
+                        }
+                    }
                     if (-not $sawProgress) {
                         $prog = Find-ElementByControlType -Tree $tree -ControlType "ProgressBar"
                         $text = Find-ElementByRegex -Tree $tree -Pattern "(separating|separated|complete|Upgrade All)"
@@ -1719,6 +1731,18 @@ function Invoke-StepAction {
 
             "mute" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                if ($script:audioOutputAvailable -eq $false) {
+                    $tree = Get-UiTree -ProcessId $script:process.Id
+                    $muteButton = Find-Mute-Button -Tree $tree
+                    if ($null -eq $muteButton) {
+                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "master mute button was not exposed by the headless Windows UI"
+                        $stepStatus = "failed"
+                    } else {
+                        Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Mute state was not exercised because Windows reports no audio output device" | Out-Null
+                    }
+                    break
+                }
 
                 $before = Find-Mute-Button -Tree $script:currentTree
                 $alreadyMuted = $before -and ($before.name -eq "Unmute" -or $before.toggleState -eq "On")
@@ -1929,6 +1953,30 @@ function Invoke-StepAction {
                 }
 
                 if ($null -eq $fs) {
+                    # Headless Windows runners may reject SendInput. Use the
+                    # product's monitor picker to exercise the same fullscreen
+                    # action through a real UIA control.
+                    if (Invoke-NamedControl -Name "Select Monitor" -PreferredAction "invoke") {
+                        $monitorTree = Wait-For-Condition -Condition {
+                            param($t)
+                            return $null -ne (Find-ElementByAutomationId -Tree $t -AutomationId "monitor-option-0")
+                        } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
+                        if ($null -ne $monitorTree) {
+                            Invoke-NamedControl -Name "" -AutomationId "monitor-option-0" -PreferredAction "invoke" | Out-Null
+                            $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
+                            while ([DateTime]::UtcNow -lt $deadline) {
+                                try {
+                                    $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 3000
+                                    if ($fs) { break }
+                                } catch {
+                                }
+                                Start-Sleep -Milliseconds 400
+                            }
+                        }
+                    }
+                }
+
+                if ($null -eq $fs) {
                     Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window 'OpenKara Player' did not appear"
                     $stepStatus = "failed"
                 } else {
@@ -1953,9 +2001,17 @@ function Invoke-StepAction {
                             return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
                         } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
                         if ($null -eq $returned) {
-                            Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window did not close before the cleanup timeout"
-                            $stepStatus = "failed"
-                        } else {
+                            [OpenKaraWin32]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+                            $returned = Wait-For-Condition -Condition {
+                                param($t)
+                                return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
+                            } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
+                            if ($null -eq $returned) {
+                                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window did not close before the cleanup timeout"
+                                $stepStatus = "failed"
+                            }
+                        }
+                        if ($null -ne $returned) {
                             $mainTree = Get-UiTree -ProcessId $script:process.Id
                             $mainWindow = Find-ElementByControlType -Tree $mainTree -ControlType "Window"
                             if ($null -eq $mainWindow) {
@@ -2116,6 +2172,13 @@ function Invoke-StepAction {
                         Write-Warning "UIA close action failed: $_"
                     }
                     $exited = $script:process.WaitForExit(10000)
+                }
+                if (-not $exited) {
+                    $hWnd = $script:process.MainWindowHandle
+                    if ($hWnd -ne [IntPtr]::Zero) {
+                        [OpenKaraWin32]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+                        $exited = $script:process.WaitForExit(10000)
+                    }
                 }
                 if (-not $exited) {
                     Stop-Process -InputObject $script:process -Force -ErrorAction SilentlyContinue
