@@ -226,12 +226,13 @@ fn ensure_cached_archive(
         &runtime.archive_digest,
         cache_dir,
         |downloaded_bytes, total_bytes| {
-            progress(RuntimeWorkerProgress::downloading(
-                downloaded_bytes,
-                total_bytes,
-            ));
             if downloaded_bytes == runtime.byte_size {
                 progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
+            } else {
+                progress(RuntimeWorkerProgress::downloading(
+                    downloaded_bytes,
+                    total_bytes,
+                ));
             }
         },
     )?;
