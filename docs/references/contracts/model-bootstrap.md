@@ -249,18 +249,18 @@ installation. They are separate from the model bootstrap flow.
 
 ### Shared type: `RuntimeBootstrapStatusSnapshot`
 
-| Field                | Type                                                                                                                                                                                             | Notes                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `state`              | `"missing" \| "downloading" \| "ready" \| "update_available" \| "downloading_candidate" \| "candidate_ready_restart_required" \| "activation_failed_previous_restored" \| "corrupt" \| "failed"` | Runtime lifecycle state                                                                                           |
-| `runtime_path`       | `String`                                                                                                                                                                                         | Active runtime library path, or target install path                                                               |
-| `downloaded_bytes`   | `Option<u64>`                                                                                                                                                                                    | Present during `downloading` / `downloading_candidate`                                                            |
-| `total_bytes`        | `Option<u64>`                                                                                                                                                                                    | Present when the download endpoint returns `Content-Length`                                                       |
-| `version`            | `String`                                                                                                                                                                                         | Active runtime upstream version; `legacy` for pre-slot installs; pinned catalog version when nothing is installed |
-| `active_artifact_id` | `Option<String>`                                                                                                                                                                                 | Active runtime artifact ID, when a slot install is active                                                         |
-| `target_triple`      | `String`                                                                                                                                                                                         | Runtime target triple for this build                                                                              |
-| `candidate_version`  | `Option<String>`                                                                                                                                                                                 | Upstream version of the staged candidate, when one exists                                                         |
-| `restart_required`   | `bool`                                                                                                                                                                                           | `true` when a candidate is staged and activation requires restart                                                 |
-| `error`              | `Option<CommandError>`                                                                                                                                                                           | Present when `state = failed`                                                                                     |
+| Field                | Type                                                                                                                                                                                                                                          | Notes                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `state`              | `"missing" \| "downloading" \| "installing" \| "probing" \| "activating" \| "ready" \| "update_available" \| "downloading_candidate" \| "candidate_ready_restart_required" \| "activation_failed_previous_restored" \| "corrupt" \| "failed"` | Runtime lifecycle state                                                                                           |
+| `runtime_path`       | `String`                                                                                                                                                                                                                                      | Active runtime library path, or target install path                                                               |
+| `downloaded_bytes`   | `Option<u64>`                                                                                                                                                                                                                                 | Present during `downloading` / `downloading_candidate`                                                            |
+| `total_bytes`        | `Option<u64>`                                                                                                                                                                                                                                 | Present when the download endpoint returns `Content-Length`                                                       |
+| `version`            | `String`                                                                                                                                                                                                                                      | Active runtime upstream version; `legacy` for pre-slot installs; pinned catalog version when nothing is installed |
+| `active_artifact_id` | `Option<String>`                                                                                                                                                                                                                              | Active runtime artifact ID, when a slot install is active                                                         |
+| `target_triple`      | `String`                                                                                                                                                                                                                                      | Runtime target triple for this build                                                                              |
+| `candidate_version`  | `Option<String>`                                                                                                                                                                                                                              | Upstream version of the staged candidate, when one exists                                                         |
+| `restart_required`   | `bool`                                                                                                                                                                                                                                        | `true` when a candidate is staged and activation requires restart                                                 |
+| `error`              | `Option<CommandError>`                                                                                                                                                                                                                        | Present when `state = failed`                                                                                     |
 
 ### Command: `download_runtime`
 
@@ -334,7 +334,13 @@ and slot metadata.
 
 Payload is a full `RuntimeBootstrapStatusSnapshot` with `state =
 "downloading"` or `"downloading_candidate"`. `downloaded_bytes` increases
-monotonically during the download.
+monotonically during the download. After the final byte is read, the first
+install emits `installing`, then `probing`, then `activating`; these states
+clear `downloaded_bytes` and `total_bytes` because the remaining work is not a
+byte-counted download. A failed probe or activation emits
+`runtime-bootstrap-error` with `state = "failed"`. A verified runtime
+directory remains available for a retry, so a retry does not download the same
+artifact again.
 
 #### `runtime-bootstrap-ready`
 
@@ -405,8 +411,8 @@ and `error.code = "model_unavailable"`.
    - `check_runtime_updates() -> RuntimeUpdateReport` — 与模型更新共享
      stable catalog 获取与缓存；检查失败绝不影响已安装 runtime 的就绪状态
    - `delete_runtime() -> ()`
-   - 状态机：`missing | downloading | ready | update_available |
-downloading_candidate | candidate_ready_restart_required |
+   - 状态机：`missing | downloading | installing | probing | activating | ready |
+update_available | downloading_candidate | candidate_ready_restart_required |
 activation_failed_previous_restored | corrupt | failed`
    - 快照字段新增 `active_artifact_id`、`target_triple`、
      `candidate_version`、`restart_required`；`version` 为 ACTIVE runtime

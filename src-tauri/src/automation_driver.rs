@@ -510,6 +510,52 @@ fn record_smoke_assertions(
         &report.runtime.runtime_path,
     );
 
+    if matches!(report.phase, AutomationSmokePhase::Prepare) {
+        let observed_phases: Vec<String> = report
+            .runtime_events
+            .iter()
+            .filter(|event| event.event == "runtime-bootstrap-progress")
+            .map(|event| state_string(&event.snapshot.state))
+            .collect();
+        let required_phases = ["downloading", "installing", "probing", "activating"];
+        let mut next_phase = 0;
+        for observed in &observed_phases {
+            if *observed == required_phases[next_phase] {
+                next_phase += 1;
+                if next_phase == required_phases.len() {
+                    break;
+                }
+            }
+        }
+        let phases_complete = next_phase == required_phases.len();
+        builder.add_assertion(
+            "OKA-284-RUNTIME-INSTALL-PHASES",
+            "downloading -> installing -> probing -> activating",
+            &observed_phases.join(" -> "),
+            phases_complete,
+            &report.app_data_dir,
+        );
+
+        let has_downloading_100 = report.runtime_events.iter().any(|event| {
+            event.event == "runtime-bootstrap-progress"
+                && event.snapshot.state
+                    == crate::commands::runtime_bootstrap::RuntimeBootstrapState::Downloading
+                && event.snapshot.total_bytes.is_some()
+                && event.snapshot.downloaded_bytes == event.snapshot.total_bytes
+        });
+        builder.add_assertion(
+            "OKA-284-RUNTIME-NO-DOWNLOADING-100",
+            "no downloading event at 100%",
+            if has_downloading_100 {
+                "found"
+            } else {
+                "not found"
+            },
+            !has_downloading_100,
+            &report.app_data_dir,
+        );
+    }
+
     if let Some(smoke) = report.local_audio_smoke.as_ref() {
         builder.add_assertion(
             &format!("OKA-LOCAL-AUDIO-SMOKE-{label}"),

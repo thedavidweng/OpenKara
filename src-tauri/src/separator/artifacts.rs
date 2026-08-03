@@ -219,9 +219,6 @@ impl TransferState {
         if actual_sha256 != expected_sha256 {
             bail!("artifact digest mismatch: expected {expected_sha256}, got {actual_sha256}");
         }
-        self.file
-            .sync_all()
-            .context("failed to sync the downloaded artifact")?;
         Ok(())
     }
 }

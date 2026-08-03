@@ -125,6 +125,18 @@ describe("RuntimeUpdateBanner", () => {
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 
+  test.each([
+    ["installing", "settings.runtime.banner.installingRuntime"],
+    ["probing", "settings.runtime.banner.checkingCompatibility"],
+    ["activating", "settings.runtime.banner.activatingRuntime"],
+  ] as const)("shows the runtime %s phase", (state, message) => {
+    setStatus(state);
+    render(<RuntimeUpdateBanner />);
+
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+
   test("failed state renders the error, a hint, and a Retry that triggers the runtime download", async () => {
     mockDownloadRuntime.mockResolvedValue({
       state: "downloading",

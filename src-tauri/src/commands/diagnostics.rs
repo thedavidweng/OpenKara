@@ -51,6 +51,9 @@ fn runtime_state_label(state: &RuntimeBootstrapState) -> &'static str {
     match state {
         RuntimeBootstrapState::Missing => "missing",
         RuntimeBootstrapState::Downloading => "downloading",
+        RuntimeBootstrapState::Installing => "installing",
+        RuntimeBootstrapState::Probing => "probing",
+        RuntimeBootstrapState::Activating => "activating",
         RuntimeBootstrapState::Ready => "ready",
         RuntimeBootstrapState::UpdateAvailable => "update_available",
         RuntimeBootstrapState::DownloadingCandidate => "downloading_candidate",

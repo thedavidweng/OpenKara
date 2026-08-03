@@ -50,6 +50,16 @@ describe("getErrorMessage", () => {
     );
   });
 
+  test("localizes runtime/model bootstrap errors instead of exposing backend language", () => {
+    const err = commandError({
+      code: "model_unavailable",
+      message: "ONNX Runtime is still downloading to C:\\OpenKara",
+    });
+
+    expect(getErrorMessage(err)).toBe("errors.modelUnavailableMessage");
+    expect(mockT).toHaveBeenCalledWith("errors.modelUnavailableMessage");
+  });
+
   test("returns message from Error instance", () => {
     expect(getErrorMessage(new Error("boom"))).toBe("boom");
   });

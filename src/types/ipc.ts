@@ -596,6 +596,9 @@ export interface ModelBootstrapStatusSnapshot {
 export type RuntimeBootstrapState =
   | "missing"
   | "downloading"
+  | "installing"
+  | "probing"
+  | "activating"
   | "ready"
   | "update_available"
   | "downloading_candidate"

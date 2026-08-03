@@ -8,10 +8,14 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, State};
 
+const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const RUNTIME_BOOTSTRAP_PROGRESS_EVENT: &str = "runtime-bootstrap-progress";
 
 /// Process-wide flag preventing concurrent `download_runtime` invocations
@@ -28,6 +32,9 @@ pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 pub enum RuntimeBootstrapState {
     Missing,
     Downloading,
+    Installing,
+    Probing,
+    Activating,
     Ready,
     UpdateAvailable,
     DownloadingCandidate,
@@ -155,7 +162,10 @@ pub fn ensure_runtime_ready(
         RuntimeBootstrapState::Missing => Err(model_bootstrap_error(
             "ONNX Runtime is not installed; install it from Settings".to_owned(),
         )),
-        RuntimeBootstrapState::Downloading => Err(model_bootstrap_error(format!(
+        RuntimeBootstrapState::Downloading
+        | RuntimeBootstrapState::Installing
+        | RuntimeBootstrapState::Probing
+        | RuntimeBootstrapState::Activating => Err(model_bootstrap_error(format!(
             "ONNX Runtime is still downloading to {}",
             snapshot.runtime_path
         ))),
@@ -187,6 +197,19 @@ fn downloading_snapshot(
     }
 }
 
+fn phase_snapshot(
+    base: &RuntimeBootstrapStatusSnapshot,
+    state: RuntimeBootstrapState,
+) -> RuntimeBootstrapStatusSnapshot {
+    RuntimeBootstrapStatusSnapshot {
+        state,
+        downloaded_bytes: None,
+        total_bytes: None,
+        error: None,
+        ..base.clone()
+    }
+}
+
 fn store_snapshot(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     snapshot: RuntimeBootstrapStatusSnapshot,
@@ -210,9 +233,80 @@ fn report_download_progress(
     downloaded_bytes: u64,
     total_bytes: Option<u64>,
 ) {
-    let snapshot = downloading_snapshot(base, state, downloaded_bytes, total_bytes);
+    let snapshot = if total_bytes == Some(downloaded_bytes) && downloaded_bytes > 0 {
+        phase_snapshot(base, RuntimeBootstrapState::Installing)
+    } else {
+        downloading_snapshot(base, state, downloaded_bytes, total_bytes)
+    };
     store_snapshot(status, snapshot.clone());
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+}
+
+fn report_phase(
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    base: &RuntimeBootstrapStatusSnapshot,
+    state: RuntimeBootstrapState,
+) {
+    let snapshot = phase_snapshot(base, state);
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+}
+
+pub fn runtime_probe_cli_exit_code() -> Option<i32> {
+    let mut args = std::env::args_os();
+    let _program = args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("--openkara-runtime-probe")) {
+        return None;
+    }
+    let Some(runtime_path) = args.next() else {
+        eprintln!("missing runtime path");
+        return Some(2);
+    };
+    let path = PathBuf::from(runtime_path);
+    match crate::separator::model::ensure_runtime_loaded_from_path(&path) {
+        Ok(_) => Some(0),
+        Err(error) => {
+            eprintln!("{error:#}");
+            Some(1)
+        }
+    }
+}
+
+fn probe_runtime_with_timeout(runtime_path: &Path) -> anyhow::Result<()> {
+    let executable = std::env::current_exe().context("failed to resolve OpenKara executable")?;
+    let mut child = Command::new(executable)
+        .arg("--openkara-runtime-probe")
+        .arg(runtime_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to start ONNX Runtime compatibility probe")?;
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().context("failed to poll runtime probe")? {
+            if status.success() {
+                return Ok(());
+            }
+            let stderr = child
+                .stderr
+                .take()
+                .and_then(|mut stream| {
+                    use std::io::Read;
+                    let mut text = String::new();
+                    stream.read_to_string(&mut text).ok().map(|_| text)
+                })
+                .unwrap_or_default();
+            anyhow::bail!("ONNX Runtime compatibility probe failed: {}", stderr.trim());
+        }
+        if started.elapsed() >= RUNTIME_PROBE_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("ONNX Runtime compatibility probe timed out after 30 seconds");
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn download_runtime_source(
@@ -258,10 +352,14 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
-    // Prove the dynamic load BEFORE persisting activation: a runtime whose
-    // files verify but whose library cannot load must never become the
-    // recorded active runtime (it would report Ready while separation
-    // fails, with no recovery path).
+    report_phase(status, emit, &base, RuntimeBootstrapState::Probing);
+    probe_runtime_with_timeout(&installed.library_path).with_context(|| {
+        format!(
+            "failed to probe ONNX Runtime from {}",
+            installed.library_path.display()
+        )
+    })?;
+    report_phase(status, emit, &base, RuntimeBootstrapState::Activating);
     crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
         .with_context(|| {
             format!(
@@ -355,7 +453,11 @@ pub fn ensure_runtime_ready_or_install_blocking(
     let has_loadable = inventory.active.is_some() || inventory.legacy_path.is_some();
     if matches!(
         snapshot.state,
-        RuntimeBootstrapState::Downloading | RuntimeBootstrapState::DownloadingCandidate
+        RuntimeBootstrapState::Downloading
+            | RuntimeBootstrapState::Installing
+            | RuntimeBootstrapState::Probing
+            | RuntimeBootstrapState::Activating
+            | RuntimeBootstrapState::DownloadingCandidate
     ) && !has_loadable
     {
         return Err(model_bootstrap_error(format!(
@@ -697,10 +799,39 @@ mod tests {
     }
 
     #[test]
+    fn completed_download_progress_leaves_downloading_before_installation_finishes() {
+        let base = snapshot_from_inventory(&empty_inventory());
+        let status = Arc::new(Mutex::new(base.clone()));
+        let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();
+        let mut emit = |event, snapshot| events.push((event, snapshot));
+
+        report_download_progress(
+            &status,
+            &mut emit,
+            &base,
+            RuntimeBootstrapState::Downloading,
+            15_000_000,
+            Some(15_000_000),
+        );
+
+        let stored = status.lock().expect("status lock should succeed").clone();
+        assert_ne!(stored.state, RuntimeBootstrapState::Downloading);
+        assert_eq!(stored.state, RuntimeBootstrapState::Installing);
+        assert_eq!(stored.downloaded_bytes, None);
+        assert_eq!(stored.total_bytes, None);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, RUNTIME_BOOTSTRAP_PROGRESS_EVENT);
+        assert_eq!(events[0].1, stored);
+    }
+
+    #[test]
     fn ensure_runtime_ready_rejects_missing_and_downloading() {
         for state in [
             RuntimeBootstrapState::Missing,
             RuntimeBootstrapState::Downloading,
+            RuntimeBootstrapState::Installing,
+            RuntimeBootstrapState::Probing,
+            RuntimeBootstrapState::Activating,
             RuntimeBootstrapState::Corrupt,
             RuntimeBootstrapState::Failed,
         ] {

@@ -183,6 +183,26 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
+  if (
+    runtimeStatus?.state === "installing" ||
+    runtimeStatus?.state === "probing" ||
+    runtimeStatus?.state === "activating"
+  ) {
+    const labelKey = (
+      {
+        installing: "bootstrap.installingRuntime",
+        probing: "bootstrap.checkingRuntimeCompatibility",
+        activating: "bootstrap.activatingRuntime",
+      } as const
+    )[runtimeStatus.state];
+    tasks.push({
+      key: "runtime-post-download",
+      label: t(labelKey),
+      percent: 0,
+      indeterminate: true,
+    });
+  }
+
   if (bootstrapStatus?.state === "downloading") {
     const total = bootstrapStatus.total_bytes;
     const down = bootstrapStatus.downloaded_bytes;

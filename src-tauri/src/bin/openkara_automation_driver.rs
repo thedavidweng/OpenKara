@@ -5,6 +5,11 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    if let Some(exit_code) =
+        openkara_lib::commands::runtime_bootstrap::runtime_probe_cli_exit_code()
+    {
+        std::process::exit(exit_code);
+    }
     if let Err(error) = run() {
         eprintln!("OpenKara automation driver failed: {error:#}");
         std::process::exit(1);
