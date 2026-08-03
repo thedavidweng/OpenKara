@@ -1,19 +1,23 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(feature = "automation-smoke")]
 fn main() {
-    match openkara_lib::automation_smoke::maybe_run_from_cli() {
-        Ok(true) => {}
-        Ok(false) => openkara_lib::run(),
-        Err(error) => {
-            eprintln!("OpenKara automation smoke failed: {error:#}");
-            std::process::exit(1);
-        }
+    if let Err(error) = run_app_or_worker() {
+        eprintln!("OpenKara startup command failed: {error:#}");
+        std::process::exit(1);
     }
 }
 
-#[cfg(not(feature = "automation-smoke"))]
-fn main() {
-    openkara_lib::run()
+fn run_app_or_worker() -> anyhow::Result<()> {
+    if openkara_lib::commands::runtime_worker::maybe_run_from_cli()? {
+        return Ok(());
+    }
+
+    #[cfg(feature = "automation-smoke")]
+    if openkara_lib::automation_smoke::maybe_run_from_cli()? {
+        return Ok(());
+    }
+
+    openkara_lib::run();
+    Ok(())
 }
