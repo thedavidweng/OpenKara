@@ -2,7 +2,7 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { downloadRuntime, restartApp } from "@/lib/tauri";
-import { notifyError } from "@/lib/errors";
+import { getErrorMessage, notifyError } from "@/lib/errors";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 
 export function RuntimeUpdateBanner() {
@@ -149,7 +149,9 @@ export function RuntimeUpdateBanner() {
           <div className="text-[12px]">
             <p className="text-[var(--color-destructive)]">
               {t("settings.runtime.banner.downloadFailed", {
-                error: status?.error?.message || t("bootstrap.unknownError"),
+                error: status?.error
+                  ? getErrorMessage(status.error)
+                  : t("bootstrap.unknownError"),
               })}
             </p>
             <p className="mt-0.5 text-[11px] text-[var(--color-text-dim)]">

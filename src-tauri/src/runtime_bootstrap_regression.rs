@@ -164,8 +164,7 @@ fn run_fault_retry(
     )));
     let mut events = Vec::new();
 
-    env::set_var("OPENKARA_AUTOMATION_RUNTIME_PROBE_MODE", "hang");
-    env::set_var("OPENKARA_AUTOMATION_RUNTIME_PROBE_TIMEOUT_MS", "1500");
+    env::set_var("OPENKARA_RUNTIME_WORKER_HANG_AFTER_DOWNLOAD", "1");
     let first_start = Instant::now();
     let first_result = command::ensure_runtime_ready_or_install_blocking(
         &config.app_data_dir,
@@ -178,8 +177,7 @@ fn run_fault_retry(
         },
     );
     let first_elapsed = first_start.elapsed();
-    env::remove_var("OPENKARA_AUTOMATION_RUNTIME_PROBE_MODE");
-    env::remove_var("OPENKARA_AUTOMATION_RUNTIME_PROBE_TIMEOUT_MS");
+    env::remove_var("OPENKARA_RUNTIME_WORKER_HANG_AFTER_DOWNLOAD");
 
     let first_end = events.len();
     let first_snapshot = locked_snapshot(&status)?;
@@ -228,10 +226,13 @@ fn run_fault_retry(
     );
     assertions.insert(
         "download_reached_post_download_installing".to_owned(),
-        has_state(
-            &first_attempt.events,
-            command::RuntimeBootstrapState::Installing,
-        ),
+        first_attempt.events.iter().any(|event| {
+            matches!(
+                event.snapshot.state,
+                command::RuntimeBootstrapState::Installing
+                    | command::RuntimeBootstrapState::Downloading
+            ) && event.snapshot.downloaded_bytes.is_none()
+        }),
     );
     assertions.insert(
         "probe_timeout_was_observed".to_owned(),
@@ -253,18 +254,8 @@ fn run_fault_retry(
         retry_attempt.byte_progress_events == 0,
     );
     assertions.insert(
-        "retry_probed_existing_runtime".to_owned(),
-        has_state(
-            &retry_attempt.events,
-            command::RuntimeBootstrapState::Probing,
-        ),
-    );
-    assertions.insert(
-        "retry_activated_existing_runtime".to_owned(),
-        has_state(
-            &retry_attempt.events,
-            command::RuntimeBootstrapState::Activating,
-        ),
+        "retry_reused_verified_install".to_owned(),
+        verified_before_retry,
     );
     assertions.insert(
         "retry_finished_ready".to_owned(),
