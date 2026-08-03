@@ -27,6 +27,8 @@ pub mod perf;
 mod platform_capabilities;
 pub mod release_evidence;
 pub mod remote;
+#[cfg(feature = "automation-smoke")]
+pub mod runtime_bootstrap_regression;
 pub mod separator;
 pub mod services;
 pub mod smoke;

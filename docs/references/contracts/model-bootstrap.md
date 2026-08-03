@@ -333,8 +333,9 @@ and slot metadata.
 #### `runtime-bootstrap-progress`
 
 Payload is a full `RuntimeBootstrapStatusSnapshot` with `state =
-"downloading"` or `"downloading_candidate"`. `downloaded_bytes` increases
-monotonically during the download. After the final byte is read, the first
+"downloading"`, `"installing"`, `"probing"`, `"activating"`, or
+`"downloading_candidate"`. `downloaded_bytes` increases monotonically during
+the download. After the final byte is read, the first
 install emits `installing`, then `probing`, then `activating`; these states
 clear `downloaded_bytes` and `total_bytes` because the remaining work is not a
 byte-counted download. A failed probe or activation emits

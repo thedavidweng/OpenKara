@@ -73,4 +73,45 @@ describe("detectSystemLanguage", () => {
     await i18next.changeLanguage("zh-CN");
     expect(document.documentElement.lang).toBe("zh-CN");
   });
+
+  it("keeps runtime bootstrap status and errors in English for English UI", async () => {
+    await i18next.changeLanguage("en");
+    expect(i18next.t("bootstrap.installingRuntime")).toBe(
+      "Installing ONNX Runtime…",
+    );
+    expect(i18next.t("bootstrap.checkingRuntimeCompatibility")).toBe(
+      "Checking ONNX Runtime compatibility…",
+    );
+    expect(i18next.t("bootstrap.activatingRuntime")).toBe(
+      "Activating ONNX Runtime…",
+    );
+    const error = i18next.t("errors.modelUnavailableMessage");
+    expect(error).toBe(
+      "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    );
+    expect(error).not.toMatch(/[\u3400-\u9fff]/u);
+  });
+
+  it("keeps runtime bootstrap status and errors in Simplified Chinese", async () => {
+    await i18next.changeLanguage("zh-CN");
+    expect(i18next.t("bootstrap.installingRuntime")).toBe(
+      "正在安装 ONNX 运行时…",
+    );
+    expect(i18next.t("bootstrap.checkingRuntimeCompatibility")).toBe(
+      "正在检查 ONNX 运行时兼容性…",
+    );
+    expect(i18next.t("errors.modelUnavailableMessage")).toBe(
+      "分离模型或 ONNX Runtime 尚未准备完成。请等待设置完成后重试。",
+    );
+  });
+
+  it("ships all runtime post-download keys used by the UI", () => {
+    for (const key of [
+      "settings.runtime.banner.installingRuntime",
+      "settings.runtime.banner.checkingCompatibility",
+      "settings.runtime.banner.activatingRuntime",
+    ]) {
+      expect(i18next.exists(key, { lng: "en" })).toBe(true);
+    }
+  });
 });

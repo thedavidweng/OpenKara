@@ -12,6 +12,14 @@ fn run_runtime_probe_if_requested() {
 #[cfg(feature = "automation-smoke")]
 fn main() {
     run_runtime_probe_if_requested();
+    match openkara_lib::runtime_bootstrap_regression::maybe_run_from_cli() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("OpenKara runtime bootstrap regression failed: {error:#}");
+            std::process::exit(1);
+        }
+    }
     match openkara_lib::automation_smoke::maybe_run_from_cli() {
         Ok(true) => {}
         Ok(false) => openkara_lib::run(),

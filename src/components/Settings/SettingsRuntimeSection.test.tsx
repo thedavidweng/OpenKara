@@ -160,6 +160,23 @@ describe("SettingsRuntimeSection", () => {
     expect(html).toContain("settings.runtime.downloadingCandidate");
   });
 
+  test.each([
+    ["installing", "settings.runtime.banner.installingRuntime"],
+    ["probing", "settings.runtime.banner.checkingCompatibility"],
+    ["activating", "settings.runtime.banner.activatingRuntime"],
+  ] as const)(
+    "shows the %s post-download phase instead of claiming the runtime is ready",
+    (runtimeState, expectedKey) => {
+      const html = render({
+        runtimeStatus: { ...readyRuntime, state: runtimeState },
+      });
+
+      expect(html).toContain(expectedKey);
+      expect(html).not.toContain("settings.runtime.statusReady");
+      expect(html).not.toContain("settings.runtime.downloading");
+    },
+  );
+
   test("owns the install CTA when the runtime is missing", () => {
     const html = render({
       runtimeStatus: { ...readyRuntime, state: "missing" },

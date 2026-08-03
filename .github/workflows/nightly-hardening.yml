@@ -114,6 +114,7 @@ jobs:
       uia_scenario: keyboard-workflow
       run_keyboard_uia: true
       run_fault_injection: true
+      run_runtime_bootstrap_regression: true
       run_display_matrix: true
       previous_version: none
       retention_days: 30

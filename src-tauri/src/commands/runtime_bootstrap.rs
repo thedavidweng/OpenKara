@@ -15,7 +15,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, State};
 
-const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const RUNTIME_BOOTSTRAP_PROGRESS_EVENT: &str = "runtime-bootstrap-progress";
 
 /// Process-wide flag preventing concurrent `download_runtime` invocations
@@ -264,6 +264,12 @@ pub fn runtime_probe_cli_exit_code() -> Option<i32> {
         return Some(2);
     };
     let path = PathBuf::from(runtime_path);
+    #[cfg(feature = "automation-smoke")]
+    if std::env::var("OPENKARA_AUTOMATION_RUNTIME_PROBE_MODE").as_deref() == Ok("hang") {
+        loop {
+            thread::sleep(Duration::from_secs(60));
+        }
+    }
     match crate::separator::model::ensure_runtime_loaded_from_path(&path) {
         Ok(_) => Some(0),
         Err(error) => {
@@ -271,6 +277,18 @@ pub fn runtime_probe_cli_exit_code() -> Option<i32> {
             Some(1)
         }
     }
+}
+
+fn runtime_probe_timeout() -> Duration {
+    #[cfg(feature = "automation-smoke")]
+    if let Ok(value) = std::env::var("OPENKARA_AUTOMATION_RUNTIME_PROBE_TIMEOUT_MS") {
+        if let Ok(milliseconds) = value.parse::<u64>() {
+            if milliseconds > 0 {
+                return Duration::from_millis(milliseconds);
+            }
+        }
+    }
+    DEFAULT_RUNTIME_PROBE_TIMEOUT
 }
 
 fn probe_runtime_with_timeout(runtime_path: &Path) -> anyhow::Result<()> {
@@ -283,6 +301,7 @@ fn probe_runtime_with_timeout(runtime_path: &Path) -> anyhow::Result<()> {
         .stderr(Stdio::piped())
         .spawn()
         .context("failed to start ONNX Runtime compatibility probe")?;
+    let timeout = runtime_probe_timeout();
     let started = Instant::now();
     loop {
         if let Some(status) = child.try_wait().context("failed to poll runtime probe")? {
@@ -300,10 +319,13 @@ fn probe_runtime_with_timeout(runtime_path: &Path) -> anyhow::Result<()> {
                 .unwrap_or_default();
             anyhow::bail!("ONNX Runtime compatibility probe failed: {}", stderr.trim());
         }
-        if started.elapsed() >= RUNTIME_PROBE_TIMEOUT {
+        if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            anyhow::bail!("ONNX Runtime compatibility probe timed out after 30 seconds");
+            anyhow::bail!(
+                "ONNX Runtime compatibility probe timed out after {} milliseconds",
+                timeout.as_millis()
+            );
         }
         thread::sleep(Duration::from_millis(100));
     }
