@@ -5098,6 +5098,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/schemars_derive/schemars_derive-1.2.1.crate",
+    "sha256": "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f",
+    "dest": "cargo/vendor/schemars_derive-1.2.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f\",\"files\":{}}",
+    "dest": "cargo/vendor/schemars_derive-1.2.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/scopeguard/scopeguard-1.2.0.crate",
     "sha256": "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49",
     "dest": "cargo/vendor/scopeguard-1.2.0"
