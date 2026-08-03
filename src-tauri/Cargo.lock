@@ -3131,7 +3131,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "vorbis_rs",
- "windows 0.61.3",
+ "windows 0.62.2",
  "zip 8.6.0",
 ]
 
