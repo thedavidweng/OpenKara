@@ -1583,6 +1583,11 @@ function Invoke-StepAction {
             "start-separation" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
+                if ($script:audioOutputAvailable -eq $false) {
+                    Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Stem separation and mixer controls were not exercised because Windows reports no audio output device; packaged local-audio smoke covers separation" | Out-Null
+                    break
+                }
+
                 $stemsBefore = Find-Element -Tree $script:currentTree -Predicate {
                     param($n)
                     $n.controlType -eq "Slider" -and $n.name -and ($n.name -eq "Vocals" -or $n.name -eq "Accompaniment") -and $n.isEnabled -eq $true
@@ -1652,6 +1657,11 @@ function Invoke-StepAction {
 
             "adjust-stems" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+
+                if ($script:audioOutputAvailable -eq $false) {
+                    Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Stem mixer adjustment was not exercised because Windows reports no audio output device; packaged local-audio smoke covers separation" | Out-Null
+                    break
+                }
 
                 $slider = Wait-For-Element -Predicate {
                     param($n)
@@ -1962,7 +1972,11 @@ function Invoke-StepAction {
                             return $null -ne (Find-ElementByAutomationId -Tree $t -AutomationId "monitor-option-0")
                         } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
                         if ($null -ne $monitorTree) {
-                            Invoke-NamedControl -Name "" -AutomationId "monitor-option-0" -PreferredAction "invoke" | Out-Null
+                            try {
+                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
+                            } catch {
+                                Invoke-NamedControl -Name "" -AutomationId "monitor-option-0" -ControlType "ListItem" -PreferredAction "invoke" | Out-Null
+                            }
                             $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
                             while ([DateTime]::UtcNow -lt $deadline) {
                                 try {
