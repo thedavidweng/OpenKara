@@ -1,22 +1,21 @@
 name: Apply issue 284 runtime patch
 
 on:
-  push:
-    branches:
-      - fix/284-runtime-bootstrap-termination
-    paths:
-      - .github/workflows/apply-fix-284.yml
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.head_ref == 'fix/284-runtime-bootstrap-termination'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/284-runtime-bootstrap-termination
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
       - name: Patch runtime bootstrap integration
         run: |
@@ -176,4 +175,4 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src-tauri/src/commands/runtime_bootstrap.rs src-tauri/src/commands/runtime_worker.rs src-tauri/src/main.rs src-tauri/src/commands/mod.rs .github/workflows/apply-fix-284.yml
           git commit -m "fix(runtime): bound post-download bootstrap"
-          git push origin HEAD:fix/284-runtime-bootstrap-termination
+          git push origin HEAD:${{ github.head_ref }}
