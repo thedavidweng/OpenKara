@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     fs,
+    io::{BufRead, BufReader, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -318,16 +319,57 @@ fn write_progress(path: &Path, progress: RuntimeWorkerProgress) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    let temp = path.with_extension("json.tmp");
-    fs::write(&temp, serde_json::to_vec(&progress)?)
-        .with_context(|| format!("failed to write runtime worker progress {}", temp.display()))?;
-    fs::rename(&temp, path).with_context(|| format!("failed to promote {}", path.display()))?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("failed to open runtime worker progress {}", path.display()))?;
+    serde_json::to_writer(&mut file, &progress)?;
+    file.write_all(b"\n").with_context(|| {
+        format!(
+            "failed to append runtime worker progress {}",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
-fn read_progress(path: &Path) -> Option<RuntimeWorkerProgress> {
-    let contents = fs::read(path).ok()?;
-    serde_json::from_slice(&contents).ok()
+fn read_progress(path: &Path, offset: &mut u64) -> Vec<RuntimeWorkerProgress> {
+    let Ok(mut file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let Ok(file_len) = file.metadata().map(|metadata| metadata.len()) else {
+        return Vec::new();
+    };
+    if *offset > file_len {
+        *offset = 0;
+    }
+    if file.seek(SeekFrom::Start(*offset)).is_err() {
+        return Vec::new();
+    }
+
+    let mut reader = BufReader::new(file);
+    let mut updates = Vec::new();
+    while let Ok(line_start) = reader.stream_position() {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) if !line.ends_with('\n') => break,
+            Ok(_) => {
+                if let Ok(progress) = serde_json::from_str(line.trim_end()) {
+                    updates.push(progress);
+                }
+                if let Ok(position) = reader.stream_position() {
+                    *offset = position;
+                } else {
+                    *offset = line_start;
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    updates
 }
 
 fn parse_post_download_timeout(raw: Option<&str>) -> Duration {
@@ -393,19 +435,15 @@ pub fn install_runtime_with_worker(
         .context("failed to start runtime bootstrap worker")?;
 
     let timeout = post_download_timeout();
-    let mut last_progress = None;
+    let mut progress_offset = 0;
     let mut post_download_started = None;
     let status = loop {
-        if let Some(progress) = read_progress(&progress_path) {
-            if last_progress != Some(progress) {
-                if progress.phase != RuntimeWorkerPhase::Downloading
-                    && post_download_started.is_none()
-                {
-                    post_download_started = Some(Instant::now());
-                }
-                on_progress(progress);
-                last_progress = Some(progress);
+        for progress in read_progress(&progress_path, &mut progress_offset) {
+            if progress.phase != RuntimeWorkerPhase::Downloading && post_download_started.is_none()
+            {
+                post_download_started = Some(Instant::now());
             }
+            on_progress(progress);
         }
 
         if let Some(status) = child
@@ -459,9 +497,17 @@ mod tests {
     fn progress_round_trips_with_an_explicit_phase() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("progress.json");
-        let progress = RuntimeWorkerProgress::downloading(128, Some(256));
-        write_progress(&path, progress).expect("write progress");
-        assert_eq!(read_progress(&path), Some(progress));
+        let progress = [
+            RuntimeWorkerProgress::downloading(128, Some(256)),
+            RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing),
+            RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Probing),
+        ];
+        for update in progress {
+            write_progress(&path, update).expect("write progress");
+        }
+        let mut offset = 0;
+        assert_eq!(read_progress(&path, &mut offset), progress);
+        assert!(read_progress(&path, &mut offset).is_empty());
     }
 
     #[test]

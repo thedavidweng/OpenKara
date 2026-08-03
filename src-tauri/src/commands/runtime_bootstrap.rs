@@ -406,7 +406,6 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
-    report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
     ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
 
