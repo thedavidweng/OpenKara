@@ -194,11 +194,7 @@ fn install_runtime_with_verified_archive_cache(
             .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
         let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
         let extracted = artifacts::extract_archive_safely(&archive, kind, &staging)?;
-        artifacts::verify_extracted_files(
-            &staging,
-            &runtime.extracted_file_digests,
-            &extracted,
-        )?;
+        artifacts::verify_extracted_files(&staging, &runtime.extracted_file_digests, &extracted)?;
         if !runtime
             .extracted_file_digests
             .contains_key(runtime_bootstrap::ORT_RUNTIME_FILENAME)

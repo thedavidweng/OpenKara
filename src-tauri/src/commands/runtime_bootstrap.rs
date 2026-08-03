@@ -215,6 +215,23 @@ fn report_download_progress(
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
 }
 
+fn report_post_download_progress(
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    base: &RuntimeBootstrapStatusSnapshot,
+    state: RuntimeBootstrapState,
+) {
+    let snapshot = RuntimeBootstrapStatusSnapshot {
+        state,
+        downloaded_bytes: None,
+        total_bytes: None,
+        error: None,
+        ..base.clone()
+    };
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+}
+
 fn download_runtime_source(
     catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
 ) -> CommandResult<(VerifiedCatalog, ())> {
@@ -242,34 +259,79 @@ pub fn install_and_load_runtime_blocking(
     store_snapshot(status, initial.clone());
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
 
-    let installed = runtime_bootstrap::install_runtime_artifact(
-        app_data_dir,
-        runtime,
-        catalog,
-        |downloaded_bytes, total_bytes| {
-            report_download_progress(
-                status,
-                emit,
-                &base,
-                RuntimeBootstrapState::Downloading,
-                downloaded_bytes,
-                total_bytes,
-            );
-        },
-    )?;
+    let embedded = catalog::embedded_catalog();
+    let use_worker =
+        catalog.generation == embedded.generation && catalog.release_id == embedded.release_id;
 
-    // Prove the dynamic load BEFORE persisting activation: a runtime whose
-    // files verify but whose library cannot load must never become the
-    // recorded active runtime (it would report Ready while separation
-    // fails, with no recovery path).
-    crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
-        .with_context(|| {
-            format!(
-                "failed to load ONNX Runtime from {}",
-                installed.library_path.display()
-            )
-        })?;
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+    let installed = if use_worker {
+        crate::commands::runtime_worker::install_first_runtime(
+            app_data_dir,
+            |progress, download_complete| {
+                if download_complete {
+                    report_post_download_progress(
+                        status,
+                        emit,
+                        &base,
+                        RuntimeBootstrapState::Downloading,
+                    );
+                } else {
+                    report_download_progress(
+                        status,
+                        emit,
+                        &base,
+                        RuntimeBootstrapState::Downloading,
+                        progress.downloaded_bytes,
+                        progress.total_bytes,
+                    );
+                }
+            },
+        )?
+    } else {
+        let installed = runtime_bootstrap::install_runtime_artifact(
+            app_data_dir,
+            runtime,
+            catalog,
+            |downloaded_bytes, total_bytes| {
+                if total_bytes.is_some_and(|total| total > 0 && downloaded_bytes >= total) {
+                    report_post_download_progress(
+                        status,
+                        emit,
+                        &base,
+                        RuntimeBootstrapState::Downloading,
+                    );
+                } else {
+                    report_download_progress(
+                        status,
+                        emit,
+                        &base,
+                        RuntimeBootstrapState::Downloading,
+                        downloaded_bytes,
+                        total_bytes,
+                    );
+                }
+            },
+        )?;
+
+        crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
+            .with_context(|| {
+                format!(
+                    "failed to load ONNX Runtime from {}",
+                    installed.library_path.display()
+                )
+            })?;
+        runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+        installed
+    };
+
+    if use_worker {
+        crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
+            .with_context(|| {
+                format!(
+                    "failed to load proven ONNX Runtime from {}",
+                    installed.library_path.display()
+                )
+            })?;
+    }
 
     let snapshot = snapshot_from_disk(app_data_dir);
     store_snapshot(status, snapshot.clone());
