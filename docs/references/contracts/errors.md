@@ -43,6 +43,7 @@
 - `network_unavailable`
 - `invalid_playback_state`
 - `execution_provider_unavailable`
+- `runtime_post_download_timeout`
 - `separation_failed`
 - `internal`
 
@@ -121,6 +122,10 @@
    - `code = model_unavailable`
    - `fallback = retry`
    - 触发场景：`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate` 的后台前置 bootstrap 失败，或 `download_model` 命令在 Runtime 未就绪时返回此错误
+7. ONNX Runtime 在下载完成后的安装、探测或激活阶段超过时限：
+   - `code = runtime_post_download_timeout`
+   - `fallback = retry`
+   - UI 使用本地化错误正文，不解析 `message`
 
 ## Important boundaries
 

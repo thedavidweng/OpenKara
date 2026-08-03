@@ -17,22 +17,53 @@ use std::{
 };
 
 pub const RUNTIME_WORKER_ARG: &str = "--runtime-bootstrap-worker";
+pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER: &str = "runtime_post_download_timeout";
+
 const POST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const RUNTIME_DOWNLOAD_CACHE_DIR: &str = "runtime-download-cache";
+const RUNTIME_DOWNLOAD_TEMP_PREFIX: &str = "artifact.download.";
 #[cfg(feature = "automation-smoke")]
 const RUNTIME_POST_DOWNLOAD_TIMEOUT_ENV: &str = "OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeWorkerPhase {
+    Downloading,
+    Installing,
+    Probing,
+    Activating,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeWorkerRequest {
+    app_data_dir: PathBuf,
+    catalog: VerifiedCatalog,
+    runtime: CatalogRuntime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeWorkerProgress {
+    pub phase: RuntimeWorkerPhase,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
 }
 
 impl RuntimeWorkerProgress {
-    pub fn download_complete(self) -> bool {
-        self.total_bytes
-            .is_some_and(|total| total > 0 && self.downloaded_bytes >= total)
+    fn downloading(downloaded_bytes: u64, total_bytes: Option<u64>) -> Self {
+        Self {
+            phase: RuntimeWorkerPhase::Downloading,
+            downloaded_bytes,
+            total_bytes,
+        }
+    }
+
+    fn phase(phase: RuntimeWorkerPhase) -> Self {
+        Self {
+            phase,
+            downloaded_bytes: 0,
+            total_bytes: None,
+        }
     }
 }
 
@@ -45,10 +76,10 @@ pub fn maybe_run_from_cli() -> Result<bool> {
         return Ok(false);
     }
 
-    let app_data_dir = args
+    let request_path = args
         .next()
         .map(PathBuf::from)
-        .context("runtime bootstrap worker requires an app-data directory")?;
+        .context("runtime bootstrap worker requires a request path")?;
     let progress_path = args
         .next()
         .map(PathBuf::from)
@@ -57,48 +88,49 @@ pub fn maybe_run_from_cli() -> Result<bool> {
         bail!("runtime bootstrap worker received unexpected arguments");
     }
 
-    run_worker(&app_data_dir, &progress_path)?;
+    run_worker(&request_path, &progress_path)?;
     Ok(true)
 }
 
-fn run_worker(app_data_dir: &Path, progress_path: &Path) -> Result<()> {
-    let catalog = catalog::embedded_catalog();
-    let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
+fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
+    let request: RuntimeWorkerRequest =
+        serde_json::from_slice(&fs::read(request_path).with_context(|| {
+            format!("failed to read worker request {}", request_path.display())
+        })?)
+        .context("failed to parse runtime worker request")?;
+    let resolved =
+        catalog::resolve_runtime(&request.catalog.manifest, catalog::current_target_triple())?;
+    anyhow::ensure!(
+        resolved.artifact_id == request.runtime.artifact_id
+            && resolved.archive_digest == request.runtime.archive_digest,
+        "runtime worker request does not match its verified catalog"
+    );
+
     let installed = install_runtime_with_verified_archive_cache(
-        app_data_dir,
-        runtime,
-        catalog,
-        |downloaded_bytes, total_bytes| {
-            let _ = write_progress(
-                progress_path,
-                RuntimeWorkerProgress {
-                    downloaded_bytes,
-                    total_bytes,
-                },
-            );
+        &request.app_data_dir,
+        &request.runtime,
+        &request.catalog,
+        |progress| {
+            let _ = write_progress(progress_path, progress);
         },
     )?;
 
-    // A cached or already-installed runtime may not produce download callbacks.
-    // Publish the phase boundary unconditionally so the parent starts its
-    // post-download watchdog before dynamic loading and activation.
+    // Keep the verified install reachable after a worker kill. Startup can
+    // promote this candidate without downloading the archive again.
+    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
+
     write_progress(
         progress_path,
-        RuntimeWorkerProgress {
-            downloaded_bytes: runtime.byte_size,
-            total_bytes: Some(runtime.byte_size),
-        },
+        RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Probing),
     )?;
-
     #[cfg(feature = "automation-smoke")]
-    if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_DOWNLOAD").is_some() {
+    if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_INSTALLING").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
     }
-
-    // Persist the verified install before the potentially unbounded dynamic
-    // load. If this worker is terminated, startup promotes the candidate and
-    // retries the exact bytes instead of downloading the archive again.
-    runtime_bootstrap::stage_candidate(app_data_dir, &installed.record.artifact_id)?;
+    #[cfg(feature = "automation-smoke")]
+    if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE").is_some() {
+        thread::sleep(Duration::from_secs(10 * 60));
+    }
 
     crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
         .with_context(|| {
@@ -107,8 +139,11 @@ fn run_worker(app_data_dir: &Path, progress_path: &Path) -> Result<()> {
                 installed.library_path.display()
             )
         })?;
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
-    remove_cached_archive(app_data_dir, runtime);
+
+    write_progress(
+        progress_path,
+        RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Activating),
+    )?;
     Ok(())
 }
 
@@ -129,10 +164,43 @@ fn cached_archive_is_valid(path: &Path, runtime: &CatalogRuntime) -> Result<bool
     Ok(artifacts::sha256_file(path)? == runtime.archive_digest)
 }
 
+fn recover_verified_archive_temp(cache_path: &Path, runtime: &CatalogRuntime) -> Result<bool> {
+    let Some(cache_dir) = cache_path.parent() else {
+        return Ok(false);
+    };
+    let entries = fs::read_dir(cache_dir)
+        .with_context(|| format!("failed to inspect runtime cache {}", cache_dir.display()))?;
+    for entry in entries {
+        let path = entry?.path();
+        let is_temp = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name.starts_with(RUNTIME_DOWNLOAD_TEMP_PREFIX) && name.ends_with(".tmp")
+            });
+        if !is_temp {
+            continue;
+        }
+        if cached_archive_is_valid(&path, runtime)? {
+            fs::rename(&path, cache_path).with_context(|| {
+                format!(
+                    "failed to preserve recovered runtime archive at {}",
+                    cache_path.display()
+                )
+            })?;
+            return Ok(true);
+        }
+        fs::remove_file(&path).with_context(|| {
+            format!("failed to remove stale runtime archive {}", path.display())
+        })?;
+    }
+    Ok(false)
+}
+
 fn ensure_cached_archive(
     app_data_dir: &Path,
     runtime: &CatalogRuntime,
-    progress: impl FnMut(u64, Option<u64>),
+    mut progress: impl FnMut(RuntimeWorkerProgress),
 ) -> Result<PathBuf> {
     let cache_path = runtime_cache_path(app_data_dir, runtime);
     if cached_archive_is_valid(&cache_path, runtime)? {
@@ -148,12 +216,23 @@ fn ensure_cached_archive(
         .context("runtime archive cache path has no parent")?;
     fs::create_dir_all(cache_dir)
         .with_context(|| format!("failed to create runtime cache {}", cache_dir.display()))?;
+    if recover_verified_archive_temp(&cache_path, runtime)? {
+        return Ok(cache_path);
+    }
     let downloaded = artifacts::download_verified_to_temp(
         &runtime.download_url,
         runtime.byte_size,
         &runtime.archive_digest,
         cache_dir,
-        progress,
+        |downloaded_bytes, total_bytes| {
+            progress(RuntimeWorkerProgress::downloading(
+                downloaded_bytes,
+                total_bytes,
+            ));
+            if downloaded_bytes == runtime.byte_size {
+                progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
+            }
+        },
     )?;
     fs::rename(&downloaded, &cache_path).with_context(|| {
         format!(
@@ -168,11 +247,12 @@ fn install_runtime_with_verified_archive_cache(
     app_data_dir: &Path,
     runtime: &CatalogRuntime,
     catalog: &VerifiedCatalog,
-    progress: impl FnMut(u64, Option<u64>),
+    mut progress: impl FnMut(RuntimeWorkerProgress),
 ) -> Result<runtime_bootstrap::InstalledRuntime> {
     if let Some(existing) = runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
     {
         if runtime_bootstrap::verify_runtime_files(&existing)? {
+            progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
             return Ok(existing);
         }
         fs::remove_dir_all(&existing.dir).with_context(|| {
@@ -187,9 +267,9 @@ fn install_runtime_with_verified_archive_cache(
     fs::create_dir_all(&root)
         .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
     let staging = artifacts::unique_temp_path(&root, "staging");
-
     let result = (|| -> Result<runtime_bootstrap::InstalledRuntime> {
-        let archive = ensure_cached_archive(app_data_dir, runtime, progress)?;
+        let archive = ensure_cached_archive(app_data_dir, runtime, &mut progress)?;
+        progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
         fs::create_dir_all(&staging)
             .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
         let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
@@ -211,7 +291,6 @@ fn install_runtime_with_verified_archive_cache(
             &staging.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
             &record,
         )?;
-
         let final_dir = runtime_bootstrap::runtime_artifact_dir(app_data_dir, &runtime.artifact_id);
         if final_dir.exists() {
             fs::remove_dir_all(&final_dir).with_context(|| {
@@ -234,17 +313,6 @@ fn install_runtime_with_verified_archive_cache(
     result
 }
 
-fn remove_cached_archive(app_data_dir: &Path, runtime: &CatalogRuntime) {
-    let cache_path = runtime_cache_path(app_data_dir, runtime);
-    let cache_dir = cache_path.parent().map(Path::to_path_buf);
-    let root = app_data_dir.join(RUNTIME_DOWNLOAD_CACHE_DIR);
-    let _ = fs::remove_file(cache_path);
-    if let Some(cache_dir) = cache_dir {
-        let _ = fs::remove_dir(cache_dir);
-    }
-    let _ = fs::remove_dir(root);
-}
-
 fn write_progress(path: &Path, progress: RuntimeWorkerProgress) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -252,10 +320,7 @@ fn write_progress(path: &Path, progress: RuntimeWorkerProgress) -> Result<()> {
     }
     let temp = path.with_extension("json.tmp");
     fs::write(&temp, serde_json::to_vec(&progress)?)
-        .with_context(|| format!("failed to write {}", temp.display()))?;
-    if path.exists() {
-        let _ = fs::remove_file(path);
-    }
+        .with_context(|| format!("failed to write runtime worker progress {}", temp.display()))?;
     fs::rename(&temp, path).with_context(|| format!("failed to promote {}", path.display()))?;
     Ok(())
 }
@@ -274,25 +339,18 @@ fn parse_post_download_timeout(raw: Option<&str>) -> Duration {
 
 fn post_download_timeout() -> Duration {
     #[cfg(feature = "automation-smoke")]
-    {
-        return parse_post_download_timeout(
-            std::env::var(RUNTIME_POST_DOWNLOAD_TIMEOUT_ENV)
-                .ok()
-                .as_deref(),
-        );
-    }
+    let raw = std::env::var(RUNTIME_POST_DOWNLOAD_TIMEOUT_ENV).ok();
     #[cfg(not(feature = "automation-smoke"))]
-    {
-        POST_DOWNLOAD_TIMEOUT
-    }
+    let raw = None;
+    parse_post_download_timeout(raw.as_deref())
 }
 
-pub fn install_first_runtime(
+pub fn install_runtime_with_worker(
     app_data_dir: &Path,
-    mut on_progress: impl FnMut(RuntimeWorkerProgress, bool),
+    catalog: &VerifiedCatalog,
+    runtime: &CatalogRuntime,
+    mut on_progress: impl FnMut(RuntimeWorkerProgress),
 ) -> Result<runtime_bootstrap::InstalledRuntime> {
-    let embedded = catalog::embedded_catalog();
-    let runtime = catalog::resolve_runtime(&embedded.manifest, catalog::current_target_triple())?;
     let root = runtime_bootstrap::runtimes_root(app_data_dir);
     fs::create_dir_all(&root)
         .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
@@ -301,15 +359,32 @@ pub fn install_first_runtime(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
+    let request_path = root.join(format!("worker-{nonce}.request.json"));
     let progress_path = root.join(format!("worker-{nonce}.progress.json"));
     let stderr_path = root.join(format!("worker-{nonce}.stderr.log"));
+    let request = RuntimeWorkerRequest {
+        app_data_dir: app_data_dir.to_path_buf(),
+        catalog: catalog.clone(),
+        runtime: runtime.clone(),
+    };
+    fs::write(&request_path, serde_json::to_vec(&request)?).with_context(|| {
+        format!(
+            "failed to write runtime worker request {}",
+            request_path.display()
+        )
+    })?;
     let stderr_file = fs::File::create(&stderr_path)
         .with_context(|| format!("failed to create {}", stderr_path.display()))?;
 
+    let cleanup = || {
+        let _ = fs::remove_file(&request_path);
+        let _ = fs::remove_file(&progress_path);
+        let _ = fs::remove_file(&stderr_path);
+    };
     let executable = std::env::current_exe().context("failed to resolve OpenKara executable")?;
     let mut child = Command::new(executable)
         .arg(RUNTIME_WORKER_ARG)
-        .arg(app_data_dir)
+        .arg(&request_path)
         .arg(&progress_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -323,12 +398,13 @@ pub fn install_first_runtime(
     let status = loop {
         if let Some(progress) = read_progress(&progress_path) {
             if last_progress != Some(progress) {
-                let complete = progress.download_complete();
-                on_progress(progress, complete);
-                last_progress = Some(progress);
-                if complete && post_download_started.is_none() {
+                if progress.phase != RuntimeWorkerPhase::Downloading
+                    && post_download_started.is_none()
+                {
                     post_download_started = Some(Instant::now());
                 }
+                on_progress(progress);
+                last_progress = Some(progress);
             }
         }
 
@@ -342,11 +418,10 @@ pub fn install_first_runtime(
         if post_download_started.is_some_and(|started| started.elapsed() > timeout) {
             let _ = child.kill();
             let _ = child.wait();
-            let _ = fs::remove_file(&progress_path);
             let details = fs::read_to_string(&stderr_path).unwrap_or_default();
-            let _ = fs::remove_file(&stderr_path);
+            cleanup();
             bail!(
-                "runtime installation did not finish within {} seconds after download completed{}",
+                "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime installation did not finish within {} seconds after the worker entered post-download phase{}",
                 timeout.as_secs_f64(),
                 if details.trim().is_empty() {
                     String::new()
@@ -359,9 +434,8 @@ pub fn install_first_runtime(
         thread::sleep(POLL_INTERVAL);
     };
 
-    let _ = fs::remove_file(&progress_path);
     let details = fs::read_to_string(&stderr_path).unwrap_or_default();
-    let _ = fs::remove_file(&stderr_path);
+    cleanup();
     if !status.success() {
         bail!(
             "runtime bootstrap worker failed with {status}{}",
@@ -373,12 +447,8 @@ pub fn install_first_runtime(
         );
     }
 
-    let installed = runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
-        .context("runtime worker exited successfully without an installed runtime")?;
-    if !runtime_bootstrap::verify_runtime_files(&installed)? {
-        bail!("runtime worker produced an unverifiable runtime install");
-    }
-    Ok(installed)
+    runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+        .context("runtime worker exited successfully without an installed runtime")
 }
 
 #[cfg(test)]
@@ -386,32 +456,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn download_completion_requires_a_positive_total() {
-        assert!(!RuntimeWorkerProgress {
-            downloaded_bytes: 10,
-            total_bytes: None,
-        }
-        .download_complete());
-        assert!(!RuntimeWorkerProgress {
-            downloaded_bytes: 0,
-            total_bytes: Some(0),
-        }
-        .download_complete());
-        assert!(RuntimeWorkerProgress {
-            downloaded_bytes: 10,
-            total_bytes: Some(10),
-        }
-        .download_complete());
-    }
-
-    #[test]
-    fn progress_file_round_trips_atomically() {
+    fn progress_round_trips_with_an_explicit_phase() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("progress.json");
-        let progress = RuntimeWorkerProgress {
-            downloaded_bytes: 128,
-            total_bytes: Some(256),
-        };
+        let progress = RuntimeWorkerProgress::downloading(128, Some(256));
         write_progress(&path, progress).expect("write progress");
         assert_eq!(read_progress(&path), Some(progress));
     }
@@ -434,14 +482,44 @@ mod tests {
     }
 
     #[test]
-    fn invalid_cached_archive_is_not_reused() {
+    fn post_download_phase_is_not_inferred_from_bytes() {
+        let progress = RuntimeWorkerProgress {
+            phase: RuntimeWorkerPhase::Downloading,
+            downloaded_bytes: 128,
+            total_bytes: Some(128),
+        };
+        assert_eq!(progress.phase, RuntimeWorkerPhase::Downloading);
+        assert_eq!(
+            RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing).total_bytes,
+            None
+        );
+    }
+
+    #[test]
+    fn verified_archive_temp_is_recovered_after_an_interrupted_install() {
         let dir = tempfile::tempdir().expect("tempdir");
         let catalog = catalog::embedded_catalog();
-        let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())
-            .expect("runtime");
-        let path = runtime_cache_path(dir.path(), runtime);
-        fs::create_dir_all(path.parent().expect("parent")).expect("cache dir");
-        fs::write(&path, b"not the runtime archive").expect("cache file");
-        assert!(!cached_archive_is_valid(&path, runtime).expect("validate cache"));
+        let embedded_runtime =
+            catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())
+                .expect("runtime");
+        let payload = b"verified runtime archive";
+        let mut runtime = embedded_runtime.clone();
+        runtime.byte_size = payload.len() as u64;
+
+        let temp_path = dir.path().join("payload.tmp");
+        fs::write(&temp_path, payload).expect("write payload");
+        runtime.archive_digest = artifacts::sha256_file(&temp_path).expect("hash payload");
+
+        let cache_path = runtime_cache_path(dir.path(), &runtime);
+        fs::create_dir_all(cache_path.parent().expect("cache directory")).expect("cache dir");
+        let interrupted_path = cache_path
+            .parent()
+            .expect("cache directory")
+            .join("artifact.download.interrupted.tmp");
+        fs::rename(&temp_path, &interrupted_path).expect("move interrupted archive");
+
+        assert!(recover_verified_archive_temp(&cache_path, &runtime).expect("recover archive"));
+        assert!(cached_archive_is_valid(&cache_path, &runtime).expect("validate archive"));
+        assert!(!interrupted_path.exists());
     }
 }

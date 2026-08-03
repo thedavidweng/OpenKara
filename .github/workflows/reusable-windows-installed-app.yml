@@ -577,7 +577,9 @@ jobs:
 
           # Registry form is authoritative; clear legacy library_path so migrate
           # cannot overwrite libraries with the old single-path field.
-          $config["language"] = "en"
+          # Leave language unset so the installed-app check exercises the
+          # system-language detector on the English Windows runner.
+          $config.Remove("language")
           $config["library_path"] = $null
           $config["libraries"] = @(
             [ordered]@{

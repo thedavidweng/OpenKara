@@ -713,6 +713,8 @@
     "execution_provider_unavailable": "実行プロバイダーを利用できません",
     "executionProviderUnavailableMessage": "選択したプロバイダーはこのデバイスと互換性がありません。設定で CPU に切り替えてください。",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "ダウンロード後のランタイム設定がタイムアウトしました。もう一度お試しください。",
+    "runtime_post_download_timeout": "ランタイム設定のタイムアウト",
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
     "remote_repository_unavailable": "リモートリポジトリを利用できません",

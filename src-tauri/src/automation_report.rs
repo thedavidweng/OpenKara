@@ -77,14 +77,14 @@ pub struct Artifact {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuntimeIdentity {
     pub archive_sha256: String,
     pub extracted_library_sha256: String,
     pub companion_dll_sha256s: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelIdentity {
     pub archive_sha256: String,
     pub extracted_onnx_sha256: String,

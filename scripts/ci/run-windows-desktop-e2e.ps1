@@ -898,6 +898,21 @@ function Invoke-StepAction {
                 # Window chrome alone is not enough: wait until WebView2 exposes
                 # named interactive DOM controls for keyboard navigation.
                 $tree = Wait-For-UiReady -ProcessId $script:process.Id -TimeoutMs $launchTimeoutMs
+
+                $languageAssertion = Assert-Step -StepId "english-ui-no-cjk" -Expected "English system UI does not expose Chinese characters" -Tree $tree -Check {
+                    param($t)
+                    $cjk = @($t | Where-Object {
+                        -not [string]::IsNullOrWhiteSpace($_.name) -and
+                        $_.name -match '[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]'
+                    })
+                    if ($cjk.Count -gt 0) {
+                        $sample = ($cjk | Select-Object -First 5 | ForEach-Object { $_.name }) -join "; "
+                        return "Chinese characters were exposed by installed UI: $sample"
+                    }
+                    return $true
+                }
+                if ($languageAssertion.result -ne "pass") { $stepStatus = "failed" }
+
                 # Enter the WebView tab order; otherwise keyboard steps stay on Document.
                 $tree = Enter-WebViewKeyboardFocus -ProcessId $script:process.Id
 

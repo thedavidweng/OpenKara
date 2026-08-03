@@ -714,6 +714,8 @@
     "execution_provider_unavailable": "Ausführungsanbieter nicht verfügbar",
     "executionProviderUnavailableMessage": "Der ausgewählte Anbieter ist mit diesem Gerät nicht kompatibel. Wechseln Sie in den Einstellungen zu CPU.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "Die Laufzeitinstallation wurde nach dem Download wegen einer Zeitüberschreitung beendet. Versuchen Sie es erneut.",
+    "runtime_post_download_timeout": "Zeitüberschreitung bei der Laufzeitinstallation",
     "separation_failed": "Trennung fehlgeschlagen",
     "internal": "Interner Fehler",
     "remote_repository_unavailable": "Remote-Repository nicht verfügbar",

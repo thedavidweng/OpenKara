@@ -713,6 +713,8 @@
     "execution_provider_unavailable": "Penyedia Eksekusi Tidak Tersedia",
     "executionProviderUnavailableMessage": "Penyedia yang dipilih tidak kompatibel dengan perangkat ini. Ganti ke CPU di Pengaturan.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "Penyiapan runtime melebihi batas waktu setelah pengunduhan. Coba lagi.",
+    "runtime_post_download_timeout": "Batas waktu penyiapan runtime",
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
     "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",

@@ -713,6 +713,8 @@
     "execution_provider_unavailable": "ไม่พบตัวประมวลผลการทำงาน",
     "executionProviderUnavailableMessage": "ตัวประมวลผลที่เลือกไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "การตั้งค่า runtime หมดเวลาหลังจากดาวน์โหลด โปรดลองอีกครั้ง",
+    "runtime_post_download_timeout": "หมดเวลาตั้งค่า runtime",
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",
     "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",

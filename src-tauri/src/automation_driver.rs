@@ -1044,7 +1044,7 @@ fn record_oka284_assertions(
                         && catalog_runtime
                             .extracted_file_digests
                             .get(&file.path)
-                            .map_or(true, |d| d.sha256 == digest);
+                            .is_none_or(|d| d.sha256 == digest);
                     (digest, ok)
                 }
                 Err(_) => (String::new(), false),
@@ -1424,10 +1424,7 @@ fn read_wav_header(path: &str) -> Result<WavHeaderInfo> {
             break;
         }
         let value = match (format_tag, bits_per_sample) {
-            (1, 16) => {
-                let raw = i16::from_le_bytes([sample_buf[0], sample_buf[1]]) as f64 / 32768.0;
-                raw
-            }
+            (1, 16) => i16::from_le_bytes([sample_buf[0], sample_buf[1]]) as f64 / 32768.0,
             (3, 32) => {
                 f32::from_le_bytes([sample_buf[0], sample_buf[1], sample_buf[2], sample_buf[3]])
                     as f64
@@ -1460,30 +1457,6 @@ struct ReportBuilder {
     model: ModelIdentity,
     database: DatabaseSummary,
     audio: AudioSummary,
-}
-
-impl Default for RuntimeIdentity {
-    fn default() -> Self {
-        Self {
-            archive_sha256: String::new(),
-            extracted_library_sha256: String::new(),
-            companion_dll_sha256s: Vec::new(),
-        }
-    }
-}
-
-impl Default for ModelIdentity {
-    fn default() -> Self {
-        Self {
-            archive_sha256: String::new(),
-            extracted_onnx_sha256: String::new(),
-            verification_manifest: String::new(),
-            catalog_generation: String::new(),
-            release_id: String::new(),
-            artifact_id: String::new(),
-            selected_variant: String::new(),
-        }
-    }
 }
 
 impl AudioSummary {

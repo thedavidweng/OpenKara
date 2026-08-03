@@ -338,10 +338,14 @@ Payload is a full `RuntimeBootstrapStatusSnapshot` with `state =
 the download. After the final byte is read, the first
 install emits `installing`, then `probing`, then `activating`; these states
 clear `downloaded_bytes` and `total_bytes` because the remaining work is not a
-byte-counted download. A failed probe or activation emits
-`runtime-bootstrap-error` with `state = "failed"`. A verified runtime
-directory remains available for a retry, so a retry does not download the same
-artifact again.
+byte-counted download. The worker stages the verified install before probing;
+the application process loads ORT under its own watchdog before it commits the
+first-install active slot. A failed install, probe, or activation emits
+`runtime-bootstrap-error` with `state = "failed"`. Its `error.code` is
+`runtime_post_download_timeout` when the post-download watchdog expires;
+other bootstrap failures use `model_unavailable`. A verified runtime
+directory or archive cache remains available for a retry, so a retry does not
+download the same artifact again.
 
 #### `runtime-bootstrap-ready`
 
@@ -351,8 +355,9 @@ are `null`.
 
 #### `runtime-bootstrap-error`
 
-Payload is a full `RuntimeBootstrapStatusSnapshot` with `state = "failed"`
-and `error.code = "model_unavailable"`.
+Payload is a full `RuntimeBootstrapStatusSnapshot` with `state = "failed"`.
+The error code is `runtime_post_download_timeout` for a post-download
+watchdog expiry and `model_unavailable` for other bootstrap failures.
 
 ## Runtime path resolution semantics
 

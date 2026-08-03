@@ -714,6 +714,8 @@
     "execution_provider_unavailable": "Yürütme sağlayıcısı kullanılamıyor",
     "executionProviderUnavailableMessage": "Seçilen sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "Çalışma zamanı kurulumu indirme sonrasında zaman aşımına uğradı. Tekrar deneyin.",
+    "runtime_post_download_timeout": "Çalışma zamanı kurulumu zaman aşımı",
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",

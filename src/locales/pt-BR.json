@@ -715,6 +715,8 @@
     "execution_provider_unavailable": "Provedor de execução indisponível",
     "executionProviderUnavailableMessage": "O provedor selecionado não é compatível com este dispositivo. Mude para CPU em Configurações.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "A configuração do runtime atingiu o tempo limite após o download. Tente novamente.",
+    "runtime_post_download_timeout": "Tempo limite da configuração do runtime",
     "separation_failed": "Falha na separação",
     "internal": "Erro interno",
     "remote_repository_unavailable": "Repositório remoto indisponível",

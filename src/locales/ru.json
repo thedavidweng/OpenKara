@@ -716,6 +716,8 @@
     "execution_provider_unavailable": "Провайдер выполнения недоступен",
     "executionProviderUnavailableMessage": "Выбранный провайдер несовместим с данным устройством. Переключите CPU в настройках.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
+    "runtimePostDownloadTimeoutMessage": "Настройка среды выполнения превысила время ожидания после загрузки. Повторите попытку.",
+    "runtime_post_download_timeout": "Истекло время настройки среды выполнения",
     "separation_failed": "Ошибка разделения",
     "internal": "Внутренняя ошибка",
     "remote_repository_unavailable": "Удалённый репозиторий недоступен",

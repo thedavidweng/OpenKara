@@ -1,12 +1,13 @@
-//! Black-box regression exercised through the packaged OpenKara executable.
+//! Installed-executable regression for the runtime bootstrap state machine.
 //!
-//! This specifically covers #284's production shape: the network transfer
-//! reaches 100%, post-download runtime probing hangs, the task must terminate
-//! as Failed, and a retry/restart must reuse the verified immutable install
-//! rather than downloading the archive again.
+//! The two phases run in separate processes. The first process downloads the
+//! runtime through the production bootstrap command core and is forced to
+//! hang during probing. The second process must recover the verified orphan
+//! install without issuing another HTTP request. The normal installed-app
+//! smoke then provides the cold-start and separation boundary.
 
 use crate::{
-    commands::{runtime_bootstrap as command, unix_timestamp},
+    commands::{error::ErrorCode, runtime_bootstrap as command, unix_timestamp},
     separator::{catalog, runtime_bootstrap},
 };
 use anyhow::{bail, Context, Result};
@@ -14,12 +15,18 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     env, fs,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Instant,
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, Instant},
 };
+use tiny_http::{Response, Server, StatusCode};
 
 const REPORT_FILENAME: &str = "runtime-bootstrap-regression-report.json";
+const REQUEST_COUNT_FILENAME: &str = "runtime-bootstrap-http-request-count.txt";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,6 +64,7 @@ pub struct AttemptReport {
     pub elapsed_ms: u128,
     pub result: String,
     pub error: Option<String>,
+    pub error_code: Option<ErrorCode>,
     pub final_state: command::RuntimeBootstrapState,
     pub byte_progress_events: usize,
     pub events: Vec<RegressionEvent>,
@@ -68,8 +76,85 @@ pub struct RuntimeBootstrapRegressionReport {
     pub phase: RegressionPhase,
     pub app_data_dir: String,
     pub artifact_id: String,
+    pub download_request_count: usize,
     pub attempts: Vec<AttemptReport>,
     pub assertions: BTreeMap<String, bool>,
+}
+
+struct DownloadFixture {
+    stop: Arc<AtomicBool>,
+    requests: Arc<AtomicUsize>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl DownloadFixture {
+    fn start(remote_url: &str, count_path: &Path) -> Result<(Self, String)> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(300))
+            .build()
+            .context("failed to build runtime fixture client")?;
+        let payload = client
+            .get(remote_url)
+            .send()
+            .context("runtime fixture could not fetch the catalog runtime")?
+            .error_for_status()
+            .context("runtime fixture received a runtime download error")?
+            .bytes()
+            .context("runtime fixture could not read the catalog runtime")?
+            .to_vec();
+
+        fs::write(count_path, "0")?;
+        let server = Server::http("127.0.0.1:0")
+            .map_err(|error| anyhow::anyhow!("failed to start runtime fixture: {error}"))?;
+        let address = server
+            .server_addr()
+            .to_ip()
+            .context("runtime fixture did not bind an IP address")?;
+        let base_url = format!("http://{address}/runtime");
+        let stop = Arc::new(AtomicBool::new(false));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let thread_stop = Arc::clone(&stop);
+        let thread_requests = Arc::clone(&requests);
+        let thread_count_path = count_path.to_path_buf();
+        let thread = thread::spawn(move || {
+            while !thread_stop.load(Ordering::Relaxed) {
+                let request = match server.recv_timeout(Duration::from_millis(100)) {
+                    Ok(Some(request)) => request,
+                    Ok(None) => continue,
+                    Err(_) => break,
+                };
+                if request.url() != "/runtime" {
+                    let _ = request.respond(Response::empty(StatusCode(404)));
+                    continue;
+                }
+                let count = thread_requests.fetch_add(1, Ordering::Relaxed) + 1;
+                let _ = fs::write(&thread_count_path, count.to_string());
+                let _ = request.respond(Response::from_data(payload.clone()));
+            }
+        });
+
+        Ok((
+            Self {
+                stop,
+                requests,
+                thread: Some(thread),
+            },
+            base_url,
+        ))
+    }
+
+    fn request_count(&self) -> usize {
+        self.requests.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for DownloadFixture {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 pub fn maybe_run_from_cli() -> Result<bool> {
@@ -141,33 +226,58 @@ fn run_phase(config: &RegressionConfig) -> Result<RuntimeBootstrapRegressionRepo
     let runtime = catalog::resolve_runtime(&embedded.manifest, catalog::current_target_triple())?;
 
     match config.phase {
-        RegressionPhase::FaultRetry => run_fault_retry(config, &runtime.artifact_id),
+        RegressionPhase::FaultRetry => run_fault_retry(config, embedded, runtime),
         RegressionPhase::Restart => run_restart(config, &runtime.artifact_id),
     }
 }
 
 fn run_fault_retry(
     config: &RegressionConfig,
-    artifact_id: &str,
+    embedded: &catalog::VerifiedCatalog,
+    runtime: &catalog::CatalogRuntime,
 ) -> Result<RuntimeBootstrapRegressionReport> {
     let inventory = runtime_bootstrap::runtime_inventory(&config.app_data_dir);
     if inventory.active.is_some()
         || inventory.candidate.is_some()
         || inventory.legacy_path.is_some()
-        || runtime_bootstrap::installed_runtime(&config.app_data_dir, artifact_id).is_some()
+        || runtime_bootstrap::installed_runtime(&config.app_data_dir, &runtime.artifact_id)
+            .is_some()
     {
         bail!("fault-retry phase requires clean runtime app data");
     }
+
+    let count_path = config.app_data_dir.join(REQUEST_COUNT_FILENAME);
+    let (fixture, fixture_url) = DownloadFixture::start(&runtime.download_url, &count_path)?;
+    let mut catalog = embedded.clone();
+    let selected = catalog
+        .manifest
+        .artifacts
+        .runtimes
+        .iter_mut()
+        .find(|candidate| candidate.artifact_id == runtime.artifact_id)
+        .context("embedded runtime was not found in its catalog")?;
+    selected.download_url = fixture_url;
+    let selected_runtime =
+        catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?.clone();
 
     let status = Arc::new(Mutex::new(command::snapshot_from_disk(
         &config.app_data_dir,
     )));
     let mut events = Vec::new();
-
-    env::set_var("OPENKARA_RUNTIME_WORKER_HANG_AFTER_DOWNLOAD", "1");
-    let first_start = Instant::now();
-    let first_result = command::ensure_runtime_ready_or_install_blocking(
+    env::set_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE", "1");
+    env::set_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS", "1500");
+    let started = Instant::now();
+    let is_update =
+        command::prepare_runtime_download(&config.app_data_dir, &status, &mut |event, snapshot| {
+            events.push(RegressionEvent {
+                event: event.to_owned(),
+                snapshot,
+            });
+        });
+    let result = command::download_runtime_blocking_with_catalog(
         &config.app_data_dir,
+        &catalog,
+        is_update,
         &status,
         &mut |event, snapshot| {
             events.push(RegressionEvent {
@@ -176,103 +286,74 @@ fn run_fault_retry(
             });
         },
     );
-    let first_elapsed = first_start.elapsed();
-    env::remove_var("OPENKARA_RUNTIME_WORKER_HANG_AFTER_DOWNLOAD");
+    env::remove_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE");
+    env::remove_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS");
 
-    let first_end = events.len();
-    let first_snapshot = locked_snapshot(&status)?;
-    let first_error = first_result.err().map(|error| error.message);
-    let first_attempt = attempt_report(
-        "probe-timeout",
-        first_elapsed.as_millis(),
-        first_error.as_deref(),
-        first_snapshot.state.clone(),
-        events[..first_end].to_vec(),
+    let elapsed = started.elapsed();
+    let snapshot = locked_snapshot(&status)?;
+    let error = result.err();
+    let attempt = attempt_report(
+        "download-and-timeout",
+        elapsed.as_millis(),
+        error.as_ref(),
+        snapshot.state.clone(),
+        events,
     );
+    let request_count = fixture.request_count();
+    drop(fixture);
 
-    let installed_before_retry =
-        runtime_bootstrap::installed_runtime(&config.app_data_dir, artifact_id);
-    let verified_before_retry = installed_before_retry.as_ref().is_some_and(|installed| {
+    let orphan = runtime_bootstrap::installed_runtime(&config.app_data_dir, &runtime.artifact_id);
+    let verified_orphan = orphan.as_ref().is_some_and(|installed| {
         runtime_bootstrap::verify_runtime_files(installed).unwrap_or(false)
     });
-
-    let retry_start = Instant::now();
-    let retry_result = command::ensure_runtime_ready_or_install_blocking(
-        &config.app_data_dir,
-        &status,
-        &mut |event, snapshot| {
-            events.push(RegressionEvent {
-                event: event.to_owned(),
-                snapshot,
-            });
-        },
-    );
-    let retry_elapsed = retry_start.elapsed();
-    let retry_snapshot = locked_snapshot(&status)?;
-    let retry_error = retry_result.err().map(|error| error.message);
-    let retry_events = events[first_end..].to_vec();
-    let retry_attempt = attempt_report(
-        "reuse-verified-install",
-        retry_elapsed.as_millis(),
-        retry_error.as_deref(),
-        retry_snapshot.state.clone(),
-        retry_events,
-    );
-
     let mut assertions = BTreeMap::new();
     assertions.insert(
         "initial_attempt_downloaded_runtime_bytes".to_owned(),
-        first_attempt.byte_progress_events > 0,
+        attempt.byte_progress_events > 0,
     );
     assertions.insert(
-        "download_reached_post_download_installing".to_owned(),
-        first_attempt.events.iter().any(|event| {
-            matches!(
-                event.snapshot.state,
-                command::RuntimeBootstrapState::Installing
-                    | command::RuntimeBootstrapState::Downloading
-            ) && event.snapshot.downloaded_bytes.is_none()
-        }),
+        "download_request_server_observed_request".to_owned(),
+        request_count > 0,
+    );
+    assertions.insert(
+        "download_left_downloading_phase".to_owned(),
+        has_state(&attempt.events, command::RuntimeBootstrapState::Installing)
+            && has_state(&attempt.events, command::RuntimeBootstrapState::Probing)
+            && !has_downloading_without_bytes(&attempt.events),
     );
     assertions.insert(
         "probe_timeout_was_observed".to_owned(),
-        first_attempt
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("timed out")),
+        attempt.error_code == Some(ErrorCode::RuntimePostDownloadTimeout),
     );
     assertions.insert(
         "probe_timeout_terminated_as_failed".to_owned(),
-        first_attempt.final_state == command::RuntimeBootstrapState::Failed,
+        attempt.final_state == command::RuntimeBootstrapState::Failed,
     );
     assertions.insert(
-        "verified_install_survived_probe_timeout".to_owned(),
-        verified_before_retry,
+        "verified_install_survived_process_exit".to_owned(),
+        verified_orphan,
     );
     assertions.insert(
-        "retry_did_not_download_runtime_bytes".to_owned(),
-        retry_attempt.byte_progress_events == 0,
+        "verified_candidate_survived_process_exit".to_owned(),
+        runtime_bootstrap::runtime_inventory(&config.app_data_dir)
+            .candidate
+            .as_ref()
+            .is_some_and(|candidate| candidate.record.artifact_id == runtime.artifact_id),
     );
     assertions.insert(
-        "retry_reused_verified_install".to_owned(),
-        verified_before_retry,
-    );
-    assertions.insert(
-        "retry_finished_ready".to_owned(),
-        retry_attempt.error.is_none()
-            && retry_attempt.final_state == command::RuntimeBootstrapState::Ready,
-    );
-    assertions.insert(
-        "active_identity_matches_catalog".to_owned(),
-        retry_snapshot.active_artifact_id.as_deref() == Some(artifact_id),
+        "runtime_is_not_active_before_restart".to_owned(),
+        runtime_bootstrap::runtime_inventory(&config.app_data_dir)
+            .active
+            .is_none(),
     );
 
     Ok(RuntimeBootstrapRegressionReport {
         generated_at: unix_timestamp(),
         phase: RegressionPhase::FaultRetry,
         app_data_dir: config.app_data_dir.display().to_string(),
-        artifact_id: artifact_id.to_owned(),
-        attempts: vec![first_attempt, retry_attempt],
+        artifact_id: selected_runtime.artifact_id,
+        download_request_count: request_count,
+        attempts: vec![attempt],
         assertions,
     })
 }
@@ -281,10 +362,26 @@ fn run_restart(
     config: &RegressionConfig,
     artifact_id: &str,
 ) -> Result<RuntimeBootstrapRegressionReport> {
+    let before_inventory = runtime_bootstrap::runtime_inventory(&config.app_data_dir);
+    let orphan = runtime_bootstrap::installed_runtime(&config.app_data_dir, artifact_id)
+        .context("restart phase did not find the verified orphan install")?;
+    anyhow::ensure!(
+        before_inventory.active.is_none()
+            && before_inventory
+                .candidate
+                .as_ref()
+                .is_some_and(|candidate| candidate.record.artifact_id == artifact_id),
+        "restart phase must begin with the verified runtime candidate"
+    );
+    anyhow::ensure!(
+        runtime_bootstrap::verify_runtime_files(&orphan)?,
+        "restart phase found an unverifiable orphan install"
+    );
+    let count_path = config.app_data_dir.join(REQUEST_COUNT_FILENAME);
+    let requests_before = read_request_count(&count_path)?;
     let status = Arc::new(Mutex::new(command::snapshot_from_disk(
         &config.app_data_dir,
     )));
-    let before = locked_snapshot(&status)?;
     let mut events = Vec::new();
     let started = Instant::now();
     let result = command::ensure_runtime_ready_or_install_blocking(
@@ -297,33 +394,34 @@ fn run_restart(
             });
         },
     );
-    let elapsed = started.elapsed();
-    let after = locked_snapshot(&status)?;
-    let error = result.err().map(|error| error.message);
     let attempt = attempt_report(
-        "cold-restart",
-        elapsed.as_millis(),
-        error.as_deref(),
-        after.state.clone(),
+        "restart-recover-orphan",
+        started.elapsed().as_millis(),
+        result.as_ref().err(),
+        locked_snapshot(&status)?.state.clone(),
         events,
     );
-
+    let requests_after = read_request_count(&count_path)?;
+    let after = locked_snapshot(&status)?;
     let mut assertions = BTreeMap::new();
     assertions.insert(
-        "restart_discovered_active_runtime".to_owned(),
-        before.state == command::RuntimeBootstrapState::Ready
-            && before.active_artifact_id.as_deref() == Some(artifact_id),
+        "restart_started_from_orphan_verified_install".to_owned(),
+        before_inventory.active.is_none() && orphan.record.artifact_id == artifact_id,
     );
     assertions.insert(
         "restart_did_not_download_runtime_bytes".to_owned(),
         attempt.byte_progress_events == 0,
     );
     assertions.insert(
-        "restart_loaded_runtime_successfully".to_owned(),
+        "restart_http_request_count_unchanged".to_owned(),
+        requests_before == requests_after,
+    );
+    assertions.insert(
+        "restart_finished_ready".to_owned(),
         attempt.error.is_none() && attempt.final_state == command::RuntimeBootstrapState::Ready,
     );
     assertions.insert(
-        "restart_kept_catalog_identity".to_owned(),
+        "restart_activated_catalog_identity".to_owned(),
         after.active_artifact_id.as_deref() == Some(artifact_id),
     );
 
@@ -332,9 +430,17 @@ fn run_restart(
         phase: RegressionPhase::Restart,
         app_data_dir: config.app_data_dir.display().to_string(),
         artifact_id: artifact_id.to_owned(),
+        download_request_count: requests_after,
         attempts: vec![attempt],
         assertions,
     })
+}
+
+fn read_request_count(path: &Path) -> Result<usize> {
+    Ok(fs::read_to_string(path)
+        .with_context(|| format!("missing runtime fixture count {}", path.display()))?
+        .trim()
+        .parse()?)
 }
 
 fn locked_snapshot(
@@ -349,7 +455,7 @@ fn locked_snapshot(
 fn attempt_report(
     name: &str,
     elapsed_ms: u128,
-    error: Option<&str>,
+    error: Option<&crate::commands::error::CommandError>,
     final_state: command::RuntimeBootstrapState,
     events: Vec<RegressionEvent>,
 ) -> AttemptReport {
@@ -364,7 +470,8 @@ fn attempt_report(
         name: name.to_owned(),
         elapsed_ms,
         result: if error.is_some() { "failed" } else { "passed" }.to_owned(),
-        error: error.map(ToOwned::to_owned),
+        error: error.map(|error| error.message.clone()),
+        error_code: error.map(|error| error.code.clone()),
         final_state,
         byte_progress_events,
         events,
@@ -373,6 +480,13 @@ fn attempt_report(
 
 fn has_state(events: &[RegressionEvent], state: command::RuntimeBootstrapState) -> bool {
     events.iter().any(|event| event.snapshot.state == state)
+}
+
+fn has_downloading_without_bytes(events: &[RegressionEvent]) -> bool {
+    events.iter().any(|event| {
+        event.snapshot.state == command::RuntimeBootstrapState::Downloading
+            && event.snapshot.downloaded_bytes.is_none()
+    })
 }
 
 #[cfg(test)]
@@ -398,42 +512,40 @@ mod tests {
     }
 
     #[test]
-    fn attempt_report_distinguishes_real_transfer_from_reuse() {
-        let downloaded = attempt_report(
-            "download",
-            10,
-            None,
-            command::RuntimeBootstrapState::Ready,
-            vec![event(
-                command::RuntimeBootstrapState::Downloading,
-                Some(4096),
-            )],
+    fn byte_progress_requires_a_downloading_state_with_bytes() {
+        let events = vec![
+            event(command::RuntimeBootstrapState::Downloading, Some(4096)),
+            event(command::RuntimeBootstrapState::Installing, None),
+        ];
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| {
+                    event.snapshot.state == command::RuntimeBootstrapState::Downloading
+                        && event.snapshot.downloaded_bytes.unwrap_or_default() > 0
+                })
+                .count(),
+            1
         );
-        let reused = attempt_report(
-            "reuse",
-            10,
-            None,
-            command::RuntimeBootstrapState::Ready,
-            vec![event(command::RuntimeBootstrapState::Downloading, Some(0))],
-        );
-        assert_eq!(downloaded.byte_progress_events, 1);
-        assert_eq!(reused.byte_progress_events, 0);
+        assert!(!has_downloading_without_bytes(&events));
     }
 
     #[test]
-    fn phase_detection_requires_the_emitted_state() {
+    fn post_download_phases_are_exact_and_ordered() {
         let events = vec![
             event(command::RuntimeBootstrapState::Installing, None),
             event(command::RuntimeBootstrapState::Probing, None),
+            event(command::RuntimeBootstrapState::Activating, None),
         ];
         assert!(has_state(
             &events,
             command::RuntimeBootstrapState::Installing
         ));
         assert!(has_state(&events, command::RuntimeBootstrapState::Probing));
-        assert!(!has_state(
+        assert!(has_state(
             &events,
             command::RuntimeBootstrapState::Activating
         ));
+        assert!(!has_downloading_without_bytes(&events));
     }
 }
