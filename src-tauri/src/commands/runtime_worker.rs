@@ -341,7 +341,7 @@ fn post_download_timeout() -> Duration {
     #[cfg(feature = "automation-smoke")]
     let raw = std::env::var(RUNTIME_POST_DOWNLOAD_TIMEOUT_ENV).ok();
     #[cfg(not(feature = "automation-smoke"))]
-    let raw = None;
+    let raw: Option<String> = None;
     parse_post_download_timeout(raw.as_deref())
 }
 
