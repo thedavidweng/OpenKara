@@ -1973,9 +1973,9 @@ function Invoke-StepAction {
                         } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
                         if ($null -ne $monitorTree) {
                             try {
-                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
+                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
                             } catch {
-                                Invoke-NamedControl -Name "" -AutomationId "monitor-option-0" -ControlType "ListItem" -PreferredAction "invoke" | Out-Null
+                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
                             }
                             $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
                             while ([DateTime]::UtcNow -lt $deadline) {
@@ -1985,6 +1985,22 @@ function Invoke-StepAction {
                                 } catch {
                                 }
                                 Start-Sleep -Milliseconds 400
+                            }
+
+                            if ($null -eq $fs) {
+                                try {
+                                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
+                                } catch {
+                                }
+                                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 10000))
+                                while ([DateTime]::UtcNow -lt $deadline) {
+                                    try {
+                                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 2000
+                                        if ($fs) { break }
+                                    } catch {
+                                    }
+                                    Start-Sleep -Milliseconds 400
+                                }
                             }
                         }
                     }
