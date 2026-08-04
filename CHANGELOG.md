@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.1](https://github.com/thedavidweng/OpenKara/compare/v0.12.0...v0.12.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* address release review findings ([f49323c](https://github.com/thedavidweng/OpenKara/commit/f49323cd3699f1f51cb1218fb0da96e086c3e44e))
+* **ci:** resolve nightly-hardening.yml Windows and installed-app failures ([ee00b0e](https://github.com/thedavidweng/OpenKara/commit/ee00b0e7ef5203ac5005941c8c93116cecafc33a))
+* **ci:** scope release workflow permissions ([6a7017d](https://github.com/thedavidweng/OpenKara/commit/6a7017d51500ba445f0614852827814f9859787b))
+* **ci:** scope release workflow permissions ([624d0ba](https://github.com/thedavidweng/OpenKara/commit/624d0ba34c81d03e5d568e7f546095bfa451c34d))
+* close issue 303 release gates and prune remote playback ([96dcd20](https://github.com/thedavidweng/OpenKara/commit/96dcd20e5bb148cb35bbd4eb5a3f0f8e097ed951))
+* close release hardening gaps ([4e6f878](https://github.com/thedavidweng/OpenKara/commit/4e6f8786b646527e9ebf44b32b5a5e7209bfc0ee))
+* guard stem attachment against stale requests ([f802618](https://github.com/thedavidweng/OpenKara/commit/f802618ef3639326aba86663b32525317ea8b142))
+* include e2e dependencies in knip ([de31a6b](https://github.com/thedavidweng/OpenKara/commit/de31a6bd2c61af2ca4dd5bb1fe01b168c9e559c3))
+* preserve stale playback cancellation ([cd1d65b](https://github.com/thedavidweng/OpenKara/commit/cd1d65bac9f4b5e500fc63fe3e5b4eeaaa5af8cf))
+* **runtime:** terminate bootstrap after completed download ([316f1a6](https://github.com/thedavidweng/OpenKara/commit/316f1a62156511d492674755fe31aa077521f2c3)), closes [#284](https://github.com/thedavidweng/OpenKara/issues/284)
+* synchronize playback request invalidation ([652a4ae](https://github.com/thedavidweng/OpenKara/commit/652a4ae0b36d0b0d907a4ee348d55b1b9edd4cb4))
+* tighten desktop and stem loading checks ([e404e97](https://github.com/thedavidweng/OpenKara/commit/e404e97ebf57f7da32a5c812d48db1a56bd8e907))
+
 ## [0.12.0](https://github.com/thedavidweng/OpenKara/compare/v0.11.0...v0.12.0) (2026-08-02)
 
 
