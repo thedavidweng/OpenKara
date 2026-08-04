@@ -676,6 +676,22 @@ describe("createSettingsOverlayActions - runtime updates", () => {
     expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
   });
 
+  test("concurrent runtime actions are rejected while another is in flight", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    void harness.actions.updateRuntime();
+    void harness.actions.downloadRuntime();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
+  });
+
   test("checkRuntimeUpdates caches the report and refreshes runtime status", async () => {
     const harness = createHarness();
 

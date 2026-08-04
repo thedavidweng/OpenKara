@@ -2232,7 +2232,7 @@ function Invoke-StepAction {
                     param($t)
                     if (-not $exited) {
                         $closeElapsed = [int]([DateTime]::UtcNow - $closeStarted).TotalSeconds
-                        return "application process did not exit within the full wait budget (${closeElapsed}s; three 10-second attempts plus Close-Settings-Overlay time)"
+                        return "Application did not exit in ${closeElapsed}s. The script used three 10-second waits. The script ran Close-Settings-Overlay."
                     }
                     return $true
                 }

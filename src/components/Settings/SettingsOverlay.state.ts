@@ -208,6 +208,8 @@ export function createSettingsOverlayActions(
     }
   };
 
+  let runtimeActionInFlight = false;
+
   const isRuntimeBusy = () => {
     const state = controls.getSnapshot().state.runtimeStatus?.state;
     return (
@@ -215,7 +217,19 @@ export function createSettingsOverlayActions(
     );
   };
 
-  const downloadRuntimeAction = async () => {
+  const withRuntimeActionLock = async (action: () => Promise<void>) => {
+    if (runtimeActionInFlight || isRuntimeBusy()) {
+      return;
+    }
+    runtimeActionInFlight = true;
+    try {
+      await action();
+    } finally {
+      runtimeActionInFlight = false;
+    }
+  };
+
+  const doDownloadRuntime = async () => {
     try {
       const status = await dependencies.api.downloadRuntime();
       useRuntimeBootstrapStore.getState().updateStatus(status);
@@ -239,43 +253,43 @@ export function createSettingsOverlayActions(
     }
   };
 
+  const downloadRuntimeAction = async () => {
+    await withRuntimeActionLock(doDownloadRuntime);
+  };
+
   const updateRuntimeAction = async () => {
-    if (isRuntimeBusy()) {
-      return;
-    }
-    await downloadRuntimeAction();
+    await withRuntimeActionLock(doDownloadRuntime);
   };
 
   const checkRuntimeUpdatesAction = async () => {
-    if (isRuntimeBusy()) {
-      return;
-    }
-    patchState({
-      runtimeUpdate: {
-        status: "checking",
-        error: null,
-        report: null,
-      },
-    });
-    try {
-      const report = await dependencies.api.checkRuntimeUpdates();
+    await withRuntimeActionLock(async () => {
       patchState({
         runtimeUpdate: {
-          status: "checked",
+          status: "checking",
           error: null,
-          report,
-        },
-      });
-      await refreshRuntimeStatus();
-    } catch (error) {
-      patchState({
-        runtimeUpdate: {
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
           report: null,
         },
       });
-    }
+      try {
+        const report = await dependencies.api.checkRuntimeUpdates();
+        patchState({
+          runtimeUpdate: {
+            status: "checked",
+            error: null,
+            report,
+          },
+        });
+        await refreshRuntimeStatus();
+      } catch (error) {
+        patchState({
+          runtimeUpdate: {
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+            report: null,
+          },
+        });
+      }
+    });
   };
 
   const setUpdatePolicyAction = async (
@@ -290,14 +304,16 @@ export function createSettingsOverlayActions(
   };
 
   const deleteRuntimeAction = async () => {
-    try {
-      await dependencies.api.deleteRuntime();
-      await refreshRuntimeStatus();
-      // Refresh model statuses since model actions may now be disabled.
-      await refreshModelStatuses();
-    } catch (error) {
-      dependencies.notifyError(error);
-    }
+    await withRuntimeActionLock(async () => {
+      try {
+        await dependencies.api.deleteRuntime();
+        await refreshRuntimeStatus();
+        // Refresh model statuses since model actions may now be disabled.
+        await refreshModelStatuses();
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    });
   };
 
   const selectSingleDirectory = async (dialogTitle: string) => {
