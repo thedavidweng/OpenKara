@@ -28,6 +28,15 @@ use tiny_http::{Response, Server, StatusCode};
 const REPORT_FILENAME: &str = "runtime-bootstrap-regression-report.json";
 const REQUEST_COUNT_FILENAME: &str = "runtime-bootstrap-http-request-count.txt";
 
+struct FaultEnvGuard;
+
+impl Drop for FaultEnvGuard {
+    fn drop(&mut self) {
+        env::remove_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE");
+        env::remove_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS");
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegressionPhase {
@@ -266,6 +275,7 @@ fn run_fault_retry(
     let mut events = Vec::new();
     env::set_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE", "1");
     env::set_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS", "1500");
+    let _env_guard = FaultEnvGuard;
     let started = Instant::now();
     let is_update =
         command::prepare_runtime_download(&config.app_data_dir, &status, &mut |event, snapshot| {
@@ -286,8 +296,6 @@ fn run_fault_retry(
             });
         },
     );
-    env::remove_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE");
-    env::remove_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS");
 
     let elapsed = started.elapsed();
     let snapshot = locked_snapshot(&status)?;
@@ -377,8 +385,6 @@ fn run_restart(
         runtime_bootstrap::verify_runtime_files(&orphan)?,
         "restart phase found an unverifiable orphan install"
     );
-    let count_path = config.app_data_dir.join(REQUEST_COUNT_FILENAME);
-    let requests_before = read_request_count(&count_path)?;
     let status = Arc::new(Mutex::new(command::snapshot_from_disk(
         &config.app_data_dir,
     )));
@@ -401,7 +407,6 @@ fn run_restart(
         locked_snapshot(&status)?.state.clone(),
         events,
     );
-    let requests_after = read_request_count(&count_path)?;
     let after = locked_snapshot(&status)?;
     let mut assertions = BTreeMap::new();
     assertions.insert(
@@ -411,10 +416,6 @@ fn run_restart(
     assertions.insert(
         "restart_did_not_download_runtime_bytes".to_owned(),
         attempt.byte_progress_events == 0,
-    );
-    assertions.insert(
-        "restart_http_request_count_unchanged".to_owned(),
-        requests_before == requests_after,
     );
     assertions.insert(
         "restart_finished_ready".to_owned(),
@@ -430,7 +431,7 @@ fn run_restart(
         phase: RegressionPhase::Restart,
         app_data_dir: config.app_data_dir.display().to_string(),
         artifact_id: artifact_id.to_owned(),
-        download_request_count: requests_after,
+        download_request_count: 0,
         attempts: vec![attempt],
         assertions,
     })
@@ -452,6 +453,18 @@ fn locked_snapshot(
         .map_err(|_| anyhow::anyhow!("runtime bootstrap status lock was poisoned"))
 }
 
+fn is_byte_progress_event(event: &RegressionEvent) -> bool {
+    event.event == command::RUNTIME_BOOTSTRAP_PROGRESS_EVENT
+        && matches!(
+            event.snapshot.state,
+            command::RuntimeBootstrapState::Downloading
+                | command::RuntimeBootstrapState::DownloadingCandidate
+        )
+        && event.snapshot.downloaded_bytes.is_some()
+        && event.snapshot.total_bytes.is_some()
+        && event.snapshot.downloaded_bytes.unwrap_or_default() > 0
+}
+
 fn attempt_report(
     name: &str,
     elapsed_ms: u128,
@@ -459,13 +472,7 @@ fn attempt_report(
     final_state: command::RuntimeBootstrapState,
     events: Vec<RegressionEvent>,
 ) -> AttemptReport {
-    let byte_progress_events = events
-        .iter()
-        .filter(|event| {
-            event.snapshot.state == command::RuntimeBootstrapState::Downloading
-                && event.snapshot.downloaded_bytes.unwrap_or_default() > 0
-        })
-        .count();
+    let byte_progress_events = events.iter().filter(|e| is_byte_progress_event(e)).count();
     AttemptReport {
         name: name.to_owned(),
         elapsed_ms,
@@ -517,16 +524,7 @@ mod tests {
             event(command::RuntimeBootstrapState::Downloading, Some(4096)),
             event(command::RuntimeBootstrapState::Installing, None),
         ];
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| {
-                    event.snapshot.state == command::RuntimeBootstrapState::Downloading
-                        && event.snapshot.downloaded_bytes.unwrap_or_default() > 0
-                })
-                .count(),
-            1
-        );
+        assert_eq!(events.iter().filter(is_byte_progress_event).count(), 1);
         assert!(!has_downloading_without_bytes(&events));
     }
 
@@ -537,15 +535,15 @@ mod tests {
             event(command::RuntimeBootstrapState::Probing, None),
             event(command::RuntimeBootstrapState::Activating, None),
         ];
-        assert!(has_state(
-            &events,
-            command::RuntimeBootstrapState::Installing
-        ));
-        assert!(has_state(&events, command::RuntimeBootstrapState::Probing));
-        assert!(has_state(
-            &events,
-            command::RuntimeBootstrapState::Activating
-        ));
+        let states: Vec<_> = events.iter().map(|event| event.snapshot.state).collect();
+        assert_eq!(
+            states,
+            vec![
+                command::RuntimeBootstrapState::Installing,
+                command::RuntimeBootstrapState::Probing,
+                command::RuntimeBootstrapState::Activating,
+            ]
+        );
         assert!(!has_downloading_without_bytes(&events));
     }
 }

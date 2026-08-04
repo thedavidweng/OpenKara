@@ -52,6 +52,7 @@ import {
   type SettingsOverlaySnapshot,
 } from "./SettingsOverlay.state";
 import type { AppSettingsSnapshot } from "@/stores/settings-store";
+import type { RuntimeStatusView } from "./settings-overlay.types";
 
 function createDependencies(): SettingsOverlayControllerDependencies {
   return {
@@ -581,6 +582,98 @@ describe("createSettingsOverlayActions - initialize", () => {
 describe("createSettingsOverlayActions - runtime updates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  function runtimeStatusWithState(
+    state: RuntimeStatusView["state"],
+  ): RuntimeStatusView {
+    return {
+      state,
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      active_artifact_id: "rt-1.27.1",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    };
+  }
+
+  test.each(["installing", "probing", "activating"] as const)(
+    "checkRuntimeUpdates and updateRuntime return early while runtime is %s",
+    async (state) => {
+      const harness = createHarness();
+      harness.setSnapshot({
+        ...harness.getSnapshot(),
+        state: {
+          ...harness.getSnapshot().state,
+          runtimeStatus: runtimeStatusWithState(state),
+        },
+      });
+
+      await harness.actions.checkRuntimeUpdates();
+      expect(
+        harness.dependencies.api.checkRuntimeUpdates,
+      ).not.toHaveBeenCalled();
+
+      await harness.actions.updateRuntime();
+      expect(harness.dependencies.api.downloadRuntime).not.toHaveBeenCalled();
+    },
+  );
+
+  test("checkRuntimeUpdates and updateRuntime run normally when runtime is not busy", async () => {
+    const harness = createHarness();
+    harness.setSnapshot({
+      ...harness.getSnapshot(),
+      state: {
+        ...harness.getSnapshot().state,
+        runtimeStatus: runtimeStatusWithState("ready"),
+      },
+    });
+
+    vi.mocked(harness.dependencies.api.checkRuntimeUpdates).mockResolvedValue({
+      generation: 8,
+      release_id: "2026-08-01-002",
+      target_triple: "aarch64-apple-darwin",
+      state: "not_installed",
+      installed_version: null,
+      available_version: "v1.28.0",
+      available_bytes: 42_000_000,
+      restart_required: false,
+    });
+    vi.mocked(
+      harness.dependencies.api.getRuntimeBootstrapStatus,
+    ).mockResolvedValue({
+      state: "ready",
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.27.1",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.checkRuntimeUpdates();
+    expect(harness.dependencies.api.checkRuntimeUpdates).toHaveBeenCalledOnce();
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockResolvedValue({
+      state: "ready",
+      version: "v1.28.0",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.28.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.updateRuntime();
+    expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
   });
 
   test("checkRuntimeUpdates caches the report and refreshes runtime status", async () => {

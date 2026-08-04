@@ -208,6 +208,13 @@ export function createSettingsOverlayActions(
     }
   };
 
+  const isRuntimeBusy = () => {
+    const state = controls.getSnapshot().state.runtimeStatus?.state;
+    return (
+      state === "installing" || state === "probing" || state === "activating"
+    );
+  };
+
   const downloadRuntimeAction = async () => {
     try {
       const status = await dependencies.api.downloadRuntime();
@@ -233,10 +240,16 @@ export function createSettingsOverlayActions(
   };
 
   const updateRuntimeAction = async () => {
+    if (isRuntimeBusy()) {
+      return;
+    }
     await downloadRuntimeAction();
   };
 
   const checkRuntimeUpdatesAction = async () => {
+    if (isRuntimeBusy()) {
+      return;
+    }
     patchState({
       runtimeUpdate: {
         status: "checking",

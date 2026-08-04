@@ -732,9 +732,11 @@ function Find-Settings-Overlay {
 
 function Find-Upgrade-Confirmation {
     param([array]$Tree)
+    $byId = Find-ElementByAutomationId -Tree $Tree -AutomationId "upgrade-confirmation"
+    if ($null -ne $byId) { return $byId }
     return Find-Element -Tree $Tree -Predicate {
         param($n)
-        $n.controlType -eq "Window" -and
+        ($n.controlType -eq "Pane" -or $n.controlType -eq "Group" -or $n.controlType -eq "Dialog" -or $n.controlType -eq "Window") -and
         $n.name -and
         $n.name.Equals("Upgrade All Songs to 4-Stem", [System.StringComparison]::OrdinalIgnoreCase) -and
         $n.isOffscreen -eq $false
@@ -909,7 +911,7 @@ function Add-EnvironmentLimitedAssertion {
         id            = $StepId
         expected      = $Expected
         observed      = $Observed
-        result        = "pass"
+        result        = "skip"
         artifact_path = $script:lastSnapshotPath
     }
     $script:assertions.Add($result)
@@ -921,15 +923,19 @@ function Close-Settings-Overlay {
         return $true
     }
 
-    $tree = Get-UiTree -ProcessId $script:process.Id
-    if ($null -eq (Find-Settings-Overlay -Tree $tree)) {
+    $tree = $null
+    try {
+        $tree = Get-UiTree -ProcessId $script:process.Id
+    } catch {
+    }
+    if ($null -eq $tree -or $null -eq (Find-Settings-Overlay -Tree $tree)) {
         return $true
     }
 
     try {
         Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -AutomationId "settings-close" -ControlType "Button" | Out-Null
     } catch {
-        if (-not (Invoke-NamedControl -Name "Close" -PreferredAction "invoke")) {
+        if (-not (Invoke-NamedControl -AutomationId "settings-close" -PreferredAction "invoke")) {
             try {
                 Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" | Out-Null
             } catch {
@@ -1607,7 +1613,7 @@ function Invoke-StepAction {
                         } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
 
                         if ($null -ne $confirmationTree) {
-                            Invoke-NamedControl -Name "Upgrade All" -PreferredAction "invoke" | Out-Null
+                            Invoke-NamedControl -AutomationId "upgrade-confirm" -PreferredAction "invoke" | Out-Null
                             Wait-For-Condition -Condition {
                                 param($t)
                                 return $null -eq (Find-Upgrade-Confirmation -Tree $t)
@@ -1975,7 +1981,10 @@ function Invoke-StepAction {
                             try {
                                 Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
                             } catch {
-                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
+                                try {
+                                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
+                                } catch {
+                                }
                             }
                             $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
                             while ([DateTime]::UtcNow -lt $deadline) {
@@ -2195,6 +2204,7 @@ function Invoke-StepAction {
 
             "close" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
+                $closeStarted = [DateTime]::UtcNow
                 Close-Settings-Overlay | Out-Null
                 Send-KeyboardInput "%{F4}"
                 $exited = $script:process.WaitForExit(10000)
@@ -2220,7 +2230,10 @@ function Invoke-StepAction {
 
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
                     param($t)
-                    if (-not $exited) { return "application process did not exit within 10 seconds" }
+                    if (-not $exited) {
+                        $closeElapsed = [int]([DateTime]::UtcNow - $closeStarted).TotalSeconds
+                        return "application process did not exit within the full wait budget (${closeElapsed}s; three 10-second attempts plus Close-Settings-Overlay time)"
+                    }
                     return $true
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
@@ -2326,6 +2339,8 @@ foreach ($path in $assertionArtifactPaths) {
 }
 
 $uiAutomationErrors = ($assertions | Where-Object { $_.result -eq "fail" }).Count
+$uiAutomationPassed = ($assertions | Where-Object { $_.result -eq "pass" }).Count
+$uiAutomationSkipped = ($assertions | Where-Object { $_.result -eq "skip" }).Count
 
 $report = [PSCustomObject]@{
     scenario      = $selectedScenario.id
@@ -2370,6 +2385,8 @@ $report = [PSCustomObject]@{
         violations_count           = 0
         keyboard_trap_count        = 0
         ui_automation_errors_count = $uiAutomationErrors
+        ui_automation_passed_count = $uiAutomationPassed
+        ui_automation_skipped_count = $uiAutomationSkipped
         zoom_levels_tested         = @()
     }
     audio         = [PSCustomObject]@{

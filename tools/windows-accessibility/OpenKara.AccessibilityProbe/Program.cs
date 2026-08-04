@@ -418,12 +418,16 @@ class Program
         bool automationIdMatches = !string.IsNullOrWhiteSpace(automationIdFilter) &&
             automationId.Equals(automationIdFilter, StringComparison.OrdinalIgnoreCase);
 
-        if ((nameMatches || automationIdMatches) &&
-            (string.IsNullOrWhiteSpace(controlTypeFilter) ||
-             controlType.Equals(controlTypeFilter, StringComparison.OrdinalIgnoreCase)) &&
-            (current.IsOffscreen == false || automationIdMatches))
+        bool controlTypeOk = string.IsNullOrWhiteSpace(controlTypeFilter) ||
+            controlType.Equals(controlTypeFilter, StringComparison.OrdinalIgnoreCase);
+
+        if (automationIdMatches && controlTypeOk)
         {
-            int score = automationIdMatches || name.Equals(nameSubstring, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            matches.Add((element, -1));
+        }
+        else if (nameMatches && controlTypeOk && current.IsOffscreen == false)
+        {
+            int score = name.Equals(nameSubstring, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             // Prefer keyboard-focusable interactive controls when set-focusing.
             if (!current.IsKeyboardFocusable)
             {
@@ -784,6 +788,18 @@ class Program
         error = null;
         try
         {
+            try
+            {
+                if (target.Current.IsOffscreen)
+                {
+                    error = "Target is offscreen";
+                    return false;
+                }
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+
             try
             {
                 var hwnd = new IntPtr(root.Current.NativeWindowHandle);

@@ -31,6 +31,7 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 
 const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
 static RUNTIME_PARENT_LOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static RUNTIME_PARENT_LOAD_TIMED_OUT: AtomicBool = AtomicBool::new(false);
 
@@ -180,10 +181,19 @@ pub fn ensure_runtime_ready(
         RuntimeBootstrapState::Downloading
         | RuntimeBootstrapState::Installing
         | RuntimeBootstrapState::Probing
-        | RuntimeBootstrapState::Activating => Err(model_bootstrap_error(format!(
-            "ONNX Runtime is still downloading to {}",
-            snapshot.runtime_path
-        ))),
+        | RuntimeBootstrapState::Activating => {
+            let description = match snapshot.state {
+                RuntimeBootstrapState::Downloading => "downloading",
+                RuntimeBootstrapState::Installing => "installing",
+                RuntimeBootstrapState::Probing => "checking compatibility",
+                RuntimeBootstrapState::Activating => "activating",
+                _ => unreachable!(),
+            };
+            Err(model_bootstrap_error(format!(
+                "ONNX Runtime is still {} at {}",
+                description, snapshot.runtime_path
+            )))
+        }
         RuntimeBootstrapState::Corrupt => Err(model_bootstrap_error(format!(
             "ONNX Runtime at {} is corrupt; delete and re-download",
             snapshot.runtime_path
@@ -311,7 +321,7 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
     if RUNTIME_PARENT_LOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         anyhow::bail!(
             "{}: ONNX Runtime load is already in progress; restart OpenKara before retrying",
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
+            RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER
         );
     }
 
@@ -497,11 +507,13 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 .map(|record| record.artifact_id.clone())
                 .unwrap_or_default();
             if let Err(error) = ensure_runtime_loaded_with_watchdog(&plan.library_path) {
-                let _ = runtime_bootstrap::rollback_failed_activation(
-                    app_data_dir,
-                    &failed_id,
-                    &error.to_string(),
-                );
+                if plan.proving_candidate && !failed_id.is_empty() {
+                    let _ = runtime_bootstrap::rollback_failed_activation(
+                        app_data_dir,
+                        &failed_id,
+                        &error.to_string(),
+                    );
+                }
                 let command_error = bootstrap_command_error(error);
                 record_runtime_failure(app_data_dir, status, emit, command_error.clone());
                 return Err(command_error);
@@ -902,9 +914,10 @@ mod tests {
 
     #[test]
     fn post_download_timeout_marker_maps_to_a_structured_error() {
-        let error = bootstrap_command_error_from_message(
-            "runtime_post_download_timeout: runtime load did not finish",
-        );
+        let error = bootstrap_command_error_from_message(&format!(
+            "{}: runtime load did not finish",
+            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
+        ));
 
         assert_eq!(
             error.code,

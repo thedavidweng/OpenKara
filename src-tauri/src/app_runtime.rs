@@ -466,7 +466,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
                     let mut emit = |event, snapshot| {
                         let _ = app_handle.emit(event, snapshot);
                     };
-                    commands::runtime_bootstrap::prepare_runtime_download(
+                    let is_update = commands::runtime_bootstrap::prepare_runtime_download(
                         &app_data_dir,
                         &status,
                         &mut emit,
@@ -475,7 +475,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
                         commands::runtime_bootstrap::download_runtime_blocking_with_catalog(
                             &app_data_dir,
                             &catalog,
-                            true,
+                            is_update,
                             &status,
                             &mut emit,
                         )

@@ -100,6 +100,9 @@ describe("detectSystemLanguage", () => {
     expect(i18next.t("bootstrap.checkingRuntimeCompatibility")).toBe(
       "正在检查 ONNX 运行时兼容性…",
     );
+    expect(i18next.t("bootstrap.activatingRuntime")).toBe(
+      "正在激活 ONNX 运行时…",
+    );
     expect(i18next.t("errors.modelUnavailableMessage")).toBe(
       "分离模型或 ONNX Runtime 尚未准备完成。请等待设置完成后重试。",
     );
@@ -107,6 +110,9 @@ describe("detectSystemLanguage", () => {
 
   it("ships all runtime post-download keys used by the UI", () => {
     for (const key of [
+      "bootstrap.installingRuntime",
+      "bootstrap.checkingRuntimeCompatibility",
+      "bootstrap.activatingRuntime",
       "settings.runtime.banner.installingRuntime",
       "settings.runtime.banner.checkingCompatibility",
       "settings.runtime.banner.activatingRuntime",

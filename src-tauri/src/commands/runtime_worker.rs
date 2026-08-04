@@ -12,7 +12,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -120,14 +120,15 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
     // promote this candidate without downloading the archive again.
     runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
 
-    write_progress(
-        progress_path,
-        RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Probing),
-    )?;
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_INSTALLING").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
     }
+
+    write_progress(
+        progress_path,
+        RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Probing),
+    )?;
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
@@ -226,14 +227,10 @@ fn ensure_cached_archive(
         &runtime.archive_digest,
         cache_dir,
         |downloaded_bytes, total_bytes| {
-            if downloaded_bytes == runtime.byte_size {
-                progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
-            } else {
-                progress(RuntimeWorkerProgress::downloading(
-                    downloaded_bytes,
-                    total_bytes,
-                ));
-            }
+            progress(RuntimeWorkerProgress::downloading(
+                downloaded_bytes,
+                total_bytes,
+            ));
         },
     )?;
     fs::rename(&downloaded, &cache_path).with_context(|| {
@@ -270,13 +267,6 @@ fn install_runtime_with_verified_archive_cache(
         .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
     let staging = artifacts::unique_temp_path(&root, "staging");
     let result = (|| -> Result<runtime_bootstrap::InstalledRuntime> {
-        let archive = ensure_cached_archive(app_data_dir, runtime, &mut progress)?;
-        progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
-        fs::create_dir_all(&staging)
-            .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
-        let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
-        let extracted = artifacts::extract_archive_safely(&archive, kind, &staging)?;
-        artifacts::verify_extracted_files(&staging, &runtime.extracted_file_digests, &extracted)?;
         if !runtime
             .extracted_file_digests
             .contains_key(runtime_bootstrap::ORT_RUNTIME_FILENAME)
@@ -287,6 +277,13 @@ fn install_runtime_with_verified_archive_cache(
                 runtime_bootstrap::ORT_RUNTIME_FILENAME
             );
         }
+        let archive = ensure_cached_archive(app_data_dir, runtime, &mut progress)?;
+        progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
+        fs::create_dir_all(&staging)
+            .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
+        let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
+        let extracted = artifacts::extract_archive_safely(&archive, kind, &staging)?;
+        artifacts::verify_extracted_files(&staging, &runtime.extracted_file_digests, &extracted)?;
 
         let record = record_from_catalog_runtime(runtime, catalog);
         write_artifact_record(
@@ -388,6 +385,50 @@ fn post_download_timeout() -> Duration {
     parse_post_download_timeout(raw.as_deref())
 }
 
+struct WorkerGuard {
+    child: Option<Child>,
+    paths: Vec<PathBuf>,
+    complete: bool,
+}
+
+impl WorkerGuard {
+    fn new(paths: Vec<PathBuf>) -> Self {
+        Self {
+            child: None,
+            paths,
+            complete: false,
+        }
+    }
+
+    fn attach(&mut self, child: Child) {
+        self.child = Some(child);
+    }
+
+    fn child(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
+    }
+
+    fn complete(mut self) {
+        self.complete = true;
+    }
+}
+
+impl Drop for WorkerGuard {
+    fn drop(&mut self) {
+        if !self.complete {
+            if let Some(child) = self.child.as_mut() {
+                if child.try_wait().map_or(true, |s| s.is_none()) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        for path in &self.paths {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 pub fn install_runtime_with_worker(
     app_data_dir: &Path,
     catalog: &VerifiedCatalog,
@@ -419,13 +460,14 @@ pub fn install_runtime_with_worker(
     let stderr_file = fs::File::create(&stderr_path)
         .with_context(|| format!("failed to create {}", stderr_path.display()))?;
 
-    let cleanup = || {
-        let _ = fs::remove_file(&request_path);
-        let _ = fs::remove_file(&progress_path);
-        let _ = fs::remove_file(&stderr_path);
-    };
+    let mut guard = WorkerGuard::new(vec![
+        request_path.clone(),
+        progress_path.clone(),
+        stderr_path.clone(),
+    ]);
+
     let executable = std::env::current_exe().context("failed to resolve OpenKara executable")?;
-    let mut child = Command::new(executable)
+    let child = Command::new(executable)
         .arg(RUNTIME_WORKER_ARG)
         .arg(&request_path)
         .arg(&progress_path)
@@ -434,20 +476,28 @@ pub fn install_runtime_with_worker(
         .stderr(Stdio::from(stderr_file))
         .spawn()
         .context("failed to start runtime bootstrap worker")?;
+    guard.attach(child);
 
     let timeout = post_download_timeout();
     let mut progress_offset = 0;
-    let mut post_download_started = None;
+    let mut last_phase: Option<RuntimeWorkerPhase> = None;
+    let mut post_download_started: Option<Instant> = None;
     let status = loop {
         for progress in read_progress(&progress_path, &mut progress_offset) {
-            if progress.phase != RuntimeWorkerPhase::Downloading && post_download_started.is_none()
-            {
-                post_download_started = Some(Instant::now());
+            if last_phase != Some(progress.phase) {
+                last_phase = Some(progress.phase);
+                post_download_started = if progress.phase == RuntimeWorkerPhase::Downloading {
+                    None
+                } else {
+                    Some(Instant::now())
+                };
             }
             on_progress(progress);
         }
 
-        if let Some(status) = child
+        if let Some(status) = guard
+            .child()
+            .context("runtime bootstrap worker handle is missing")?
             .try_wait()
             .context("failed to poll runtime bootstrap worker")?
         {
@@ -455,10 +505,12 @@ pub fn install_runtime_with_worker(
         }
 
         if post_download_started.is_some_and(|started| started.elapsed() > timeout) {
-            let _ = child.kill();
-            let _ = child.wait();
+            if let Some(child) = guard.child() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
             let details = fs::read_to_string(&stderr_path).unwrap_or_default();
-            cleanup();
+            guard.complete();
             bail!(
                 "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime installation did not finish within {} seconds after the worker entered post-download phase{}",
                 timeout.as_secs_f64(),
@@ -474,7 +526,7 @@ pub fn install_runtime_with_worker(
     };
 
     let details = fs::read_to_string(&stderr_path).unwrap_or_default();
-    cleanup();
+    guard.complete();
     if !status.success() {
         bail!(
             "runtime bootstrap worker failed with {status}{}",
