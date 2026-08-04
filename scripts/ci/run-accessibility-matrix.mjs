@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 
-const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(command, ["test:a11y"], {
+// Windows runners need a shell to resolve pnpm.cmd; without shell: true the
+// spawnSync call fails with EINVAL.
+const result = spawnSync("pnpm", ["test:a11y"], {
   stdio: "inherit",
+  shell: process.platform === "win32",
   env: {
     ...process.env,
     OKA_ACCESSIBILITY_MATRIX: "1",

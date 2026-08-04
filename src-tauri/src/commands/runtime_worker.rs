@@ -227,6 +227,11 @@ fn ensure_cached_archive(
         &runtime.archive_digest,
         cache_dir,
         |downloaded_bytes, total_bytes| {
+            // Avoid publishing a "downloading" event at 100%; the next phase
+            // (installing) will follow once the archive is verified and moved.
+            if total_bytes.is_some_and(|total| downloaded_bytes == total) {
+                return;
+            }
             progress(RuntimeWorkerProgress::downloading(
                 downloaded_bytes,
                 total_bytes,
