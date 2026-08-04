@@ -692,6 +692,37 @@ describe("createSettingsOverlayActions - runtime updates", () => {
     expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
   });
 
+  test("deleteRuntime releases the lock and notifies on failure", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.deleteRuntime).mockRejectedValue(
+      new Error("permission denied"),
+    );
+
+    await harness.actions.deleteRuntime();
+
+    expect(harness.dependencies.api.deleteRuntime).toHaveBeenCalledOnce();
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockResolvedValue({
+      state: "ready",
+      version: "v1.28.0",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.28.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.updateRuntime();
+    expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
+  });
+
   test("checkRuntimeUpdates caches the report and refreshes runtime status", async () => {
     const harness = createHarness();
 
