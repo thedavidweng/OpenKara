@@ -446,6 +446,13 @@ pub fn install_runtime_with_worker(
     let request_path = root.join(format!("worker-{nonce}.request.json"));
     let progress_path = root.join(format!("worker-{nonce}.progress.json"));
     let stderr_path = root.join(format!("worker-{nonce}.stderr.log"));
+
+    let mut guard = WorkerGuard::new(vec![
+        request_path.clone(),
+        progress_path.clone(),
+        stderr_path.clone(),
+    ]);
+
     let request = RuntimeWorkerRequest {
         app_data_dir: app_data_dir.to_path_buf(),
         catalog: catalog.clone(),
@@ -459,12 +466,6 @@ pub fn install_runtime_with_worker(
     })?;
     let stderr_file = fs::File::create(&stderr_path)
         .with_context(|| format!("failed to create {}", stderr_path.display()))?;
-
-    let mut guard = WorkerGuard::new(vec![
-        request_path.clone(),
-        progress_path.clone(),
-        stderr_path.clone(),
-    ]);
 
     let executable = std::env::current_exe().context("failed to resolve OpenKara executable")?;
     let child = Command::new(executable)
