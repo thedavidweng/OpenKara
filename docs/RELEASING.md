@@ -7,18 +7,22 @@ every push to `main` and maintains a running release PR that bumps
 `.release-please-manifest.json`.
 
 When the release PR is merged, release-please opens a **draft** GitHub
-Release with changelog notes. The Release Please workflow creates the final
-tag, ensures the draft release is bound to that tag, applies the installation
-section, and dispatches the Release workflow. The Release workflow also
-supports manual dispatch for an existing draft release.
+Release with changelog notes. release-please creates the draft before the
+git tag exists. GitHub leaves such drafts tagged `untagged-*` and never
+binds them afterwards. The Release Please workflow therefore creates the
+final tag, re-creates the draft release bound to that tag (copying the
+release-please notes), applies the installation section, and dispatches the
+Release workflow. The Release workflow also supports manual dispatch for an
+existing draft release.
 
 The Release Please workflow:
 
 1. Syncs native manifests (`Cargo.toml`, `tauri.conf.json`, …) via
    `scripts/sync-version.mjs`.
-2. Ensures the git tag `vX.Y.Z` exists (draft releases can land untagged
-   when only `GITHUB_TOKEN` is used).
-3. Creates a formal draft when the provider leaves only an untagged draft.
+2. Ensures the git tag `vX.Y.Z` exists on the post-sync `main` HEAD.
+3. Re-creates the draft release bound to that tag. The job matches the
+   release-please draft by name, creates a fresh draft after the tag
+   exists, and deletes the stale drafts for the same tag.
 4. Applies `.github/release-notes-installation.md`. The template includes
    Homebrew and WinGet install commands.
 5. Dispatches the [`Release` workflow](../.github/workflows/release.yml)
@@ -45,9 +49,11 @@ gates are the automated quality gate. There is no separate manual Publish
 click on the GitHub Release page for plain version tags.
 
 Release Please owns the version, changelog text, draft release, and final
-release body. The Release workflow owns the tested asset pipeline. Set
-`force-tag-creation` so a draft release has its real tag. Keep the installation
-section in the checked-in template file and apply it from the Release Please
+release body. The Release workflow owns the tested asset pipeline. Keep
+`force-tag-creation` so release-please pushes the real tag; the ensure job
+still re-creates the draft bound to it because GitHub never binds a draft
+that release-please created before the tag. Keep the installation section
+in the checked-in template file and apply it from the Release Please
 workflow. The release-please config has no static release-body template
 setting.
 
@@ -64,13 +70,18 @@ setting.
    commit on `main`). The sync job may push a follow-up commit with
    `GITHUB_TOKEN`. That push does not re-run full CI, so `main` HEAD can
    look green while the release cut failed on the previous commit. The
-   workflow must create (or repair) `vX.Y.Z` and start a Release run. If
-   either is missing, create the tag on the release commit and run
+   workflow must create (or repair) `vX.Y.Z`, re-create the draft release
+   bound to it, and start a Release run. If either is missing, create the
+   tag on the release commit, bind a draft release to it, and run
    `gh workflow run release.yml --ref vX.Y.Z -f version=X.Y.Z`. A failed
    cut also opens a GitHub issue titled `Release cut failed for vX.Y.Z`.
-3. **Watch the Release workflow.** It runs smoke tests, uploads assets,
-   publishes the GitHub Release, then submits WinGet and Flatpak when
-   configured.
+3. **Watch the Release workflow.** It requires a successful Nightly
+   hardening run for the tag commit from the last 24 hours. The nightly
+   cron runs at 04:00 UTC on `main`. When the tag points at a commit the
+   nightly has not covered, dispatch `nightly-hardening.yml` on `main`
+   first, or wait for the next cron run. The workflow then runs smoke
+   tests, uploads assets, publishes the GitHub Release, and submits WinGet
+   and Flatpak when configured.
 4. **Confirm the published release.** Asset names match the tag, e.g.
    `OpenKara_0.11.0_x64-setup.exe`. `SHA256SUMS` and `latest.json` are
    attached. `/releases/latest` points at the new plain tag.
@@ -87,9 +98,11 @@ setting.
 | `package.json` / `.release-please-manifest.json` on `main` | What release-please already bumped when a release PR merged      |
 
 If those three disagree, stop and repair before cutting the next release.
-A common failure is: release PR merged → draft Release exists → **no git
-tag** → Release workflow never runs → users still see the previous
-published version.
+A common failure is: release PR merged → draft Release exists but tagged
+`untagged-*` → the Release workflow's draft gate fails → users still see
+the previous published version. The ensure job now always re-creates the
+draft bound to the real tag, which is the state the Release workflow
+requires.
 
 ## Native manifest sync
 
