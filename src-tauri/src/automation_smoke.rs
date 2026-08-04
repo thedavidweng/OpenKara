@@ -1,7 +1,6 @@
 use crate::{
     commands::{bootstrap, runtime_bootstrap, unix_timestamp},
-    config,
-    separator::{self, model},
+    config, separator,
     services::separation,
     smoke::{
         run_local_audio_smoke, LocalAudioSmokeConfig, LocalAudioSmokeReport, SeparationSmokeMode,
@@ -231,12 +230,13 @@ fn verify_cold_start_state(
     let startup = separator::runtime_bootstrap::begin_startup(app_data_dir)
         .context("failed to derive runtime startup plan")?
         .context("installed runtime was absent on cold restart")?;
-    model::ensure_runtime_loaded_from_path(&startup.library_path).with_context(|| {
-        format!(
-            "installed runtime could not load on cold restart from {}",
-            startup.library_path.display()
-        )
-    })?;
+    crate::commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(&startup.library_path)
+        .with_context(|| {
+            format!(
+                "installed runtime could not load on cold restart from {}",
+                startup.library_path.display()
+            )
+        })?;
     if startup.proving_candidate {
         separator::runtime_bootstrap::finish_activation_success(app_data_dir)
             .context("failed to finalize a runtime activation after cold restart")?;

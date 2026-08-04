@@ -325,9 +325,11 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
 
       {!previewMode && showUpgradeConfirm && (
         <ConfirmationDialog
+          id="upgrade-confirmation"
           title={t("sidebar.confirmUpgrade.title")}
           message={t("sidebar.confirmUpgrade.message")}
           confirmLabel={t("sidebar.confirmUpgrade.confirm")}
+          confirmButtonId="upgrade-confirm"
           onConfirm={() => {
             setShowUpgradeConfirm(false);
             if (!previewMode) {

@@ -77,7 +77,7 @@ const EMBEDDED_MANIFEST_JSON: &str = include_str!("../../catalog/release-manifes
 // Unknown fields are tolerated: the catalog is additive across generations.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StablePointer {
     pub schema_version: String,
     pub channel: String,
@@ -88,7 +88,7 @@ pub struct StablePointer {
     pub release_manifest_size: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseManifest {
     pub schema_version: String,
     pub generation: u64,
@@ -97,13 +97,13 @@ pub struct ReleaseManifest {
     pub compatibility: Vec<CompatibilityEdge>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogArtifacts {
     pub models: Vec<CatalogModel>,
     pub runtimes: Vec<CatalogRuntime>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogModel {
     pub artifact_id: String,
     pub variant: String,
@@ -129,14 +129,14 @@ pub struct CatalogModel {
     pub known_user_effect: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityLimit {
     pub max_segment_seconds: f64,
     pub sample_rate_hz: u32,
     pub channels: usize,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CatalogDeprecation {
     #[serde(default)]
     pub deprecated: bool,
@@ -172,12 +172,12 @@ impl CatalogModel {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogUpstream {
     pub tag: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogModelMetadata {
     pub cache_key: String,
     pub compatible_runtime_ids: Vec<String>,
@@ -187,7 +187,7 @@ pub struct CatalogModelMetadata {
     pub stem_profile: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogRuntime {
     pub artifact_id: String,
     pub target_triple: Option<String>,
@@ -202,13 +202,13 @@ pub struct CatalogRuntime {
     pub deprecation: CatalogDeprecation,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogFileDigest {
     pub sha256: String,
     pub size: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogRuntimeMetadata {
     pub version: String,
     /// Published as a string (e.g. `"27"`).
@@ -218,7 +218,7 @@ pub struct CatalogRuntimeMetadata {
     pub companion_files: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompatibilityEdge {
     pub execution_provider: String,
     pub model_artifact_id: String,
@@ -229,7 +229,7 @@ pub struct CompatibilityEdge {
 
 /// A manifest whose bytes have been verified against a pointer and whose
 /// content passed structural validation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifiedCatalog {
     pub generation: u64,
     pub release_id: String,

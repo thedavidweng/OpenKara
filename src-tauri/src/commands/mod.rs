@@ -13,6 +13,7 @@ pub mod playback;
 pub mod playlist;
 pub mod remote_library;
 pub mod runtime_bootstrap;
+pub mod runtime_worker;
 pub mod self_update;
 pub mod separation;
 pub mod settings;

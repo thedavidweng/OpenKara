@@ -123,6 +123,16 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toContain("upgrade-install:");
     expect(reusableWorkflow).toContain("fault-injection:");
     expect(reusableWorkflow).toContain("run_fault_injection");
+    expect(reusableWorkflow).toContain("run_runtime_bootstrap_regression");
+    expect(reusableWorkflow).toContain(
+      "--automation-runtime-bootstrap-regression",
+    );
+    expect(reusableWorkflow).toContain(
+      'Invoke-RuntimeRegressionPhase -Phase "fault-retry"',
+    );
+    expect(reusableWorkflow).toContain(
+      'Invoke-RuntimeRegressionPhase -Phase "restart"',
+    );
     expect(reusableWorkflow).toContain("run_keyboard_uia");
     expect(reusableWorkflow).toContain("keyboard-workflow");
     expect(reusableWorkflow).toContain("--scenario fault-injection");
@@ -167,6 +177,9 @@ describe("release workflow", () => {
       /release-windows-installed-smoke:[\s\S]*?run_fault_injection:\s*true/,
     );
     expect(releaseWorkflow).toMatch(
+      /release-windows-installed-smoke:[\s\S]*?run_runtime_bootstrap_regression:\s*true/,
+    );
+    expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?run_keyboard_uia:\s*true/,
     );
     // Display scaling matrix stays on Nightly; release keeps the shorter path.
@@ -198,6 +211,21 @@ describe("release workflow", () => {
     // Signed release builds keep fat LTO via release_build: true.
     expect(releaseWorkflow).toMatch(
       /release-windows-installed-smoke:[\s\S]*?release_build:\s*true/,
+    );
+  });
+
+  test("runs the targeted #284 installed-app regression on relevant pull requests", () => {
+    const workflow = readProjectFile(
+      ".github/workflows/windows-installed-app-smoke-test.yml",
+    );
+
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain('"src-tauri/src/commands/runtime_bootstrap.rs"');
+    expect(workflow).toContain(
+      '"src-tauri/src/runtime_bootstrap_regression.rs"',
+    );
+    expect(workflow).toMatch(
+      /run_runtime_bootstrap_regression:[^\n]*github\.event_name == 'pull_request'/,
     );
   });
 

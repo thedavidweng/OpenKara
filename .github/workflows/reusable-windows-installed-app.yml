@@ -33,6 +33,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_runtime_bootstrap_regression:
+        description: "Run the installed-executable #284 100%-hang, retry-reuse, and cold-restart regression"
+        required: false
+        type: boolean
+        default: false
       run_display_matrix:
         description: "Run Windows display scaling matrix (100/125/150/200%) after UIA"
         required: false
@@ -352,6 +357,75 @@ jobs:
           Set-Content -Path $marker -Value "openkara-user-library-must-survive-uninstall" -Encoding utf8
           "OPENKARA_USER_LIBRARY_MARKER=$marker" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Run #284 runtime bootstrap regression
+        if: ${{ inputs.run_runtime_bootstrap_regression }}
+        shell: pwsh
+        env:
+          SMOKE_ROOT: ${{ runner.temp }}/openkara-clean-install-smoke
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:SMOKE_ROOT
+          $appData = Join-Path $root "app-data"
+          $reportRoot = Join-Path $root "runtime-bootstrap-regression"
+          $faultReport = Join-Path $reportRoot "fault-retry"
+          $restartReport = Join-Path $reportRoot "restart"
+          New-Item -ItemType Directory -Force -Path $appData, $faultReport, $restartReport | Out-Null
+
+          function Invoke-RuntimeRegressionPhase {
+            param(
+              [Parameter(Mandatory = $true)][string]$Phase,
+              [Parameter(Mandatory = $true)][string]$OutputDir,
+              [int]$TimeoutSeconds = 360
+            )
+            $stdout = Join-Path $OutputDir "$Phase.stdout.log"
+            $stderr = Join-Path $OutputDir "$Phase.stderr.log"
+            $process = Start-Process -FilePath $env:OPENKARA_INSTALLED_APP `
+              -ArgumentList @(
+                "--automation-runtime-bootstrap-regression", $Phase,
+                "--app-data-dir", $appData,
+                "--output-dir", $OutputDir
+              ) `
+              -PassThru -NoNewWindow `
+              -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+            $exited = $false
+            try {
+              Wait-Process -Id $process.Id -Timeout $TimeoutSeconds -ErrorAction Stop
+              $exited = $true
+            } catch {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            } finally {
+              $process.Refresh()
+              Get-Content -Path $stdout, $stderr -ErrorAction SilentlyContinue | Write-Host
+            }
+            if (-not $exited) {
+              throw "#284 $Phase runtime bootstrap regression exceeded ${TimeoutSeconds}s"
+            }
+            if ($process.ExitCode -ne 0) {
+              throw "#284 $Phase runtime bootstrap regression failed with exit code $($process.ExitCode)"
+            }
+          }
+
+          Invoke-RuntimeRegressionPhase -Phase "fault-retry" -OutputDir $faultReport
+          # A second installed executable process is the cold-restart boundary.
+          Invoke-RuntimeRegressionPhase -Phase "restart" -OutputDir $restartReport -TimeoutSeconds 60
+
+          foreach ($reportDir in @($faultReport, $restartReport)) {
+            $reportPath = Join-Path $reportDir "runtime-bootstrap-regression-report.json"
+            if (-not (Test-Path -Path $reportPath -PathType Leaf)) {
+              throw "Runtime bootstrap regression did not write $reportPath"
+            }
+            $report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json
+            $failed = @($report.assertions.PSObject.Properties | Where-Object { $_.Value -ne $true })
+            if ($failed.Count -gt 0) {
+              throw "Runtime bootstrap regression assertions failed: $($failed.Name -join ', ')"
+            }
+          }
+
+          # The normal installed-app scenario intentionally reuses this same
+          # app-data directory. That proves the regression leaves a production-
+          # usable runtime and avoids paying for a second runtime download.
+
       - name: Run installed-app scenario
         shell: pwsh
         env:
@@ -508,7 +582,9 @@ jobs:
 
           # Registry form is authoritative; clear legacy library_path so migrate
           # cannot overwrite libraries with the old single-path field.
-          $config["language"] = "en"
+          # Leave language unset so the installed-app check exercises the
+          # system-language detector on the English Windows runner.
+          $config.Remove("language")
           $config["library_path"] = $null
           $config["libraries"] = @(
             [ordered]@{
@@ -662,6 +738,9 @@ jobs:
             ${{ runner.temp }}/openkara-clean-install-smoke/**/automation-report.json
             ${{ runner.temp }}/openkara-clean-install-smoke/**/release-evidence-fragment.json
             ${{ runner.temp }}/openkara-clean-install-smoke/**/local-audio-smoke-report.*
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/runtime-bootstrap-regression-report.json
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/runtime-bootstrap-regression/**/*.stdout.log
+            ${{ runner.temp }}/openkara-clean-install-smoke/**/runtime-bootstrap-regression/**/*.stderr.log
             ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
             ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
             ${{ runner.temp }}/desktop-e2e/uia-tree-*.json

@@ -2,7 +2,7 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { downloadRuntime, restartApp } from "@/lib/tauri";
-import { notifyError } from "@/lib/errors";
+import { getErrorMessage, notifyError } from "@/lib/errors";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 
 export function RuntimeUpdateBanner() {
@@ -114,6 +114,29 @@ export function RuntimeUpdateBanner() {
     );
   }
 
+  if (state === "installing" || state === "probing" || state === "activating") {
+    const messageKey = (
+      {
+        installing: "settings.runtime.banner.installingRuntime",
+        probing: "settings.runtime.banner.checkingCompatibility",
+        activating: "settings.runtime.banner.activatingRuntime",
+      } as const
+    )[state];
+    return (
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
+          <Loader2 size={12} className="animate-spin" />
+          {t(messageKey)}
+        </div>
+      </div>
+    );
+  }
+
   if (state === "failed") {
     return (
       <div
@@ -126,7 +149,9 @@ export function RuntimeUpdateBanner() {
           <div className="text-[12px]">
             <p className="text-[var(--color-destructive)]">
               {t("settings.runtime.banner.downloadFailed", {
-                error: status?.error?.message || t("bootstrap.unknownError"),
+                error: status?.error
+                  ? getErrorMessage(status.error)
+                  : t("bootstrap.unknownError"),
               })}
             </p>
             <p className="mt-0.5 text-[11px] text-[var(--color-text-dim)]">

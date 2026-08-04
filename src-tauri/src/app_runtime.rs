@@ -71,7 +71,9 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
 
     match separator::runtime_bootstrap::begin_startup(&app_data_dir) {
         Ok(Some(plan)) => {
-            match separator::model::ensure_runtime_loaded_from_path(&plan.library_path) {
+            match commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
+                &plan.library_path,
+            ) {
                 Ok(_) => {
                     if plan.proving_candidate {
                         if let Err(err) =
@@ -99,7 +101,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                         ) {
                             Ok(Some(previous)) => {
                                 if let Err(load_err) =
-                                    separator::model::ensure_runtime_loaded_from_path(
+                                    commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
                                         &previous.library_path,
                                     )
                                 {
@@ -130,7 +132,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                         ) {
                             Ok(Some(previous)) => {
                                 if let Err(load_err) =
-                                    separator::model::ensure_runtime_loaded_from_path(
+                                    commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
                                         &previous.library_path,
                                     )
                                 {
@@ -464,15 +466,25 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
                     let mut emit = |event, snapshot| {
                         let _ = app_handle.emit(event, snapshot);
                     };
+                    let is_update = commands::runtime_bootstrap::prepare_runtime_download(
+                        &app_data_dir,
+                        &status,
+                        &mut emit,
+                    );
                     if let Err(error) =
-                        commands::runtime_bootstrap::download_and_stage_candidate_blocking(
+                        commands::runtime_bootstrap::download_runtime_blocking_with_catalog(
                             &app_data_dir,
                             &catalog,
+                            is_update,
                             &status,
                             &mut emit,
                         )
                     {
-                        tracing::warn!("automatic runtime update download failed: {error:#}");
+                        tracing::warn!(
+                            code = ?error.code,
+                            message = %error.message,
+                            "automatic runtime update download failed"
+                        );
                     }
                 }
                 config::UpdatePolicy::Notify | config::UpdatePolicy::Manual => {

@@ -194,6 +194,35 @@ describe("GlobalProgressBar", () => {
     mockRuntimeState.status = null;
   });
 
+  test.each([
+    ["installing", "bootstrap.installingRuntime"],
+    ["probing", "bootstrap.checkingRuntimeCompatibility"],
+    ["activating", "bootstrap.activatingRuntime"],
+  ] as const)("shows indeterminate runtime %s phase", (state, label) => {
+    mockLibraryState.batchSeparation = null;
+    mockLibraryState.separationStatuses = {};
+    mockLibraryState.uploadStatuses = {};
+    mockLibraryState.songs = [];
+    mockRuntimeState.status = {
+      state,
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      version: "v1.27.1",
+      active_artifact_id: null,
+      target_triple: "x86_64-pc-windows-msvc",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    };
+
+    const markup = renderToStaticMarkup(<GlobalProgressBar />);
+
+    expect(markup).toContain(label);
+    expect(markup).toContain("model-indeterminate-bar");
+    mockRuntimeState.status = null;
+  });
+
   test("TaskProgressBar compact mode clamps percent and supports indeterminate fill", () => {
     const clamped = renderToStaticMarkup(
       <TaskProgressBar compact label="" ariaLabel="batch-song" percent={140} />,

@@ -90,11 +90,17 @@ export function SettingsModelVariantSection() {
     ? null
     : runtimeState === "downloading"
       ? t("settings.runtime.downloading")
-      : runtimeState === "corrupt"
-        ? t("settings.runtime.corrupt")
-        : runtimeState === "failed"
-          ? t("settings.runtime.downloadFailed")
-          : t("settings.modelVariant.runtimeRequired");
+      : runtimeState === "installing"
+        ? t("settings.runtime.banner.installingRuntime")
+        : runtimeState === "probing"
+          ? t("settings.runtime.banner.checkingCompatibility")
+          : runtimeState === "activating"
+            ? t("settings.runtime.banner.activatingRuntime")
+            : runtimeState === "corrupt"
+              ? t("settings.runtime.corrupt")
+              : runtimeState === "failed"
+                ? t("settings.runtime.downloadFailed")
+                : t("settings.modelVariant.runtimeRequired");
 
   const update = state.modelUpdate;
   const updatableModels =

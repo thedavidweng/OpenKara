@@ -22,14 +22,11 @@
 //! runtime is installed; it is deleted once a slot runtime becomes active.
 
 use crate::separator::artifacts;
-use crate::separator::catalog::{
-    read_artifact_record, record_from_catalog_runtime, write_artifact_record, CatalogRuntime,
-    InstalledArtifactRecord, VerifiedCatalog,
-};
+use crate::separator::catalog::{read_artifact_record, InstalledArtifactRecord};
 use crate::separator::verified_manifest::{
     verified_manifest_matches, verified_manifest_path, VerifiedManifest,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -187,103 +184,6 @@ pub fn verify_runtime_files(runtime: &InstalledRuntime) -> Result<bool> {
         }
     }
     Ok(true)
-}
-
-/// Install a catalog runtime artifact into its immutable directory:
-/// stream-download with digest verification, safely extract into a staging
-/// directory, verify every declared file, write the installed record, then
-/// atomically rename the staging directory into place. Idempotent: a
-/// verified existing install is returned as-is.
-pub fn install_runtime_artifact(
-    app_data_dir: &Path,
-    runtime: &CatalogRuntime,
-    catalog: &VerifiedCatalog,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<InstalledRuntime> {
-    if let Some(existing) = installed_runtime(app_data_dir, &runtime.artifact_id) {
-        if verify_runtime_files(&existing)? {
-            return Ok(existing);
-        }
-        // A failed prior install must never stay visible at the final path.
-        fs::remove_dir_all(&existing.dir).with_context(|| {
-            format!(
-                "failed to remove unverifiable runtime install {}",
-                existing.dir.display()
-            )
-        })?;
-    }
-
-    let root = runtimes_root(app_data_dir);
-    fs::create_dir_all(&root)
-        .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
-
-    let staging = artifacts::unique_temp_path(&root, "staging");
-    let result = install_into_staging(&staging, runtime, catalog, progress);
-
-    match result {
-        Ok(()) => {
-            let final_dir = runtime_artifact_dir(app_data_dir, &runtime.artifact_id);
-            if final_dir.exists() {
-                fs::remove_dir_all(&final_dir).with_context(|| {
-                    format!("failed to clear stale install {}", final_dir.display())
-                })?;
-            }
-            fs::rename(&staging, &final_dir).with_context(|| {
-                format!(
-                    "failed to activate runtime install at {}",
-                    final_dir.display()
-                )
-            })?;
-            installed_runtime(app_data_dir, &runtime.artifact_id)
-                .context("freshly installed runtime failed to resolve")
-        }
-        Err(error) => {
-            let _ = fs::remove_dir_all(&staging);
-            Err(error)
-        }
-    }
-}
-
-fn install_into_staging(
-    staging: &Path,
-    runtime: &CatalogRuntime,
-    catalog: &VerifiedCatalog,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<()> {
-    fs::create_dir_all(staging)
-        .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
-
-    let archive = artifacts::download_verified_to_temp(
-        &runtime.download_url,
-        runtime.byte_size,
-        &runtime.archive_digest,
-        staging,
-        progress,
-    )?;
-
-    let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
-    let extracted = artifacts::extract_archive_safely(&archive, kind, staging)?;
-    fs::remove_file(&archive)
-        .with_context(|| format!("failed to remove archive temp {}", archive.display()))?;
-
-    // The extracted listing still contains the archive temp's siblings only
-    // if extraction wrote them — verify strictly against the catalog.
-    artifacts::verify_extracted_files(staging, &runtime.extracted_file_digests, &extracted)?;
-
-    if !runtime
-        .extracted_file_digests
-        .contains_key(ORT_RUNTIME_FILENAME)
-    {
-        bail!(
-            "runtime artifact {} does not declare the platform library {}",
-            runtime.artifact_id,
-            ORT_RUNTIME_FILENAME
-        );
-    }
-
-    let record = record_from_catalog_runtime(runtime, catalog);
-    write_artifact_record(&staging.join(RUNTIME_RECORD_FILENAME), &record)?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -622,7 +522,10 @@ fn unix_now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::separator::catalog::{self, embedded_catalog, resolve_runtime};
+    use crate::separator::catalog::{
+        self, embedded_catalog, record_from_catalog_runtime, resolve_runtime,
+        write_artifact_record, CatalogRuntime, VerifiedCatalog,
+    };
     use crate::separator::verified_manifest::{sha256_hex, write_verified_manifest};
 
     fn catalog_runtime() -> (&'static VerifiedCatalog, &'static CatalogRuntime) {

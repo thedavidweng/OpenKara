@@ -77,14 +77,14 @@ pub struct Artifact {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuntimeIdentity {
     pub archive_sha256: String,
     pub extracted_library_sha256: String,
     pub companion_dll_sha256s: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelIdentity {
     pub archive_sha256: String,
     pub extracted_onnx_sha256: String,
@@ -206,6 +206,8 @@ impl DesktopE2eReport {
 
         let mut assertion_ids = BTreeSet::new();
         let mut failed_assertions = 0;
+        let mut skipped_assertions = 0;
+        let mut passed_assertions = 0;
         for assertion in &self.assertions {
             if assertion.id.trim().is_empty()
                 || assertion.expected.trim().is_empty()
@@ -221,13 +223,20 @@ impl DesktopE2eReport {
                     assertion.id
                 );
             }
-            if assertion.result == DesktopAssertionResult::Fail {
-                failed_assertions += 1;
+            match assertion.result {
+                DesktopAssertionResult::Fail => failed_assertions += 1,
+                DesktopAssertionResult::Skip => skipped_assertions += 1,
+                DesktopAssertionResult::Pass => passed_assertions += 1,
             }
         }
 
         if failed_assertions > 0 {
             anyhow::bail!("desktop E2E report contains {failed_assertions} failed assertions");
+        }
+        if passed_assertions == 0 {
+            anyhow::bail!(
+                "desktop E2E report contains no passed assertions ({skipped_assertions} skipped)"
+            );
         }
         if self.status != ReportStatus::Passed {
             anyhow::bail!(
@@ -465,6 +474,15 @@ mod tests {
         );
         assert!(
             desktop_report(ReportStatus::Failed, DesktopAssertionResult::Pass)
+                .validate_release_gate("keyboard-workflow")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn desktop_validation_rejects_a_report_with_only_skipped_assertions() {
+        assert!(
+            desktop_report(ReportStatus::Passed, DesktopAssertionResult::Skip)
                 .validate_release_gate("keyboard-workflow")
                 .is_err()
         );

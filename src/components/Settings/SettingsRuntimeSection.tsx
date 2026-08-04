@@ -49,6 +49,12 @@ export function SettingsRuntimeSection() {
         return t("settings.runtime.activationFailedPreviousRestored");
       case "downloading":
         return t("settings.runtime.downloading");
+      case "installing":
+        return t("settings.runtime.banner.installingRuntime");
+      case "probing":
+        return t("settings.runtime.banner.checkingCompatibility");
+      case "activating":
+        return t("settings.runtime.banner.activatingRuntime");
       case "downloading_candidate":
         return t("settings.runtime.downloadingCandidate");
       case "corrupt":

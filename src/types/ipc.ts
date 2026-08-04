@@ -11,6 +11,7 @@ export type ErrorCode =
   | "network_unavailable"
   | "invalid_playback_state"
   | "execution_provider_unavailable"
+  | "runtime_post_download_timeout"
   | "separation_failed"
   | "internal";
 
@@ -596,6 +597,9 @@ export interface ModelBootstrapStatusSnapshot {
 export type RuntimeBootstrapState =
   | "missing"
   | "downloading"
+  | "installing"
+  | "probing"
+  | "activating"
   | "ready"
   | "update_available"
   | "downloading_candidate"

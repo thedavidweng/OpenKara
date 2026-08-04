@@ -17,6 +17,7 @@ pub enum ErrorCode {
     NetworkUnavailable,
     InvalidPlaybackState,
     ExecutionProviderUnavailable,
+    RuntimePostDownloadTimeout,
     SeparationFailed,
     Internal,
 }
@@ -107,6 +108,15 @@ pub fn invalid_playback_state(message: impl ToString) -> CommandError {
 pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
     CommandError::new(
         ErrorCode::ModelUnavailable,
+        message.to_string(),
+        true,
+        FallbackAction::Retry,
+    )
+}
+
+pub fn runtime_post_download_timeout(message: impl ToString) -> CommandError {
+    CommandError::new(
+        ErrorCode::RuntimePostDownloadTimeout,
         message.to_string(),
         true,
         FallbackAction::Retry,

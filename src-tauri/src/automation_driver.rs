@@ -510,6 +510,62 @@ fn record_smoke_assertions(
         &report.runtime.runtime_path,
     );
 
+    if matches!(report.phase, AutomationSmokePhase::Prepare) {
+        let observed_phases: Vec<String> = report
+            .runtime_events
+            .iter()
+            .filter(|event| event.event == "runtime-bootstrap-progress")
+            .map(|event| state_string(&event.snapshot.state))
+            .collect();
+        if observed_phases.is_empty() {
+            builder.add_assertion(
+                "OKA-284-RUNTIME-INSTALL-PHASES",
+                "not exercised because the runtime was already prepared",
+                "not exercised",
+                true,
+                &report.app_data_dir,
+            );
+        } else {
+            let required_phases = ["downloading", "installing", "probing", "activating"];
+            let mut next_phase = 0;
+            for observed in &observed_phases {
+                if *observed == required_phases[next_phase] {
+                    next_phase += 1;
+                    if next_phase == required_phases.len() {
+                        break;
+                    }
+                }
+            }
+            let phases_complete = next_phase == required_phases.len();
+            builder.add_assertion(
+                "OKA-284-RUNTIME-INSTALL-PHASES",
+                "downloading -> installing -> probing -> activating",
+                &observed_phases.join(" -> "),
+                phases_complete,
+                &report.app_data_dir,
+            );
+
+            let has_downloading_100 = report.runtime_events.iter().any(|event| {
+                event.event == "runtime-bootstrap-progress"
+                    && event.snapshot.state
+                        == crate::commands::runtime_bootstrap::RuntimeBootstrapState::Downloading
+                    && event.snapshot.total_bytes.is_some()
+                    && event.snapshot.downloaded_bytes == event.snapshot.total_bytes
+            });
+            builder.add_assertion(
+                "OKA-284-RUNTIME-NO-DOWNLOADING-100",
+                "no downloading event at 100%",
+                if has_downloading_100 {
+                    "found"
+                } else {
+                    "not found"
+                },
+                !has_downloading_100,
+                &report.app_data_dir,
+            );
+        }
+    }
+
     if let Some(smoke) = report.local_audio_smoke.as_ref() {
         builder.add_assertion(
             &format!("OKA-LOCAL-AUDIO-SMOKE-{label}"),
@@ -998,7 +1054,7 @@ fn record_oka284_assertions(
                         && catalog_runtime
                             .extracted_file_digests
                             .get(&file.path)
-                            .map_or(true, |d| d.sha256 == digest);
+                            .is_none_or(|d| d.sha256 == digest);
                     (digest, ok)
                 }
                 Err(_) => (String::new(), false),
@@ -1378,10 +1434,7 @@ fn read_wav_header(path: &str) -> Result<WavHeaderInfo> {
             break;
         }
         let value = match (format_tag, bits_per_sample) {
-            (1, 16) => {
-                let raw = i16::from_le_bytes([sample_buf[0], sample_buf[1]]) as f64 / 32768.0;
-                raw
-            }
+            (1, 16) => i16::from_le_bytes([sample_buf[0], sample_buf[1]]) as f64 / 32768.0,
             (3, 32) => {
                 f32::from_le_bytes([sample_buf[0], sample_buf[1], sample_buf[2], sample_buf[3]])
                     as f64
@@ -1414,30 +1467,6 @@ struct ReportBuilder {
     model: ModelIdentity,
     database: DatabaseSummary,
     audio: AudioSummary,
-}
-
-impl Default for RuntimeIdentity {
-    fn default() -> Self {
-        Self {
-            archive_sha256: String::new(),
-            extracted_library_sha256: String::new(),
-            companion_dll_sha256s: Vec::new(),
-        }
-    }
-}
-
-impl Default for ModelIdentity {
-    fn default() -> Self {
-        Self {
-            archive_sha256: String::new(),
-            extracted_onnx_sha256: String::new(),
-            verification_manifest: String::new(),
-            catalog_generation: String::new(),
-            release_id: String::new(),
-            artifact_id: String::new(),
-            selected_variant: String::new(),
-        }
-    }
 }
 
 impl AudioSummary {

@@ -5,19 +5,23 @@ import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 
 interface ConfirmationDialogProps {
+  id?: string;
   title: string;
   message: string;
   detail?: string;
   confirmLabel: string;
+  confirmButtonId?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export function ConfirmationDialog({
+  id,
   title,
   message,
   detail,
   confirmLabel,
+  confirmButtonId,
   onConfirm,
   onCancel,
 }: ConfirmationDialogProps) {
@@ -40,6 +44,7 @@ export function ConfirmationDialog({
 
       <div
         ref={dialogRef}
+        id={id}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirmation-dialog-title"
@@ -70,6 +75,7 @@ export function ConfirmationDialog({
             {t("common.cancel")}
           </button>
           <button
+            id={confirmButtonId}
             onClick={onConfirm}
             className="rounded-md bg-[var(--color-destructive)] px-4 py-2 text-[13px] text-[var(--color-destructive-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-destructive)_90%,white)] focus:outline-none focus:ring-2 focus:ring-[var(--color-destructive)]/40"
           >

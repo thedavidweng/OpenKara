@@ -1,14 +1,21 @@
 use crate::{
-    commands::error::{internal_error, model_bootstrap_error, CommandError, CommandResult},
+    commands::error::{
+        internal_error, model_bootstrap_error, runtime_post_download_timeout, CommandError,
+        CommandResult,
+    },
     separator::catalog::{self, VerifiedCatalog},
     separator::runtime_bootstrap::{self, RuntimeInventory},
     AppState,
 };
-use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
+    thread,
+    time::Duration,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -23,11 +30,19 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 
+const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
+static RUNTIME_PARENT_LOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static RUNTIME_PARENT_LOAD_TIMED_OUT: AtomicBool = AtomicBool::new(false);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeBootstrapState {
     Missing,
     Downloading,
+    Installing,
+    Probing,
+    Activating,
     Ready,
     UpdateAvailable,
     DownloadingCandidate,
@@ -75,7 +90,7 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
                     inventory
                         .last_failure
                         .as_ref()
-                        .map(|failure| model_bootstrap_error(failure.error.clone())),
+                        .map(|failure| bootstrap_command_error_from_message(&failure.error)),
                 )
             }
             (None, Some(legacy_path)) => (
@@ -89,7 +104,7 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
                 let (state, error) = match &inventory.last_failure {
                     Some(failure) => (
                         RuntimeBootstrapState::Failed,
-                        Some(model_bootstrap_error(failure.error.clone())),
+                        Some(bootstrap_command_error_from_message(&failure.error)),
                     ),
                     None => (RuntimeBootstrapState::Missing, None),
                 };
@@ -119,6 +134,14 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         candidate_version,
         restart_required,
         error,
+    }
+}
+
+fn bootstrap_command_error_from_message(message: &str) -> CommandError {
+    if message.starts_with(crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER) {
+        runtime_post_download_timeout(message)
+    } else {
+        model_bootstrap_error(message)
     }
 }
 
@@ -155,10 +178,22 @@ pub fn ensure_runtime_ready(
         RuntimeBootstrapState::Missing => Err(model_bootstrap_error(
             "ONNX Runtime is not installed; install it from Settings".to_owned(),
         )),
-        RuntimeBootstrapState::Downloading => Err(model_bootstrap_error(format!(
-            "ONNX Runtime is still downloading to {}",
-            snapshot.runtime_path
-        ))),
+        RuntimeBootstrapState::Downloading
+        | RuntimeBootstrapState::Installing
+        | RuntimeBootstrapState::Probing
+        | RuntimeBootstrapState::Activating => {
+            let description = match snapshot.state {
+                RuntimeBootstrapState::Downloading => "downloading",
+                RuntimeBootstrapState::Installing => "installing",
+                RuntimeBootstrapState::Probing => "checking compatibility",
+                RuntimeBootstrapState::Activating => "activating",
+                _ => unreachable!(),
+            };
+            Err(model_bootstrap_error(format!(
+                "ONNX Runtime is still {} at {}",
+                description, snapshot.runtime_path
+            )))
+        }
         RuntimeBootstrapState::Corrupt => Err(model_bootstrap_error(format!(
             "ONNX Runtime at {} is corrupt; delete and re-download",
             snapshot.runtime_path
@@ -215,9 +250,111 @@ fn report_download_progress(
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
 }
 
+fn report_post_download_progress(
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    base: &RuntimeBootstrapStatusSnapshot,
+    state: RuntimeBootstrapState,
+) {
+    let snapshot = RuntimeBootstrapStatusSnapshot {
+        state,
+        downloaded_bytes: None,
+        total_bytes: None,
+        error: None,
+        ..base.clone()
+    };
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+}
+
+fn report_worker_progress(
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    base: &RuntimeBootstrapStatusSnapshot,
+    progress: crate::commands::runtime_worker::RuntimeWorkerProgress,
+    download_state: RuntimeBootstrapState,
+) {
+    use crate::commands::runtime_worker::RuntimeWorkerPhase;
+
+    match progress.phase {
+        RuntimeWorkerPhase::Downloading => report_download_progress(
+            status,
+            emit,
+            base,
+            download_state,
+            progress.downloaded_bytes,
+            progress.total_bytes,
+        ),
+        RuntimeWorkerPhase::Installing => {
+            report_post_download_progress(status, emit, base, RuntimeBootstrapState::Installing)
+        }
+        RuntimeWorkerPhase::Probing => {
+            report_post_download_progress(status, emit, base, RuntimeBootstrapState::Probing)
+        }
+        RuntimeWorkerPhase::Activating => {
+            report_post_download_progress(status, emit, base, RuntimeBootstrapState::Activating)
+        }
+    }
+}
+
+/// Load ORT in the application process without allowing a native loader hang
+/// to block the command executor forever. A timed-out load poisons this
+/// process; a restart is required before another attempt can use ORT.
+pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result<()> {
+    if RUNTIME_PARENT_LOAD_TIMED_OUT.load(Ordering::SeqCst) {
+        anyhow::bail!(
+            "{}: ONNX Runtime load already timed out; restart OpenKara before retrying",
+            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
+        );
+    }
+
+    if let Some(loaded) = crate::separator::model::loaded_runtime_path() {
+        anyhow::ensure!(
+            loaded == path,
+            "a different ONNX Runtime is already loaded from {}; restart to use {}",
+            loaded.display(),
+            path.display()
+        );
+        return Ok(());
+    }
+
+    if RUNTIME_PARENT_LOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        anyhow::bail!(
+            "{}: ONNX Runtime load is already in progress; restart OpenKara before retrying",
+            RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER
+        );
+    }
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let runtime_path = path.to_path_buf();
+    thread::spawn(move || {
+        let result = crate::separator::model::ensure_runtime_loaded_from_path(&runtime_path)
+            .map(|_| ())
+            .map_err(|error| error.to_string());
+        RUNTIME_PARENT_LOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+        let _ = sender.send(result);
+    });
+
+    match receiver.recv_timeout(RUNTIME_PARENT_LOAD_TIMEOUT) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(anyhow::anyhow!(error)),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            RUNTIME_PARENT_LOAD_TIMED_OUT.store(true, Ordering::SeqCst);
+            anyhow::bail!(
+                "{}: ONNX Runtime load did not finish within {} seconds",
+                crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
+                RUNTIME_PARENT_LOAD_TIMEOUT.as_secs()
+            )
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            anyhow::bail!("ONNX Runtime load watchdog exited before reporting a result")
+        }
+    }
+}
+
 fn download_runtime_source(
     catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
-) -> CommandResult<(VerifiedCatalog, ())> {
+) -> CommandResult<VerifiedCatalog> {
     let embedded = catalog::embedded_catalog();
     let cache = catalog_cache
         .lock()
@@ -226,7 +363,32 @@ fn download_runtime_source(
         Some(cached) if cached.generation > embedded.generation => cached.clone(),
         _ => embedded.clone(),
     };
-    Ok((catalog, ()))
+    Ok(catalog)
+}
+
+pub(crate) fn prepare_runtime_download(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+) -> bool {
+    let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
+    // A runtime loaded into this process can never be replaced in place,
+    // even when the slots were just deleted — treat any loaded runtime as
+    // the update (candidate + restart) flow.
+    let is_update = inventory.active.is_some()
+        || inventory.legacy_path.is_some()
+        || crate::separator::model::loaded_runtime_path().is_some();
+
+    let base = snapshot_from_disk(app_data_dir);
+    let initial_state = if is_update {
+        RuntimeBootstrapState::DownloadingCandidate
+    } else {
+        RuntimeBootstrapState::Downloading
+    };
+    let initial = downloading_snapshot(&base, initial_state, 0, None);
+    store_snapshot(status, initial.clone());
+    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
+    is_update
 }
 
 pub fn install_and_load_runtime_blocking(
@@ -238,37 +400,23 @@ pub fn install_and_load_runtime_blocking(
     let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
 
     let base = snapshot_from_disk(app_data_dir);
-    let initial = downloading_snapshot(&base, RuntimeBootstrapState::Downloading, 0, None);
-    store_snapshot(status, initial.clone());
-    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
 
-    let installed = runtime_bootstrap::install_runtime_artifact(
+    let installed = crate::commands::runtime_worker::install_runtime_with_worker(
         app_data_dir,
-        runtime,
         catalog,
-        |downloaded_bytes, total_bytes| {
-            report_download_progress(
+        runtime,
+        |progress| {
+            report_worker_progress(
                 status,
                 emit,
                 &base,
+                progress,
                 RuntimeBootstrapState::Downloading,
-                downloaded_bytes,
-                total_bytes,
             );
         },
     )?;
 
-    // Prove the dynamic load BEFORE persisting activation: a runtime whose
-    // files verify but whose library cannot load must never become the
-    // recorded active runtime (it would report Ready while separation
-    // fails, with no recovery path).
-    crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
-        .with_context(|| {
-            format!(
-                "failed to load ONNX Runtime from {}",
-                installed.library_path.display()
-            )
-        })?;
+    ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
@@ -309,27 +457,21 @@ pub fn download_and_stage_candidate_blocking(
     }
 
     let base = snapshot_from_disk(app_data_dir);
-    let initial = downloading_snapshot(&base, RuntimeBootstrapState::DownloadingCandidate, 0, None);
-    store_snapshot(status, initial.clone());
-    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
 
-    let installed = runtime_bootstrap::install_runtime_artifact(
+    crate::commands::runtime_worker::install_runtime_with_worker(
         app_data_dir,
-        runtime,
         catalog,
-        |downloaded_bytes, total_bytes| {
-            report_download_progress(
+        runtime,
+        |progress| {
+            report_worker_progress(
                 status,
                 emit,
                 &base,
+                progress,
                 RuntimeBootstrapState::DownloadingCandidate,
-                downloaded_bytes,
-                total_bytes,
             );
         },
     )?;
-
-    runtime_bootstrap::stage_candidate(app_data_dir, &installed.record.artifact_id)?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
     store_snapshot(status, snapshot.clone());
@@ -352,6 +494,41 @@ pub fn ensure_runtime_ready_or_install_blocking(
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
     let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
 
+    // A worker can be terminated after it has installed and staged a runtime
+    // but before activation. Recover that candidate by identity rather than
+    // resolving the embedded catalog and starting a second download.
+    if inventory.active.is_none() && inventory.candidate.is_some() {
+        if let Some(plan) = runtime_bootstrap::begin_startup(app_data_dir)
+            .map_err(|error| model_bootstrap_error(error.to_string()))?
+        {
+            let failed_id = plan
+                .record
+                .as_ref()
+                .map(|record| record.artifact_id.clone())
+                .unwrap_or_default();
+            if let Err(error) = ensure_runtime_loaded_with_watchdog(&plan.library_path) {
+                if plan.proving_candidate && !failed_id.is_empty() {
+                    let _ = runtime_bootstrap::rollback_failed_activation(
+                        app_data_dir,
+                        &failed_id,
+                        &error.to_string(),
+                    );
+                }
+                let command_error = bootstrap_command_error(error);
+                record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+                return Err(command_error);
+            }
+            if plan.proving_candidate {
+                runtime_bootstrap::finish_activation_success(app_data_dir)
+                    .map_err(|error| model_bootstrap_error(error.to_string()))?;
+            }
+            let ready = snapshot_from_disk(app_data_dir);
+            store_snapshot(status, ready.clone());
+            emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
+            return Ok(plan.library_path);
+        }
+    }
+
     let has_loadable = inventory.active.is_some() || inventory.legacy_path.is_some();
     if matches!(
         snapshot.state,
@@ -365,16 +542,22 @@ pub fn ensure_runtime_ready_or_install_blocking(
     }
 
     if let Some(active) = inventory.active {
-        crate::separator::model::ensure_runtime_loaded_from_path(&active.library_path)
-            .map_err(|error| model_bootstrap_error(error.to_string()))?;
+        if let Err(error) = ensure_runtime_loaded_with_watchdog(&active.library_path) {
+            let command_error = bootstrap_command_error(error);
+            record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+            return Err(command_error);
+        }
         let ready = snapshot_from_disk(app_data_dir);
         store_snapshot(status, ready.clone());
         emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
         return Ok(active.library_path);
     }
     if let Some(legacy_path) = inventory.legacy_path {
-        crate::separator::model::ensure_runtime_loaded_from_path(&legacy_path)
-            .map_err(|error| model_bootstrap_error(error.to_string()))?;
+        if let Err(error) = ensure_runtime_loaded_with_watchdog(&legacy_path) {
+            let command_error = bootstrap_command_error(error);
+            record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+            return Err(command_error);
+        }
         let ready = snapshot_from_disk(app_data_dir);
         store_snapshot(status, ready.clone());
         emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
@@ -382,15 +565,59 @@ pub fn ensure_runtime_ready_or_install_blocking(
     }
 
     let catalog = catalog::embedded_catalog();
+    ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, catalog, emit)
+}
+
+pub fn ensure_runtime_ready_or_install_with_catalog(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    catalog: &VerifiedCatalog,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+) -> CommandResult<PathBuf> {
+    prepare_runtime_download(app_data_dir, status, emit);
     install_and_load_runtime_blocking(app_data_dir, catalog, status, emit).map_err(|error| {
-        let command_error = model_bootstrap_error(error.to_string());
-        let mut failed = snapshot_from_disk(app_data_dir);
-        failed.state = RuntimeBootstrapState::Failed;
-        failed.error = Some(command_error.clone());
-        store_snapshot(status, failed.clone());
-        emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
+        let command_error = bootstrap_command_error(error);
+        record_runtime_failure(app_data_dir, status, emit, command_error.clone());
         command_error
     })
+}
+
+pub(crate) fn download_runtime_blocking_with_catalog(
+    app_data_dir: &Path,
+    catalog: &VerifiedCatalog,
+    is_update: bool,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+) -> CommandResult<()> {
+    let result = if is_update {
+        download_and_stage_candidate_blocking(app_data_dir, catalog, status, emit)
+    } else {
+        install_and_load_runtime_blocking(app_data_dir, catalog, status, emit).map(|_| ())
+    };
+
+    result.map_err(|error| {
+        let command_error = bootstrap_command_error(error);
+        record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+        command_error
+    })
+}
+
+fn record_runtime_failure(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    error: CommandError,
+) {
+    let mut failed = snapshot_from_disk(app_data_dir);
+    failed.state = RuntimeBootstrapState::Failed;
+    failed.error = Some(error);
+    store_snapshot(status, failed.clone());
+    emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
+}
+
+fn bootstrap_command_error(error: anyhow::Error) -> CommandError {
+    let message = error.to_string();
+    bootstrap_command_error_from_message(&message)
 }
 
 #[tauri::command]
@@ -400,7 +627,7 @@ pub fn download_runtime(
 ) -> CommandResult<RuntimeBootstrapStatusSnapshot> {
     let app_data_dir = state.shell.app_data_dir.clone();
     let status = Arc::clone(&state.shell.runtime_bootstrap_status);
-    let (catalog, ()) = download_runtime_source(&state.shell.catalog_cache)?;
+    let catalog = download_runtime_source(&state.shell.catalog_cache)?;
 
     if RUNTIME_DOWNLOAD_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
         // A download is already running; report its current state instead
@@ -408,23 +635,10 @@ pub fn download_runtime(
         return get_runtime_bootstrap_status_from_state(&status);
     }
 
-    let inventory = runtime_bootstrap::runtime_inventory(&app_data_dir);
-    // A runtime loaded into this process can never be replaced in place,
-    // even when the slots were just deleted — treat any loaded runtime as
-    // the update (candidate + restart) flow.
-    let is_update = inventory.active.is_some()
-        || inventory.legacy_path.is_some()
-        || crate::separator::model::loaded_runtime_path().is_some();
-
-    let base = snapshot_from_disk(&app_data_dir);
-    let initial_state = if is_update {
-        RuntimeBootstrapState::DownloadingCandidate
-    } else {
-        RuntimeBootstrapState::Downloading
-    };
-    let initial = downloading_snapshot(&base, initial_state, 0, None);
-    store_snapshot(&status, initial.clone());
-    let _ = app_handle.emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial.clone());
+    let is_update = prepare_runtime_download(&app_data_dir, &status, &mut |event, snapshot| {
+        let _ = app_handle.emit(event, snapshot);
+    });
+    let initial = get_runtime_bootstrap_status_from_state(&status)?;
 
     tauri::async_runtime::spawn(async move {
         let task_status = Arc::clone(&status);
@@ -434,38 +648,27 @@ pub fn download_runtime(
             let mut emit = |event, snapshot| {
                 let _ = task_app_handle.emit(event, snapshot);
             };
-            if is_update {
-                download_and_stage_candidate_blocking(
-                    &task_app_data_dir,
-                    &catalog,
-                    &task_status,
-                    &mut emit,
-                )
-            } else {
-                install_and_load_runtime_blocking(
-                    &task_app_data_dir,
-                    &catalog,
-                    &task_status,
-                    &mut emit,
-                )
-                .map(|_| ())
-            }
+            download_runtime_blocking_with_catalog(
+                &task_app_data_dir,
+                &catalog,
+                is_update,
+                &task_status,
+                &mut emit,
+            )
         })
         .await;
 
         RUNTIME_DOWNLOAD_IN_PROGRESS.store(false, std::sync::atomic::Ordering::SeqCst);
 
-        let flattened = match result {
-            Ok(inner) => inner,
-            Err(join_error) => Err(anyhow::anyhow!(join_error.to_string())),
-        };
-        if let Err(error) = flattened {
-            let command_error = model_bootstrap_error(error.to_string());
-            let mut failed = snapshot_from_disk(&app_data_dir);
-            failed.state = RuntimeBootstrapState::Failed;
-            failed.error = Some(command_error);
-            store_snapshot(&status, failed.clone());
-            let _ = app_handle.emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
+        if let Err(join_error) = result {
+            record_runtime_failure(
+                &app_data_dir,
+                &status,
+                &mut |event, snapshot| {
+                    let _ = app_handle.emit(event, snapshot);
+                },
+                internal_error(format!("runtime download task failed: {join_error}")),
+            );
         }
     });
 
@@ -693,6 +896,32 @@ mod tests {
         assert_eq!(
             events[0].1, stored,
             "the emitted snapshot must match the stored snapshot"
+        );
+    }
+
+    #[test]
+    fn download_runtime_source_keeps_a_newer_verified_catalog() {
+        let mut refreshed = catalog::embedded_catalog().clone();
+        refreshed.generation += 1;
+        refreshed.release_id = "refreshed-release".to_owned();
+        let cache = Arc::new(Mutex::new(Some(refreshed.clone())));
+
+        let selected = download_runtime_source(&cache).expect("catalog cache should resolve");
+
+        assert_eq!(selected.generation, refreshed.generation);
+        assert_eq!(selected.release_id, refreshed.release_id);
+    }
+
+    #[test]
+    fn post_download_timeout_marker_maps_to_a_structured_error() {
+        let error = bootstrap_command_error_from_message(&format!(
+            "{}: runtime load did not finish",
+            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
+        ));
+
+        assert_eq!(
+            error.code,
+            crate::commands::error::ErrorCode::RuntimePostDownloadTimeout
         );
     }
 

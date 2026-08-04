@@ -279,6 +279,7 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
         {monitors.map((monitor, index) => (
           <button
             key={monitor.id}
+            id={`monitor-option-${index}`}
             ref={(el) => {
               optionRefs.current[index] = el;
             }}

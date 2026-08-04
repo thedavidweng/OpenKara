@@ -15,13 +15,19 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 
-const { mockRestartApp, mockDownloadRuntime, mockNotifyError } = vi.hoisted(
-  () => ({
-    mockRestartApp: vi.fn().mockResolvedValue(undefined),
-    mockDownloadRuntime: vi.fn(),
-    mockNotifyError: vi.fn(),
-  }),
-);
+const {
+  mockRestartApp,
+  mockDownloadRuntime,
+  mockNotifyError,
+  mockGetErrorMessage,
+} = vi.hoisted(() => ({
+  mockRestartApp: vi.fn().mockResolvedValue(undefined),
+  mockDownloadRuntime: vi.fn(),
+  mockNotifyError: vi.fn(),
+  mockGetErrorMessage: vi.fn(
+    (error: { message?: string }) => error.message ?? "",
+  ),
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -32,7 +38,10 @@ vi.mock("@/lib/tauri", () => ({
   restartApp: mockRestartApp,
   downloadRuntime: mockDownloadRuntime,
 }));
-vi.mock("@/lib/errors", () => ({ notifyError: mockNotifyError }));
+vi.mock("@/lib/errors", () => ({
+  getErrorMessage: mockGetErrorMessage,
+  notifyError: mockNotifyError,
+}));
 
 function setStatus(
   state: RuntimeBootstrapState,
@@ -122,6 +131,18 @@ describe("RuntimeUpdateBanner", () => {
     expect(
       screen.getByText("settings.runtime.banner.downloadingRuntime"),
     ).toBeTruthy();
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+
+  test.each([
+    ["installing", "settings.runtime.banner.installingRuntime"],
+    ["probing", "settings.runtime.banner.checkingCompatibility"],
+    ["activating", "settings.runtime.banner.activatingRuntime"],
+  ] as const)("shows the runtime %s phase", (state, message) => {
+    setStatus(state);
+    render(<RuntimeUpdateBanner />);
+
+    expect(screen.getByText(message)).toBeTruthy();
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 

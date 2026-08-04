@@ -150,7 +150,7 @@ pub fn corrupt_file(path: &Path) -> std::io::Result<()> {
     use std::fs::OpenOptions;
     use std::io::Write;
 
-    let mut file = OpenOptions::new().write(true).append(true).open(path)?;
+    let mut file = OpenOptions::new().append(true).open(path)?;
     file.write_all(&[0xff])?;
     Ok(())
 }

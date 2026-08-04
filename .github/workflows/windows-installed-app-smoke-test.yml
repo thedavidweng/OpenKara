@@ -8,6 +8,14 @@ name: Branch Windows installed-app gate
 # Use workflow_dispatch suite=fast for a quicker clean-install-only loop;
 # suite=full (default on push) keeps keyboard UIA + fault-injection proof.
 on:
+  pull_request:
+    paths:
+      - "src-tauri/src/commands/runtime_bootstrap.rs"
+      - "src-tauri/src/separator/runtime_bootstrap.rs"
+      - "src-tauri/src/separator/artifacts.rs"
+      - "src-tauri/src/runtime_bootstrap_regression.rs"
+      - ".github/workflows/reusable-windows-installed-app.yml"
+      - ".github/workflows/windows-installed-app-smoke-test.yml"
   push:
     branches:
       - fix/automation-assertions-and-workflows
@@ -37,9 +45,10 @@ jobs:
       artifact_prefix: test-windows-installed-app
       driver_scenario: clean-install
       uia_scenario: keyboard-workflow
-      # push always runs full proof; workflow_dispatch can pick fast.
-      run_keyboard_uia: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
-      run_fault_injection: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'full' }}
+      # push/nightly always run full proof; workflow_dispatch can pick fast; pull_request limits to #284 regression.
+      run_keyboard_uia: ${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full') }}
+      run_fault_injection: ${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full') }}
+      run_runtime_bootstrap_regression: ${{ github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full') }}
       run_display_matrix: false
       previous_version: none
       retention_days: 1
