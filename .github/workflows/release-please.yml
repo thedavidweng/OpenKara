@@ -76,10 +76,11 @@ jobs:
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push
 
-  # GITHUB_TOKEN events do not start other workflows. release-please may also
-  # leave a draft release with an untagged-* placeholder. Ensure the tag
-  # exists, bind the draft release to it, apply the release footer, then
-  # dispatch Release explicitly.
+  # GITHUB_TOKEN events do not start other workflows. release-please also
+  # leaves its draft release tagged untagged-*: it creates the draft before
+  # the tag exists, and GitHub never binds such a draft afterwards. Ensure
+  # the tag exists, re-create the draft bound to it, apply the release
+  # footer, then dispatch Release explicitly.
   ensure-tag-and-dispatch-release:
     name: Ensure tag and dispatch Release
     needs: [release-please, sync-native-versions]
@@ -115,6 +116,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Tag pushes from GITHUB_TOKEN do not start other workflows, so a
+          # dispatched Release run is the only ship path. Bail when one is
+          # already in flight for this tag instead of rebuilding its drafts.
+          existing_run="$(gh run list \
+            --repo "${GH_REPO}" \
+            --workflow release.yml \
+            --branch "${TAG_NAME}" \
+            --limit 5 \
+            --json databaseId,status,event,url \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "pending" or .status == "waiting")] | .[0].url // empty')"
+          if [ -n "${existing_run}" ]; then
+            echo "Release workflow already running for ${TAG_NAME}: ${existing_run}"
+            echo "Skipping draft repair and workflow_dispatch"
+            exit 0
+          fi
+
           # Prefer main HEAD after native-manifest sync so the tag tree matches
           # package.json + Cargo.toml. Fall back to release-please's SHA.
           target_sha="$(git rev-parse HEAD)"
@@ -134,55 +151,58 @@ jobs:
             git push origin "refs/tags/${TAG_NAME}"
           fi
 
-          # Draft releases created without a git ref show as untagged-*. Find
-          # an existing formal draft first. If only an untagged draft exists,
-          # create a second draft with the real tag after the tag is present.
-          # GitHub does not support changing an existing draft's tag in place.
-          release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
-            --jq "[.[] | select(.draft == true and .tag_name == \"${TAG_NAME}\")] | .[0].id // empty")"
-          if [ -z "${release_id}" ]; then
-            source_release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
-              --jq "[.[] | select(.draft == true and .name == \"${TAG_NAME}\")] | .[0].id // empty")"
-          fi
-          if [ -z "${release_id}" ] && [ -z "${source_release_id:-}" ]; then
+          # release-please creates its draft release before the tag exists.
+          # GitHub rewrites such drafts to untagged-* and never binds them, so
+          # a draft's tag_name can claim a binding that GitHub later removes.
+          # Match the draft by name only and always create a fresh formal
+          # draft AFTER the tag is present; GitHub does not rewrite drafts
+          # whose tag exists, and it does not support changing a draft's tag
+          # in place.
+          source_release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq "[.[] | select(.draft == true and .name == \"${TAG_NAME}\")] | .[0].id // empty")"
+          if [ -z "${source_release_id}" ]; then
             source_release_id="$(gh api "repos/${GH_REPO}/releases" --paginate \
               --jq "[.[] | select(.draft == true and .name == \"OpenKara ${TAG_NAME}\")] | .[0].id // empty")"
           fi
-          if [ -z "${release_id}" ] && [ -z "${source_release_id:-}" ]; then
+          if [ -z "${source_release_id}" ]; then
             echo "::error::No draft GitHub Release was found for ${TAG_NAME}."
             exit 1
           fi
 
-          if [ -z "${release_id}" ]; then
-            source_endpoint="repos/${GH_REPO}/releases/${source_release_id}"
-            release_name="$(gh api "${source_endpoint}" --jq '.name // empty')"
-            if [ -z "${release_name}" ]; then
-              echo "::error::Draft GitHub Release ${source_release_id} has no name."
-              exit 1
-            fi
-            gh api "${source_endpoint}" --jq '.body // empty' > RELEASE_NOTES.md
-            if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
-              printf '\n\n' >> RELEASE_NOTES.md
-              cat .github/release-notes-installation.md >> RELEASE_NOTES.md
-            fi
-            release_id="$(gh api --method POST "repos/${GH_REPO}/releases" \
-              -f "tag_name=${TAG_NAME}" \
-              -f "target_commitish=${target_sha}" \
-              -f "name=${release_name}" \
-              -F "draft=true" \
-              -F "body=@RELEASE_NOTES.md" \
-              --jq '.id')"
-            echo "Created formal draft release ${release_id} for ${TAG_NAME}"
+          source_endpoint="repos/${GH_REPO}/releases/${source_release_id}"
+          release_name="$(gh api "${source_endpoint}" --jq '.name // empty')"
+          if [ -z "${release_name}" ]; then
+            echo "::error::Draft GitHub Release ${source_release_id} has no name."
+            exit 1
           fi
-
-          release_endpoint="repos/${GH_REPO}/releases/${release_id}"
-          gh api "${release_endpoint}" --jq '.body // empty' > RELEASE_NOTES.md
+          gh api "${source_endpoint}" --jq '.body // empty' > RELEASE_NOTES.md
           if ! grep -Fq "## Installation" RELEASE_NOTES.md; then
             printf '\n\n' >> RELEASE_NOTES.md
             cat .github/release-notes-installation.md >> RELEASE_NOTES.md
-            gh api --method PATCH "${release_endpoint}" \
-              -F "body=@RELEASE_NOTES.md" >/dev/null
           fi
+
+          release_id="$(gh api --method POST "repos/${GH_REPO}/releases" \
+            -f "tag_name=${TAG_NAME}" \
+            -f "target_commitish=${target_sha}" \
+            -f "name=${release_name}" \
+            -F "draft=true" \
+            -F "body=@RELEASE_NOTES.md" \
+            --jq '.id')"
+          echo "Created formal draft release ${release_id} for ${TAG_NAME} at ${target_sha}"
+
+          # Keep exactly one draft for this tag: the fresh formal draft. The
+          # in-flight check above guarantees no running Release run still
+          # references the stale drafts.
+          stale_releases="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq "[.[] | select(.draft == true and (.name == \"${TAG_NAME}\" or .name == \"OpenKara ${TAG_NAME}\" or .tag_name == \"${TAG_NAME}\")) | .id] | join(\" \")")"
+          for stale_id in ${stale_releases}; do
+            if [ "${stale_id}" = "${release_id}" ]; then
+              continue
+            fi
+            gh api --method DELETE "repos/${GH_REPO}/releases/${stale_id}" >/dev/null \
+              || echo "Warning: could not delete stale draft release ${stale_id}"
+          done
+
           echo "Verified formal draft release ${release_id} for ${TAG_NAME} at ${target_sha}"
           echo "Applied release installation notes to ${TAG_NAME}"
 

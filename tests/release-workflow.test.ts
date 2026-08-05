@@ -428,7 +428,7 @@ describe("release workflow", () => {
       "cat .github/release-notes-installation.md >> RELEASE_NOTES.md",
     );
     expect(releasePleaseWorkflow).toContain(
-      'gh api --method PATCH "${release_endpoint}"',
+      "gh api \"${source_endpoint}\" --jq '.body // empty' > RELEASE_NOTES.md",
     );
     expect(releasePleaseWorkflow).toContain('-F "body=@RELEASE_NOTES.md"');
     expect(releasePleaseConfig).toContain('"force-tag-creation": true');
@@ -439,9 +439,10 @@ describe("release workflow", () => {
 
   test("release-please ensures a git tag and dispatches the Release workflow", () => {
     // GITHUB_TOKEN tag/release events do not start other workflows. The
-    // release-please path must create a missing tag, create a formal draft
-    // release, and workflow_dispatch release.yml so installed-app smokes and
-    // publish run.
+    // release-please path must ensure the tag, always re-create the formal
+    // draft bound to it (release-please's own draft stays untagged-*),
+    // delete the stale drafts, and workflow_dispatch release.yml so
+    // installed-app smokes and publish run.
     const releasePleaseWorkflow = readProjectFile(
       ".github/workflows/release-please.yml",
     );
@@ -457,13 +458,20 @@ describe("release workflow", () => {
     expect(releasePleaseWorkflow).toContain("actions: write");
     expect(releasePleaseWorkflow).toContain("git tag -a");
     expect(releasePleaseWorkflow).toContain("untagged-*");
+    expect(releasePleaseWorkflow).toContain(
+      "Skipping draft repair and workflow_dispatch",
+    );
+    expect(releasePleaseWorkflow).toContain(
+      "Match the draft by name only and always create a fresh formal",
+    );
+    expect(releasePleaseWorkflow).toContain("stale_releases=");
     expect(releasePleaseWorkflow).toContain(".tag_name ==");
     expect(releasePleaseWorkflow).toContain(".name ==");
     expect(releasePleaseWorkflow).toContain(
       'gh api --method POST "repos/${GH_REPO}/releases"',
     );
     expect(releasePleaseWorkflow).toContain(
-      "GitHub does not support changing an existing draft's tag in place",
+      "does not support changing a draft's tag",
     );
     expect(releasePleaseWorkflow).toContain(
       "No draft GitHub Release was found",
