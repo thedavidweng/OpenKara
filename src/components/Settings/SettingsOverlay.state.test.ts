@@ -256,6 +256,11 @@ describe("createInitialSettingsOverlaySnapshot", () => {
   });
 
   test("shows the active app language when stored language is still null", () => {
+    Object.defineProperty(navigator, "language", {
+      value: "ja-JP",
+      configurable: true,
+    });
+
     const snapshot = createInitialSettingsOverlaySnapshot({
       hydrated: true,
       stemMode: "two_stem",
@@ -277,9 +282,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       updatePolicy: "notify",
     });
 
-    expect(snapshot.state.language).toMatch(
-      /^(en|zh-CN|zh-TW|ja|ko|es|pt-BR|fr|de|it|ru|id|vi|th|tr|pl|nl)$/,
-    );
+    expect(snapshot.state.language).toBe("ja");
     expect(snapshot.state.stemMode).toBe("two_stem");
     expect(snapshot.state.modelVariant).toBe("htdemucs");
     expect(snapshot.state.coverArtBackdrop).toBe(false);

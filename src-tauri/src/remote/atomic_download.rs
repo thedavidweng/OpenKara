@@ -270,7 +270,8 @@ pub(crate) fn resumable_atomic_download(
             .as_ref()
             .map(|p| p.transferred_bytes)
             .unwrap_or(0)
-            > 0;
+            > 0
+        && temp_path.exists();
 
     let result = if can_resume {
         run_resumable_download(provider, &opts, &temp_path, existing_part.as_ref().unwrap())
@@ -291,8 +292,18 @@ pub(crate) fn resumable_atomic_download(
 
     // Drop transfer-part on success so restart does not resume a finished file.
     if result.is_ok() {
-        let _ =
-            crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
+        if let Err(error) =
+            crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id)
+        {
+            // Destination already holds the verified file; orphan rows are
+            // ignored on next attempt because resume requires temp_path.exists().
+            if !opts.destination.exists() {
+                return Err(internal_error(format!(
+                    "download finished but transfer-part cleanup failed and destination is missing: {}",
+                    error.message
+                )));
+            }
+        }
     } else if result.as_ref().err().is_some_and(|e| {
         let msg = e.message.to_ascii_lowercase();
         msg.contains("integrity")

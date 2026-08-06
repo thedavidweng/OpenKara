@@ -218,8 +218,9 @@ impl ExecutionProviderPreference {
         }
     }
 
-    /// Platform default EP: CoreML on Apple Silicon, DirectML on Windows with
-    /// D3D12 hardware, otherwise CPU (XNNPACK loses to ORT CPU on Intel/Linux).
+    /// Platform default EP: CoreML on Apple Silicon when `capabilities.coreml`
+    /// is available (else CPU); DirectML on Windows with D3D12 hardware;
+    /// otherwise CPU (XNNPACK loses to ORT CPU on Intel/Linux).
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
         Self::default_for_capabilities(
             platform,
@@ -771,6 +772,7 @@ fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
         return Err(err);
     }
 
+    // Same-volume rename is atomic on POSIX and on Windows; cross-volume is not.
     if let Err(err) = fs::rename(&tmp_path, path) {
         let _ = fs::remove_file(&tmp_path);
         return Err(anyhow::Error::from(err).context(format!(

@@ -90,7 +90,7 @@ pub fn separate_song_into_cache(
     drop(_decode_guard);
 
     report_progress(MODEL_LOAD_PROGRESS);
-    // Hold the model-cache lock only for get_or_load.
+    // Mutex covers metadata inspect, cache-key build, and get_or_load_with_key.
     let loaded_model = {
         let mut model_cache = model_cache
             .lock()
@@ -248,6 +248,7 @@ pub fn separate_song_into_cache(
         },
     };
 
+    // Workspace size is bounded by chunk/hop/channel layout, not full-song PCM.
     let mut workspace =
         SeparationWorkspace::new(stem_mode, channels, chunk_size, hop_size, input_frame_count);
 
@@ -260,6 +261,7 @@ pub fn separate_song_into_cache(
         }
     };
 
+    // Streaming path writes OGG incrementally; peak memory stays near one chunk.
     let _outcome = inference::separate_streaming(
         &loaded_model,
         &normalized_audio,
@@ -273,6 +275,7 @@ pub fn separate_song_into_cache(
 
     report_progress(CACHE_WRITE_PROGRESS);
 
+    // Promote complete stem files before cache registration.
     writers
         .finish_all()
         .context("failed to finalize streaming OGG writers")?;

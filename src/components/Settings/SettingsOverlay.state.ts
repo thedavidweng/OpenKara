@@ -360,7 +360,7 @@ export function createSettingsOverlayActions(
         patchState({
           stemMode: settingsResult.value.stem_mode,
           modelVariant: settingsResult.value.model_variant,
-          language: settingsResult.value.language ?? "en",
+          language: resolveAppLanguage(settingsResult.value.language),
           hideBatchSeparate: settingsResult.value.hide_batch_separate,
           coverArtBackdrop: settingsResult.value.cover_art_backdrop,
           hideUpgradeAll: settingsResult.value.hide_upgrade_all,

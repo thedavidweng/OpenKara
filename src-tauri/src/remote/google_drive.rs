@@ -223,8 +223,12 @@ fn google_drive_refresh_access_token(
     if let Ok(Some(stored)) =
         load_remote_credential::<StoredGoogleDriveSecret>(app_data_dir, &secret.library_id)
     {
-        if let Some(expires_at_ms) = stored.access_token_expires_at_ms {
-            if expires_at_ms > current_unix_time_ms() + 60_000 && !stored.access_token.is_empty() {
+        if !stored.access_token.is_empty() {
+            let still_valid = match stored.access_token_expires_at_ms {
+                Some(expires_at_ms) => expires_at_ms > current_unix_time_ms() + 60_000,
+                None => true,
+            };
+            if still_valid {
                 secret.access_token = stored.access_token;
                 secret.access_token_expires_at_ms = stored.access_token_expires_at_ms;
                 return Ok(secret.access_token.clone());

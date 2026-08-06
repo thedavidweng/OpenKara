@@ -216,7 +216,10 @@ impl CacheCatalog {
                 continue;
             }
 
-            known_files.insert(row.data_path.clone());
+            // Match orphan scan keys (file names under cache_dir).
+            if let Some(name) = absolute.file_name() {
+                known_files.insert(name.to_string_lossy().into_owned());
+            }
         }
 
         // Delete `.cache` files with no catalog row (leave other subsystems' temps).
@@ -386,7 +389,7 @@ impl CacheCatalog {
             return Ok(false);
         }
 
-        // Ranges must fit the real file length (no sparse zero-fill gaps).
+        // Every range end must be within the real file length.
         let ranges = ranges_from_json(&row.downloaded_ranges_json)?;
         if !ranges_within_file(&ranges, file_len) {
             return Ok(false);

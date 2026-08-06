@@ -15,7 +15,7 @@ actually resolved.
 
 Single-context:
 
-```
+```text
 /
 ├── CONTEXT.md
 ├── docs/adr/

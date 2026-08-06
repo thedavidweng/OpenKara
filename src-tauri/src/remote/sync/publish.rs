@@ -708,7 +708,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     }
 
     if let Err(error) = publish_result {
-        // Pre-executor asset failure → durable RetryWait on this operation_id.
+        // Pre-executor asset failure: retryable → RetryWait; non-retryable → Failed.
         let failure = mark_upload_status_for_operation(
             state,
             &operation_id,

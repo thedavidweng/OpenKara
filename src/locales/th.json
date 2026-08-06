@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "ไม่พบตัวประมวลผลการทำงาน",
     "executionProviderUnavailableMessage": "ตัวประมวลผลที่เลือกไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
     "modelUnavailableMessage": "โมเดลแยกเสียงหรือ ONNX Runtime ยังไม่พร้อม โปรดรอให้การตั้งค่าเสร็จสิ้น แล้วลองอีกครั้ง",
-    "runtimePostDownloadTimeoutMessage": "การตั้งค่า runtime หมดเวลาหลังจากดาวน์โหลด เปิด การตั้งค่า → เกี่ยวกับ คัดลอกข้อมูลดีบัก แล้วลองอีกครั้ง",
+    "runtimePostDownloadTimeoutMessage": "การตั้งค่า runtime หมดเวลาหลังจากดาวน์โหลด เปิดการตั้งค่า → เกี่ยวกับ คัดลอกข้อมูลดีบัก แล้วลองอีกครั้ง",
     "runtime_post_download_timeout": "หมดเวลาตั้งค่า runtime",
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",

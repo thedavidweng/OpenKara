@@ -369,7 +369,7 @@ pub(crate) fn mark_upload_status(
             .map(|e| e.operation_id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        // Keep multi-song payloads; fill song_ids only when the row has none.
+        // Keep multi-song payloads; append song_id when missing.
         let mut existing_payload = existing
             .as_ref()
             .and_then(|e| OperationPayload::from_json(&e.payload_json).ok())

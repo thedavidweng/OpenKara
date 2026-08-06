@@ -119,8 +119,8 @@ pub fn lookup_query_from_song(song: &Song) -> Option<LyricsLookupQuery> {
         track_name: song.title.clone()?,
         artist_name: song.artist.clone()?,
         album_name: song.album.clone(),
-        // LRCLIB: omit duration=0 (unknown); it skews matching.
-        duration_seconds: if song.duration_ms > 0 {
+        // LRCLIB: omit unknown/sub-second durations (never send duration=0).
+        duration_seconds: if song.duration_ms >= 1_000 {
             Some((song.duration_ms / 1_000) as u64)
         } else {
             None

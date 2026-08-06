@@ -307,18 +307,25 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   };
 
   const handleFinish = async () => {
+    setError(null);
+    setLoading(true);
     try {
       const languageSettings = await api.setLanguage(selectedLanguage);
       hydrateAppSettings(languageSettings);
-    } catch {
-      // non-fatal
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
+      setLoading(false);
+      return;
     }
     try {
       const settings = await api.setStemMode(selectedStemMode);
       hydrateAppSettings(settings);
-    } catch {
-      // non-fatal
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
+      setLoading(false);
+      return;
     }
+    setLoading(false);
     onComplete();
   };
 
@@ -849,9 +856,16 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               {t("setup.modelDownloadHint")}
             </p>
 
+            {error && (
+              <p className="text-[13px] text-[var(--color-destructive)]">
+                {error}
+              </p>
+            )}
+
             <button
-              onClick={handleFinish}
-              className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90"
+              onClick={() => void handleFinish()}
+              disabled={loading}
+              className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {t("setup.getStarted")}
             </button>
