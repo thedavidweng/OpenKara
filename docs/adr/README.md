@@ -34,7 +34,11 @@ Status: accepted | superseded by NNNN | deprecated
 
 ## Writing rules
 
-Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. Use short sentences. Use active voice. Use one topic per sentence. Use one word for one meaning. Do not edit accepted ADRs in place. Supersede a record. Write a new record. Update the old `Status` line. Do not delete accepted records. Do not rewrite accepted records.
+Write new ADRs in ASD-STE100 Simplified English. See `docs/agents/engineering.md`
+for the rules. Use short sentences. Use active voice. Use one topic per
+sentence. Use one word for one meaning. Do not edit accepted ADRs in place.
+Supersede a record. Write a new record. Update the old `Status` line. Do not
+delete accepted records. Do not rewrite accepted records.
 
 ## Index
 
