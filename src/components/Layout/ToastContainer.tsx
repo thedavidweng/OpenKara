@@ -51,7 +51,10 @@ function Toast({ notification }: { notification: Notification }) {
       if (copiedTimeoutRef.current !== undefined) {
         window.clearTimeout(copiedTimeoutRef.current);
       }
-      copiedTimeoutRef.current = window.setTimeout(() => setDebugCopied(false), COPIED_RESET_MS);
+      copiedTimeoutRef.current = window.setTimeout(
+        () => setDebugCopied(false),
+        COPIED_RESET_MS,
+      );
     } catch (error) {
       notifyError(error);
     }

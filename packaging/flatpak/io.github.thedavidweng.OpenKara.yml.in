@@ -57,8 +57,8 @@ modules:
         strip-components: 1
       - cargo-sources.json
       - type: archive
-        url: https://registry.npmjs.org/pnpm/-/pnpm-11.13.0.tgz
-        sha256: 865c76bd9111a45ca41f6eeed4067ff0ecdfee9eac83aad24179c83ffebe7599
+        url: https://registry.npmjs.org/pnpm/-/pnpm-11.20.0.tgz
+        sha256: 34e198cb1e43237517ecedfd31f9ae26a6c0a3e5366ce58a2d05f4b21fb5f19a
         dest: pnpm-package
       # ONNX Runtime archives come from the openkara-models catalog snapshot;
       # the renderer injects the URL and digest so no version is hand-pinned
