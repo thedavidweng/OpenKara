@@ -206,6 +206,21 @@ function createHarness(overrides?: {
 }
 
 describe("createInitialSettingsOverlaySnapshot", () => {
+  let originalNavigatorLanguage: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalNavigatorLanguage = Object.getOwnPropertyDescriptor(
+      navigator,
+      "language",
+    );
+  });
+
+  afterEach(() => {
+    if (originalNavigatorLanguage) {
+      Object.defineProperty(navigator, "language", originalNavigatorLanguage);
+    }
+  });
+
   test("returns the correct initial shape with default settings", () => {
     const snapshot = createInitialSettingsOverlaySnapshot();
 
