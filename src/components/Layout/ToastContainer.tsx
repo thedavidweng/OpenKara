@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { copyDebugInfo } from "@/lib/debug-info";
@@ -24,6 +24,7 @@ function Toast({ notification }: { notification: Notification }) {
   const { t } = useTranslation();
   const dismiss = useNotificationStore((s) => s.dismissNotification);
   const [debugCopied, setDebugCopied] = useState(false);
+  const copiedTimeoutRef = useRef<number | undefined>();
   const Icon = ICON_MAP[notification.type];
   const iconColor =
     notification.type === "error"
@@ -35,11 +36,22 @@ function Toast({ notification }: { notification: Notification }) {
   const showCopyDebug = notification.type === "error";
   const showActions = showRetry || showCopyDebug;
 
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current !== undefined) {
+        window.clearTimeout(copiedTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleCopyDebug = async () => {
     try {
       await copyDebugInfo({ translate: t });
       setDebugCopied(true);
-      window.setTimeout(() => setDebugCopied(false), COPIED_RESET_MS);
+      if (copiedTimeoutRef.current !== undefined) {
+        window.clearTimeout(copiedTimeoutRef.current);
+      }
+      copiedTimeoutRef.current = window.setTimeout(() => setDebugCopied(false), COPIED_RESET_MS);
     } catch (error) {
       notifyError(error);
     }
