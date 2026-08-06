@@ -24,7 +24,7 @@ function Toast({ notification }: { notification: Notification }) {
   const { t } = useTranslation();
   const dismiss = useNotificationStore((s) => s.dismissNotification);
   const [debugCopied, setDebugCopied] = useState(false);
-  const copiedTimeoutRef = useRef<number | undefined>();
+  const copiedTimeoutRef = useRef<number | undefined>(undefined);
   const Icon = ICON_MAP[notification.type];
   const iconColor =
     notification.type === "error"
