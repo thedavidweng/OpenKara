@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { copyDebugInfo } from "@/lib/debug-info";
+import { notifyError } from "@/lib/errors";
 import {
   useNotificationStore,
   type Notification,
@@ -12,9 +15,15 @@ const ICON_MAP = {
   info: Info,
 } as const;
 
+const ACTION_BUTTON_CLASS =
+  "rounded-sm text-[11px] text-[var(--color-accent)] hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30";
+
+const COPIED_RESET_MS = 2000;
+
 function Toast({ notification }: { notification: Notification }) {
   const { t } = useTranslation();
   const dismiss = useNotificationStore((s) => s.dismissNotification);
+  const [debugCopied, setDebugCopied] = useState(false);
   const Icon = ICON_MAP[notification.type];
   const iconColor =
     notification.type === "error"
@@ -22,6 +31,19 @@ function Toast({ notification }: { notification: Notification }) {
       : "text-[var(--color-text)]";
   const isAssertive =
     notification.type === "error" || notification.type === "warning";
+  const showRetry = notification.retryable && Boolean(notification.retryAction);
+  const showCopyDebug = notification.type === "error";
+  const showActions = showRetry || showCopyDebug;
+
+  const handleCopyDebug = async () => {
+    try {
+      await copyDebugInfo({ translate: t });
+      setDebugCopied(true);
+      window.setTimeout(() => setDebugCopied(false), COPIED_RESET_MS);
+    } catch (error) {
+      notifyError(error);
+    }
+  };
 
   return (
     <div
@@ -37,21 +59,36 @@ function Toast({ notification }: { notification: Notification }) {
           {notification.title}
         </p>
         {notification.message && (
-          <p className="mt-0.5 break-words text-[11px] text-[var(--color-text-dim)]">
+          <p className="mt-0.5 break-words whitespace-pre-line text-[11px] text-[var(--color-text-dim)]">
             {notification.message}
           </p>
         )}
-        {notification.retryable && notification.retryAction && (
-          <button
-            type="button"
-            onClick={() => {
-              notification.retryAction?.();
-              dismiss(notification.id);
-            }}
-            className="mt-1.5 rounded-sm text-[11px] text-[var(--color-accent)] hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
-          >
-            {t("common.tryAgain")}
-          </button>
+        {showActions && (
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            {showRetry && (
+              <button
+                type="button"
+                onClick={() => {
+                  notification.retryAction?.();
+                  dismiss(notification.id);
+                }}
+                className={ACTION_BUTTON_CLASS}
+              >
+                {t("common.tryAgain")}
+              </button>
+            )}
+            {showCopyDebug && (
+              <button
+                type="button"
+                onClick={() => void handleCopyDebug()}
+                className={ACTION_BUTTON_CLASS}
+              >
+                {debugCopied
+                  ? t("settings.about.copied")
+                  : t("settings.about.copyDebugInfo")}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
