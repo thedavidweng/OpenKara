@@ -715,7 +715,7 @@
     "execution_provider_unavailable": "Fournisseur d’exécution indisponible",
     "executionProviderUnavailableMessage": "Le fournisseur sélectionné n’est pas compatible avec cet appareil. Passez au CPU dans les réglages.",
     "modelUnavailableMessage": "Le modèle de séparation ou ONNX Runtime n'est pas prêt. Attendez la fin de la configuration, puis réessayez.",
-    "runtimePostDownloadTimeoutMessage": "L’installation de l’environnement d’exécution a expiré après le téléchargement. Réessayez.",
+    "runtimePostDownloadTimeoutMessage": "L’installation de l’environnement d’exécution a expiré après le téléchargement. Ouvrez Réglages → À propos, copiez les infos de débogage, puis réessayez.",
     "runtime_post_download_timeout": "Délai d’expiration de la configuration de l’environnement d’exécution",
     "separation_failed": "Échec de la séparation",
     "internal": "Erreur interne",

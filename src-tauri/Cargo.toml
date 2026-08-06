@@ -112,4 +112,5 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Dxgi",
+    "Win32_System_LibraryLoader",
 ] }

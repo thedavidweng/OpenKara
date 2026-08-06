@@ -72,6 +72,8 @@ vi.mock("@/lib/i18n", () => ({
     { code: "zh-CN", nameKey: "languageNames.zh-CN" },
   ],
   detectSystemLanguage: () => "en",
+  resolveAppLanguage: (persisted: string | null | undefined) =>
+    persisted && persisted.trim().length > 0 ? persisted.trim() : "en",
 }));
 
 vi.mock("./remote-library-flow", () => ({

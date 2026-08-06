@@ -265,7 +265,10 @@ export interface DebugInfo {
   runtime_version: string;
   runtime_artifact_id: string | null;
   runtime_target_triple: string;
+  runtime_path: string;
   execution_provider: string;
+  directml_available: boolean;
+  language: string | null;
   log_file: string;
 }
 

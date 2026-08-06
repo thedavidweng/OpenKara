@@ -125,10 +125,20 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
         thread::sleep(Duration::from_secs(10 * 60));
     }
 
+    anyhow::ensure!(
+        installed.library_path.is_file(),
+        "installed ONNX Runtime library is missing at {}",
+        installed.library_path.display()
+    );
+
     write_progress(
         progress_path,
         RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Probing),
     )?;
+    eprintln!(
+        "probing ONNX Runtime at {}",
+        installed.library_path.display()
+    );
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
@@ -141,6 +151,7 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
                 installed.library_path.display()
             )
         })?;
+    eprintln!("probe succeeded for {}", installed.library_path.display());
 
     write_progress(
         progress_path,
@@ -473,13 +484,21 @@ pub fn install_runtime_with_worker(
         .with_context(|| format!("failed to create {}", stderr_path.display()))?;
 
     let executable = std::env::current_exe().context("failed to resolve OpenKara executable")?;
-    let child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .arg(RUNTIME_WORKER_ARG)
         .arg(&request_path)
         .arg(&progress_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::from(stderr_file))
+        .stderr(Stdio::from(stderr_file));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = command
         .spawn()
         .context("failed to start runtime bootstrap worker")?;
     guard.attach(child);
@@ -516,9 +535,13 @@ pub fn install_runtime_with_worker(
                 let _ = child.wait();
             }
             let details = fs::read_to_string(&stderr_path).unwrap_or_default();
+            let phase = last_phase
+                .map(|phase| format!("{phase:?}").to_ascii_lowercase())
+                .unwrap_or_else(|| "post-download".to_owned());
             guard.complete();
             bail!(
-                "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime installation did not finish within {} seconds after the worker entered post-download phase{}",
+                "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime {} did not finish within {} seconds after download (phase={phase}){}",
+                runtime.artifact_id,
                 timeout.as_secs_f64(),
                 if details.trim().is_empty() {
                     String::new()

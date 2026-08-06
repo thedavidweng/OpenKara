@@ -714,7 +714,7 @@
     "execution_provider_unavailable": "Uitvoeringsprovider niet beschikbaar",
     "executionProviderUnavailableMessage": "De geselecteerde provider is niet compatibel met dit apparaat. Schakel in Instellingen over naar CPU.",
     "modelUnavailableMessage": "Het scheidingsmodel of ONNX Runtime is niet gereed. Wacht tot de installatie is voltooid en probeer het opnieuw.",
-    "runtimePostDownloadTimeoutMessage": "De runtime-installatie duurde te lang na het downloaden. Probeer het opnieuw.",
+    "runtimePostDownloadTimeoutMessage": "De runtime-installatie duurde te lang na het downloaden. Open Instellingen → Info, kopieer de debug-informatie en probeer het opnieuw.",
     "runtime_post_download_timeout": "Time-out voor runtime-instelling",
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",

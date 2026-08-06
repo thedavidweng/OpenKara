@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "Trình thực thi không khả dụng",
     "executionProviderUnavailableMessage": "Trình thực thi đã chọn không tương thích với thiết bị. Hãy chuyển sang CPU trong Cài đặt.",
     "modelUnavailableMessage": "Mô hình tách bè hoặc ONNX Runtime chưa sẵn sàng. Hãy đợi thiết lập hoàn tất, rồi thử lại.",
-    "runtimePostDownloadTimeoutMessage": "Thiết lập runtime đã hết thời gian sau khi tải xuống. Hãy thử lại.",
+    "runtimePostDownloadTimeoutMessage": "Thiết lập runtime đã hết thời gian sau khi tải xuống. Mở Cài đặt → Giới thiệu, sao chép thông tin gỡ lỗi, rồi thử lại.",
     "runtime_post_download_timeout": "Thiết lập runtime đã hết thời gian",
     "separation_failed": "Tách thất bại",
     "internal": "Lỗi nội bộ",

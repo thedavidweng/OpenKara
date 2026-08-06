@@ -715,7 +715,7 @@
     "execution_provider_unavailable": "Provider di esecuzione non disponibile",
     "executionProviderUnavailableMessage": "Il provider selezionato non è compatibile con questo dispositivo. Passa a CPU nelle impostazioni.",
     "modelUnavailableMessage": "Il modello di separazione o ONNX Runtime non è pronto. Attendi il completamento della configurazione, poi riprova.",
-    "runtimePostDownloadTimeoutMessage": "La configurazione del runtime ha superato il tempo limite dopo il download. Riprova.",
+    "runtimePostDownloadTimeoutMessage": "La configurazione del runtime ha superato il tempo limite dopo il download. Apri Impostazioni → Informazioni, copia le info di debug e riprova.",
     "runtime_post_download_timeout": "Timeout configurazione runtime",
     "separation_failed": "Separazione non riuscita",
     "internal": "Errore interno",

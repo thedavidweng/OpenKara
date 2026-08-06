@@ -49,12 +49,7 @@ export function useAppStartupRuntime(
       }
       notifyError(error);
 
-      // Fallback system-language setup is independent of settings hydration so
-      // a language failure cannot clear the selected theme.
-      void i18next.changeLanguage(detectSystemLanguage()).catch(() => {
-        // Language failure after settings fallback is non-fatal; the default
-        // language remains active and the window can still be shown.
-      });
+      void i18next.changeLanguage(detectSystemLanguage()).catch(() => {});
     });
   }, [hydrateAppSettings, patchAppSettings]);
 

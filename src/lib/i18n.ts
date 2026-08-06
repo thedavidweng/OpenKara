@@ -97,6 +97,19 @@ export function detectSystemLanguage(): string {
   return shared?.code ?? "en";
 }
 
+export function resolveAppLanguage(
+  persistedLanguage: string | null | undefined,
+  detectSystem: () => string = detectSystemLanguage,
+): string {
+  if (typeof persistedLanguage === "string") {
+    const trimmed = persistedLanguage.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return detectSystem();
+}
+
 function setDocumentLanguage(language: string): void {
   if (typeof document === "undefined") return;
   document.documentElement.lang = language;

@@ -1,3 +1,4 @@
+import { resolveAppLanguage } from "@/lib/i18n";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -50,7 +51,7 @@ export function createInitialSettingsOverlaySnapshot(
       modelUpdate: null,
       runtimeStatus: null,
       runtimeUpdate: null,
-      language: initialSettings.language ?? "en",
+      language: resolveAppLanguage(initialSettings.language),
       hideBatchSeparate: initialSettings.hideBatchSeparate,
       coverArtBackdrop: initialSettings.coverArtBackdrop,
       hideUpgradeAll: initialSettings.hideUpgradeAll,

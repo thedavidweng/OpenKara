@@ -170,7 +170,45 @@ fn preload_directml_companion() -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(test, target_os = "windows"))]
+pub(crate) fn runtime_dll_search_dir(runtime_path: &Path) -> Option<&Path> {
+    runtime_path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_windows_runtime_dll_search(runtime_path: &Path) -> Result<()> {
+    use windows::{core::HSTRING, Win32::System::LibraryLoader::SetDllDirectoryW};
+
+    let search_dir = runtime_dll_search_dir(runtime_path).with_context(|| {
+        format!(
+            "ONNX Runtime path has no parent directory: {}",
+            runtime_path.display()
+        )
+    })?;
+    let path = HSTRING::from(search_dir.as_os_str());
+    // SAFETY: `path` is a valid UTF-16 directory string owned by `HSTRING` for
+    // the duration of this call. SetDllDirectoryW copies the path.
+    unsafe { SetDllDirectoryW(&path) }.with_context(|| {
+        format!(
+            "failed to set Windows DLL search directory to {}",
+            search_dir.display()
+        )
+    })?;
+    Ok(())
+}
+
 fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
+    anyhow::ensure!(
+        runtime_path.is_file(),
+        "ONNX Runtime library is missing at {}",
+        runtime_path.display()
+    );
+
+    #[cfg(target_os = "windows")]
+    prepare_windows_runtime_dll_search(runtime_path)?;
+
     let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
     anyhow::ensure!(
         committed,
@@ -958,5 +996,15 @@ mod tests {
         // On Apple Silicon the sysctl must resolve to a real P-core count.
         let cores = performance_core_count().expect("hw.perflevel0.physicalcpu should resolve");
         assert!(cores >= 1, "performance-core count must be at least 1");
+    }
+
+    #[test]
+    fn runtime_dll_search_dir_is_the_library_parent() {
+        let path = PathBuf::from("/data/runtimes/rt-1/onnxruntime.dll");
+        assert_eq!(
+            runtime_dll_search_dir(&path),
+            Some(Path::new("/data/runtimes/rt-1"))
+        );
+        assert_eq!(runtime_dll_search_dir(Path::new("onnxruntime.dll")), None);
     }
 }

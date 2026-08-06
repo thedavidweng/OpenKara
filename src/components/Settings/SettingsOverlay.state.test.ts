@@ -255,7 +255,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
     });
   });
 
-  test("defaults language to 'en' when initialSettings.language is null", () => {
+  test("shows the active app language when stored language is still null", () => {
     const snapshot = createInitialSettingsOverlaySnapshot({
       hydrated: true,
       stemMode: "two_stem",
@@ -277,10 +277,37 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       updatePolicy: "notify",
     });
 
-    expect(snapshot.state.language).toBe("en");
+    expect(snapshot.state.language).toMatch(
+      /^(en|zh-CN|zh-TW|ja|ko|es|pt-BR|fr|de|it|ru|id|vi|th|tr|pl|nl)$/,
+    );
     expect(snapshot.state.stemMode).toBe("two_stem");
     expect(snapshot.state.modelVariant).toBe("htdemucs");
     expect(snapshot.state.coverArtBackdrop).toBe(false);
+  });
+
+  test("keeps a stored English language even when the OS locale would differ", () => {
+    const snapshot = createInitialSettingsOverlaySnapshot({
+      hydrated: true,
+      stemMode: "two_stem",
+      modelVariant: "htdemucs",
+      language: "en",
+      hideBatchSeparate: false,
+      coverArtBackdrop: false,
+      hideUpgradeAll: false,
+      lyricsFontStep: 0,
+      executionProvider: "cpu",
+      availableExecutionProviders: ["cpu"],
+      compatibleExecutionProviders: ["cpu"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
+      librarySortMode: "recently_imported",
+      themePreference: "dark",
+      updatePolicy: "notify",
+    });
+
+    expect(snapshot.state.language).toBe("en");
   });
 
   test("uses provided initialSettings values", () => {

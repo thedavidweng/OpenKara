@@ -67,7 +67,7 @@ describe("getErrorMessage", () => {
     });
 
     expect(getErrorMessage(err)).toBe(
-      "errors.runtimePostDownloadTimeoutMessage",
+      "errors.runtimePostDownloadTimeoutMessage\ntechnical detail",
     );
     expect(mockT).toHaveBeenCalledWith(
       "errors.runtimePostDownloadTimeoutMessage",

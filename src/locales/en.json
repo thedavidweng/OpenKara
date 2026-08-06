@@ -714,7 +714,7 @@
     "execution_provider_unavailable": "Execution Provider Unavailable",
     "executionProviderUnavailableMessage": "The selected provider is not compatible with this device. Switch to CPU in Settings.",
     "modelUnavailableMessage": "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
-    "runtimePostDownloadTimeoutMessage": "Runtime setup timed out after the download. Try again.",
+    "runtimePostDownloadTimeoutMessage": "Runtime setup timed out after the download. Open Settings → About, copy the debug info, then try again.",
     "runtime_post_download_timeout": "Runtime Setup Timeout",
     "separation_failed": "Separation Failed",
     "internal": "Internal Error",

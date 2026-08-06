@@ -399,6 +399,12 @@ pub fn install_and_load_runtime_blocking(
 ) -> anyhow::Result<PathBuf> {
     let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
 
+    if let Some(path) =
+        try_activate_staged_runtime(app_data_dir, &runtime.artifact_id, status, emit)?
+    {
+        return Ok(path);
+    }
+
     let base = snapshot_from_disk(app_data_dir);
 
     let installed = crate::commands::runtime_worker::install_runtime_with_worker(
@@ -423,6 +429,41 @@ pub fn install_and_load_runtime_blocking(
     store_snapshot(status, snapshot.clone());
     emit(RUNTIME_BOOTSTRAP_READY_EVENT, snapshot);
     Ok(installed.library_path)
+}
+
+fn try_activate_staged_runtime(
+    app_data_dir: &Path,
+    artifact_id: &str,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+) -> anyhow::Result<Option<PathBuf>> {
+    let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
+    if inventory.active.is_some() {
+        return Ok(None);
+    }
+
+    let installed = match inventory.candidate {
+        Some(candidate) if candidate.record.artifact_id == artifact_id => candidate,
+        _ => match runtime_bootstrap::installed_runtime(app_data_dir, artifact_id) {
+            Some(existing) if runtime_bootstrap::verify_runtime_files(&existing)? => existing,
+            _ => return Ok(None),
+        },
+    };
+
+    if !runtime_bootstrap::verify_runtime_files(&installed)? {
+        return Ok(None);
+    }
+
+    let base = snapshot_from_disk(app_data_dir);
+    report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Probing);
+    ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
+    report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
+    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+
+    let snapshot = snapshot_from_disk(app_data_dir);
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_READY_EVENT, snapshot);
+    Ok(Some(installed.library_path))
 }
 
 pub fn download_and_stage_candidate_blocking(

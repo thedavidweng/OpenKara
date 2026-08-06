@@ -10,7 +10,7 @@ Field or command semantic changes must update this document before changing UI c
 | ------------------------------- | ------------- | --------------------------------------------------- | ----------------------------------------- |
 | `stem_mode` | `"two_stem"   | "four_stem"` | Active stem separation mode |
 | `model_variant` | `"htdemucs"   | "htdemucs_ft"` | Active Demucs model variant |
-| `language` | `string       | null` | UI language code, `null` = system default |
+| `language` | `string       | null` | App UI language. Once set (OOBE or Settings), every label, error, menu, and progress string uses this code and ignores later OS locale changes. `null` means not chosen yet: the app recommends the system language only until the first explicit choice. |
 | `hide_batch_separate` | `boolean` | Hide batch-separate action in UI |
 | `cover_art_backdrop` | `boolean` | Show blurred cover-art backdrop in player |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
@@ -129,7 +129,10 @@ plain-text formatting.
 | `runtime_version`         | `string`         | Active runtime upstream version                         |
 | `runtime_artifact_id`     | `Option<string>` | Active runtime artifact ID                              |
 | `runtime_target_triple`   | `string`         | Runtime target triple for this build                    |
+| `runtime_path`            | `string`         | Active or staged runtime library path, or empty         |
 | `execution_provider`      | `string`         | Current execution-provider preference                   |
+| `directml_available`      | `bool`           | Host can create a D3D12 device for DirectML             |
+| `language`                | `Option<string>` | Persisted UI language, or null for system default       |
 | `log_file`                | `string`         | Path pattern of the rolling log file                    |
 
 ## Self-update probe

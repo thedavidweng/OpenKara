@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
 import * as api from "@/lib/tauri";
-import i18next, { SUPPORTED_LANGUAGES, detectSystemLanguage } from "@/lib/i18n";
+import i18next, { SUPPORTED_LANGUAGES, resolveAppLanguage } from "@/lib/i18n";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { RemoteLibraryProvider } from "@/types/ipc";
 import { runRemoteLibraryRegistrationFlow } from "./remote-library-flow";
@@ -174,10 +174,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   >(null);
   const remoteAuthSessionIdRef = useRef<string | null>(null);
   const selectedLanguage =
-    selectedLanguageDraft ??
-    settingsLanguage ??
-    i18next.resolvedLanguage ??
-    detectSystemLanguage();
+    selectedLanguageDraft ?? resolveAppLanguage(settingsLanguage);
   const selectedStemMode = selectedStemModeDraft ?? settingsStemMode;
 
   const resolveSingleDirectory = (selected: string | string[] | null) =>
@@ -206,13 +203,11 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const handleLanguageSelect = (code: string) => {
     setSelectedLanguageDraft(code);
     patchAppSettings({ language: code });
-    i18next.changeLanguage(code);
+    void i18next.changeLanguage(code);
     api
       .setLanguage(code)
       .then(hydrateAppSettings)
-      .catch(() => {
-        // non-fatal: language saved on next step anyway
-      });
+      .catch(() => {});
     setStep("library");
   };
 
@@ -312,6 +307,12 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   };
 
   const handleFinish = async () => {
+    try {
+      const languageSettings = await api.setLanguage(selectedLanguage);
+      hydrateAppSettings(languageSettings);
+    } catch {
+      // non-fatal
+    }
     try {
       const settings = await api.setStemMode(selectedStemMode);
       hydrateAppSettings(settings);
