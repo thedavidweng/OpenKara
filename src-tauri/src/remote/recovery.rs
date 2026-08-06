@@ -48,7 +48,6 @@ pub fn run_recovery(
 ) -> CommandResult<RecoveryReport> {
     let mut report = RecoveryReport::default();
 
-    // 1. running / committing / verifying → retry_wait (interrupted mid-flight)
     let in_flight = list_operations_in_states(
         connection,
         &[
@@ -62,7 +61,6 @@ pub fn run_recovery(
         report.transitioned_to_retry_wait.push(op.operation_id);
     }
 
-    // 2. prepared mutation intents → cancelled / pending / conflicted
     let prepared = list_operations_in_states(connection, &[OperationState::Prepared])?;
     for op in prepared {
         let outcome = resolve_prepared_operation(connection, &op, digest_resolver, clock)?;
@@ -75,22 +73,15 @@ pub fn run_recovery(
         }
     }
 
-    // 3. completed operations stay completed — count for observability
     let completed = list_operations_in_states(connection, &[OperationState::Completed])?;
     report.already_completed = completed.len();
 
-    // 4. Any Pending/RetryWait publish op forces repository non-Clean so an
-    // automatic pull cannot overwrite committed local edits when a prior
-    // crash left operation=Pending but local_state=Clean.
+    // Pending/RetryWait publish must force non-Clean (crash left Pending+Clean).
     force_dirty_for_active_publish_ops(connection, clock)?;
 
-    // 5. Repair repositories left Dirty/Publishing after operation Completed
-    // when the process died between the two writes (pre-atomic completion)
-    // and no non-terminal publish intent remains.
+    // Repair Dirty/Publishing left after Completed when no publish intent remains.
     repair_completed_repository_state(connection, digest_resolver, clock)?;
 
-    // Keep provider work out of this pass. The publication executor consumes
-    // pending and retry_wait operations after the state transition completes.
     Ok(report)
 }
 
@@ -119,8 +110,7 @@ fn repair_completed_repository_state(
         let Some(mut repo) = get_repository_state(connection, &library_id)? else {
             continue;
         };
-        // Never erase a conflict or credential failure. This repair is only
-        // for the historical completion crash window.
+        // Only repair Dirty/Publishing completion-crash window; never touch conflict/reauth.
         if !matches!(repo.local_state, LocalState::Dirty | LocalState::Publishing) {
             continue;
         }
@@ -132,9 +122,7 @@ fn repair_completed_repository_state(
             continue;
         }
 
-        // Recover from the highest committed generation, not wall-clock order.
-        // Multiple completions can share a millisecond, and clocks can move
-        // backwards; target_generation is the repository ordering contract.
+        // Order by target_generation (not wall clock); clocks can move backwards.
         let latest = all
             .into_iter()
             .filter(|op| {
@@ -149,8 +137,7 @@ fn repair_completed_repository_state(
             })
             .max_by_key(|(generation, _, updated_at_ms)| (*generation, *updated_at_ms));
         let Some((generation, committed_digest, _)) = latest else {
-            // We cannot prove what was committed. Collapse stale Publishing
-            // to Dirty, but never advertise a Clean repository.
+            // Unknown commit: collapse Publishing → Dirty, never Clean.
             repo.local_state = LocalState::Dirty;
             repo.active_operation_id = None;
             repo.updated_at_ms = now;
@@ -171,8 +158,7 @@ fn repair_completed_repository_state(
             repo.last_success_at_ms = Some(now);
             repo.last_error_code = None;
         } else {
-            // The completed generation is real, but the working copy contains
-            // additional or unknown bytes. Preserve it as unpublished state.
+            // Completed gen is real; working copy diverged → keep Dirty.
             repo.local_state = LocalState::Dirty;
             repo.last_error_code = Some("working_copy_diverged".to_owned());
         }
@@ -241,10 +227,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::types::load_app_config;
     use std::collections::HashMap;
 
-    // Recovery does not depend on the currently active library. Pending
-    // operations for any registered remote library must run against their
-    // own `op.library_id`. Only skip when there are no remote libraries at
-    // all.
+    // Run against each op.library_id; skip only when no remote libraries exist.
     let config = load_app_config(&state.shell.app_data_dir)?;
     let has_remote_library = config
         .libraries
@@ -263,10 +246,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
     let now = crate::remote::types::current_unix_time_ms();
 
-    // Partition GC vs Publish. Publish ops are grouped by library so the
-    // durable queue runs once per library (CAS-boundary first, then merge).
-    // Future RetryWait publish ops are still included so they can be merged
-    // into the shared-DB survivor (library waits on max backoff).
+    // Partition GC vs Publish; publish grouped per library (CAS-boundary then merge).
     let mut gc_ops = Vec::new();
     let mut publish_by_library: HashMap<String, Vec<OperationRow>> = HashMap::new();
     for op in pending {
@@ -542,8 +522,7 @@ pub fn recover_stale_part_files(
     working_copy_dir: &std::path::Path,
     control_db: &Connection,
 ) -> CommandResult<Vec<std::path::PathBuf>> {
-    // Collect operation IDs that have valid, non-terminal transfer parts.
-    // These partials are resumable and must survive restart.
+    // Resumable transfer parts must survive restart.
     let protected = collect_protected_transfer_operation_ids(control_db);
     crate::remote::atomic_download::remove_stale_part_files(working_copy_dir, &protected)
 }
@@ -600,10 +579,7 @@ fn resolve_prepared_operation(
 ) -> CommandResult<PreparedOutcome> {
     let now = (clock)();
 
-    // Conflict check: if expected_generation differs from the currently-known
-    // committed_generation, the remote advanced independently. The
-    // committed_generation is advanced by the manifest-based pull in
-    // revision.rs after a successful atomic database pull.
+    // expected_generation ≠ committed_generation → remote advanced independently.
     if let Some(expected_gen) = op.expected_generation {
         if let Some(repo_state) = get_repository_state(connection, &op.library_id)? {
             if repo_state.committed_generation != expected_gen {
@@ -619,31 +595,22 @@ fn resolve_prepared_operation(
     let working_digest = digest_resolver.working_db_digest(&op.library_id);
     let source_digest = op.source_db_digest.as_deref();
 
-    // None must never mean "same". Missing digests are degraded: keep the
-    // operation recoverable (promote/dirty) rather than cancelling as
-    // "mutation never committed".
+    // None must never mean "same"; missing digests stay recoverable (not cancel).
     let working_unchanged = match (working_digest.as_deref(), source_digest) {
         (Some(w), Some(s)) => w == s,
-        (None, _) | (_, None) => {
-            // Degraded: cannot prove the mutation did not commit. Leave as
-            // pending when song_ids are present so publication can continue;
-            // cancel only empty payloads below.
-            false
-        }
+        (None, _) | (_, None) => false,
     };
 
     if working_unchanged {
-        // The mutation never committed locally — discard the intent.
+        // Mutation never committed locally — discard the intent.
         let mut updated = op.clone();
         updated.state = OperationState::Cancelled;
         updated.updated_at_ms = now;
         upsert_operation(connection, &updated)?;
         Ok(PreparedOutcome::Cancelled)
     } else {
-        // The local mutation committed but publication didn't finish.
-        // Only promote when the payload has recoverable song identity.
-        // Empty song_ids placeholders (pre-bind crash window or legacy) must
-        // not become permanent pending zombies that recovery skips forever.
+        // Local mutation committed; promote only with recoverable song identity.
+        // Empty song_ids placeholders must not become permanent pending zombies.
         let payload = crate::remote::control_db::OperationPayload::from_json(&op.payload_json).ok();
         let has_recoverable_scope = payload
             .as_ref()
@@ -659,8 +626,7 @@ fn resolve_prepared_operation(
             );
             updated.updated_at_ms = now;
             upsert_operation(connection, &updated)?;
-            // Keep repository dirty so a subsequent publish can create a
-            // full-identity operation for the committed local edits.
+            // Keep Dirty so a later publish can mint a full-identity op.
             mark_repository_dirty(connection, &op.library_id, now)?;
             return Ok(PreparedOutcome::Cancelled);
         }
@@ -1323,11 +1289,7 @@ mod tests {
     /// both key off `op.library_id`.
     #[test]
     fn multi_library_operation_targets_op_library_id_not_active() {
-        // The production recovery path loads the library via
-        // `load_registered_remote_library(app_data_dir, &op.library_id)` and
-        // acquires `state.remote.commit_lock(library_id)`. This unit test
-        // proves the lock map isolates libraries so an operation for B cannot
-        // hold A's commit lock (and vice versa).
+        // Commit locks are per-library; B must not block on A's lock.
         use std::collections::HashMap;
         use std::sync::{Arc, Mutex};
 
@@ -1353,11 +1315,7 @@ mod tests {
 
     // --- Resumable transfer parts ---
 
-    // Incomplete transfers resume from verified offsets. The recovery pass
-    // detects incomplete transfer parts so the executor can resume them. The
-    // actual resume is performed by the executor's resumable upload/download
-    // paths, not by recovery itself — recovery only transitions the operation
-    // to `pending` so the executor picks it up.
+    // Recovery transitions ops with incomplete transfer parts; executor resumes.
     #[test]
     fn recovery_detects_incomplete_transfer_parts() {
         use crate::remote::control_db::{

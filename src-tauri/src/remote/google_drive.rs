@@ -203,7 +203,6 @@ fn google_drive_refresh_access_token(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
 ) -> CommandResult<String> {
-    // Fast path: the token is still valid. No lock needed.
     if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
         if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
             return Ok(secret.access_token.clone());
@@ -212,8 +211,7 @@ fn google_drive_refresh_access_token(
         return Ok(secret.access_token.clone());
     }
 
-    // Slow path: acquire the process-wide refresh lock so only one thread
-    // performs the network refresh.
+    // Process-wide single-flight refresh; re-check after wait.
     let lock = GOOGLE_DRIVE_REFRESH_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().map_err(|_| {
         CommandError::from(LibraryError::Internal(
@@ -221,11 +219,7 @@ fn google_drive_refresh_access_token(
         ))
     })?;
 
-    // Re-check after acquiring the lock — another thread may have refreshed
-    // while we waited. Reload the stored credential from disk to pick up the
-    // refreshed token. The in-memory secret is per-provider-instance, so
-    // without this reload the waiter would see its stale copy and fire a
-    // redundant refresh request.
+    // Reload disk credential: in-memory secret is per-provider-instance.
     if let Ok(Some(stored)) =
         load_remote_credential::<StoredGoogleDriveSecret>(app_data_dir, &secret.library_id)
     {
@@ -1353,17 +1347,7 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
     }
 
     fn capabilities(&self) -> RemoteProviderCapabilities {
-        // Google Drive API v3 does NOT support server-enforced conditional
-        // updates: the `etag` field is "n/a" in v3 (it was present in v2), and
-        // `If-Match` headers are ignored by the `files.update` endpoint. The
-        // `headRevisionId` is read-only metadata with no server-enforced
-        // precondition check. See:
-        // https://stackoverflow.com/questions/79865579/is-raceless-optimistic-concurrency-possible-in-google-drive-v3-interface
-        //
-        // Because we cannot enforce compare-and-swap, Google Drive is
-        // READ-ONLY for safe writes: reads + caching still work, but
-        // publication is blocked with `ProviderCapabilityUnavailable` rather
-        // than silently downgrading to last-writer-wins.
+        // Drive v3 has no server-enforced CAS (If-Match ignored); block publish.
         RemoteProviderCapabilities {
             conditional_replace: false,
             resumable_upload: true,
@@ -1491,11 +1475,6 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
             )
         })?;
 
-        // Resolve or create the remote file: walk parent folders (creating
-        // them as needed), then find-or-create the leaf file metadata. If the
-        // file already exists we overwrite it resumably via its file_id;
-        // otherwise we start a new-file resumable session against the parent
-        // folder.
         let segments: Vec<&str> = relative_path
             .split('/')
             .filter(|segment| !segment.is_empty())
@@ -1633,9 +1612,7 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
             .send_network("download Google Drive file range")
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-        // Validate the response status. A Range request must return 206
-        // Partial Content. A 200 OK means the server ignored the Range
-        // header — only acceptable when offset == 0 (full-body fallback).
+        // 206 for ranges; 200 only when offset == 0 (full-body fallback).
         let status = response.status();
         if status == reqwest::StatusCode::OK && offset > 0 {
             return Err(RemoteError::new(
@@ -1653,7 +1630,6 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
             ));
         }
 
-        // 206 Partial Content MUST include a matching Content-Range.
         if status == reqwest::StatusCode::PARTIAL_CONTENT {
             let content_range = response.headers().get("content-range").ok_or_else(|| {
                 RemoteError::new(
@@ -1678,9 +1654,7 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
                 )
             })?;
         }
-        // Open for write at a specific offset. We intentionally do NOT
-        // truncate — the file may already contain bytes from a prior range
-        // download, and truncating would destroy them.
+        // Seek-write; do not truncate (prior range bytes must survive).
         #[allow(clippy::suspicious_open_options)]
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -1699,12 +1673,7 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
             )
         })?;
 
-        // Stream the body straight to disk as it arrives instead of buffering
-        // the whole chunk with `response.bytes()`. The buffered call imposed
-        // one total-body deadline per 8 MiB chunk; streaming makes the client
-        // timeout a per-read idle timeout so slow links make progress, and an
-        // interruption leaves the received bytes durable for sub-chunk resume
-        // (issue #205).
+        // Stream to disk (idle timeout + durable partials); not full-body buffer.
         let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
             .map_err(|error| {
                 RemoteError::new(
@@ -1713,11 +1682,7 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
                 )
             })?;
 
-        // Validate body length. For a 206 the body must be exactly `length`
-        // bytes; for a 200 full-body fallback (offset == 0 only) it must be at
-        // least `length`. A truncated transfer is a transport failure, not
-        // corruption, so it stays retryable and the partial bytes on disk are
-        // preserved for resume.
+        // Truncation is transport failure (retryable); keep partial bytes.
         if status == reqwest::StatusCode::PARTIAL_CONTENT {
             if written != length {
                 return Err(RemoteError::new(

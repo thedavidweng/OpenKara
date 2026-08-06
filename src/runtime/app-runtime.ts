@@ -74,13 +74,7 @@ export function useAppStartupRuntime(
   }, [libraryReady, loadBootstrapStatus, loadLibrary, loadPlayerState]);
 }
 
-/**
- * Backstop for the reveal request. The main window starts hidden, and a hidden
- * (occluded) WebView has its animation frames suspended — so the rAF callback
- * that asks the backend to show the window would never run, leaving the app
- * running with no window at all. The timer guarantees the request goes out;
- * rAF still wins whenever frames are actually being produced.
- */
+// Hidden WebViews suspend rAF; timer guarantees the reveal request still fires.
 const WINDOW_REVEAL_FALLBACK_MS = 120;
 
 export function useAppReadyRuntime(
@@ -128,10 +122,6 @@ export function useAppReadyRuntime(
   ]);
 }
 
-/**
- * Single product runtime graph (library-ready gated). There is no second
- * webview/sidebar runtime path.
- */
 export function useAppRuntime(enabled: boolean) {
   useEventListeners(enabled);
   useLyricsAutoFetch(enabled);

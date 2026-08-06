@@ -218,13 +218,8 @@ impl ExecutionProviderPreference {
         }
     }
 
-    /// Measured defaults (issue #170; five-target dual-preference bench on
-    /// the spectral-core stable artifact, run 30164564615, archived on the
-    /// issue): the Apple Silicon runtime contains CoreML, while the Intel
-    /// macOS and Linux runtimes contain XNNPACK. XNNPACK loses to the ORT CPU
-    /// EP by ~1.6–2.1x on Linux x64/arm64 and Intel macOS. Windows uses
-    /// DirectML only when a hardware D3D12 adapter is available. Tuning never
-    /// changes StemMode or overlap (#173).
+    /// Platform default EP: CoreML on Apple Silicon, DirectML on Windows with
+    /// D3D12 hardware, otherwise CPU (XNNPACK loses to ORT CPU on Intel/Linux).
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
         Self::default_for_capabilities(
             platform,
@@ -699,14 +694,8 @@ impl AppConfig {
     }
 }
 
-/// Returns `Ok(None)` if the file does not exist.
-///
-/// Corruption recovery (issue #208): if the file exists but cannot be parsed
-/// — truncated, 0-length, or garbage, e.g. left behind by a non-atomic write
-/// interrupted by a crash, kill, or power loss — the bad file is moved aside
-/// to `config.json.corrupt-<unix-millis>` and `Ok(None)` is returned. Callers
-/// then fall back to defaults instead of the app aborting startup forever on
-/// a single interrupted save. Genuine I/O read failures still return `Err`.
+/// Load config; missing or unparseable file → `Ok(None)` (corrupt file quarantined).
+/// Genuine I/O read failures return `Err`.
 pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
     let config_path = config_path(app_data_dir);
     if !config_path.exists() {
@@ -762,16 +751,7 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-/// Durably write `contents` to `path` using the write-temp + fsync + atomic
-/// rename pattern already used across the codebase (`remote::atomic_download`,
-/// `cache::stems`). A crash, kill, or power loss at any point leaves either the
-/// previous file fully intact (the rename never happened) or the new file fully
-/// written (the rename completed) — never a truncated or 0-length `path`.
-///
-/// The temp file is a sibling in the same directory so `fs::rename` stays on
-/// one filesystem, which POSIX and same-volume Windows both guarantee to be
-/// atomic. On any failure the temp file is cleaned up so no partial file
-/// lingers next to the real config.
+/// Write-temp + fsync + atomic rename; cleans up the temp on any failure.
 fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
     let tmp_path = temp_path_for(path);
 
@@ -791,8 +771,6 @@ fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
         return Err(err);
     }
 
-    // Atomically replace the destination. On POSIX rename replaces the target
-    // atomically; on Windows a same-volume rename also replaces it.
     if let Err(err) = fs::rename(&tmp_path, path) {
         let _ = fs::remove_file(&tmp_path);
         return Err(anyhow::Error::from(err).context(format!(
@@ -802,19 +780,13 @@ fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
         )));
     }
 
-    // fsync the parent directory so the rename itself survives power loss on
-    // POSIX. Best-effort: the file is already written and renamed, so a dir
-    // fsync failure does not invalidate the save.
+    // Best-effort: rename already completed.
     fsync_parent_dir(path);
 
     Ok(())
 }
 
-/// Build the sibling temp path for an atomic write:
-/// `<name>.tmp.<pid>.<nanos>.<counter>`. The pid + high-resolution timestamp +
-/// per-process counter keep concurrent or rapid successive saves from sharing
-/// a temp file, so two racing writers never interleave bytes into one temp that
-/// is then renamed over the config.
+/// Sibling temp: `<name>.tmp.<pid>.<nanos>.<counter>` (no shared temps under race).
 fn temp_path_for(path: &Path) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -829,8 +801,7 @@ fn temp_path_for(path: &Path) -> PathBuf {
     path.with_file_name(file_name)
 }
 
-/// fsync the parent directory so a completed rename survives power loss on
-/// POSIX. No-op on non-Unix (Windows has no meaningful directory fsync).
+/// POSIX parent-dir fsync after rename; no-op on non-Unix.
 fn fsync_parent_dir(path: &Path) {
     #[cfg(unix)]
     if let Some(parent) = path.parent() {

@@ -62,8 +62,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
           if (cancelled) return;
           const payload = event.payload;
           if (payload.revision <= lastRevisionRef.current) {
-            // Older or duplicate revision; ignore. This guards against a
-            // delayed event from a previous song overwriting newer state.
             return;
           }
           lastRevisionRef.current = payload.revision;

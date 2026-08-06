@@ -16,15 +16,10 @@ export function FullscreenPlayerView() {
   useLocalAudienceRomanizeReceiver();
 
   useEffect(() => {
-    void announceLocalAudienceOutputActive(true).catch(() => {
-      // The main window treats this as auxiliary state; a missed update must
-      // not block opening the audience window itself.
-    });
+    void announceLocalAudienceOutputActive(true).catch(() => {});
 
     return () => {
-      void announceLocalAudienceOutputActive(false).catch(() => {
-        // Closing the window should stay best-effort even if the state sync is gone.
-      });
+      void announceLocalAudienceOutputActive(false).catch(() => {});
     };
   }, []);
 

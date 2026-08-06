@@ -206,10 +206,7 @@ pub fn separate_streaming(
     let chunk_size = preprocess::target_frame_count(model, input_frame_count)?;
     let (hop_size, total_chunks) = chunk_schedule(input_frame_count, chunk_size);
 
-    // The only production path is the spectral-core session, dispatched from
-    // the model's verified spectral interface (issue #172). The inference
-    // window is fixed by the contract, so the schedule's chunk size must
-    // equal the interface segment.
+    // Spectral-core window is fixed; chunk size must equal the interface segment.
     let iface = &model.spectral;
     anyhow::ensure!(
         chunk_size == iface.segment_frames,
@@ -217,35 +214,25 @@ pub fn separate_streaming(
         iface.segment_frames,
         chunk_size
     );
-    // The transform plans and every chunk-loop buffer are created once per run
-    // and reused across every chunk (fixed working memory per chunk). Both
-    // stem modes are supported: the core always exposes four sources; TwoStem
-    // pre-mixes the accompaniment in the spectral domain.
     let mut spectral_state = spectral_session::SpectralSessionState::new();
 
-    // Interrupted runs always restart from chunk 0. Vorbis encoder and OLA
-    // state are intentionally not serialized.
+    // Interrupted runs restart from chunk 0 (encoder/OLA state not serialized).
     let window = workspace.window().to_vec();
 
     let mut chunk_index = 0usize;
     for chunk_start_frame in (0..input_frame_count).step_by(hop_size) {
-        // Cancellation checkpoint: bail before doing any work for this chunk.
-        // The writers are dropped on the error path, cleaning up temp files.
         if cancel.load(Ordering::Relaxed) {
             return Err(SeparationError::Cancelled.into());
         }
 
         let chunk_frame_count = (input_frame_count - chunk_start_frame).min(chunk_size);
 
-        // 1. Fill planar input directly from the normalized source.
         workspace.fill_planar_input(
             &normalized_audio.samples,
             chunk_start_frame,
             chunk_frame_count,
         );
 
-        // 2-4. Forward transform, spectral-core inference, stem composition,
-        // and OLA ring feeding all happen in the spectral session.
         spectral_session::process_spectral_chunk(
             model,
             iface,
@@ -258,10 +245,7 @@ pub fn separate_streaming(
             chunk_start_frame,
         )?;
 
-        // 5. Flush finalized frames to writers.
-        // After processing chunk N (starting at chunk_start_frame), frames
-        // before chunk_start_frame are safe because the next chunk starts
-        // at chunk_start_frame + hop_size and only covers from there.
+        // Frames before this chunk start are finalized (next hop starts here).
         let safe_through = chunk_start_frame;
         flush_finalized_to_writers(workspace, stem_mode, safe_through, writers)?;
 
@@ -269,7 +253,6 @@ pub fn separate_streaming(
         on_chunk_complete(chunk_index, total_chunks);
     }
 
-    // Flush all remaining frames.
     flush_finalized_to_writers(workspace, stem_mode, input_frame_count, writers)?;
     let finalized_frames = input_frame_count;
 

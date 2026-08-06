@@ -93,8 +93,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     };
   }, []);
 
-  // Track DPR via window resize. Some platforms update devicePixelRatio
-  // synchronously on resize before any media-query fires.
+  // Some platforms update devicePixelRatio on resize before media-query fires.
   useEffect(() => {
     const onResize = () => {
       const next = window.devicePixelRatio || 1;
@@ -142,14 +141,12 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
         setWaveformVersion((v) => v + 1);
       })
       .catch(() => {
-        // Backend may be unavailable during startup — keep placeholder empty.
         if (generation !== requestGenerationRef.current) return;
         waveformRef.current = null;
         setWaveformVersion((v) => v + 1);
       });
 
     return () => {
-      // Invalidate in-flight work for this song/bucket pairing.
       requestGenerationRef.current += 1;
     };
   }, [songId, effectiveBuckets, railWidth]);

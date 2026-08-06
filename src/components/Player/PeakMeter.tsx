@@ -98,7 +98,6 @@ export function PeakMeter({
           lastPeaksRef.current = snapshot;
           draw(snapshot);
         } else if (snapshot.peaks.length === 0) {
-          // Only draw once — the canvas content is static until peaks arrive.
           if (!flatLineDrawnRef.current) {
             flatLineDrawnRef.current = true;
             draw(snapshot);
@@ -134,7 +133,6 @@ export function PeakMeter({
           }
         }
       } catch {
-        // Backend may be unavailable during startup — silently skip.
       } finally {
         inFlight = false;
         if (!cancelled && rerunRequested) {

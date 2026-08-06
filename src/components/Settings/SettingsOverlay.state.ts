@@ -156,9 +156,7 @@ export function createSettingsOverlayActions(
           },
         },
       });
-    } catch {
-      // Model status is display-only and should not block the rest of settings.
-    }
+    } catch {}
   };
 
   const refreshRuntimeStatus = async () => {
@@ -177,9 +175,7 @@ export function createSettingsOverlayActions(
           error: status.error?.message ?? null,
         },
       });
-    } catch {
-      // Runtime status is display-only.
-    }
+    } catch {}
   };
 
   const applyModelVariant = async (variant: ModelVariant) => {
@@ -247,7 +243,6 @@ export function createSettingsOverlayActions(
         },
         runtimeUpdate: null,
       });
-      // Refresh model statuses too since model actions may now be enabled.
       await refreshModelStatuses();
     } catch (error) {
       dependencies.notifyError(error);
@@ -309,7 +304,6 @@ export function createSettingsOverlayActions(
       try {
         await dependencies.api.deleteRuntime();
         await refreshRuntimeStatus();
-        // Refresh model statuses since model actions may now be disabled.
         await refreshModelStatuses();
       } catch (error) {
         dependencies.notifyError(error);

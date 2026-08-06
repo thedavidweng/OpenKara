@@ -6,7 +6,6 @@ import { notifyError } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import type { CacheUsage } from "@/types/ipc";
 
-// Remote streaming cache settings section (PR #8, issue #151).
 export function SettingsRemoteCacheSection() {
   const { t } = useTranslation();
   const [usage, setUsage] = useState<CacheUsage | null>(null);

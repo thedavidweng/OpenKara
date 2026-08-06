@@ -34,8 +34,6 @@ export const ALPHABET_BUCKETS = [
 
 export type AlphabetBucket = (typeof ALPHABET_BUCKETS)[number];
 
-// Module-level Intl.Segmenter for grapheme segmentation (handles supplementary
-// plane characters that UTF-16 indexing would split).
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", {
   granularity: "grapheme",
 });
@@ -44,15 +42,6 @@ const HAN_REGEX = /\p{Script=Han}/u;
 const MARK_REGEX = /\p{Mark}/gu;
 const ASCII_LETTER_REGEX = /^[A-Z]$/;
 
-/**
- * Map a sort key (title or artist) to one of the 27 alphabet buckets.
- *
- * 1. NFC normalize and trim Unicode whitespace.
- * 2. Segment the first grapheme.
- * 3. Empty/missing → `#`.
- * 4. Han grapheme → pinyin first initial, uppercase, A–Z only; else `#`.
- * 5. Non-Han grapheme → NFD strip marks, uppercase, first code point A–Z; else `#`.
- */
 export function bucketForSortKey(value: string | null): AlphabetBucket {
   if (value == null) return "#";
 
@@ -103,17 +92,6 @@ export function buildAlphabetIndex(
   return indexByBucket;
 }
 
-/**
- * Resolve a requested bucket to a song index using the missing-letter fallback:
- * 1. exact mapped index when present;
- * 2. nearest mapped bucket by distance in ALPHABET_BUCKETS order (ties broken
- *    toward the following bucket so the user lands on the next section, not
- *    `#`, when pressing a late letter with no songs);
- * 3. null when the map is empty.
- *
- * Returns both the resolved song index and the bucket that was actually used
- * (for visual/ARIA state), or null when no navigation is possible.
- */
 export function resolveBucket(
   indexByBucket: ReadonlyMap<AlphabetBucket, number>,
   requested: AlphabetBucket,

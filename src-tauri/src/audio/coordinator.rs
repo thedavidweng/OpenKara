@@ -116,14 +116,7 @@ pub enum PlaybackCommand {
         song_ids: Vec<String>,
         reply: SnapshotReply,
     },
-    /// Atomically replace the active streaming source after a remote playback
-    /// reconnect (PR #7, issue #151). The coordinator swaps the source under
-    /// the playback mutex while preserving the timeline (the new source is
-    /// seeked to `position_ms`). Fire-and-forget: the reconnect coordinator
-    /// already emitted `remote-playback-reconnect` / `remote-playback-resync`
-    /// events; this command only performs the atomic swap. A stale request
-    /// (user skipped) is a no-op — `replace_streaming_source` returns `None`
-    /// when the current song no longer matches.
+    /// Atomic streaming-source swap after reconnect; seeks to `position_ms`.
     ReplaceStreamingSource {
         request_id: u64,
         song_id: String,
@@ -342,13 +335,7 @@ fn is_latest_request(runtime: &CoordinatorRuntime<impl Runtime>, request_id: u64
     runtime.latest_request_id.load(Ordering::SeqCst) == request_id
 }
 
-/// Report a failure for the latest request after `InstallReady` has already
-/// installed the track. Unlike `handle_fail_load` (which clears a pending
-/// load via `cancel_loading_if_matching`), this clears the *installed* track
-/// via `clear_track_if_matching` — `start_track` / `start_track_streaming`
-/// already cleared `loading_song_id`, so the loading-state guard would
-/// silently no-op and leave the UI in a silent `playing` state with no output
-/// device.
+/// Fail after InstallReady: clear the installed track (loading guard would no-op).
 fn report_install_output_failure<R: Runtime>(
     runtime: &CoordinatorRuntime<R>,
     song_id: &str,
@@ -544,14 +531,7 @@ fn handle_fail_load<R: Runtime>(
     emit_playback_error(&runtime.app_handle, song_id, error);
 }
 
-/// Handle `ReplaceStreamingSource` (PR #7, issue #151): atomically swap the
-/// active streaming source after a reconnect, preserving the timeline.
-///
-/// The reconnect coordinator (in `services::playback`) already emitted the
-/// `remote-playback-reconnect` / `remote-playback-resync` events; this
-/// command only performs the atomic swap under the playback mutex and emits
-/// a fresh position event so the frontend converges on the preserved
-/// position. A stale request (user skipped) is a silent no-op.
+/// Swap streaming source under the playback mutex; stale request is a no-op.
 fn handle_replace_streaming_source<R: Runtime>(
     runtime: &CoordinatorRuntime<R>,
     request_id: u64,

@@ -5,7 +5,6 @@ import { notifyError } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import type { RemoteDiagnostics } from "@/types/ipc";
 
-// Remote repository diagnostics panel (PR #8, issue #151).
 export function SettingsRemoteDiagnosticsSection() {
   const { t } = useTranslation();
   const [diagnostics, setDiagnostics] = useState<RemoteDiagnostics | null>(

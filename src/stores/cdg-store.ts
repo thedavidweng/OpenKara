@@ -4,13 +4,9 @@ import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
 interface CdgState {
   hasCdg: boolean;
   songId: string | null;
-  /** CDG availability from the backend (more granular than hasCdg). */
   availability: CdgAvailability;
-  /** Error code if availability is "error". */
   errorCode: CdgErrorCode | null;
-  /** Last frame version received from the backend. Used to skip redundant redraws. */
   frameVersion: number;
-  /** Transport generation from the backend. Used to detect stale frames. */
   transportGeneration: number;
 
   setSong: (songId: string | null, hasCdg: boolean) => void;

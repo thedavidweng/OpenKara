@@ -172,12 +172,7 @@ impl EqProcessor {
         let fully_bypassed =
             self.wet_mix == 0.0 && self.wet_step == 0.0 && self.target_wet_mix == 0.0;
 
-        // Advance stored per-frame steps (fixed at last target change). Do not
-        // recompute step from remaining distance here — that would restart a
-        // fresh 50 ms ramp every callback and become buffer-size dependent.
-        // Coefficients are recomputed per frame from the advanced smoothed
-        // gain so the filter response follows the same deterministic schedule
-        // as the scalar ramps, independent of CPAL callback partition size.
+        // Fixed per-frame steps (not distance-based) so ramp length is buffer-size independent.
         for frame in 0..frames {
             for band in 0..5 {
                 let step = self.gain_steps_db[band];
@@ -201,25 +196,12 @@ impl EqProcessor {
                 continue;
             }
 
-            // Skip the per-frame coefficient rebuild when all smoothing ramps
-            // have settled — the coefficients already match the current gains
-            // from the last ramp tick, so recomputing them is wasted CPU on
-            // every audio frame while settings are unchanged. The filter run
-            // below still executes with the last-valid coefficients.
+            // Skip coefficient rebuild once all ramps have settled.
             let all_steps_settled =
                 self.gain_steps_db.iter().all(|&s| s == 0.0) && self.wet_step == 0.0;
 
             if !all_steps_settled {
-                // Recompute coefficients for this frame from the advanced smoothed
-                // gain. `update_coefficients` preserves delay state. A coefficient
-                // error disables only that band for this frame; the last valid
-                // coefficients are retained (no update, no panic).
-                //
-                // #88: `Coefficients::from_params` depends only on the band
-                // (gain, frequency, sample rate) — not on the channel — so
-                // compute it once per band in a separate loop before iterating
-                // channels. This avoids redundantly recomputing the same
-                // coefficients for every channel's filter on every frame.
+                // #88: coeffs are per-band only; from_params failure keeps last valid.
                 let gains_db = self.current_gains_db;
                 let band_coeffs: [Option<Coefficients<f32>>; 5] = {
                     let mut arr: [Option<Coefficients<f32>>; 5] = [None; 5];
@@ -252,8 +234,7 @@ impl EqProcessor {
                 }
             }
 
-            // Snapshot the per-frame wet/dry scalars so the inner channel loop
-            // can borrow `self.filters` mutably without aliasing.
+            // Snapshot wet/dry so the channel loop can mutably borrow filters.
             let wet_mix = self.wet_mix;
             let dry_gain = 1.0 - wet_mix;
 

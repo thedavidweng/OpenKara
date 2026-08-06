@@ -102,9 +102,7 @@ function shouldEmphasize(word: {
   const duration = word.end_ms - word.time_ms;
   if (duration < 1000) return false;
   const trimmed = word.text.trim();
-  // CJK characters: any length qualifies
   if (/[一-鿿぀-ゟ゠-ヿ]/.test(trimmed)) return true;
-  // Non-CJK: 2-7 characters
   return trimmed.length >= 2 && trimmed.length <= 7;
 }
 
@@ -518,8 +516,6 @@ export const LyricLine = memo(function LyricLine({
           .trim()
       : "";
     const visibleName = line.text.trim() || wordText;
-    // Only set an explicit label when the button would otherwise expose no name
-    // (for example empty/bg-only lines). Named lines keep their text content.
     const ariaLabel = visibleName
       ? undefined
       : t("player.seekToLine", { index: lineIndex + 1 });

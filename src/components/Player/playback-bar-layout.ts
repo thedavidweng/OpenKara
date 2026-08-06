@@ -38,8 +38,6 @@ const PLAYBACK_BAR_LAYOUT_TOKENS: Record<
   },
   compact: {
     leftMaxWidth: 152,
-    // See relaxed-density comment: rem classes from #116 don't produce the
-    // required pixel widths under the 13 px root font.
     inlineStemVolumeWidthClass: "w-[72px]",
     masterVolumeWidth: 80,
     masterVolumeWidthClass: "w-[80px]",

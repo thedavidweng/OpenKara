@@ -5,11 +5,6 @@ import type {
   SettingsOverlayActions,
 } from "./settings-overlay.types";
 
-/**
- * Default selection for a fresh integrity report: all songs with missing or
- * empty primary media are selected by default. Optional/orphan sections are
- * read-only.
- */
 function defaultSelection(report: IntegrityReport): Set<string> {
   const hashes = new Set<string>();
   for (const issue of report.missing_primary_media) {

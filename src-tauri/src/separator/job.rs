@@ -81,10 +81,7 @@ pub fn separate_song_into_cache(
     };
     let absolute_path = library_root.resolve(song_path);
 
-    // Serialize audio decoding across all separation jobs. Multiple
-    // concurrent decodes would each hold a full-song PCM buffer in memory,
-    // causing OOM on large libraries. The lock is released before model load
-    // so the model-cache lock is not held during decode.
+    // Serialize decode (full-song PCM) across jobs; release before model load.
     let _decode_guard = DECODE_SERIALIZE_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("separation decode lock was poisoned"))?;
@@ -93,8 +90,7 @@ pub fn separate_song_into_cache(
     drop(_decode_guard);
 
     report_progress(MODEL_LOAD_PROGRESS);
-    // Lock the model cache only for the get_or_load operation, then
-    // release it so other jobs can access the cache while inference runs.
+    // Hold the model-cache lock only for get_or_load.
     let loaded_model = {
         let mut model_cache = model_cache
             .lock()
@@ -113,12 +109,8 @@ pub fn separate_song_into_cache(
             })
         })?
     };
-    // model_cache lock is now released. The Arc<LoadedModel> keeps the model alive.
 
-    // Normalize the decoded audio to the model's expected sample rate and
-    // channel layout. The normalized audio is the input to the streaming
-    // separation path. Takes ownership to avoid holding two full-song PCM
-    // copies in memory simultaneously.
+    // Takes ownership to avoid two full-song PCM copies.
     let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)
         .context("failed to normalize audio for model")?;
 
@@ -127,13 +119,12 @@ pub fn separate_song_into_cache(
     let chunk_size = preprocess::target_frame_count(&loaded_model, input_frame_count)?;
     let hop_size = chunk_size / 2;
 
-    // Prepare a clean stem directory. Interrupted runs restart from chunk 0.
+    // Interrupted runs restart from chunk 0.
     let stems_base = library_root.stems_dir();
     let stem_directory = cache::stems::prepare_stem_directory(&stems_base, song_hash)
         .context("failed to prepare stem cache directory")?;
 
-    // Create streaming OGG writers. The writers write to temp files and
-    // atomically promote on finish, so a crash never leaves a partial cache.
+    // Writers promote temp → final on finish so a crash never publishes partial stems.
     let source_path_for_metadata = &absolute_path;
     let vocals_title = format!(
         "{} (Acapella)",
@@ -257,7 +248,6 @@ pub fn separate_song_into_cache(
         },
     };
 
-    // Create the reusable workspace with bounded memory.
     let mut workspace =
         SeparationWorkspace::new(stem_mode, channels, chunk_size, hop_size, input_frame_count);
 
@@ -270,8 +260,6 @@ pub fn separate_song_into_cache(
         }
     };
 
-    // Run the streaming separation. Finalized frames are written to the
-    // OGG writers incrementally; memory is bounded by the workspace size.
     let _outcome = inference::separate_streaming(
         &loaded_model,
         &normalized_audio,
@@ -285,14 +273,10 @@ pub fn separate_song_into_cache(
 
     report_progress(CACHE_WRITE_PROGRESS);
 
-    // Finalize all writers — atomically promote temp files to final paths.
-    // If any writer fails, the remaining writers are dropped and their
-    // temp files cleaned up, so no partial cache is published.
     writers
         .finish_all()
         .context("failed to finalize streaming OGG writers")?;
 
-    // Register the DB entry now that the OGG files exist.
     let cached = cache::stems::register_streamed_stem_cache(
         connection,
         &stems_base,

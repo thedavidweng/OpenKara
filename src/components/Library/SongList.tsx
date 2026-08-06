@@ -14,7 +14,6 @@ import type { Song } from "@/types/ipc";
 const SONG_ROW_ESTIMATE_PX = 68;
 const SONG_ROW_GAP_PX = 4;
 
-// matchMedia legacy fallback for older WebViews that lack addEventListener.
 function useAtLeast600Px(): boolean {
   const [matches, setMatches] = useState(() => {
     if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -29,7 +28,7 @@ function useAtLeast600Px(): boolean {
       mql.addEventListener("change", handler);
       return () => mql.removeEventListener("change", handler);
     }
-    // Legacy fallback for older WebKit.
+    // Older WebViews lack addEventListener on MediaQueryList.
     mql.addListener(handler);
     return () => mql.removeListener(handler);
   }, []);

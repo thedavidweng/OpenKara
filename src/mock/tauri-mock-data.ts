@@ -5,13 +5,6 @@ import {
 } from "@/mock/preview-songs";
 import type { MockData } from "@/mock/tauri-mock-impl";
 
-/**
- * Sidebar width returned by the mock's `get_window_shell_state`. The app
- * applies this at runtime via `--window-shell-sidebar-width`, so E2E
- * geometry helpers must use the same value when deriving the playback-bar
- * container width (viewport minus sidebar). Exported so specs stay in sync
- * with the mock instead of hard-coding a separate copy.
- */
 export const MOCK_SIDEBAR_WIDTH = 280;
 
 export const MOCK_PLAYLIST_SONGS: Record<string, string[]> = {
@@ -19,12 +12,6 @@ export const MOCK_PLAYLIST_SONGS: Record<string, string[]> = {
   party: ["all-the-love", "three-empty-words", "earfquake", "see-you-again"],
 };
 
-/**
- * Playlists for the website preview.  `song_count` must match membership in
- * {@link MOCK_PLAYLIST_SONGS} — the preview seeds the playlist store directly
- * and never re-counts via IPC.  E2E tests use an empty list — tests that need
- * playlists create them via the mock IPC's `create_playlist` command at runtime.
- */
 export const MOCK_PLAYLISTS = [
   {
     id: "favorites",
@@ -42,23 +29,12 @@ export const MOCK_PLAYLISTS = [
   },
 ];
 
-/**
- * Start position for the website mock's auto-playing preview loop. Chosen so
- * the seekbar and lyrics panel open on a real mid-song line (`Don't leave,
- * it's my fault (Girl)` in `PREVIEW_LYRICS.earfquake`) with active karaoke
- * fill and word glow from the first frame.
- */
 export const PREVIEW_FROZEN_POSITION_MS = 59560;
 
 const PRIMARY_PREVIEW_DURATION_MS =
   PREVIEW_SONGS.find((song) => song.hash === PRIMARY_PREVIEW_SONG_HASH)
     ?.duration_ms ?? 0;
 
-/**
- * The shared mock data payload.  Both the website preview and E2E fixture
- * use this as the base; E2E may override fields (e.g. set `playlists` to
- * `[]`) before serialization.
- */
 export const MOCK_DATA: MockData = {
   songs: PREVIEW_SONGS.map(({ mbid: _mbid, cover_art, ...rest }) => ({
     ...rest,
@@ -159,16 +135,10 @@ export const MOCK_DATA: MockData = {
   loopStartPositionMs: 0,
 };
 
-/**
- * E2E-specific mock data: same as {@link MOCK_DATA} but with empty playlists
- * (E2E tests create playlists at runtime via mock IPC commands) and an idle
- * playback snapshot so specs control transport from a known starting state.
- */
 export const E2E_MOCK_DATA: MockData = {
   ...MOCK_DATA,
   playlists: [],
   playlistSongs: {},
-  // E2E tests control transport from a known idle state; disable looping.
   loopPlayback: false,
   playbackSnapshot: {
     transport_generation: 0,

@@ -3,12 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { ResolvedTheme, ThemePreference } from "@/types/ipc";
 
-/**
- * Resolve a persisted theme preference to a concrete light/dark value using
- * the OS `prefers-color-scheme` signal. When the preference is `system` and
- * the OS reports a dark preference (or the media query is unavailable), the
- * resolved theme is `dark` to preserve the default product appearance.
- */
 export function resolveThemePreference(
   preference: ThemePreference,
   systemPrefersDark: boolean,
@@ -20,15 +14,7 @@ export function resolveThemePreference(
     : preference;
 }
 
-/**
- * Apply the resolved theme to the document root so semantic CSS tokens and
- * `color-scheme` match before the browser paints a hydrated frame.
- *
- * The audience/fullscreen presentation stage stays explicitly dark regardless
- * of the primary theme preference. When the `data-presentation-mode="audience"`
- * marker is present, `color-scheme` is kept dark so native controls (scrollbars,
- * form elements) render correctly against the dark audience backdrop.
- */
+// Audience presentation keeps color-scheme dark for native control chrome.
 export function applyResolvedTheme(
   theme: ResolvedTheme,
   root: HTMLElement = document.documentElement,
@@ -94,21 +80,6 @@ function createNativeThemeBridge(): NativeThemeBridge | null {
 
 const STARTUP_TIMEOUT_MS = 750;
 
-/**
- * React hook that resolves the persisted theme preference, applies the
- * matching CSS tokens and native window theme before first paint, and keeps
- * them in sync across preference and system-appearance changes.
- *
- * Returns `startupThemeReady` which becomes true after the first native
- * `setTheme` call settles (success or failure) or after a 750ms injected
- * timeout guard. The ready gate ensures the hidden main window is not shown
- * until the document theme is correct.
- *
- * In preview mode (website embedded preview) the surrounding landing page
- * owns `data-theme` on the document root; this hook skips writing it so the
- * landing toggle stays the single source of truth and the mock's default
- * preference cannot desync the preview from the chrome.
- */
 export function useThemeRuntime(previewMode = false): {
   resolvedTheme: ResolvedTheme;
   startupThemeReady: boolean;
@@ -150,8 +121,6 @@ export function useThemeRuntime(previewMode = false): {
     applyResolvedTheme(resolvedTheme);
   }, [hydrated, previewMode, resolvedTheme]);
 
-  // Call native setTheme once per distinct preference/resolved-theme pair and
-  // gate the startup ready signal on the first settlement.
   useEffect(() => {
     if (!hydrated) {
       return;
@@ -190,8 +159,6 @@ export function useThemeRuntime(previewMode = false): {
       .setTheme(nativeArg)
       .then(markReady)
       .catch((error: unknown) => {
-        // A native-theme rejection is non-fatal: CSS remains applied and the
-        // settings are retained. Emit one sanitized warning.
         console.warn("[theme] native setTheme rejected", sanitizeError(error));
         markReady();
       });

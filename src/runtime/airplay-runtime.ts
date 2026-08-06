@@ -65,9 +65,7 @@ export function useAirPlayAudienceSync(enabled = true): void {
           },
         }),
       )
-      .catch(() => {
-        // Auxiliary sync failures must not interrupt local playback.
-      });
+      .catch(() => {});
   }, [
     currentSongHasCdg,
     enabled,

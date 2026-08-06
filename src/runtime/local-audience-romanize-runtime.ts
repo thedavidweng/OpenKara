@@ -17,20 +17,6 @@ function nextRevision(): number {
   return ++revisionCounter;
 }
 
-/**
- * Main-window authoritative romanization runtime. Mount once from
- * `useAppRuntime` so panel unmounts, CDG rendering, or layout changes never
- * interrupt synchronization. The main window is the only romanization
- * computation owner; this runtime projects its state to the fullscreen
- * audience window and services explicit set requests from the fullscreen
- * Romanize control.
- *
- * The runtime emits a fresh snapshot whenever the authoritative state
- * changes while local audience output is active, and answers sync requests
- * immediately regardless of the audience-active announcement state so a
- * race between the announcement and the listener registration cannot drop
- * the initial snapshot.
- */
 export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
   const songId = useLyricsStore((s) => s.songId);
   const lines = useLyricsStore((s) => s.lines);
@@ -67,10 +53,7 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
       return;
     }
 
-    void emitLocalAudienceRomanizeState(snapshot).catch(() => {
-      // The fullscreen window may have closed mid-emit; the next change
-      // will retry.
-    });
+    void emitLocalAudienceRomanizeState(snapshot).catch(() => {});
   }, [
     enabled,
     songId,
@@ -97,9 +80,7 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
           if (cancelled) return;
           const snapshot = latestSnapshotRef.current;
           if (!snapshot) return;
-          void emitLocalAudienceRomanizeState(snapshot).catch(() => {
-            // Auxiliary sync delivery failure is non-fatal.
-          });
+          void emitLocalAudienceRomanizeState(snapshot).catch(() => {});
         },
       );
 

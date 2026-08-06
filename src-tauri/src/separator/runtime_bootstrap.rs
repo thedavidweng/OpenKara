@@ -120,8 +120,7 @@ pub fn read_slots(app_data_dir: &Path) -> RuntimeSlots {
     };
     match serde_json::from_str::<RuntimeSlots>(&contents) {
         Ok(slots) if slots.schema == RUNTIME_SLOTS_SCHEMA_VERSION => slots,
-        // A corrupt or unknown-schema slot file must not brick the runtime
-        // path: fall back to defaults and let inventory rebuild state.
+        // Corrupt/unknown slot file: fall back to defaults; inventory rebuilds.
         _ => RuntimeSlots::default(),
     }
 }
@@ -241,13 +240,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
     let mut slots = read_slots(app_data_dir);
 
     if slots.activation_pending {
-        // The last launch did not persist a success acknowledgement. That is
-        // ambiguous: the load may have crashed, or it may have succeeded and
-        // the process died before the acknowledgement landed. Retry the
-        // pending runtime while attempts remain — deleting a runtime that
-        // actually loaded fine would silently lose a proven update — and
-        // only roll back once the attempt budget shows the load itself is
-        // what keeps failing.
+        // Pending activation is ambiguous: retry while attempts remain, then roll back.
         let pending_id = slots.active.clone();
         let retryable = pending_id
             .as_deref()
@@ -287,8 +280,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
     if let Some(candidate_id) = slots.candidate.clone() {
         match installed_runtime(app_data_dir, &candidate_id) {
             Some(candidate) if verify_runtime_files(&candidate)? => {
-                // Promote: persist the swap with the pending marker BEFORE
-                // loading so a crash is detected and rolled back next launch.
+                // Persist pending marker before load so a crash rolls back next launch.
                 let old_active = slots.active.take();
                 slots.previous = old_active;
                 slots.active = Some(candidate_id);
@@ -304,7 +296,6 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 }));
             }
             _ => {
-                // An unverifiable candidate never becomes active.
                 slots.candidate = None;
                 slots.last_failure = Some(ActivationFailure {
                     artifact_id: candidate_id.clone(),
@@ -328,8 +319,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 }));
             }
             _ => {
-                // Corrupt active install: surface as missing so the install
-                // flow can repair it; never load unverified bytes.
+                // Corrupt active install: surface as missing; never load unverified bytes.
                 let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &active_id));
                 slots.active = None;
                 slots.last_failure = Some(ActivationFailure {
@@ -351,8 +341,6 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
         }));
     }
 
-    // Nothing loadable: opportunistically remove leftovers a partial
-    // Windows delete could not unlink while the library was mapped.
     prune_unreferenced_runtimes(app_data_dir, &slots);
 
     Ok(None)
@@ -491,11 +479,7 @@ pub fn is_runtime_available(app_data_dir: &Path) -> bool {
 pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
     let root = runtimes_root(app_data_dir);
     if root.exists() {
-        // Clear the slot state FIRST so the store's source of truth is
-        // consistent even when file removal is partial: on Windows the
-        // currently-loaded library is mapped and cannot be unlinked, so
-        // artifact directories are removed best-effort and any leftovers
-        // are pruned on the next launch, after the mapping is gone.
+        // Clear slots first; Windows may keep a mapped library until restart.
         write_slots(app_data_dir, &RuntimeSlots::default())?;
         if let Ok(entries) = fs::read_dir(&root) {
             for entry in entries.flatten() {

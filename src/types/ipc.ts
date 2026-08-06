@@ -33,8 +33,6 @@ export interface CommandError {
 
 export type CoverArtBytes = number[] | Uint8Array | ArrayBuffer | null;
 
-// Requested cover art resolution for `get_cover_art`. Mirrors the Rust
-// `CoverArtSize` enum (`#[serde(rename_all = "lowercase")]`).
 export type CoverArtSize = "thumb" | "preview" | "original";
 
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
@@ -132,12 +130,6 @@ export interface Song {
   duration_ms: number;
   cover_art: CoverArtBytes;
   has_cover_art: boolean;
-  /**
-   * Absolute path of the 80x80 WebP cover-art derivative, or null when the song
-   * has no cover art or the derivative has not been generated yet. The backend
-   * stores it library-relative and absolutizes it at the IPC boundary because
-   * `convertFileSrc` requires an absolute path.
-   */
   artwork_thumb_path: string | null;
   imported_at: number;
   original_ext: string | null;
@@ -241,12 +233,6 @@ export interface AppSettings {
   update_policy: UpdatePolicy;
 }
 
-/**
- * One-shot diagnostic snapshot assembled by the `get_debug_info` command. The
- * same payload backs the Settings → About display and the copy-to-clipboard
- * export (in-app button and the macOS Help menu), so there is a single source
- * of truth. Field names mirror the Rust struct's snake_case serialization.
- */
 export interface DebugInfo {
   app_version: string;
   build_sha: string;
@@ -259,7 +245,6 @@ export interface DebugInfo {
   model_installed: boolean;
   model_installed_version: string | null;
   model_pinned_version: string;
-  /** Absolute path where the active variant's model file is expected. */
   model_path: string;
   runtime_state: string;
   runtime_version: string;
@@ -275,12 +260,9 @@ export interface DebugInfo {
 export interface ModelStatusSnapshot {
   variant: string;
   downloaded: boolean;
-  /** Managed file exists but SHA-256 does not match the pinned release. */
   legacy_install_present: boolean;
   file_size_bytes: number | null;
-  /** Upstream release tag of the verified installed model, when known. */
   installed_version: string | null;
-  /** Upstream release tag pinned by the app's embedded catalog snapshot. */
   pinned_version: string;
 }
 
@@ -333,12 +315,10 @@ export interface StemVolumes {
 export interface PlaybackStateSnapshot {
   song_id: string | null;
   transport_generation: number;
-  /** Backend transport lifecycle; pause is represented by `is_playing: false`. */
   state: PlaybackTransportState;
   is_playing: boolean;
   position_ms: number;
   duration_ms: number | null;
-  /** Maximum safe playback position (ms) that has been buffered. */
   buffered_ms: number;
   volume: number;
   stem_volumes: StemVolumes;
@@ -367,14 +347,6 @@ export interface AudioPeakSnapshot {
   peaks: Array<[left: number, right: number]>;
 }
 
-/**
- * Waveform peaks for the seekbar visualizer.
- *
- * `peaks` is empty for remote sources (no download/decode). For local
- * sources every value is finite and in `[0, 1]`. `buckets` is the effective
- * bucket count used by the backend (clamped to `24..=1000`), which may
- * differ from the requested count.
- */
 export interface WaveformData {
   peaks: number[];
   buckets: number;
@@ -616,11 +588,6 @@ export interface RuntimeBootstrapStatusSnapshot {
   runtime_path: string;
   downloaded_bytes: number | null;
   total_bytes: number | null;
-  /**
-   * Upstream version of the ACTIVE runtime (`v1.27.1`), the string `legacy`
-   * for a pre-catalog install, or the pinned catalog version when nothing is
-   * installed yet.
-   */
   version: string;
   active_artifact_id: string | null;
   target_triple: string;

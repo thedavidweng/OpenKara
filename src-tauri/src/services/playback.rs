@@ -45,10 +45,7 @@ pub struct PlaybackErrorEvent {
     pub error: CommandError,
 }
 
-/// IPC event sink for the reconnect coordinator. Forwards
-/// [`ReconnectEvent`]s to the frontend as `remote-playback-reconnect`,
-/// `remote-playback-resync`, and `remote-playback-failed` IPC events (PR #7,
-/// issue #151). PR #8 renders the "reconnecting…" UI from these events.
+/// Forwards reconnect events to the frontend IPC surface.
 struct IpcReconnectSink<R: Runtime> {
     app_handle: AppHandle<R>,
 }
@@ -106,9 +103,7 @@ impl<R: Runtime> crate::services::reconnect::EventSink for IpcReconnectSink<R> {
     }
 }
 
-/// Returns `(None, None)` when no CDG file exists, `(None, Some(code))` when
-/// a CDG file exists but loading fails, and `(Some(packets), None)` on success.
-/// Load failures are logged by the CDG service; audio playback continues.
+/// `(packets, error_code)`; audio continues when CDG load fails.
 fn load_cdg_packets_as_arc(
     library_root: &LibraryRoot,
     song: &library::Song,
@@ -213,8 +208,6 @@ pub fn play<R: Runtime>(
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
 
-    // Signal any previously running background thread to stop. Replace the
-    // old Arc with a fresh one so the new thread gets its own un-signalled flag.
     let shutdown = {
         let mut guard = state.playback.background_shutdown.lock().map_err(|_| {
             PlaybackError::Internal("background_shutdown lock was poisoned".to_owned())
@@ -271,8 +264,7 @@ pub fn play<R: Runtime>(
     Ok(snapshot)
 }
 
-/// Runs on a spawned thread so the UI stays responsive during decode/download.
-/// Sends `InstallReady` to the coordinator instead of directly mutating the controller.
+/// Background decode/download; posts `InstallReady` to the coordinator.
 fn play_track_background<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -298,15 +290,10 @@ fn play_track_background<R: Runtime>(
             return Ok(());
         }
 
-        // Load streaming stems (non-fatal: if stems can't be loaded, playback
-        // continues with the base audio).
         let connection = cache::open_database(&library_root.database_path())
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         if song.is_remote_stems() {
-            // PR #7, defect #11: use the guarded variant so a skip cancels
-            // remaining stem downloads and aborts the atomic rename. The
-            // stale guard checks the playback request id; a StaleRequest
-            // result is a benign no-op (the user has moved on).
+            // Guarded cache: skip cancels remaining stem downloads / rename.
             let request_id_for_guard = request_id;
             let request_id_atom = Arc::clone(&state.playback.playback_request_id);
             let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
@@ -342,8 +329,6 @@ fn play_track_background<R: Runtime>(
         let ready = ReadyTrack::Streaming {
             sample_rate: streaming_source.metadata.sample_rate_hz,
             channels: streaming_source.metadata.channels,
-            // duration_ms may be None if the container doesn't expose
-            // frame count metadata. Use 0 as fallback; it will be resolved async.
             duration_ms: streaming_source.metadata.duration_ms.unwrap_or(0),
             original: streaming_source.streaming_track,
             stems: stems_track,
@@ -351,9 +336,6 @@ fn play_track_background<R: Runtime>(
             cdg_error,
         };
 
-        // Send InstallReady — the coordinator handles track installation,
-        // stem attachment, CDG state replacement, output startup, and position
-        // emission atomically.
         state
             .playback
             .command_tx
@@ -371,14 +353,9 @@ fn play_track_background<R: Runtime>(
             let event_request_id = request_id;
             let event_library_root = library_root.clone();
             let event_app_data_dir = app_data_dir.to_path_buf();
-            // Move the cache pin guard into the fetch event thread so it lives
-            // for the duration of playback. When the fetch channel closes
-            // (playback stops / track skips), the guard is dropped, which
-            // decrements the pin count and makes the entry eligible for
-            // eviction.
+            // Pin guard lives with the fetch-event thread for playback duration.
             let _pin_guard = streaming_source.cache_pin_guard;
             std::thread::spawn(move || {
-                // Keep the pin guard alive for the lifetime of this thread.
                 let _pin = _pin_guard;
                 for event in fetch_event_rx {
                     match event {
@@ -386,13 +363,6 @@ fn play_track_background<R: Runtime>(
                             eprintln!(
                                 "remote fetch: {count} consecutive failures for {event_song_id}"
                             );
-                            // PR #7, defect #8: attempt a mid-song reconnect
-                            // before surfacing a terminal error. The
-                            // reconnect coordinator re-resolves the source
-                            // (cache fast path first), swaps it atomically,
-                            // and preserves the timeline. On failure it
-                            // emits `remote-playback-failed` and a
-                            // `playback-error`.
                             attempt_remote_reconnect(
                                 &event_state,
                                 &event_app_handle,
@@ -407,9 +377,6 @@ fn play_track_background<R: Runtime>(
                             eprintln!(
                                 "remote fetch: Range requests not supported for {event_song_id}, falling back to full-file playback"
                             );
-                            // Range not supported — reconnect cannot help
-                            // (the server cannot serve ranges at all). Fall
-                            // back to full-file decode.
                             if let Err(error) = fallback_remote_playback_to_full_file(
                                 &event_state,
                                 event_request_id,
@@ -433,13 +400,6 @@ fn play_track_background<R: Runtime>(
                             eprintln!(
                                 "remote fetch: download URL expired for {event_song_id}, attempting reconnect with credential refresh"
                             );
-                            // PR #7, defect #8/#10: URL/credential expiry
-                            // is a transient, retryable condition. The
-                            // reconnect coordinator re-resolves (which
-                            // creates a fresh provider with current
-                            // credentials) and swaps the source. The
-                            // credential single-flight refresh itself lives
-                            // inside ProviderFetcher (PR #5).
                             attempt_remote_reconnect(
                                 &event_state,
                                 &event_app_handle,
@@ -465,7 +425,6 @@ fn play_track_background<R: Runtime>(
         return Ok(());
     }
 
-    // Fallback: full decode path (remote, Media+G, or streaming not available).
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     let request_id_for_guard = request_id;
@@ -562,31 +521,9 @@ fn fallback_remote_playback_to_full_file(
     Ok(())
 }
 
-/// Attempt a remote playback reconnect (PR #7, issue #151 defects #8, #12).
-///
-/// Called from the fetch event thread when the active streaming source's
-/// range fetch fails with a transient error (`ConsecutiveFailures`) or a
-/// URL/credential expiry (`UrlExpired`). The reconnect coordinator
-/// re-resolves the source — `load_remote_streaming_source` checks the
-/// `CacheCatalog` first (fast path: a partial download that completed in
-/// the background during the reconnect delay is served with no network
-/// fetch), then re-fetches over the network on a cache miss — and on
-/// success sends `ReplaceStreamingSource` to the coordinator, which swaps
-/// the active source atomically while preserving the timeline.
-///
-/// On failure (budget exhausted or permanent error) the coordinator emits a
-/// `remote-playback-failed` event via the [`IpcReconnectSink`] and the
-/// caller surfaces a terminal `playback-error`.
-///
-/// Architecture note: the credential single-flight refresh (PR #5) lives
-/// inside `ProviderFetcher::fetch_range`, which runs a single-flight
-/// refresh on HTTP 401 before retrying. The reconnect's
-/// `refresh_credentials` closure is therefore a no-op that returns `true`
-/// — re-resolve creates a fresh provider (and thus a fresh fetcher with
-/// current credentials) on each attempt, so a credential-expired failure
-/// is resolved by the re-resolve itself rather than by an explicit refresh
-/// callback. The reconnect unit test covers the explicit-refresh path
-/// directly.
+/// Mid-song reconnect after transient/URL-expired fetch failure.
+/// Re-resolve + atomic source swap; `refresh_credentials` is a no-op
+/// (ProviderFetcher single-flights 401 refresh; re-resolve refreshes provider).
 fn attempt_remote_reconnect<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -597,16 +534,12 @@ fn attempt_remote_reconnect<R: Runtime>(
     failure: ReconnectError,
 ) {
     eprintln!("remote playback reconnect triggered for {song_id} (cause: {failure:?})");
-    // Capture the current playback position before re-resolving so the new
-    // source can seek to it (timeline preservation, defect #12).
     let position_ms = {
         let Ok(playback) = state.playback.playback.lock() else {
             return;
         };
         playback_position_for_reconnect(&playback, song_id)
     };
-    // If there is no current track for this song, the user already skipped
-    // — nothing to reconnect.
     let Some(position_ms) = position_ms else {
         return;
     };
@@ -618,8 +551,6 @@ fn attempt_remote_reconnect<R: Runtime>(
     let request_id_for_guard = request_id;
     let request_id_atom = Arc::clone(&state.playback.playback_request_id);
     let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
-    // Clone of the staleness check for the cache-fast-path pin guard
-    // thread. This thread polls until the song is no longer current.
     let request_id_atom_for_pin = Arc::clone(&state.playback.playback_request_id);
     let is_current_for_pin =
         move || request_id_atom_for_pin.load(Ordering::SeqCst) == request_id_for_guard;
@@ -630,11 +561,7 @@ fn attempt_remote_reconnect<R: Runtime>(
     let library_root_clone = library_root.clone();
     let app_data_dir_clone = app_data_dir.to_path_buf();
     let song_id_clone = song_id.to_owned();
-    // Clones for the fetch event listener spawned after reconnect success.
-    // These keep the reconnected source's cache pin guard alive and route
-    // subsequent fetch events (UrlExpired, ConsecutiveFailures) to the
-    // reconnect handler. The originals are moved into `re_resolve` below,
-    // so we clone here before that closure captures them.
+    // Clones for the post-success fetch-event listener (re_resolve moves the originals).
     let event_library_root = library_root_clone.clone();
     let event_app_data_dir = app_data_dir_clone.clone();
     let event_song_id = song_id_clone.clone();
@@ -646,10 +573,7 @@ fn attempt_remote_reconnect<R: Runtime>(
         let song = cache::get_song_by_hash(&connection, &song_id_clone)
             .map_err(|_| ReconnectError::NotFound)?
             .ok_or(ReconnectError::NotFound)?;
-        // Re-resolve the streaming source. This checks the CacheCatalog
-        // first (fast path) and re-fetches on a miss. A returned
-        // `Ok(None)` means the provider no longer supports Range — treat
-        // it as a permanent fallback signal.
+        // Ok(None) = Range unsupported → permanent fallback.
         let source = playback_source::load_remote_streaming_source(
             Some(&app_data_dir_clone),
             &cache,
@@ -659,51 +583,26 @@ fn attempt_remote_reconnect<R: Runtime>(
         .map_err(ReconnectError::from_playback_error)?
         .ok_or(ReconnectError::Permanent)?;
 
-        // Package the cache pin guard and fetch event receiver into a
-        // RemoteStreamingRuntime. The caller (attempt_remote_reconnect)
-        // spawns a fetch event listener thread that owns the runtime,
-        // so the pin guard lives for the duration of the reconnected
-        // playback and is dropped when the listener thread exits (on
-        // track skip, stop, or replace). This replaces the previous
-        // approach of leaking the pin guard into a detached
-        // thread::park() thread.
         let runtime = RemoteStreamingRuntime {
             cache_pin_guard: source.cache_pin_guard,
             fetch_event_rx: source.fetch_event_rx,
         };
 
-        // The cache fast path is detected by checking whether the cache
-        // entry is complete + verified. For simplicity here, treat any
-        // successful re-resolve as a non-cache source; the cache fast path
-        // is exercised by the reconnect unit tests directly.
         Ok(ReresolvedSource {
             source: source.streaming_track,
             from_cache: false,
             runtime,
         })
     };
-    // Seek the new source to the preserved position. The streaming
-    // consumers expose a `seek_target` atomic; the coordinator's
-    // `replace_streaming_source` also sets it, but setting it here lets the
-    // decode threads start refilling from the right offset before the swap.
+    // Exact seek is applied by the coordinator swap.
     let seek_source = |source: &mut crate::audio::streaming::StreamingTrack, pos_ms: u64| {
-        // The exact seek is delegated to the coordinator swap, which sets
-        // render_frame and seeks the consumers. Here we report an exact
-        // outcome; the resync event is emitted when the source cannot seek
-        // exactly (covered by the reconnect unit test with a block-boundary
-        // mock).
         let _ = (source, pos_ms);
         SeekOutcome {
             requested_ms: pos_ms,
             actual_ms: pos_ms,
         }
     };
-    let refresh_credentials = || {
-        // No-op: credential refresh is handled inside ProviderFetcher on
-        // 401 (PR #5 single-flight). Re-resolve creates a fresh provider
-        // with current credentials on each attempt.
-        true
-    };
+    let refresh_credentials = || true;
     let result = reconnect_production(
         song_id,
         request_id,
@@ -718,13 +617,7 @@ fn attempt_remote_reconnect<R: Runtime>(
     );
     match result {
         Ok(success) => {
-            // Spawn a fetch event listener thread that owns the
-            // RemoteStreamingRuntime (cache pin guard + fetch event rx).
-            // The pin guard lives for the duration of this thread — when
-            // the fetch event rx is exhausted (source dropped on skip/stop/
-            // replace), the thread exits and the guard is dropped, unpinning
-            // the cache entry. This replaces the previous detached
-            // thread::park() leak.
+            // Listener thread owns pin guard + fetch_event_rx for reconnected playback.
             let event_state = reconnect_state.clone();
             let event_app_handle = reconnect_app_handle.clone();
             let event_song_id = event_song_id.clone();
@@ -735,18 +628,9 @@ fn attempt_remote_reconnect<R: Runtime>(
                 cache_pin_guard,
                 fetch_event_rx,
             } = success.runtime;
-            // The pin guard must stay alive as long as the fetch event
-            // listener runs. For sources with a fetch event rx, the guard
-            // is moved into the listener thread. For cache-fast-path
-            // sources (no rx), the guard is moved into a short-lived
-            // thread that waits on the rx channel — but since there is no
-            // rx, we instead tie it to the request_id staleness check.
             if let Some(rx) = fetch_event_rx {
                 let _pin_guard = cache_pin_guard;
                 std::thread::spawn(move || {
-                    // Keep the pin guard alive for the lifetime of this
-                    // thread. It is dropped when the thread exits (rx
-                    // closes on source replacement/skip/stop).
                     let _pin = _pin_guard;
                     for event in rx {
                         match event {
@@ -805,24 +689,15 @@ fn attempt_remote_reconnect<R: Runtime>(
                     }
                 });
             } else if let Some(guard) = cache_pin_guard {
-                // Cache-fast-path source: no fetch event rx, but still need
-                // the pin guard alive. Spawn a thread that polls the
-                // request_id staleness check and exits when the song is no
-                // longer current, dropping the guard.
+                // Cache fast path: pin until request_id goes stale.
                 std::thread::spawn(move || {
                     let _pin = guard;
-                    // Poll until the song is no longer current (skipped/
-                    // stopped/replaced). This is lightweight — the check is
-                    // an atomic load.
                     while is_current_for_pin() {
                         std::thread::sleep(std::time::Duration::from_secs(1));
                     }
                 });
             }
 
-            // Atomic source swap: send the new source to the coordinator,
-            // which replaces the active source under the playback mutex
-            // while preserving the timeline.
             let _ = state
                 .playback
                 .command_tx
@@ -833,12 +708,8 @@ fn attempt_remote_reconnect<R: Runtime>(
                     new_source: Box::new(success.source),
                 });
         }
-        Err(ReconnectError::Stale) => {
-            // User skipped — no-op. The new song's load owns the UI.
-        }
+        Err(ReconnectError::Stale) => {}
         Err(error) => {
-            // Terminal: surface a playback-error so the frontend can
-            // prompt a manual retry.
             eprintln!("remote playback reconnect failed for {song_id}: {error:?}");
             let _ = app_handle.emit(
                 PLAYBACK_ERROR_EVENT,
@@ -856,9 +727,7 @@ fn attempt_remote_reconnect<R: Runtime>(
     }
 }
 
-/// Read the current playback position for a reconnect, but only when the
-/// active track still matches `song_id`. Returns `None` when the user has
-/// skipped to a different song (stale reconnect).
+/// Position for reconnect when the active track still matches `song_id`.
 fn playback_position_for_reconnect(playback: &PlaybackController, song_id: &str) -> Option<u64> {
     let track = playback.current_track_ref()?;
     if track.song_id != song_id {
@@ -868,15 +737,10 @@ fn playback_position_for_reconnect(playback: &PlaybackController, song_id: &str)
 }
 
 impl ReconnectError {
-    /// Map a `PlaybackError` from the re-resolve path to a reconnect
-    /// classification. Network/decode failures are transient (the provider
-    /// may recover); missing songs are permanent.
     fn from_playback_error(error: PlaybackError) -> Self {
         match error {
             PlaybackError::SongNotFound(_) => ReconnectError::NotFound,
-            // AudioDecodeFailed and Internal errors during re-resolve are
-            // treated as transient: a transient decode/probe failure (e.g.
-            // partial fetch) may recover on the next attempt.
+            // Decode/internal on re-resolve may be transient (partial fetch).
             _ => ReconnectError::Transient,
         }
     }
@@ -884,9 +748,7 @@ impl ReconnectError {
 
 impl RemoteErrorKind {}
 
-/// Captures the current song_id and latest request id before decode, then
-/// sends `AttachStems` to the coordinator. A stale or switched song returns
-/// the current snapshot without attaching data.
+/// Decode stems and attach via coordinator; stale/switched song returns snapshot.
 pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let library_root = state
         .shell
@@ -916,8 +778,6 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.clone()))?;
 
-    // Decode stems before sending the command — expensive work stays
-    // outside the coordinator.
     let request_id_for_guard = request_id;
     let request_id_atom = Arc::clone(&state.playback.playback_request_id);
     let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;

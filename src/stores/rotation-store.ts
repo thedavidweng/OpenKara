@@ -126,9 +126,7 @@ export const useRotationStore = create<RotationState>((set, get) => ({
         currentIndex: state.current_index,
         filterSinger: newSinger,
       });
-    } catch {
-      // silently fail
-    }
+    } catch {}
   },
 
   assignSingerToQueueEntry: (songHash, singer) => {
@@ -154,11 +152,9 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     const { queue, setQueue } = useQueueStore.getState();
     if (queue.length <= 1) return;
 
-    // Check if any songs have assigned singers
     const hasAssignments = queue.some((id) => queueSingers.has(id));
 
     if (!hasAssignments) {
-      // Fisher-Yates shuffle
       const shuffled = [...queue];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -168,7 +164,6 @@ export const useRotationStore = create<RotationState>((set, get) => ({
       return;
     }
 
-    // Interleave by singer to avoid back-to-back
     const groups = new Map<string, string[]>();
     const unassigned: string[] = [];
     for (const id of queue) {
@@ -199,7 +194,6 @@ export const useRotationStore = create<RotationState>((set, get) => ({
       while (j < sorted.length && sorted[j][1].length === sorted[i][1].length) {
         j++;
       }
-      // Fisher-Yates within the equal-size tier [i, j)
       for (let k = j - 1; k > i; k--) {
         const r = i + Math.floor(Math.random() * (k - i + 1));
         [sorted[k], sorted[r]] = [sorted[r], sorted[k]];

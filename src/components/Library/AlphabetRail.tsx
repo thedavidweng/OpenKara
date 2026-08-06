@@ -19,10 +19,7 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   const pointerNavOccurredRef = useRef(false);
   const pointerMovedRef = useRef(false);
   const [rovingBucket, setRovingBucket] = useState<AlphabetBucket | null>(null);
-  // Keep the keyboard cursor synchronously available between consecutive
-  // key events. React state is intentionally asynchronous, so an immediate
-  // End → Enter sequence must not activate the bucket from the previous
-  // render.
+  // Sync ref for key events between React renders (e.g. End then Enter).
   const rovingBucketRef = useRef<AlphabetBucket | null>(null);
   const [activeBucket, setActiveBucket] = useState<AlphabetBucket | null>(null);
 
@@ -104,9 +101,7 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       }
       try {
         event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        // Pointer may already be released
-      }
+      } catch {}
     },
     [],
   );

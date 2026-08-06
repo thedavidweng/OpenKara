@@ -236,8 +236,6 @@ export function VolumeSliders({
         setAccompDragValue(newValue);
       }
       if (isTwoStem) {
-        // In 2-stem mode, set all three sub-stems to the same value;
-        // the backend uses max gain as the accompaniment gain.
         dispatchAccompGroup(newValue, newValue, newValue);
         return;
       }
@@ -575,11 +573,7 @@ export function StemSlider({
   const isOperational = !disabled && onIconClick != null;
   const isMuted = value === 0;
 
-  /*
-   * Muted = dim icon only (same gray as disabled/unselected). Do not set
-   * data-active — that class paints a persistent rounded selected chrome
-   * which reads as "pressed", not "muted".
-   */
+  // Avoid data-active: that class paints "pressed" chrome, not muted.
   const muteIconClass = isOperational
     ? isMuted
       ? "text-[var(--color-text-dimmer)]"

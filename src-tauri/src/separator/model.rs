@@ -76,8 +76,7 @@ pub struct LoadedModel {
     /// contract spectral tensors; verification happens at load time so a
     /// non-conforming graph fails before any separation starts.
     pub spectral: crate::separator::spectral_session::SpectralInterface,
-    // Mutex allows &self access to session.run() since ort::Session is thread-safe
-    // and run() only needs exclusive access to its internal state, not the model.
+    // Mutex: ort::Session::run needs exclusive access despite Session being Send.
     pub(crate) session: std::sync::Mutex<ort::session::Session>,
 }
 
@@ -94,8 +93,6 @@ impl std::fmt::Debug for LoadedModel {
 }
 
 pub fn default_model_path_for_filename(filename: &str) -> PathBuf {
-    // Dev builds may keep multiple local model variants under `src-tauri/models/`.
-    // Callers must resolve by filename instead of assuming the standard model.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("models")
         .join(filename)
@@ -118,8 +115,7 @@ pub fn loaded_runtime_path() -> Option<&'static Path> {
 
 pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
     if let Some(path) = ORT_RUNTIME_PATH.get() {
-        // A committed runtime is process-final. Pretending a different path
-        // loaded would report an artifact the process is not running.
+        // Committed runtime is process-final; do not report a different path.
         anyhow::ensure!(
             path.as_path() == runtime_path,
             "a different ONNX Runtime is already loaded from {}; restart to use {}",
@@ -240,10 +236,7 @@ pub(crate) fn session_cache_key(
         ),
         None => format!("{}::{}", model_path.display(), provider.as_str()),
     };
-    // Session identity depends on the transform semantics for spectral-core
-    // models: a contract revision must never reuse a cached session (issue
-    // #172). Waveform keys are unchanged so existing installs keep their
-    // cache identity.
+    // Spectral-core session keys include contract revision (#172); waveform keys unchanged.
     if metadata.tensor_interface.as_deref() == Some("spectral-core") {
         if let Some(contract) = metadata.spectral_contract.as_deref() {
             key.push_str("::");
@@ -394,18 +387,12 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         "ONNX Runtime is not initialized; the managed runtime bootstrap must complete before model loading"
     );
     let runtime_metadata = read_model_runtime_metadata(path)?;
-    // Non-spectral interfaces (absent/waveform/unknown) and unsupported
-    // spectral contract versions fail HERE, before any ORT session is
-    // created (issue #172 requirement).
+    // Fail unsupported spectral contracts before creating an ORT session (#172).
     ensure_spectral_core_metadata(&runtime_metadata)
         .with_context(|| format!("cannot load model {}", path.display()))?;
 
     let model_path = path.to_path_buf();
-    // Size ORT intra-op parallelism to the performance-core count on Apple
-    // Silicon, keeping the previous `available.min(8)` policy everywhere else
-    // (see `intra_thread_count`). The `OPENKARA_INTRA_THREADS` override lets the
-    // bench harness force a specific count. `available_parallelism` errors keep
-    // the historical `.unwrap_or(4)` fallback.
+    // P-cores on Apple Silicon; else `available.min(8)`. Override: `OPENKARA_INTRA_THREADS`.
     let available = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -418,15 +405,11 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
     let mut builder =
         ort::session::Session::builder().context("failed to create ONNX session builder")?;
 
-    // `intra_threads` controls ORT CPU EP intra-op parallelism for operators
-    // that XNNPACK does not handle (for example, some LSTM nodes).
     builder = builder
         .with_intra_threads(num_threads)
         .map_err(|e| anyhow::anyhow!("failed to set intra-op thread count: {e}"))?;
 
-    // XNNPACK has its own internal worker pool. When XNNPACK owns conv/matmul
-    // operators, ORT intra-op spinning can compete for CPU time; disable
-    // spinning so the OS scheduler can arbitrate cores fairly.
+    // XNNPACK has its own pool; disable ORT intra-op spinning to avoid oversubscription.
     if matches!(ep_preference, ExecutionProviderPreference::Xnnpack) {
         builder = builder
             .with_intra_op_spinning(false)
@@ -442,9 +425,6 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         preload_directml_companion()?;
     }
 
-    // Register execution providers. ORT falls back to CPU automatically if the
-    // requested EP is unavailable, but we log the attempt so users can diagnose
-    // performance issues.
     let ep_list = build_execution_provider_list(ep_preference, num_threads);
     if !ep_list.is_empty() {
         builder = builder
@@ -493,8 +473,6 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         .tensor_type()
         .context("model input tensor type is missing")?;
 
-    // The spectral-core declaration must be backed by the exact contract
-    // tensor interface; a mismatched graph fails at load, not mid-song.
     let spectral = {
         let input_infos: Vec<(String, Vec<i64>)> = session
             .inputs()
@@ -551,8 +529,7 @@ fn build_execution_provider_list(
     match preference {
         // Empty list means ORT uses the built-in CPU EP.
         ExecutionProviderPreference::Cpu => vec![],
-        // Keep XNNPACK worker count aligned with ORT intra-op threads to avoid
-        // oversubscription. Unsupported operators fall back to ORT CPU EP.
+        // Align XNNPACK workers with ORT intra-op threads.
         ExecutionProviderPreference::Xnnpack => vec![ep::XNNPACK::default()
             .with_intra_op_num_threads(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
@@ -567,17 +544,14 @@ fn execution_provider_chain(
     preference: ExecutionProviderPreference,
 ) -> Vec<ExecutionProviderPreference> {
     match preference {
-        // If XNNPACK session creation fails, drop to bare CPU.
         ExecutionProviderPreference::Xnnpack => vec![
             ExecutionProviderPreference::Xnnpack,
             ExecutionProviderPreference::Cpu,
         ],
-        // The Windows runtime artifact contains DirectML and CPU only.
         ExecutionProviderPreference::DirectMl => vec![
             ExecutionProviderPreference::DirectMl,
             ExecutionProviderPreference::Cpu,
         ],
-        // The Apple Silicon runtime artifact contains CoreML and CPU only.
         ExecutionProviderPreference::CoreMl => vec![
             ExecutionProviderPreference::CoreMl,
             ExecutionProviderPreference::Cpu,
@@ -587,8 +561,7 @@ fn execution_provider_chain(
 }
 
 fn parse_model_runtime_metadata(bytes: &[u8]) -> ModelRuntimeMetadata {
-    // We only need two custom ONNX metadata properties at runtime. Reading just
-    // `metadata_props` avoids pulling a full protobuf dependency into the app.
+    // Read only metadata_props (avoids a full protobuf dependency).
     let mut metadata = ModelRuntimeMetadata::default();
     let mut cursor = 0;
 

@@ -14,34 +14,20 @@ import {
   shouldLoadSeparatedStems,
 } from "./session-policies";
 
-/**
- * Small public surface for song lifecycle + position clock.
- * Queue/history and stem-load policy live behind this interface so
- * "what happens when a song ends?" is one module, not a scatter across stores.
- */
 export interface PlaybackSession {
   play(songId: string): Promise<void>;
   playNow(songId: string): Promise<void>;
   skipForward(): Promise<void>;
   skipBack(): Promise<void>;
-  /** Queue advance on backend `playback-ended` (song_id guarded). */
   onEnded(endedSongId: string): Promise<void>;
-  /** #88: Reconcile queue head after a gapless `track-transitioned` event.
-   * The backend already swapped to the new song; the frontend must remove
-   * the old song from the queue and push it to history so the queue head
-   * matches the backend's current track. Also restores separated stems for
-   * the new song — the gapless swap creates a plain track, so vocal-removal
-   * / karaoke stem mode must be reloaded. */
   onTrackTransitioned(fromSongId: string, toSongId: string): Promise<void>;
   applyPosition(event: PlaybackPositionEvent): void;
   applySnapshot(snapshot: PlaybackStateSnapshot): void;
   getPositionClock(): PositionClockState;
-  /** Replace clock from peer webview sync (adapter rebases playingSinceMs). */
   replaceClock(clock: PositionClockState): void;
 
   resume(): Promise<void>;
   pause(): Promise<void>;
-  /** Returns true when the authoritative seek snapshot was accepted. */
   seek(ms: number): Promise<boolean>;
   setVolume(level: number): Promise<void>;
   setStemVolume(stem: StemName, level: number): Promise<void>;
@@ -49,7 +35,6 @@ export interface PlaybackSession {
   loadState(): Promise<void>;
 }
 
-/** Transport seam — backend IPC only. */
 export interface PlaybackTransport {
   play: (songId: string) => Promise<PlaybackStateSnapshot>;
   resume: () => Promise<PlaybackStateSnapshot>;
@@ -64,13 +49,11 @@ export interface PlaybackTransport {
   getPlaybackState: () => Promise<PlaybackStateSnapshot>;
 }
 
-/** Queue/history seam — not part of the public session API. */
 export interface PlaybackQueueOps {
   addToQueue: (songId: string) => void;
   dequeue: () => string | null;
   pushToHistory: (songId: string) => void;
   popFromHistory: () => string | null;
-  /** #88: Remove songs from the queue by ID (used by gapless reconciliation). */
   removeSongIds: (songIds: string[]) => void;
 }
 
@@ -117,7 +100,6 @@ export function createPlaybackSession(
     }
 
     const snapshotWithStems = await deps.transport.loadStems();
-    // Skip applying stems if the song changed during loadStems().
     if (clock.snapshot?.song_id !== songId) {
       return;
     }
@@ -183,8 +165,6 @@ export function createPlaybackSession(
       }
 
       deps.queue.pushToHistory(fromSongId);
-      // Remove the from-song from the queue if it's still there (it may
-      // have already been dequeued by the preload scheduler's caller).
       deps.queue.removeSongIds([fromSongId, toSongId]);
 
       const currentSnapshot = await deps.transport.getPlaybackState();
@@ -200,8 +180,6 @@ export function createPlaybackSession(
       }
 
       const snapshotWithStems = await deps.transport.loadStems();
-      // Skip applying stems if the song changed again before loadStems()
-      // resolved.
       if (clock.snapshot?.song_id !== toSongId) {
         return;
       }
@@ -230,7 +208,6 @@ export function createPlaybackSession(
         return;
       }
 
-      // applySnapshot also updates playingSinceMs from the seek response,
       const newSnapshot = await deps.transport.seek(0);
       tryApplyAuthoritative(newSnapshot);
     },
@@ -272,7 +249,6 @@ export function createPlaybackSession(
     setVolume: async (level) => {
       const clamped = Math.max(0, Math.min(1, level));
       const snapshot = await deps.transport.setVolume(clamped);
-      // Volume changes do not re-anchor the playhead clock.
       if (isStaleTransportSnapshotForClock(clock, snapshot)) {
         return;
       }

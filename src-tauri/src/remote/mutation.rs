@@ -219,8 +219,7 @@ mod sync_backend {
             .and_then(|root| crate::library_root::LibraryRoot::open(&root).ok())
             .map(|root| root.database_path());
 
-        // Fail closed: a missing pre-mutation digest must not be treated as
-        // "unchanged" by recovery (None == None cancels the operation).
+        // Fail closed: missing digest must not look like "unchanged" (None==None).
         let source_db_digest = match db_path.as_ref() {
             Some(p) => Some(control_db::sha256_file(p).map_err(|e| {
                 internal_error(format!(

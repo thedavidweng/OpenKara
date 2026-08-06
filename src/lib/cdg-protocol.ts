@@ -64,15 +64,7 @@ export function parseCdgFrameResponse(
   };
 }
 
-/**
- * Normalize the IPC response to an ArrayBuffer.
- *
- * PERF: The backend returns raw bytes via `tauri::ipc::Response`, which
- * **should** arrive as an `ArrayBuffer` on desktop platforms. However, Tauri's
- * IPC bridge may occasionally deliver it as a `number[]` (JSON-serialized
- * Vec<u8>) depending on the protocol path. This function handles both cases
- * so CDG rendering is robust regardless of IPC serialization behavior.
- */
+/** Tauri IPC may deliver bytes as ArrayBuffer or number[]. */
 export function ensureArrayBuffer(result: unknown): ArrayBuffer {
   if (result instanceof ArrayBuffer) return result;
   if (ArrayBuffer.isView(result)) {

@@ -1,4 +1,3 @@
-/** The document shell marker is always full-app; host uses a single webview tree. */
 export function applyShellDocumentMarker() {
   const shellMode = "full-app";
 

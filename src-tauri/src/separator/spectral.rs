@@ -295,10 +295,7 @@ impl SpectralPlans {
 
         for c in 0..channels {
             let chan = &x[c * samples..(c + 1) * samples];
-            // Outer Demucs reflect padding (f32 -> f64 in one pass) into pad_a,
-            // then the centered STFT reflect padding of N_FFT/2 on each side
-            // into pad_b. `pad_a` and `pad_b` are disjoint fields, so the
-            // second call borrows one shared and one mutable without cloning.
+            // Two-stage reflect pad into disjoint pad_a/pad_b (no clone).
             reflect_pad_from_f32(chan, OUTER_PAD, pad_r, &mut self.pad_a);
             reflect_pad_into(&self.pad_a, N_FFT / 2, N_FFT / 2, &mut self.pad_b);
             let padded = &self.pad_b;
@@ -391,9 +388,7 @@ impl SpectralPlans {
                         *bin = Complex::new(0.0, 0.0);
                     }
                 }
-                // Zero Nyquist bin, and a zero DC imaginary part (both are
-                // required to be real for the C2R inverse; the reference's
-                // sin(0)/sin(πn) terms make them contribute nothing regardless).
+                // C2R inverse requires real Nyquist and real DC imag.
                 self.frame_freq[CONTRACT_FREQS] = Complex::new(0.0, 0.0);
                 self.frame_freq[0].im = 0.0;
 
@@ -419,8 +414,7 @@ impl SpectralPlans {
                 }
             }
 
-            // Envelope division (clamped), front crop of N_FFT/2, outer crop of
-            // OUTER_PAD, and final crop to `length` — folded into one indexing.
+            // Envelope divide + crop (front N_FFT/2, OUTER_PAD, length) in one index.
             for k in 0..length {
                 let idx = front + OUTER_PAD + k;
                 let env = self.envelope[idx].max(ENVELOPE_CLAMP);

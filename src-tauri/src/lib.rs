@@ -90,10 +90,8 @@ pub fn derive_startup_model_bootstrap(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        // The single-instance guard must be the FIRST plugin so a second launch
-        // short-circuits before any state initializes. The library is a single
-        // SQLite writer and the remote-library outbox/recovery logic assumes one
-        // writer, so a second concurrent instance is a real corruption risk.
+        // First plugin: short-circuit a second launch before any state init
+        // (single SQLite writer + remote outbox assume one process).
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
@@ -103,9 +101,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        // Separation runs for minutes and users switch away; the frontend
-        // posts a native notification when a run finishes while the window
-        // is unfocused (#262).
         .plugin(tauri_plugin_notification::init())
         .setup(|app| app_runtime::setup_app(app))
         .invoke_handler(tauri::generate_handler![
@@ -233,26 +228,14 @@ pub fn run() {
             commands::self_update::self_update_supported
         ]);
 
-    // In-app updater (#255): the first-party updater + process plugins power the
-    // launch update check, signed download/install, and post-install relaunch.
-    // Both are desktop-only — the updater has no mobile implementation and
-    // OpenKara ships desktop bundles exclusively — so gate them behind `desktop`.
+    // Desktop-only: updater has no mobile implementation.
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        // Window geometry (#263). The flags are spelled out rather than
-        // `StateFlags::all()` because the other three fight designs the app
-        // already committed to: VISIBLE would `show()` during restore and race
-        // the hidden-start reveal handshake (and could persist "hidden" from a
-        // crashed run), FULLSCREEN would reintroduce the AppKit full-screen
-        // state the zoom-button retarget in `window_shell.m` deliberately
-        // avoids, and DECORATIONS would make the saved file a second writer for
-        // a titlebar the native shell pass configures on every launch.
-        //
-        // The fullscreen player is denied: it is created on the monitor the
-        // user picked with geometry derived from that monitor, so a restored
-        // frame would override the selection.
+        // SIZE|POSITION|MAXIMIZED only — VISIBLE races the hidden-start reveal,
+        // FULLSCREEN fights window_shell.m zoom retarget, DECORATIONS fights the
+        // native titlebar config. Deny fullscreen-player: geometry is monitor-derived.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(

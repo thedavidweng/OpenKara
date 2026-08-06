@@ -80,7 +80,6 @@ export function createCdgFrameCoordinator(deps: {
     songId: string;
     transportGeneration: number;
     frameVersion: number;
-    /** Protocol decoder yields `Uint8Array` (not ClampedArray). */
     rgba: Uint8Array;
   }) => void;
   onProbeResolved: (args: {

@@ -13,7 +13,6 @@ type Phase =
   | "ready"
   | "failed";
 
-// In-app updater banner (#255).
 export function UpdateBanner() {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("hidden");

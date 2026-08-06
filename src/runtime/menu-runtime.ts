@@ -95,9 +95,7 @@ export async function promptImportFiles({
 
     try {
       defaultPath = await getDefaultAudioDir();
-    } catch {
-      // audioDir may not be available on all platforms; fall through
-    }
+    } catch {}
     const selectedPaths =
       getShortcutPlatform() === "mac"
         ? await pickImportPaths(defaultPath)

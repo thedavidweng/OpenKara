@@ -68,8 +68,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
     (s) => separationStatuses[s.hash]?.state === "completed",
   ).length;
 
-  // Check if all songs are separated in the current stem mode.
-  // Treat "running" as separated — a song being re-separated was previously completed.
   const allSeparated =
     separableSongs.length > 0 &&
     separableSongs.every((s) => {

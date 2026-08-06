@@ -102,8 +102,7 @@ pub(crate) fn bootstrap_remote_library(
                     Ok(probe.revision)
                 }
                 None => {
-                    // Empty repository seed: one-time root openkara.db upload.
-                    // First publication migrates to the manifest protocol.
+                    // One-time empty-repo seed; later publication uses the manifest.
                     let uploaded = storage.upload_database(&root.database_path())?;
                     Ok(match uploaded {
                         Some(revision) => Some(revision),
@@ -115,8 +114,7 @@ pub(crate) fn bootstrap_remote_library(
             }
         }
         BootstrapMode::RequireExisting => {
-            // Do not create layout or marker on reauthorize: a missing marker
-            // means the user pointed at the wrong remote folder.
+            // Reauthorize must not create layout; missing marker = wrong folder.
             if !storage.marker_exists()? {
                 return Err(CommandError::from(LibraryError::Internal(format!(
                     "The selected {} is not an OpenKara remote repository.",
@@ -139,11 +137,7 @@ pub(crate) fn bootstrap_remote_library(
     }
 }
 
-/// Download the committed remote database to a temp path, verify size and
-/// SHA-256 when known, then activate via the shared database activation
-/// helper (integrity + schema + fsync + LKG restore on rename failure).
-/// Register/Reauthorize must not write a corrupt or truncated generation DB
-/// directly to the final path, and must not diverge from ordinary pull.
+/// Download committed DB to temp, verify size/digest, then shared atomic activate.
 fn activate_committed_database(
     storage: &mut dyn RemoteBootstrapStorage,
     root: &LibraryRoot,
@@ -151,7 +145,6 @@ fn activate_committed_database(
 ) -> CommandResult<()> {
     let destination = root.database_path();
     let temp_path = destination.with_extension(format!("db.part.bootstrap-{}", probe.generation));
-    // Download to temp (never directly to the final working path).
     let _ = fs::remove_file(&temp_path);
     storage.download_database(&probe.database_path, &temp_path)?;
 
@@ -178,8 +171,6 @@ fn activate_committed_database(
         }
     }
 
-    // Shared activation with ordinary atomic pull: integrity, schema
-    // compatibility, fsync, LKG preserve, rename-with-restore.
     crate::remote::atomic_download::activate_verified_database_candidate(&temp_path, &destination)?;
     Ok(())
 }

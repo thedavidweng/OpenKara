@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
 import { usePlayerStore } from "@/stores/player-store";
 
-// Reconnect indicator for remote playback (PR #8, issue #151).
 export function RemoteReconnectIndicator() {
   const { t } = useTranslation();
   const reconnectState = useRemotePlaybackStore((s) => s.reconnectState);
