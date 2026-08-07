@@ -89,6 +89,7 @@ playwright-report/
 
 # Local worktrees / ephemeral tooling
 .worktrees/
+.zcode/
 .sisyphus/
 .omx/
 .pnpm-store/
