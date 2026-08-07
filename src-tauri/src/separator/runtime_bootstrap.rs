@@ -514,8 +514,12 @@ mod tests {
 
     fn catalog_runtime() -> (&'static VerifiedCatalog, &'static CatalogRuntime) {
         let catalog = embedded_catalog();
-        let runtime = resolve_runtime(&catalog.manifest, catalog::current_target_triple())
-            .expect("embedded catalog must resolve the current target runtime");
+        let runtime = resolve_runtime(
+            &catalog.manifest,
+            catalog::current_target_triple(),
+            crate::config::ExecutionProviderPreference::default_for_current_platform(),
+        )
+        .expect("embedded catalog must resolve the current target runtime");
         (catalog, runtime)
     }
 

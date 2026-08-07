@@ -99,8 +99,11 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
             format!("failed to read worker request {}", request_path.display())
         })?)
         .context("failed to parse runtime worker request")?;
-    let resolved =
-        catalog::resolve_runtime(&request.catalog.manifest, catalog::current_target_triple())?;
+    let resolved = catalog::resolve_runtime(
+        &request.catalog.manifest,
+        catalog::current_target_triple(),
+        crate::config::effective_execution_provider_from_dir(&request.app_data_dir),
+    )?;
     anyhow::ensure!(
         resolved.artifact_id == request.runtime.artifact_id
             && resolved.archive_digest == request.runtime.archive_digest,
@@ -627,9 +630,12 @@ mod tests {
     fn verified_archive_temp_is_recovered_after_an_interrupted_install() {
         let dir = tempfile::tempdir().expect("tempdir");
         let catalog = catalog::embedded_catalog();
-        let embedded_runtime =
-            catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())
-                .expect("runtime");
+        let embedded_runtime = catalog::resolve_runtime(
+            &catalog.manifest,
+            catalog::current_target_triple(),
+            crate::config::ExecutionProviderPreference::default_for_current_platform(),
+        )
+        .expect("runtime");
         let payload = b"verified runtime archive";
         let mut runtime = embedded_runtime.clone();
         runtime.byte_size = payload.len() as u64;

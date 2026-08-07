@@ -232,7 +232,11 @@ fn run_phase(config: &RegressionConfig) -> Result<RuntimeBootstrapRegressionRepo
         )
     })?;
     let embedded = catalog::embedded_catalog();
-    let runtime = catalog::resolve_runtime(&embedded.manifest, catalog::current_target_triple())?;
+    let runtime = catalog::resolve_runtime(
+        &embedded.manifest,
+        catalog::current_target_triple(),
+        crate::config::ExecutionProviderPreference::default_for_current_platform(),
+    )?;
 
     match config.phase {
         RegressionPhase::FaultRetry => run_fault_retry(config, embedded, runtime),
@@ -266,8 +270,12 @@ fn run_fault_retry(
         .find(|candidate| candidate.artifact_id == runtime.artifact_id)
         .context("embedded runtime was not found in its catalog")?;
     selected.download_url = fixture_url;
-    let selected_runtime =
-        catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?.clone();
+    let selected_runtime = catalog::resolve_runtime(
+        &catalog.manifest,
+        catalog::current_target_triple(),
+        crate::config::ExecutionProviderPreference::default_for_current_platform(),
+    )?
+    .clone();
 
     let status = Arc::new(Mutex::new(command::snapshot_from_disk(
         &config.app_data_dir,

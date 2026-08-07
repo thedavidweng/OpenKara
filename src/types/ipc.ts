@@ -594,6 +594,7 @@ export interface RuntimeBootstrapStatusSnapshot {
   candidate_version: string | null;
   restart_required: boolean;
   error: CommandError | null;
+  cpu_fallback_notice?: string | null;
 }
 
 export interface RuntimeUpdateReport {

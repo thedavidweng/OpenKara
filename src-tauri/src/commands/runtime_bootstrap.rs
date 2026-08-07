@@ -29,6 +29,7 @@ pub const RUNTIME_BOOTSTRAP_READY_EVENT: &str = "runtime-bootstrap-ready";
 pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
+const CPU_FALLBACK_NOTICE: &str = "cpu-runtime-fallback-after-directml-timeout";
 
 const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
@@ -64,13 +65,19 @@ pub struct RuntimeBootstrapStatusSnapshot {
     pub candidate_version: Option<String>,
     pub restart_required: bool,
     pub error: Option<CommandError>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_fallback_notice: Option<String>,
 }
 
 fn pinned_runtime_version() -> String {
     let catalog = catalog::embedded_catalog();
-    catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())
-        .map(|runtime| runtime.runtime.version.clone())
-        .unwrap_or_else(|_| "unknown".to_owned())
+    catalog::resolve_runtime(
+        &catalog.manifest,
+        catalog::current_target_triple(),
+        crate::config::ExecutionProviderPreference::default_for_current_platform(),
+    )
+    .map(|runtime| runtime.runtime.version.clone())
+    .unwrap_or_else(|_| "unknown".to_owned())
 }
 
 pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrapStatusSnapshot {
@@ -123,6 +130,7 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         state
     };
 
+    let cpu_fallback_notice = cpu_fallback_notice_for(&active_artifact_id);
     RuntimeBootstrapStatusSnapshot {
         state,
         runtime_path,
@@ -134,6 +142,26 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         candidate_version,
         restart_required,
         error,
+        cpu_fallback_notice,
+    }
+}
+
+fn cpu_fallback_notice_for(active_artifact_id: &Option<String>) -> Option<String> {
+    if !crate::platform_capabilities::directml_disabled_by_timeout() {
+        return None;
+    }
+    let artifact_id = active_artifact_id.as_ref()?;
+    let runtime =
+        catalog::runtime_by_artifact_id(&catalog::embedded_catalog().manifest, artifact_id)?;
+    let is_cpu_only = runtime
+        .runtime
+        .execution_providers
+        .iter()
+        .all(|provider| provider.eq_ignore_ascii_case("cpu"));
+    if is_cpu_only {
+        Some(CPU_FALLBACK_NOTICE.to_owned())
+    } else {
+        None
     }
 }
 
@@ -395,7 +423,11 @@ pub fn install_and_load_runtime_blocking(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> anyhow::Result<PathBuf> {
-    let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
+    let runtime = catalog::resolve_runtime(
+        &catalog.manifest,
+        catalog::current_target_triple(),
+        crate::config::effective_execution_provider_from_dir(app_data_dir),
+    )?;
 
     if let Some(path) =
         try_activate_staged_runtime(app_data_dir, &runtime.artifact_id, status, emit)?
@@ -420,7 +452,14 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
-    ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
+    if let Err(err) = ensure_runtime_loaded_with_watchdog(&installed.library_path) {
+        let _ = crate::config::record_directml_unavailable_on_timeout(
+            app_data_dir,
+            &runtime.runtime.execution_providers,
+            &err.to_string(),
+        );
+        return Err(err);
+    }
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
@@ -454,7 +493,19 @@ fn try_activate_staged_runtime(
 
     let base = snapshot_from_disk(app_data_dir);
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Probing);
-    ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
+    if let Err(err) = ensure_runtime_loaded_with_watchdog(&installed.library_path) {
+        if let Some(runtime) = catalog::runtime_by_artifact_id(
+            &catalog::embedded_catalog().manifest,
+            &installed.record.artifact_id,
+        ) {
+            let _ = crate::config::record_directml_unavailable_on_timeout(
+                app_data_dir,
+                &runtime.runtime.execution_providers,
+                &err.to_string(),
+            );
+        }
+        return Err(err);
+    }
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
 
@@ -470,7 +521,11 @@ pub fn download_and_stage_candidate_blocking(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> anyhow::Result<()> {
-    let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
+    let runtime = catalog::resolve_runtime(
+        &catalog.manifest,
+        catalog::current_target_triple(),
+        crate::config::effective_execution_provider_from_dir(app_data_dir),
+    )?;
 
     // Fail closed if the staged runtime cannot serve every installed model variant.
     for variant in [
@@ -729,11 +784,12 @@ pub async fn check_runtime_updates(
         tauri::async_runtime::spawn_blocking(move || -> CommandResult<RuntimeUpdateReport> {
             let catalog = catalog::fetch_stable_catalog()
                 .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
-            let runtime =
-                catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())
-                    .map_err(|error| {
-                        model_bootstrap_error(format!("update check failed: {error}"))
-                    })?;
+            let runtime = catalog::resolve_runtime(
+                &catalog.manifest,
+                catalog::current_target_triple(),
+                crate::config::effective_execution_provider_from_dir(&app_data_dir),
+            )
+            .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
 
             let inventory = runtime_bootstrap::runtime_inventory(&app_data_dir);
             let installed_record = inventory
@@ -887,6 +943,7 @@ mod tests {
                 candidate_version: None,
                 restart_required: false,
                 error: None,
+                cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
             assert!(ensure_runtime_ready(&status).is_ok());
@@ -973,6 +1030,7 @@ mod tests {
                 candidate_version: None,
                 restart_required: false,
                 error: None,
+                cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
             assert!(ensure_runtime_ready(&status).is_err());

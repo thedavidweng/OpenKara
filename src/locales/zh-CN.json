@@ -460,6 +460,10 @@
         "downloadFailed": "ONNX 运行时下载失败：{{error}}",
         "downloadFailedHint": "请检查网络连接后重试下载。",
         "retryDownload": "重试"
+      },
+      "cpuFallbackToast": {
+        "title": "正在使用 CPU 版 ONNX Runtime",
+        "message": "GPU 运行时在本机无响应，OpenKara 已切换到 CPU 运行时。人声分离功能可用，但速度较慢。"
       }
     },
     "hideBatchSeparate": {

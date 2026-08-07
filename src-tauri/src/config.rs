@@ -602,6 +602,12 @@ pub struct AppConfig {
     pub pending_mirror_restore: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
+    /// Records that this host failed to load a DirectML-linked ONNX Runtime and
+    /// must not auto-select DirectML again. Holds a short human-readable reason
+    /// (set when the timeout fires); presence alone is the gate. The user can
+    /// still explicitly pick DirectML in Settings, which clears this flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub directml_disabled_by_runtime_timeout: Option<String>,
 }
 
 impl AppConfig {
@@ -647,8 +653,33 @@ impl AppConfig {
         platform: ExecutionProviderPlatform,
     ) -> ExecutionProviderPreference {
         match self.execution_provider {
+            // An explicit user choice wins and clears a recorded DirectML
+            // timeout — the user is signalling they want to retry DirectML.
+            Some(ExecutionProviderPreference::DirectMl)
+                if ExecutionProviderPreference::DirectMl.is_available_for(platform) =>
+            {
+                ExecutionProviderPreference::DirectMl
+            }
             Some(ep) if ep.is_available_for(platform) => ep,
-            _ => ExecutionProviderPreference::default_for(platform),
+            _ => self.default_execution_provider_for(platform),
+        }
+    }
+
+    /// Platform default with the DirectML-timeout disable honored. When the
+    /// host recorded a DirectML load timeout, the Windows default downgrades
+    /// from DirectML to CPU so the next bootstrap selects a CPU-only runtime.
+    fn default_execution_provider_for(
+        &self,
+        platform: ExecutionProviderPlatform,
+    ) -> ExecutionProviderPreference {
+        if self.directml_disabled_by_runtime_timeout.is_some()
+            && platform == ExecutionProviderPlatform::Windows
+            && ExecutionProviderPreference::default_for(platform)
+                == ExecutionProviderPreference::DirectMl
+        {
+            ExecutionProviderPreference::Cpu
+        } else {
+            ExecutionProviderPreference::default_for(platform)
         }
     }
 
@@ -749,6 +780,54 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
         .with_context(|| format!("failed to write config to {}", config_path.display()))?;
 
     Ok(())
+}
+
+/// Resolve the execution provider a runtime selection should target, reading
+/// the persisted config from `app_data_dir`. Falls back to the platform
+/// default when the config is missing or unreadable. Runtime catalog
+/// resolution (which picks a CPU-only vs DirectML Windows runtime) calls this
+/// so a host that recorded a DirectML load timeout resolves the CPU runtime
+/// even before the OS capability probe is consulted.
+pub fn effective_execution_provider_from_dir(app_data_dir: &Path) -> ExecutionProviderPreference {
+    match load_config(app_data_dir) {
+        Ok(Some(config)) => config.effective_execution_provider(),
+        _ => ExecutionProviderPreference::default_for_current_platform(),
+    }
+}
+
+const DIRECTML_RUNTIME_TIMEOUT_REASON: &str = "directml-runtime-load-timeout";
+
+pub fn record_directml_unavailable_on_timeout(
+    app_data_dir: &Path,
+    runtime_execution_providers: &[String],
+    error_message: &str,
+) -> Result<bool> {
+    if !error_message
+        .contains(crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER)
+    {
+        return Ok(false);
+    }
+    let runtime_advertises_directml = runtime_execution_providers
+        .iter()
+        .any(|provider| provider.eq_ignore_ascii_case("directml"));
+    if !runtime_advertises_directml {
+        return Ok(false);
+    }
+
+    crate::platform_capabilities::set_directml_disabled_by_timeout(true);
+
+    let mut config = load_config(app_data_dir)
+        .with_context(|| format!("failed to load config from {}", app_data_dir.display()))?
+        .unwrap_or_default();
+    if config.directml_disabled_by_runtime_timeout.as_deref()
+        == Some(DIRECTML_RUNTIME_TIMEOUT_REASON)
+    {
+        return Ok(true);
+    }
+    config.directml_disabled_by_runtime_timeout = Some(DIRECTML_RUNTIME_TIMEOUT_REASON.to_owned());
+    save_config(app_data_dir, &config)
+        .with_context(|| format!("failed to save config to {}", app_data_dir.display()))?;
+    Ok(true)
 }
 
 /// Write-temp + fsync + atomic rename; cleans up the temp on any failure.
@@ -898,6 +977,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            directml_disabled_by_runtime_timeout: None,
         };
 
         save_config(tmp.path(), &config).unwrap();
@@ -1026,6 +1106,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            directml_disabled_by_runtime_timeout: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("stem_mode"));
@@ -1061,6 +1142,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            directml_disabled_by_runtime_timeout: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));
@@ -1090,6 +1172,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            directml_disabled_by_runtime_timeout: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("execution_provider"));
@@ -1137,6 +1220,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            directml_disabled_by_runtime_timeout: None,
         };
 
         save_config(tmp.path(), &legacy).unwrap();
@@ -1728,5 +1812,78 @@ mod tests {
         assert!(sibling_file_names(tmp.path())
             .iter()
             .all(|name| !name.contains(".tmp.")));
+    }
+
+    #[test]
+    fn directml_timeout_disable_downgrades_windows_default_to_cpu() {
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
+        let config = AppConfig {
+            directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
+            ..AppConfig::default()
+        };
+        let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
+        assert_eq!(resolved, ExecutionProviderPreference::Cpu);
+    }
+
+    #[test]
+    fn explicit_user_execution_provider_overrides_timeout_disable() {
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
+        let config = AppConfig {
+            execution_provider: Some(ExecutionProviderPreference::DirectMl),
+            directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
+            ..AppConfig::default()
+        };
+        let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
+        assert_eq!(resolved, ExecutionProviderPreference::DirectMl);
+    }
+
+    #[test]
+    fn record_directml_unavailable_ignores_non_timeout_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let providers = vec!["directml".to_owned()];
+        let recorded = record_directml_unavailable_on_timeout(
+            tmp.path(),
+            &providers,
+            "some unrelated load error",
+        )
+        .unwrap();
+        assert!(!recorded);
+        let loaded = load_config(tmp.path()).unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn record_directml_unavailable_ignores_cpu_only_runtime_timeouts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let providers = vec!["cpu".to_owned()];
+        let marker = crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER;
+        let recorded = record_directml_unavailable_on_timeout(
+            tmp.path(),
+            &providers,
+            &format!("{marker}: timed out"),
+        )
+        .unwrap();
+        assert!(!recorded);
+    }
+
+    #[test]
+    fn record_directml_unavailable_persists_flag_and_flips_process_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
+        let providers = vec!["directml".to_owned(), "cpu".to_owned()];
+        let marker = crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER;
+        let recorded = record_directml_unavailable_on_timeout(
+            tmp.path(),
+            &providers,
+            &format!("{marker}: timed out"),
+        )
+        .unwrap();
+        assert!(recorded);
+        assert!(crate::platform_capabilities::directml_disabled_by_timeout());
+        let loaded = load_config(tmp.path()).unwrap().unwrap();
+        assert_eq!(
+            loaded.directml_disabled_by_runtime_timeout.as_deref(),
+            Some("directml-runtime-load-timeout"),
+        );
     }
 }

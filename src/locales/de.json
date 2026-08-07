@@ -460,6 +460,10 @@
         "downloadFailed": "Download der ONNX Runtime fehlgeschlagen: {{error}}",
         "downloadFailedHint": "Überprüfen Sie Ihre Verbindung und wiederholen Sie dann den Download.",
         "retryDownload": "Wiederholen"
+      },
+      "cpuFallbackToast": {
+        "title": "Using CPU-only ONNX Runtime",
+        "message": "The GPU runtime did not respond on this machine, so OpenKara switched to the CPU runtime. Stem separation works, but runs slower."
       }
     },
     "hideBatchSeparate": {
