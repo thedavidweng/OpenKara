@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.0](https://github.com/thedavidweng/OpenKara/compare/v0.12.1...v0.13.0) (2026-08-07)
+
+
+### Features
+
+* **ui:** add copy debug info action on error toasts ([55bf6f3](https://github.com/thedavidweng/OpenKara/commit/55bf6f308e52c5d5e5528cdd5dd98efe70e2a25c))
+
+
+### Bug Fixes
+
+* address PR review findings still valid in tree ([7c57231](https://github.com/thedavidweng/OpenKara/commit/7c57231603a5ad7d90c8c066b40c1c00582d1809))
+* apply CodeRabbit auto-fixes ([030a2fd](https://github.com/thedavidweng/OpenKara/commit/030a2fdb1f95f1bfa5c2f13d9168b2489a976a2d))
+* apply CodeRabbit auto-fixes ([862fc10](https://github.com/thedavidweng/OpenKara/commit/862fc10aca9f71ae4632facee5cc53569c30675f))
+* **ci:** align pnpm action version with packageManager 11.20.0 ([f6d3037](https://github.com/thedavidweng/OpenKara/commit/f6d303751fbbf81daee8571a1f8a4edad96f542f))
+* **ci:** align pnpm pins with packageManager 11.20.0 ([64046b4](https://github.com/thedavidweng/OpenKara/commit/64046b402acaf4e4bb0d4790f747fb69e2c266d4))
+* **ci:** re-create draft releases bound to the real tag ([d915a74](https://github.com/thedavidweng/OpenKara/commit/d915a74905867823c43ab986d281b580191284cd))
+* pass initial value to useRef in ToastContainer ([e28b450](https://github.com/thedavidweng/OpenKara/commit/e28b4508fb082fc3d7492e42cfdca27cd9be2ca6))
+* **runtime:** harden Windows ORT load and sticky app language ([a34b961](https://github.com/thedavidweng/OpenKara/commit/a34b961d9b039a57a937ef1300f18f96ca664d84))
+* **runtime:** Windows ORT load, sticky language, agent docs index ([30c4c76](https://github.com/thedavidweng/OpenKara/commit/30c4c76f555c29baae4e3527095b393e91479e88))
+
 ## [0.12.1](https://github.com/thedavidweng/OpenKara/compare/v0.12.0...v0.12.1) (2026-08-04)
 
 
