@@ -459,6 +459,10 @@
         "downloadFailed": "ONNX Runtime 다운로드 실패: {{error}}",
         "downloadFailedHint": "연결을 확인한 뒤 다운로드를 다시 시도하세요.",
         "retryDownload": "다시 시도"
+      },
+      "cpuFallbackToast": {
+        "title": "CPU 전용 ONNX 런타임 사용 중",
+        "message": "OpenKara가 CPU 전용 ONNX 런타임을 사용합니다. GPU 런타임이 응답하지 않았습니다. 보컬 분리는 계속 작동합니다. 속도가 더 느립니다."
       }
     },
     "hideBatchSeparate": {

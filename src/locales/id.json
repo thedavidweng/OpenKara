@@ -459,6 +459,10 @@
         "downloadFailed": "Unduhan ONNX Runtime gagal: {{error}}",
         "downloadFailedHint": "Periksa koneksi Anda, lalu coba unduh lagi.",
         "retryDownload": "Coba Lagi"
+      },
+      "cpuFallbackToast": {
+        "title": "Menggunakan ONNX Runtime khusus CPU",
+        "message": "OpenKara memakai ONNX Runtime khusus CPU. Runtime GPU tidak merespons. Pemisahan vokal masih berfungsi. Prosesnya lebih lambat."
       }
     },
     "hideBatchSeparate": {

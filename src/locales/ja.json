@@ -459,6 +459,10 @@
         "downloadFailed": "ONNX Runtime のダウンロードに失敗しました: {{error}}",
         "downloadFailedHint": "接続を確認してから、ダウンロードを再試行してください。",
         "retryDownload": "再試行"
+      },
+      "cpuFallbackToast": {
+        "title": "CPU 専用の ONNX Runtime を使用中",
+        "message": "このマシンでは GPU ランタイムが応答しなかったため、CPU ランタイムに切り替えました。ボーカル分離は機能しますが、速度が遅くなります。"
       }
     },
     "hideBatchSeparate": {

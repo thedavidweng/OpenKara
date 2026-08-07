@@ -20,7 +20,7 @@
 //! pointer's declared size and SHA-256 **before parsing**, and reject any
 //! generation older than the embedded snapshot or the installed model.
 
-use crate::config::ModelVariant;
+use crate::config::{ExecutionProviderPreference, ModelVariant};
 use crate::separator::verified_manifest::sha256_hex;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -695,26 +695,88 @@ fn load_embedded_catalog() -> Result<VerifiedCatalog> {
 // Model resolution
 // ---------------------------------------------------------------------------
 
-/// Resolve the runtime artifact for a target triple. Exactly one runtime per
-/// target is expected in a valid manifest.
+/// Resolve the active runtime artifact for a target triple.
+///
+/// When more than one active runtime matches the target, `preferred_ep`
+/// disambiguates. When exactly one matches, it wins regardless of preference,
+/// so older single-runtime-per-target catalogs keep resolving as before.
 pub fn resolve_runtime<'a>(
     manifest: &'a ReleaseManifest,
     target_triple: &str,
+    preferred_ep: ExecutionProviderPreference,
 ) -> Result<&'a CatalogRuntime> {
-    // Superseded runtimes stay listed for provenance (generation 9 keeps the
-    // full-operator builds deprecated next to their reduced replacements), so
-    // resolution must skip them the same way resolve_model skips deprecated
-    // and non-loadable model deliveries.
-    let mut matches = manifest.artifacts.runtimes.iter().filter(|runtime| {
-        runtime.target_triple.as_deref() == Some(target_triple) && !runtime.deprecation.deprecated
-    });
-    let resolved = matches
-        .next()
-        .with_context(|| format!("catalog has no active runtime for target {target_triple}"))?;
-    if matches.next().is_some() {
-        bail!("catalog lists more than one active runtime for target {target_triple}");
+    // Deprecated (superseded) runtimes stay listed for provenance; skip them.
+    let matches: Vec<&CatalogRuntime> = manifest
+        .artifacts
+        .runtimes
+        .iter()
+        .filter(|runtime| {
+            runtime.target_triple.as_deref() == Some(target_triple)
+                && !runtime.deprecation.deprecated
+        })
+        .collect();
+
+    match matches.len() {
+        0 => bail!("catalog has no active runtime for target {target_triple}"),
+        1 => Ok(matches[0]),
+        _ => {
+            let preferred = runtime_supporting_ep(&matches, preferred_ep)
+                .with_context(|| format!("catalog lists more than one active runtime for target {target_triple} and none matches the preferred execution provider {preferred_ep:?}"))?;
+            Ok(preferred)
+        }
     }
-    Ok(resolved)
+}
+
+pub fn runtime_by_artifact_id<'a>(
+    manifest: &'a ReleaseManifest,
+    artifact_id: &str,
+) -> Option<&'a CatalogRuntime> {
+    manifest
+        .artifacts
+        .runtimes
+        .iter()
+        .find(|runtime| runtime.artifact_id == artifact_id)
+}
+
+/// Pick the runtime that declares the preferred execution provider.
+///
+/// DirectML preference selects a runtime advertising `directml`; any other
+/// preference selects the runtime whose provider list is exactly `["cpu"]`,
+/// falling back to one that does not advertise `directml`.
+fn runtime_supporting_ep<'a>(
+    runtimes: &[&'a CatalogRuntime],
+    preferred_ep: ExecutionProviderPreference,
+) -> Option<&'a CatalogRuntime> {
+    let advertises = |rt: &CatalogRuntime, ep: &str| {
+        rt.runtime
+            .execution_providers
+            .iter()
+            .any(|provider| provider == ep)
+    };
+
+    if matches!(preferred_ep, ExecutionProviderPreference::DirectMl) {
+        return runtimes
+            .iter()
+            .copied()
+            .find(|rt| advertises(rt, "directml"))
+            .or_else(|| {
+                runtimes
+                    .iter()
+                    .copied()
+                    .find(|rt| rt.runtime.execution_providers == ["cpu"])
+            });
+    }
+
+    runtimes
+        .iter()
+        .copied()
+        .find(|rt| rt.runtime.execution_providers == ["cpu"])
+        .or_else(|| {
+            runtimes
+                .iter()
+                .copied()
+                .find(|rt| !advertises(rt, "directml"))
+        })
 }
 
 /// The only tensor interface this build can load (the spectral session is
@@ -931,13 +993,18 @@ mod tests {
 
     #[test]
     fn embedded_snapshot_is_self_consistent() {
+        use crate::config::ExecutionProviderPreference as Ep;
+
         let catalog = load_embedded_catalog().expect("embedded catalog must load");
         assert!(catalog.generation >= 6);
         // Generations publish several deliveries per variant (raw kept for
         // older consumers, compressed preferred); both variants must resolve.
         assert!(catalog.manifest.artifacts.models.len() >= 2);
-        // Superseded runtimes stay listed but deprecated; exactly one active
-        // runtime per supported target must remain resolvable.
+        // Superseded runtimes stay listed but deprecated; at least one active
+        // runtime per supported target must remain resolvable. Windows may
+        // publish more than one active runtime (CPU + DirectML) once issue
+        // OpenKara/OpenKara#284's CPU artifact lands; the count assertion is a
+        // floor, not an exact match.
         let active: Vec<_> = catalog
             .manifest
             .artifacts
@@ -945,12 +1012,23 @@ mod tests {
             .iter()
             .filter(|runtime| !runtime.deprecation.deprecated)
             .collect();
-        assert_eq!(active.len(), 5);
+        assert!(active.len() >= 5, "expected at least 5 active runtimes");
         let targets: std::collections::BTreeSet<_> = active
             .iter()
             .filter_map(|r| r.target_triple.as_deref())
             .collect();
-        assert_eq!(targets.len(), 5, "one active runtime per target");
+        assert!(
+            targets.len() >= 5,
+            "expected at least 5 active runtime targets"
+        );
+        // Each active runtime target must resolve for both EP preferences so
+        // the consumer never sees an ambiguous catalog it cannot disambiguate.
+        for target in &targets {
+            resolve_runtime(&catalog.manifest, target, Ep::Cpu)
+                .expect("active target must resolve for CPU preference");
+            resolve_runtime(&catalog.manifest, target, Ep::DirectMl)
+                .expect("active target must resolve for DirectML preference");
+        }
         assert!(!catalog.manifest.compatibility.is_empty());
     }
 
@@ -993,6 +1071,133 @@ mod tests {
                 runtime.artifact_id
             );
         }
+    }
+
+    /// Build a minimal runtime catalog entry for resolve_runtime tests.
+    fn runtime_fixture(
+        artifact_id: &str,
+        target_triple: &str,
+        execution_providers: &[&str],
+    ) -> CatalogRuntime {
+        CatalogRuntime {
+            artifact_id: artifact_id.to_owned(),
+            target_triple: Some(target_triple.to_owned()),
+            filename: format!("{artifact_id}.zip"),
+            byte_size: 1,
+            archive_digest: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_owned(),
+            download_url: format!("https://example.invalid/{artifact_id}.zip"),
+            extracted_file_digests: Default::default(),
+            runtime: CatalogRuntimeMetadata {
+                version: "v1.27.1".to_owned(),
+                ort_c_api_level: "27".to_owned(),
+                execution_providers: execution_providers
+                    .iter()
+                    .map(|provider| provider.to_string())
+                    .collect(),
+                supported_model_artifact_ids: vec![],
+                companion_files: vec![],
+            },
+            deprecation: CatalogDeprecation::default(),
+        }
+    }
+
+    fn manifest_with_runtimes(runtimes: Vec<CatalogRuntime>) -> ReleaseManifest {
+        ReleaseManifest {
+            schema_version: RELEASE_SCHEMA_VERSION.to_owned(),
+            generation: 11,
+            release_id: "2099-01-01-001".to_owned(),
+            artifacts: CatalogArtifacts {
+                models: vec![],
+                runtimes,
+            },
+            compatibility: vec![],
+        }
+    }
+
+    #[test]
+    fn resolve_runtime_picks_single_active_runtime_regardless_of_ep() {
+        use crate::config::ExecutionProviderPreference as Ep;
+
+        let manifest = manifest_with_runtimes(vec![runtime_fixture(
+            "rt-windows-dml",
+            "x86_64-pc-windows-msvc",
+            &["cpu", "directml"],
+        )]);
+
+        let cpu =
+            resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu).expect("cpu resolves");
+        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
+            .expect("dml resolves");
+        assert_eq!(cpu.artifact_id, "rt-windows-dml");
+        assert_eq!(dml.artifact_id, "rt-windows-dml");
+    }
+
+    #[test]
+    fn resolve_runtime_disambiguates_windows_cpu_and_directml_by_ep() {
+        use crate::config::ExecutionProviderPreference as Ep;
+
+        // A CPU-only runtime ships alongside the DirectML runtime on the same
+        // Windows target.
+        let manifest = manifest_with_runtimes(vec![
+            runtime_fixture("rt-windows-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
+            runtime_fixture(
+                "rt-windows-dml",
+                "x86_64-pc-windows-msvc",
+                &["cpu", "directml"],
+            ),
+        ]);
+
+        // CPU preference must pick the CPU-only runtime.
+        let cpu = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
+            .expect("cpu preference resolves the cpu-only runtime");
+        assert_eq!(cpu.artifact_id, "rt-windows-cpu");
+        assert_eq!(cpu.runtime.execution_providers, vec!["cpu".to_owned()]);
+
+        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
+            .expect("directml preference resolves the dml runtime");
+        assert_eq!(dml.artifact_id, "rt-windows-dml");
+        assert!(dml
+            .runtime
+            .execution_providers
+            .iter()
+            .any(|provider| provider == "directml"));
+    }
+
+    #[test]
+    fn resolve_runtime_errors_when_no_active_runtime_matches_target() {
+        use crate::config::ExecutionProviderPreference as Ep;
+
+        let manifest = manifest_with_runtimes(vec![]);
+        let err = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
+            .expect_err("empty catalog must not resolve");
+        assert!(format!("{err}").contains("no active runtime"));
+    }
+
+    #[test]
+    fn resolve_runtime_skips_deprecated_runtimes() {
+        use crate::config::ExecutionProviderPreference as Ep;
+
+        let mut deprecated_full = runtime_fixture(
+            "rt-windows-full",
+            "x86_64-pc-windows-msvc",
+            &["cpu", "directml"],
+        );
+        deprecated_full.deprecation = CatalogDeprecation {
+            deprecated: true,
+            replacement_artifact_id: Some("rt-windows-reduced".to_owned()),
+        };
+        let reduced = runtime_fixture(
+            "rt-windows-reduced",
+            "x86_64-pc-windows-msvc",
+            &["cpu", "directml"],
+        );
+        let manifest = manifest_with_runtimes(vec![deprecated_full, reduced]);
+
+        let resolved = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
+            .expect("deprecated runtime must be skipped");
+        assert_eq!(resolved.artifact_id, "rt-windows-reduced");
+        assert!(!resolved.deprecation.deprecated);
     }
 
     #[test]

@@ -462,6 +462,10 @@
         "downloadFailed": "Pobieranie ONNX Runtime nie powiodło się: {{error}}",
         "downloadFailedHint": "Sprawdź połączenie, a następnie ponów pobieranie.",
         "retryDownload": "Ponów"
+      },
+      "cpuFallbackToast": {
+        "title": "Używanie środowiska ONNX Runtime tylko na CPU",
+        "message": "OpenKara używa środowiska ONNX Runtime tylko na CPU. Środowisko GPU nie odpowiedziało. Separacja wokali nadal działa. Jest wolniejsza."
       }
     },
     "hideBatchSeparate": {

@@ -230,16 +230,19 @@ fn verify_cold_start_state(
     let startup = separator::runtime_bootstrap::begin_startup(app_data_dir)
         .context("failed to derive runtime startup plan")?
         .context("installed runtime was absent on cold restart")?;
-    crate::commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(&startup.library_path)
+    if startup.proving_candidate {
+        separator::runtime_bootstrap::finish_activation_success(app_data_dir)
+            .context("failed to finalize a runtime activation after cold restart")?;
+    } else {
+        crate::commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
+            &startup.library_path,
+        )
         .with_context(|| {
             format!(
                 "installed runtime could not load on cold restart from {}",
                 startup.library_path.display()
             )
         })?;
-    if startup.proving_candidate {
-        separator::runtime_bootstrap::finish_activation_success(app_data_dir)
-            .context("failed to finalize a runtime activation after cold restart")?;
     }
 
     let no_development_fallback = app_data_dir.join("__automation_smoke_no_dev_model__");

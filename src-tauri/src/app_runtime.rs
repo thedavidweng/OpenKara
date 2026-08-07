@@ -66,85 +66,61 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
 
     match separator::runtime_bootstrap::begin_startup(&app_data_dir) {
         Ok(Some(plan)) => {
-            match commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                &plan.library_path,
-            ) {
-                Ok(_) => {
-                    if plan.proving_candidate {
-                        if let Err(err) =
-                            separator::runtime_bootstrap::finish_activation_success(&app_data_dir)
-                        {
-                            tracing::warn!("failed to finalize runtime activation: {err:#}");
-                        }
-                    }
+            if plan.proving_candidate {
+                if let Err(err) =
+                    separator::runtime_bootstrap::finish_activation_success(&app_data_dir)
+                {
+                    tracing::warn!("failed to finalize runtime activation: {err:#}");
                 }
-                Err(err) => {
-                    tracing::warn!(
-                        "failed to load ONNX Runtime from {}: {err:#}",
-                        plan.library_path.display()
-                    );
-                    if !plan.proving_candidate && !plan.is_legacy {
-                        let failed_id = plan
-                            .record
-                            .as_ref()
-                            .map(|record| record.artifact_id.clone())
-                            .unwrap_or_default();
-                        match separator::runtime_bootstrap::rollback_failed_activation(
-                            &app_data_dir,
-                            &failed_id,
-                            &err.to_string(),
-                        ) {
-                            Ok(Some(previous)) => {
-                                if let Err(load_err) =
-                                    commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                                        &previous.library_path,
-                                    )
-                                {
-                                    tracing::warn!(
-                                        "failed to load previous ONNX Runtime {}: {load_err:#}",
-                                        previous.library_path.display()
-                                    );
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(rollback_err) => {
-                                tracing::warn!(
-                                    "failed to record runtime load failure: {rollback_err:#}"
+            } else {
+                match commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
+                    &plan.library_path,
+                ) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::warn!(
+                            "failed to load ONNX Runtime from {}: {err:#}",
+                            plan.library_path.display()
+                        );
+                        if !plan.is_legacy {
+                            if let Some(failed_id) = plan
+                                .record
+                                .as_ref()
+                                .map(|record| record.artifact_id.clone())
+                                .filter(|id| !id.is_empty())
+                            {
+                                record_directml_timeout_for_artifact(
+                                    &app_data_dir,
+                                    &failed_id,
+                                    &err.to_string(),
                                 );
-                            }
-                        }
-                    }
-                    if plan.proving_candidate {
-                        let failed_id = plan
-                            .record
-                            .as_ref()
-                            .map(|record| record.artifact_id.clone())
-                            .unwrap_or_default();
-                        match separator::runtime_bootstrap::rollback_failed_activation(
-                            &app_data_dir,
-                            &failed_id,
-                            &err.to_string(),
-                        ) {
-                            Ok(Some(previous)) => {
-                                if let Err(load_err) =
-                                    commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                                        &previous.library_path,
-                                    )
-                                {
-                                    tracing::warn!(
-                                        "failed to restore previous ONNX Runtime {}: {load_err:#}",
-                                        previous.library_path.display()
-                                    );
+                                match separator::runtime_bootstrap::rollback_failed_activation(
+                                    &app_data_dir,
+                                    &failed_id,
+                                    &err.to_string(),
+                                ) {
+                                    Ok(Some(previous)) => {
+                                        if let Err(load_err) =
+                                            commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
+                                                &previous.library_path,
+                                            )
+                                        {
+                                            tracing::warn!(
+                                                "failed to load previous ONNX Runtime {}: {load_err:#}",
+                                                previous.library_path.display()
+                                            );
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(rollback_err) => {
+                                        tracing::warn!(
+                                            "failed to record runtime load failure: {rollback_err:#}"
+                                        );
+                                    }
                                 }
-                            }
-                            Ok(None) => {
+                            } else {
                                 tracing::warn!(
-                                    "no previous ONNX Runtime available after failed activation"
-                                );
-                            }
-                            Err(rollback_err) => {
-                                tracing::warn!(
-                                    "failed to roll back runtime activation: {rollback_err:#}"
+                                    "cannot roll back runtime load failure without an artifact id"
                                 );
                             }
                         }
@@ -157,10 +133,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             tracing::warn!("runtime startup resolution failed: {err:#}");
         }
     }
-
-    let runtime_bootstrap_status = Arc::new(Mutex::new(
-        commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
-    ));
 
     // Config load failures fall back to defaults; never brick startup.
     let app_config = match config::load_config(&app_data_dir) {
@@ -192,6 +164,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     } else {
         None
     };
+
+    config::restore_directml_timeout_state(app_config.as_ref());
+
+    let runtime_bootstrap_status = Arc::new(Mutex::new(
+        commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
+    ));
+
     let configured_window_count = app.webview_windows().len();
     if configured_window_count == 0 {
         tracing::warn!("no Tauri webview windows were created during startup");
@@ -371,6 +350,26 @@ fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
     });
 }
 
+fn record_directml_timeout_for_artifact(
+    app_data_dir: &std::path::Path,
+    artifact_id: &str,
+    error_message: &str,
+) {
+    let Some(runtime) = separator::catalog::runtime_by_artifact_id(
+        &separator::catalog::embedded_catalog().manifest,
+        artifact_id,
+    ) else {
+        return;
+    };
+    if let Err(err) = config::record_directml_unavailable_on_timeout(
+        app_data_dir,
+        &runtime.runtime.execution_providers,
+        error_message,
+    ) {
+        tracing::warn!("failed to record directml timeout disable: {err:#}");
+    }
+}
+
 fn spawn_runtime_update_check_worker<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     app_data_dir: PathBuf,
@@ -392,6 +391,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
             let Ok(runtime) = separator::catalog::resolve_runtime(
                 &catalog.manifest,
                 separator::catalog::current_target_triple(),
+                crate::config::effective_execution_provider_from_dir(&app_data_dir),
             ) else {
                 return;
             };

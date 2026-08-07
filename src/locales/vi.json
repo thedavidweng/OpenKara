@@ -459,6 +459,10 @@
         "downloadFailed": "Tải ONNX Runtime thất bại: {{error}}",
         "downloadFailedHint": "Hãy kiểm tra kết nối, rồi thử tải lại.",
         "retryDownload": "Thử lại"
+      },
+      "cpuFallbackToast": {
+        "title": "Đang dùng ONNX Runtime chỉ CPU",
+        "message": "OpenKara dùng ONNX Runtime chỉ CPU. Runtime GPU không phản hồi. Tách giọng hát vẫn hoạt động. Nó chạy chậm hơn."
       }
     },
     "hideBatchSeparate": {

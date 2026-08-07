@@ -113,6 +113,7 @@ impl AppShell {
                     candidate_version: None,
                     restart_required: false,
                     error: None,
+                    cpu_fallback_notice: None,
                 },
             )),
         )

@@ -461,6 +461,10 @@
         "downloadFailed": "Download di ONNX Runtime non riuscito: {{error}}",
         "downloadFailedHint": "Controlla la connessione, poi riprova il download.",
         "retryDownload": "Riprova"
+      },
+      "cpuFallbackToast": {
+        "title": "Uso del runtime ONNX solo CPU",
+        "message": "OpenKara usa il runtime ONNX solo CPU. Il runtime GPU non ha risposto. La separazione vocale funziona ancora. È più lenta."
       }
     },
     "hideBatchSeparate": {

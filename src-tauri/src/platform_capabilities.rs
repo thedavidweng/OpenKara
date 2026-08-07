@@ -1,5 +1,17 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static DIRECTML_DISABLED_BY_TIMEOUT: AtomicBool = AtomicBool::new(false);
+
+pub fn set_directml_disabled_by_timeout(disabled: bool) {
+    DIRECTML_DISABLED_BY_TIMEOUT.store(disabled, Ordering::SeqCst);
+}
+
+pub fn directml_disabled_by_timeout() -> bool {
+    DIRECTML_DISABLED_BY_TIMEOUT.load(Ordering::SeqCst)
+}
+
 #[cfg(target_os = "windows")]
-pub fn directml_available() -> bool {
+fn probe_directml_available() -> bool {
     use windows::Win32::Graphics::{
         Direct3D::D3D_FEATURE_LEVEL_11_0,
         Direct3D12::{D3D12CreateDevice, ID3D12Device},
@@ -50,8 +62,12 @@ pub fn directml_available() -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub const fn directml_available() -> bool {
+fn probe_directml_available() -> bool {
     false
+}
+
+pub fn directml_available() -> bool {
+    !directml_disabled_by_timeout() && probe_directml_available()
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
