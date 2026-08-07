@@ -461,8 +461,8 @@
         "retryDownload": "Thử lại"
       },
       "cpuFallbackToast": {
-        "title": "Using CPU-only ONNX Runtime",
-        "message": "The GPU runtime did not respond on this machine, so OpenKara switched to the CPU runtime. Stem separation works, but runs slower."
+        "title": "Đang dùng ONNX Runtime chỉ CPU",
+        "message": "OpenKara dùng ONNX Runtime chỉ CPU. Runtime GPU không phản hồi. Tách giọng hát vẫn hoạt động. Nó chạy chậm hơn."
       }
     },
     "hideBatchSeparate": {

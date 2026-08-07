@@ -695,28 +695,17 @@ fn load_embedded_catalog() -> Result<VerifiedCatalog> {
 // Model resolution
 // ---------------------------------------------------------------------------
 
-/// Resolve the runtime artifact for a target triple.
+/// Resolve the active runtime artifact for a target triple.
 ///
-/// A target may publish more than one active runtime when the host capability
-/// alone cannot pick a safe artifact (issue OpenKara/OpenKara#284): the Windows
-/// catalog ships both a DirectML-linked runtime and a CPU-only runtime. A
-/// virtual display adapter can pass the D3D12 capability probe yet deadlock
-/// loading `DirectML.dll`, so the EP preference disambiguates — a CPU/DirectML
-/// catalog pair resolves to the CPU artifact when the caller prefers CPU, and
-/// to the DirectML artifact when it prefers DirectML.
-///
-/// When exactly one active runtime matches the target, that runtime wins
-/// regardless of preference (the legacy single-runtime-per-target behavior),
-/// so older catalogs keep resolving as before.
+/// When more than one active runtime matches the target, `preferred_ep`
+/// disambiguates. When exactly one matches, it wins regardless of preference,
+/// so older single-runtime-per-target catalogs keep resolving as before.
 pub fn resolve_runtime<'a>(
     manifest: &'a ReleaseManifest,
     target_triple: &str,
     preferred_ep: ExecutionProviderPreference,
 ) -> Result<&'a CatalogRuntime> {
-    // Superseded runtimes stay listed for provenance (generation 9 keeps the
-    // full-operator builds deprecated next to their reduced replacements), so
-    // resolution must skip them the same way resolve_model skips deprecated
-    // and non-loadable model deliveries.
+    // Deprecated (superseded) runtimes stay listed for provenance; skip them.
     let matches: Vec<&CatalogRuntime> = manifest
         .artifacts
         .runtimes
@@ -749,13 +738,11 @@ pub fn runtime_by_artifact_id<'a>(
         .find(|runtime| runtime.artifact_id == artifact_id)
 }
 
-/// Pick the catalog runtime that declares the preferred execution provider.
+/// Pick the runtime that declares the preferred execution provider.
 ///
-/// DirectML-preference selects a runtime advertising `directml`; any other
-/// preference selects the CPU-only runtime (the runtime whose provider list
-/// is exactly `["cpu"]`, or, failing an exact match, the runtime that does not
-/// advertise `directml`). This is what keeps a CPU-preferred host off the
-/// DirectML-linked DLL that deadlocks on virtual adapters.
+/// DirectML preference selects a runtime advertising `directml`; any other
+/// preference selects the runtime whose provider list is exactly `["cpu"]`,
+/// falling back to one that does not advertise `directml`.
 fn runtime_supporting_ep<'a>(
     runtimes: &[&'a CatalogRuntime],
     preferred_ep: ExecutionProviderPreference,
@@ -1150,8 +1137,8 @@ mod tests {
     fn resolve_runtime_disambiguates_windows_cpu_and_directml_by_ep() {
         use crate::config::ExecutionProviderPreference as Ep;
 
-        // Issue #284 catalog shape: a CPU-only runtime ships alongside the
-        // DirectML runtime on the same Windows target.
+        // A CPU-only runtime ships alongside the DirectML runtime on the same
+        // Windows target.
         let manifest = manifest_with_runtimes(vec![
             runtime_fixture("rt-windows-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
             runtime_fixture(
@@ -1161,8 +1148,7 @@ mod tests {
             ),
         ]);
 
-        // CPU preference must pick the CPU-only runtime — loading the
-        // DirectML runtime is what deadlocks on virtual adapters.
+        // CPU preference must pick the CPU-only runtime.
         let cpu = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
             .expect("cpu preference resolves the cpu-only runtime");
         assert_eq!(cpu.artifact_id, "rt-windows-cpu");

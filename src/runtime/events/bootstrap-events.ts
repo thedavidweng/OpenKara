@@ -12,7 +12,15 @@ import i18next from "@/lib/i18n";
 
 const CPU_FALLBACK_NOTICE_STORAGE_KEY = "openkara.cpuFallbackNoticeShown";
 
+// In-memory session flag mirrors the persisted guard. When localStorage throws
+// (private contexts, quota), the session flag still suppresses repeat toasts
+// for the rest of this app session.
+let cpuFallbackNoticeShownThisSession = false;
+
 function hasShownCpuFallbackNotice(): boolean {
+  if (cpuFallbackNoticeShownThisSession) {
+    return true;
+  }
   try {
     return localStorage.getItem(CPU_FALLBACK_NOTICE_STORAGE_KEY) === "1";
   } catch {
@@ -21,11 +29,12 @@ function hasShownCpuFallbackNotice(): boolean {
 }
 
 function markCpuFallbackNoticeShown() {
+  cpuFallbackNoticeShownThisSession = true;
   try {
     localStorage.setItem(CPU_FALLBACK_NOTICE_STORAGE_KEY, "1");
   } catch {
-    // localStorage can be unavailable in private contexts; the session guard
-    // still prevents repeat toasts within the same app session.
+    // localStorage can be unavailable; the session flag above still suppresses
+    // repeat toasts until the app restarts.
   }
 }
 

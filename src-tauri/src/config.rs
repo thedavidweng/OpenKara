@@ -602,10 +602,10 @@ pub struct AppConfig {
     pub pending_mirror_restore: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
-    /// Records that this host failed to load a DirectML-linked ONNX Runtime and
-    /// must not auto-select DirectML again. Holds a short human-readable reason
-    /// (set when the timeout fires); presence alone is the gate. The user can
-    /// still explicitly pick DirectML in Settings, which clears this flag.
+    /// Records that this host failed to load a DirectML-linked ONNX Runtime.
+    /// Presence is the gate: when set, the platform default avoids DirectML so
+    /// the next bootstrap selects a CPU-only runtime. An explicit user choice in
+    /// Settings still wins and overrides this default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub directml_disabled_by_runtime_timeout: Option<String>,
 }
@@ -653,13 +653,6 @@ impl AppConfig {
         platform: ExecutionProviderPlatform,
     ) -> ExecutionProviderPreference {
         match self.execution_provider {
-            // An explicit user choice wins and clears a recorded DirectML
-            // timeout — the user is signalling they want to retry DirectML.
-            Some(ExecutionProviderPreference::DirectMl)
-                if ExecutionProviderPreference::DirectMl.is_available_for(platform) =>
-            {
-                ExecutionProviderPreference::DirectMl
-            }
             Some(ep) if ep.is_available_for(platform) => ep,
             _ => self.default_execution_provider_for(platform),
         }
@@ -830,6 +823,16 @@ pub fn record_directml_unavailable_on_timeout(
     Ok(true)
 }
 
+/// Restore the process-level DirectML timeout override from the persisted
+/// config so startup snapshots (`directml_available`, `cpu_fallback_notice_for`)
+/// observe the recorded state without waiting for a fresh timeout to fire.
+pub fn restore_directml_timeout_state(app_config: Option<&AppConfig>) {
+    let disabled = app_config
+        .and_then(|config| config.directml_disabled_by_runtime_timeout.as_ref())
+        .is_some();
+    crate::platform_capabilities::set_directml_disabled_by_timeout(disabled);
+}
+
 /// Write-temp + fsync + atomic rename; cleans up the temp on any failure.
 fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
     let tmp_path = temp_path_for(path);
@@ -941,6 +944,11 @@ pub fn migrate_legacy_library_path(config: &mut AppConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // DIRECTML_DISABLED_BY_TIMEOUT is a process-wide AtomicBool. Tests that
+    // touch it run under this lock so a parallel test cannot flip the flag
+    // between the write and the assertion.
+    static DIRECTML_TIMEOUT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn load_returns_none_when_missing() {
@@ -1816,6 +1824,7 @@ mod tests {
 
     #[test]
     fn directml_timeout_disable_downgrades_windows_default_to_cpu() {
+        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let config = AppConfig {
             directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
@@ -1823,10 +1832,12 @@ mod tests {
         };
         let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
         assert_eq!(resolved, ExecutionProviderPreference::Cpu);
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
     }
 
     #[test]
     fn explicit_user_execution_provider_overrides_timeout_disable() {
+        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let config = AppConfig {
             execution_provider: Some(ExecutionProviderPreference::DirectMl),
@@ -1835,6 +1846,7 @@ mod tests {
         };
         let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
         assert_eq!(resolved, ExecutionProviderPreference::DirectMl);
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
     }
 
     #[test]
@@ -1868,6 +1880,7 @@ mod tests {
 
     #[test]
     fn record_directml_unavailable_persists_flag_and_flips_process_override() {
+        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let providers = vec!["directml".to_owned(), "cpu".to_owned()];
@@ -1885,5 +1898,6 @@ mod tests {
             loaded.directml_disabled_by_runtime_timeout.as_deref(),
             Some("directml-runtime-load-timeout"),
         );
+        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
     }
 }

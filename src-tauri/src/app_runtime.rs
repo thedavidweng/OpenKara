@@ -83,39 +83,45 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                             plan.library_path.display()
                         );
                         if !plan.is_legacy {
-                            let failed_id = plan
+                            if let Some(failed_id) = plan
                                 .record
                                 .as_ref()
                                 .map(|record| record.artifact_id.clone())
-                                .unwrap_or_default();
-                            record_directml_timeout_for_artifact(
-                                &app_data_dir,
-                                &failed_id,
-                                &err.to_string(),
-                            );
-                            match separator::runtime_bootstrap::rollback_failed_activation(
-                                &app_data_dir,
-                                &failed_id,
-                                &err.to_string(),
-                            ) {
-                                Ok(Some(previous)) => {
-                                    if let Err(load_err) =
-                                        commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                                            &previous.library_path,
-                                        )
-                                    {
+                                .filter(|id| !id.is_empty())
+                            {
+                                record_directml_timeout_for_artifact(
+                                    &app_data_dir,
+                                    &failed_id,
+                                    &err.to_string(),
+                                );
+                                match separator::runtime_bootstrap::rollback_failed_activation(
+                                    &app_data_dir,
+                                    &failed_id,
+                                    &err.to_string(),
+                                ) {
+                                    Ok(Some(previous)) => {
+                                        if let Err(load_err) =
+                                            commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
+                                                &previous.library_path,
+                                            )
+                                        {
+                                            tracing::warn!(
+                                                "failed to load previous ONNX Runtime {}: {load_err:#}",
+                                                previous.library_path.display()
+                                            );
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(rollback_err) => {
                                         tracing::warn!(
-                                            "failed to load previous ONNX Runtime {}: {load_err:#}",
-                                            previous.library_path.display()
+                                            "failed to record runtime load failure: {rollback_err:#}"
                                         );
                                     }
                                 }
-                                Ok(None) => {}
-                                Err(rollback_err) => {
-                                    tracing::warn!(
-                                        "failed to record runtime load failure: {rollback_err:#}"
-                                    );
-                                }
+                            } else {
+                                tracing::warn!(
+                                    "cannot roll back runtime load failure without an artifact id"
+                                );
                             }
                         }
                     }
@@ -127,10 +133,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             tracing::warn!("runtime startup resolution failed: {err:#}");
         }
     }
-
-    let runtime_bootstrap_status = Arc::new(Mutex::new(
-        commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
-    ));
 
     // Config load failures fall back to defaults; never brick startup.
     let app_config = match config::load_config(&app_data_dir) {
@@ -162,6 +164,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     } else {
         None
     };
+
+    config::restore_directml_timeout_state(app_config.as_ref());
+
+    let runtime_bootstrap_status = Arc::new(Mutex::new(
+        commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
+    ));
+
     let configured_window_count = app.webview_windows().len();
     if configured_window_count == 0 {
         tracing::warn!("no Tauri webview windows were created during startup");

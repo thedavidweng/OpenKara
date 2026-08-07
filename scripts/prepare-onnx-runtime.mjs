@@ -90,11 +90,8 @@ function resolveCatalogRuntime(targetTriple, preferredProvider) {
       `unsupported release manifest schema: ${catalog.schema_version}`,
     );
   }
-  // Superseded runtimes stay listed for provenance but deprecated; only the
-  // active delivery per target is a provisioning candidate (mirrors the Rust
-  // resolve_runtime rule). A target may now carry more than one active runtime
-  // (Windows ships DirectML and CPU-only builds); disambiguate by the preferred
-  // execution provider the same way the Rust resolver does.
+  // Skip deprecated runtimes; when more than one active runtime matches the
+  // target, disambiguate by the preferred execution provider.
   const matches = catalog.artifacts.runtimes.filter(
     (runtime) =>
       runtime.target_triple === targetTriple &&
