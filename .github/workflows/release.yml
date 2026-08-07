@@ -88,6 +88,9 @@ jobs:
     needs: prepare-release
     runs-on: ubuntu-latest
     timeout-minutes: 45 # Resolves or waits for a full Nightly build (macOS Intel leg ~30m).
+    concurrency:
+      group: verify-nightly-evidence-${{ github.repository }}-${{ github.sha }}
+      cancel-in-progress: false
     permissions:
       actions: write # Dispatch same-commit Nightly run when no recent evidence exists.
       contents: read # Checks out the evidence verifier.

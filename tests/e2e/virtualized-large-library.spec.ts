@@ -286,12 +286,7 @@ test.describe("Virtualized large library (5,000 songs)", () => {
 
     const renderedRows = songList.locator("[data-song-hash]");
 
-    // Each Enter triggers an estimated virtualizer.scrollToIndex that only
-    // re-measures on later rAF frames. Wait for the first navigation to settle
-    // before issuing the second so two estimate→remeasure passes cannot queue
-    // under one assertion. End lands on #, which has no songs and falls back to
-    // the nearest mapped bucket (H for the 5,000-song catalog), so the rows
-    // must leave A before Home navigates back.
+    // Let each navigation settle before issuing the next.
     const firstButton = rail.locator("button").first();
     await firstButton.focus();
     await page.keyboard.press("End");
@@ -300,7 +295,6 @@ test.describe("Virtualized large library (5,000 songs)", () => {
       timeout: 10000,
     });
 
-    // Press Home to move roving back to A and Enter to navigate to A songs.
     await page.keyboard.press("Home");
     await page.keyboard.press("Enter");
     await expect(renderedRows.first()).toContainText(/^A Song/, {
