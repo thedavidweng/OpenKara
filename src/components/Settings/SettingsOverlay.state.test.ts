@@ -218,6 +218,8 @@ describe("createInitialSettingsOverlaySnapshot", () => {
   afterEach(() => {
     if (originalNavigatorLanguage) {
       Object.defineProperty(navigator, "language", originalNavigatorLanguage);
+    } else {
+      Reflect.deleteProperty(navigator, "language");
     }
   });
 
