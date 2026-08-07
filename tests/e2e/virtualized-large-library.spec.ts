@@ -284,31 +284,28 @@ test.describe("Virtualized large library (5,000 songs)", () => {
       /^A Song/,
     );
 
-    // Focus the rail, press End to move roving to #, then Enter to navigate.
+    const renderedRows = songList.locator("[data-song-hash]");
+
+    // Each Enter triggers an estimated virtualizer.scrollToIndex that only
+    // re-measures on later rAF frames. Wait for the first navigation to settle
+    // before issuing the second so two estimate→remeasure passes cannot queue
+    // under one assertion. End lands on #, which has no songs and falls back to
+    // the nearest mapped bucket (H for the 5,000-song catalog), so the rows
+    // must leave A before Home navigates back.
     const firstButton = rail.locator("button").first();
     await firstButton.focus();
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
+    await expect(renderedRows.first()).not.toContainText(/^A Song/, {
+      timeout: 10000,
+    });
 
-    // End goes to # which falls back to nearest mapped. Then press Home
-    // to go back to A and Enter to navigate to A songs.
+    // Press Home to move roving back to A and Enter to navigate to A songs.
     await page.keyboard.press("Home");
     await page.keyboard.press("Enter");
-
-    const renderedRows = songList.locator("[data-song-hash]");
-    await expect
-      .poll(
-        async () => {
-          const count = await renderedRows.count();
-          for (let i = 0; i < Math.min(count, 10); i++) {
-            const text = await renderedRows.nth(i).textContent();
-            if (text && /^A Song/.test(text)) return true;
-          }
-          return false;
-        },
-        { timeout: 5000 },
-      )
-      .toBe(true);
+    await expect(renderedRows.first()).toContainText(/^A Song/, {
+      timeout: 10000,
+    });
   });
 
   test("keyboard Space activates the focused bucket", async ({ page }) => {

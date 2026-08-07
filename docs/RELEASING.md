@@ -77,11 +77,12 @@ setting.
    cut also opens a GitHub issue titled `Release cut failed for vX.Y.Z`.
 3. **Watch the Release workflow.** It requires a successful Nightly
    hardening run for the tag commit from the last 24 hours. The nightly
-   cron runs at 04:00 UTC on `main`. When the tag points at a commit the
-   nightly has not covered, dispatch `nightly-hardening.yml` on `main`
-   first, or wait for the next cron run. The workflow then runs smoke
-   tests, uploads assets, publishes the GitHub Release, and submits WinGet
-   and Flatpak when configured.
+   cron runs at 04:00 UTC on `main`. When no fresh Nightly evidence exists
+   for the tag commit, the Release workflow's `Verify Nightly evidence`
+   job dispatches `nightly-hardening.yml` on the tag commit and waits for
+   it, so manual dispatch is only needed if that dispatched run fails. The
+   workflow then runs smoke tests, uploads assets, publishes the GitHub
+   Release, and submits WinGet and Flatpak when configured.
 4. **Confirm the published release.** Asset names match the tag, e.g.
    `OpenKara_0.11.0_x64-setup.exe`. `SHA256SUMS` and `latest.json` are
    attached. `/releases/latest` points at the new plain tag.
