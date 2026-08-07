@@ -49,15 +49,16 @@ describe("issue 303 acceptance wiring", () => {
     expect(driver).not.toContain("accepting control presence");
   });
 
-  test("release requires fresh Nightly evidence for the candidate commit", () => {
+  test("release resolves or builds fresh Nightly evidence for the candidate commit", () => {
     const release = readProjectFile(".github/workflows/release.yml");
     const nightly = readProjectFile(".github/workflows/nightly-hardening.yml");
 
     expect(release).toContain("verify-nightly-evidence:");
-    expect(release).toContain("actions: read");
+    expect(release).toContain("actions: write");
     expect(release).toContain("nightly-evidence.mjs verify");
     expect(release).toContain("--max-age-hours 24");
     expect(release).toContain("verify-nightly-evidence");
+    expect(release).toContain("gh workflow run nightly-hardening.yml");
     expect(nightly).toContain("nightly-evidence.mjs create");
     expect(nightly).toContain("nightly-evidence.json");
     expect(nightly).toContain("NEEDS_JSON: ${{ toJson(needs) }}");

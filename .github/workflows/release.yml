@@ -87,9 +87,12 @@ jobs:
     name: Verify Nightly evidence
     needs: prepare-release
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45 # Resolves or waits for a full Nightly build (macOS Intel leg ~30m).
+    concurrency:
+      group: verify-nightly-evidence-${{ github.repository }}-${{ github.sha }}
+      cancel-in-progress: false
     permissions:
-      actions: read # Downloads same-commit Nightly evidence.
+      actions: write # Dispatch same-commit Nightly run when no recent evidence exists.
       contents: read # Checks out the evidence verifier.
     steps:
       - name: Checkout
@@ -103,28 +106,89 @@ jobs:
           node-version: 24
           package-manager-cache: false # Release workflow: disable cache to prevent poisoning.
 
-      - name: Download Nightly evidence for the candidate commit
+      - name: Resolve or build candidate Nightly evidence
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          EVIDENCE_DIR: ${{ runner.temp }}/nightly-evidence
         run: |
           set -euo pipefail
-          run_id="$(gh run list \
+          mkdir -p "${EVIDENCE_DIR}"
+
+          fresh_run() {
+            gh run list \
+              --repo "${GH_REPO}" \
+              --workflow nightly-hardening.yml \
+              --commit "${GITHUB_SHA}" \
+              --status success \
+              --limit 1 \
+              --json databaseId,createdAt \
+              --jq "[.[] | select(.createdAt >= \"$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)\")] | .[0].databaseId // empty"
+          }
+
+          reused_run="$(fresh_run)"
+          if [ -n "${reused_run}" ]; then
+            echo "Reusing successful Nightly run ${reused_run} for ${GITHUB_SHA}."
+            gh run download "${reused_run}" \
+              --repo "${GH_REPO}" \
+              --name nightly-evidence \
+              --dir "${EVIDENCE_DIR}"
+            exit 0
+          fi
+
+          # No fresh reusable evidence. Dispatch Nightly on the release commit,
+          # guarding against an already-in-flight run so a retried Release does
+          # not double-dispatch.
+          in_flight="$(gh run list \
             --repo "${GH_REPO}" \
             --workflow nightly-hardening.yml \
             --commit "${GITHUB_SHA}" \
-            --status success \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId // empty')"
-          if [ -z "${run_id}" ]; then
-            echo "::error::No successful Nightly run exists for candidate commit ${GITHUB_SHA}."
+            --limit 5 \
+            --json databaseId,status \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "pending" or .status == "waiting")] | .[0].databaseId // empty')"
+          if [ -z "${in_flight}" ]; then
+            echo "No recent Nightly evidence and no in-flight run; dispatching nightly-hardening for ${GITHUB_SHA}."
+            gh workflow run nightly-hardening.yml \
+              --repo "${GH_REPO}" \
+              --ref "${GITHUB_SHA}"
+          else
+            echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
+          fi
+
+          deadline=$(( $(date +%s) + 40 * 60 ))
+          nightly_run=""
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            nightly_run="$(gh run list \
+              --repo "${GH_REPO}" \
+              --workflow nightly-hardening.yml \
+              --commit "${GITHUB_SHA}" \
+              --limit 1 \
+              --json databaseId,status,conclusion \
+              --jq '.[0] | select(.status == "completed") | .databaseId // empty')"
+            if [ -n "${nightly_run}" ]; then
+              break
+            fi
+            sleep 30
+          done
+
+          if [ -z "${nightly_run}" ]; then
+            echo "::error::Dispatched Nightly run did not finish within 40 minutes for commit ${GITHUB_SHA}."
             exit 1
           fi
-          gh run download "${run_id}" \
+
+          conclusion="$(gh run view "${nightly_run}" \
+            --repo "${GH_REPO}" \
+            --json conclusion \
+            --jq '.conclusion')"
+          if [ "${conclusion}" != "success" ]; then
+            echo "::error::Nightly run ${nightly_run} for commit ${GITHUB_SHA} ended with ${conclusion}. Fix the failure before releasing."
+            exit 1
+          fi
+
+          gh run download "${nightly_run}" \
             --repo "${GH_REPO}" \
             --name nightly-evidence \
-            --dir "${RUNNER_TEMP}/nightly-evidence"
+            --dir "${EVIDENCE_DIR}"
 
       - name: Verify candidate Nightly evidence
         run: |
