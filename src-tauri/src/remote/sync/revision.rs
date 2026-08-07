@@ -64,10 +64,7 @@ pub(crate) fn remote_database_revision(
     library: &RegisteredLibrary,
 ) -> CommandResult<Option<String>> {
     let provider = create_repository_storage(app_data_dir, library)?;
-    // For manifest-based repositories, the manifest revision is the staleness
-    // signal: a new generation always produces a new manifest write. For
-    // legacy repositories (no manifest), fall back to the `openkara.db`
-    // revision.
+    // Manifest revision is the staleness signal; legacy falls back to openkara.db.
     let manifest_rev = provider.get_revision(MANIFEST_PATH)?;
     if manifest_rev.is_some() {
         return Ok(manifest_rev);
@@ -100,16 +97,11 @@ pub(crate) fn sync_remote_database_from_provider(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<RegisteredLibrary> {
-    // Reconcile any restart that completed the rename but not the local-state
-    // update before deciding whether to pull again.
+    // Finish a crash between rename and control-DB state update first.
     reconcile_after_restart(control_db_conn, app_data_dir, library)?;
 
-    // Unified read protocol: resolve the committed database through the
-    // manifest (or the legacy root openkara.db when no manifest exists).
-    // Do NOT call provider.initialize_or_sync() here — that bootstrap path
-    // always downloads root openkara.db and would silently replace a
-    // generation-specific working copy with a stale legacy object after
-    // the repository has been migrated to the manifest protocol.
+    // Pull via manifest (or legacy root DB). Do not call initialize_or_sync —
+    // it always downloads root openkara.db and can clobber a generation working copy.
     let provider_revision = remote_database_revision(app_data_dir, library)?;
     if !remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
         return Ok(library.clone());
@@ -152,14 +144,8 @@ pub(crate) fn prepare_remote_database_for_mutation(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<RegisteredLibrary> {
-    // Dirty working-copy protection: before any refresh that would overwrite
-    // openkara.db, consult the durable repository state. A dirty/publishing/
-    // conflicted/reauth-required working copy holds committed local edits that
-    // must NOT be overwritten by an automatic pull — otherwise network loss or
-    // a failed publication would silently destroy the user's work.
+    // Dirty/publishing/conflicted/reauth working copies must not be auto-pulled over.
     if !should_allow_automatic_pull(control_db_conn, library) {
-        // Preserve the current working copy. The publication executor can
-        // resume the pending operation without an automatic pull overwriting it.
         tracing::info!(
             "skipping automatic remote database pull for library {} because \
              the working copy is not clean",
@@ -192,9 +178,7 @@ fn should_allow_automatic_pull(control_db_conn: &Connection, library: &Registere
     match get_repository_state(control_db_conn, library.id()) {
         Ok(Some(state)) => matches!(state.local_state, LocalState::Clean),
         Ok(None) => true,
-        // If the control DB is unreadable, fail closed. Do not allow an
-        // automatic pull over the working copy — the local database may
-        // contain unpublished edits that the control plane cannot verify.
+        // Fail closed when control DB is unreadable.
         Err(_) => false,
     }
 }
@@ -221,12 +205,7 @@ fn pull_remote_database_atomically(
     let provider = create_repository_storage(app_data_dir, library)?;
     let root = load_remote_root(app_data_dir, library)?;
 
-    // Sanitize the provider revision before embedding it in the operation
-    // id (which becomes part of a temp filename). WebDAV ETags can contain
-    // quotes ("abc123") and weak prefixes (W/"abc123"); other providers may
-    // return revision strings with slashes. Replace any character outside
-    // [A-Za-z0-9._-] with an underscore so the temp filename is always
-    // valid across platforms.
+    // Sanitize revision for temp filenames (ETags may include quotes/slashes).
     let sanitized_revision: String = provider_revision
         .unwrap_or("unknown")
         .chars()
@@ -240,10 +219,6 @@ fn pull_remote_database_atomically(
         .collect();
     let operation_id = format!("pull-{sanitized_revision}");
 
-    // Read the repository manifest. When present, pull the generation-specific
-    // database with full size + digest verification. When absent (legacy
-    // repository or first publication), fall back to pulling `openkara.db`
-    // directly with size-only verification.
     let manifest = read_manifest(provider.as_ref())?;
 
     let (remote_db_path, expected_size, expected_digest, committed_generation) = match &manifest {
@@ -276,8 +251,6 @@ fn pull_remote_database_atomically(
         },
     ) {
         Ok(_) => {
-            // Use the manifest path's revision when available, falling back
-            // to the legacy `openkara.db` revision for pre-manifest repos.
             let new_revision = if manifest.is_some() {
                 provider.get_revision(MANIFEST_PATH)?
             } else {
@@ -287,9 +260,7 @@ fn pull_remote_database_atomically(
             load_registered_remote_library(app_data_dir, library.id())
         }
         Err(error) => {
-            // Offline / network error or integrity failure: fall back to the
-            // last verified working copy. Do not block the mutation. The
-            // candidate temp file is cleaned up by `atomic_database_pull`.
+            // Fall back to last verified working copy; do not block the mutation.
             tracing::info!(
                 "remote database pull failed for library {}; falling back to \
                  the existing local database: {:?}",
@@ -321,21 +292,13 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
 
     let provider = create_repository_storage(app_data_dir, &library)?;
 
-    // Verified cache catalog lookup. The cache key is derived from the
-    // identity tuple (library_id, relative_path, provider_revision,
-    // expected_size). A complete, verified catalog entry means the file is
-    // already cached and reusable; otherwise fall through to an atomic
-    // download. This replaces the old existence+revision+size check that could
-    // reuse bytes from an older provider revision (defect #7).
+    // Identity-keyed cache catalog (library_id, path, revision, size) — defect #7.
     let provider_revision = provider.get_revision(relative_path)?;
     let remote_size = provider.media_source().get_file_size(relative_path)?;
     let revision = provider_revision
         .clone()
         .or_else(|| library.remote_revision().map(str::to_owned));
 
-    // Open the control DB to consult the cache catalog. This is the same DB
-    // the AppState holds; opening a short-lived read connection here is safe
-    // because WAL mode allows concurrent readers.
     let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
     if let Ok(conn) = crate::remote::control_db::open_control_db(&control_db_path) {
         if let (Some(size), Some(rev)) = (remote_size, revision.as_deref()) {
@@ -354,9 +317,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
                 {
                     return Ok(());
                 }
-                // For the working-copy destination path (not the streaming
-                // cache), check the destination directly when the catalog row
-                // is complete and the data file matches.
+                // Working-copy destination: reuse when size matches a complete catalog row.
                 if row.complete
                     && row.expected_size == size as i64
                     && destination.exists()
@@ -368,13 +329,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
         }
     }
 
-    // Fallback fast-path: if the destination file already exists and its
-    // size matches the remote size, skip the download. The catalog lookup
-    // above only succeeds when a `remote_cache_entries` row exists, but
-    // `atomic_download` does not create catalog rows — it writes directly
-    // to the destination. Without this fallback, non-streaming remote media,
-    // CDG graphics, and imported remote files are re-downloaded on every
-    // access even when a valid copy is already present.
+    // Size match at destination skips re-download (atomic_download does not catalog rows).
     if let Some(size) = remote_size {
         if destination.exists()
             && std::fs::metadata(&destination).map(|m| m.len()).ok() == Some(size)
@@ -418,9 +373,7 @@ pub(crate) fn refresh_remote_repository(state: &AppState) -> CommandResult<()> {
         let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-        // Dirty working-copy protection: only pull when the working copy is
-        // clean. A dirty/publishing/conflicted/reauth-required copy holds
-        // committed local edits that must not be overwritten by a refresh.
+        // Only pull when the working copy is Clean.
         if !should_allow_automatic_pull(&control_db_conn, active_library) {
             tracing::info!(
                 "skipping remote database refresh for library {} because the \

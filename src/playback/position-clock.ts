@@ -7,7 +7,6 @@ import type {
 export interface PositionClockState {
   snapshot: PlaybackStateSnapshot | null;
   positionMs: number;
-  /** Monotonic-ms of the last authoritative position update; null when paused/stopped. */
   playingSinceMs: number | null;
 }
 
@@ -79,7 +78,6 @@ export function selectSyncDisplayPositionMs(
     : state.positionMs;
 }
 
-/** Apply a command-response or hydrate snapshot. Returns null if stale. */
 export function reduceAuthoritativeSnapshot(
   prev: PositionClockState,
   nextSnapshot: PlaybackStateSnapshot,
@@ -96,7 +94,6 @@ export function reduceAuthoritativeSnapshot(
   };
 }
 
-/** Apply a playback-position IPC event. Returns null if ignored/stale. */
 export function reducePositionEvent(
   prev: PositionClockState,
   event: PlaybackPositionEvent,

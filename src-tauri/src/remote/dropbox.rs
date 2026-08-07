@@ -197,7 +197,6 @@ fn dropbox_refresh_access_token(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
 ) -> CommandResult<String> {
-    // Fast path: the token is still valid. No lock needed.
     if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
         if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
             return Ok(secret.access_token.clone());
@@ -206,10 +205,7 @@ fn dropbox_refresh_access_token(
         return Ok(secret.access_token.clone());
     }
 
-    // Slow path: acquire the process-wide refresh lock so only one thread
-    // performs the network refresh. Other threads wait for the lock; when
-    // they acquire it, they re-check the token expiry (the first thread may
-    // have already refreshed and stored the new token to disk).
+    // Process-wide single-flight refresh; re-check after wait.
     let lock = DROPBOX_REFRESH_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().map_err(|_| {
         CommandError::from(LibraryError::Internal(
@@ -217,11 +213,7 @@ fn dropbox_refresh_access_token(
         ))
     })?;
 
-    // Re-check after acquiring the lock — another thread may have refreshed
-    // while we waited. Reload the stored credential from disk to pick up the
-    // refreshed token. The in-memory secret is per-provider-instance, so
-    // without this reload the waiter would see its stale copy and fire a
-    // redundant refresh request.
+    // Reload disk credential: in-memory secret is per-provider-instance.
     if let Ok(Some(stored)) =
         load_remote_credential::<StoredDropboxSecret>(app_data_dir, &secret.library_id)
     {
@@ -1300,8 +1292,7 @@ impl RepositoryStorage for DropboxProvider<'_> {
         let commit_path = dropbox_join_path(root_path, relative_path);
         let total = bytes.len() as u64;
 
-        // Content identity for this upload. A session started for candidate X
-        // must never be resumed with bytes from candidate Y.
+        // Resume only when size+digest match (never resume X's session with Y's bytes).
         let expected_digest = {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
@@ -1309,7 +1300,6 @@ impl RepositoryStorage for DropboxProvider<'_> {
             crate::hash::hex_lower(hasher.finalize())
         };
 
-        // Resume only when the persisted row matches size + digest identity.
         let existing_session = list_transfer_parts(control_db, operation_id)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
             .into_iter()
@@ -1359,8 +1349,6 @@ impl RepositoryStorage for DropboxProvider<'_> {
         )
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-        // Clear the transfer part so a future restart does not resume against a
-        // non-existent remote partial.
         delete_transfer_parts(control_db, operation_id)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
         Ok(())
@@ -1479,9 +1467,7 @@ impl RemoteMediaSource for DropboxProvider<'_> {
                 .send_network("download Dropbox range")
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-        // Validate the response status. A Range request must return 206
-        // Partial Content. A 200 OK means the server ignored the Range
-        // header — only acceptable when offset == 0 (full-body fallback).
+        // 206 for ranges; 200 only when offset == 0 (full-body fallback).
         let status = response.status();
         if status == reqwest::StatusCode::OK && offset > 0 {
             return Err(RemoteError::new(
@@ -1499,8 +1485,7 @@ impl RemoteMediaSource for DropboxProvider<'_> {
             ));
         }
 
-        // A 206 Partial Content response MUST include a matching Content-Range.
-        // Treating the header as optional allowed silent mis-ranged bodies.
+        // 206 must carry Content-Range (optional header allowed silent mis-range).
         if status == reqwest::StatusCode::PARTIAL_CONTENT {
             let content_range = response.headers().get("content-range").ok_or_else(|| {
                 RemoteError::new(
@@ -1525,9 +1510,7 @@ impl RemoteMediaSource for DropboxProvider<'_> {
                 )
             })?;
         }
-        // Open for write at a specific offset. We intentionally do NOT
-        // truncate — the file may already contain bytes from a prior range
-        // download, and truncating would destroy them.
+        // Seek-write; do not truncate (prior range bytes must survive).
         #[allow(clippy::suspicious_open_options)]
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -1546,12 +1529,7 @@ impl RemoteMediaSource for DropboxProvider<'_> {
             )
         })?;
 
-        // Stream the body straight to disk as it arrives instead of buffering
-        // the whole chunk with `response.bytes()`. The buffered call imposed
-        // one total-body deadline per 8 MiB chunk; streaming makes the client
-        // timeout a per-read idle timeout so slow links make progress, and an
-        // interruption leaves the received bytes durable for sub-chunk resume
-        // (issue #205).
+        // Stream to disk (idle timeout + durable partials); not full-body buffer.
         let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
             .map_err(|error| {
                 RemoteError::new(
@@ -1560,11 +1538,7 @@ impl RemoteMediaSource for DropboxProvider<'_> {
                 )
             })?;
 
-        // Validate body length. For a 206 the body must be exactly `length`
-        // bytes; for a 200 full-body fallback (offset == 0 only) it must be at
-        // least `length`. A truncated transfer is a transport failure, not
-        // corruption, so it stays retryable and the partial bytes on disk are
-        // preserved for resume.
+        // Truncation is transport failure (retryable); keep partial bytes.
         if status == reqwest::StatusCode::PARTIAL_CONTENT {
             if written != length {
                 return Err(RemoteError::new(

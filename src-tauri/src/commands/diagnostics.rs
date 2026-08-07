@@ -33,7 +33,10 @@ pub struct DebugInfo {
     pub runtime_version: String,
     pub runtime_artifact_id: Option<String>,
     pub runtime_target_triple: String,
+    pub runtime_path: String,
     pub execution_provider: String,
+    pub directml_available: bool,
+    pub language: Option<String>,
     pub log_file: String,
 }
 
@@ -83,7 +86,10 @@ pub fn assemble_debug_info(
     runtime_version: String,
     runtime_artifact_id: Option<String>,
     runtime_target_triple: String,
+    runtime_path: String,
     execution_provider: &str,
+    directml_available: bool,
+    language: Option<String>,
     log_file: String,
 ) -> DebugInfo {
     DebugInfo {
@@ -103,7 +109,10 @@ pub fn assemble_debug_info(
         runtime_version,
         runtime_artifact_id,
         runtime_target_triple,
+        runtime_path,
         execution_provider: execution_provider.to_owned(),
+        directml_available,
+        language,
         log_file,
     }
 }
@@ -172,7 +181,10 @@ pub fn get_debug_info(
         runtime_snapshot.version.clone(),
         runtime_snapshot.active_artifact_id.clone(),
         runtime_snapshot.target_triple.clone(),
+        runtime_snapshot.runtime_path.clone(),
         execution_provider.as_str(),
+        crate::platform_capabilities::directml_available(),
+        config.language.clone(),
         log_file,
     ))
 }
@@ -200,7 +212,11 @@ mod tests {
             "v1.27.1".to_owned(),
             Some("onnxruntime-1.27.1-openkara-aarch64-apple-darwin".to_owned()),
             "aarch64-apple-darwin".to_owned(),
+            "/Users/me/Library/Application Support/com.openkara.desktop/runtimes/rt/libonnxruntime.dylib"
+                .to_owned(),
             "xnnpack",
+            false,
+            Some("en".to_owned()),
             "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log".to_owned(),
         )
     }
@@ -233,7 +249,10 @@ mod tests {
             Some("onnxruntime-1.27.1-openkara-aarch64-apple-darwin")
         );
         assert_eq!(info.runtime_target_triple, "aarch64-apple-darwin");
+        assert!(info.runtime_path.contains("libonnxruntime.dylib"));
         assert_eq!(info.execution_provider, "xnnpack");
+        assert!(!info.directml_available);
+        assert_eq!(info.language.as_deref(), Some("en"));
         assert!(info.log_file.ends_with("openkara.<date>.log"));
     }
 
@@ -247,6 +266,9 @@ mod tests {
             "arch",
             "catalog_generation",
             "catalog_release_id",
+            "runtime_path",
+            "directml_available",
+            "language",
             "model_variant",
             "model_state",
             "model_installed",
@@ -302,11 +324,16 @@ mod tests {
             "v1.27.1".to_owned(),
             None,
             "x86_64-unknown-linux-gnu".to_owned(),
+            String::new(),
             "cpu",
+            false,
+            None,
             "/home/me/.local/share/com.openkara.desktop/logs/openkara.<date>.log".to_owned(),
         );
         assert!(!info.model_installed);
         assert!(info.model_installed_version.is_none());
         assert!(info.runtime_artifact_id.is_none());
+        assert!(info.runtime_path.is_empty());
+        assert!(info.language.is_none());
     }
 }

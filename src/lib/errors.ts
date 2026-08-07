@@ -30,7 +30,14 @@ function getCommandErrorMessage(error: CommandError): string {
     return i18next.t("errors.modelUnavailableMessage");
   }
   if (error.code === "runtime_post_download_timeout") {
-    return i18next.t("errors.runtimePostDownloadTimeoutMessage");
+    const base = i18next.t("errors.runtimePostDownloadTimeoutMessage");
+    const technical = error.message
+      .replace(/^runtime_post_download_timeout:\s*/i, "")
+      .trim();
+    if (technical.length > 0 && technical !== base) {
+      return `${base}\n${technical}`;
+    }
+    return base;
   }
   return error.message;
 }

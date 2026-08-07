@@ -26,20 +26,6 @@ const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
     "sidecar_lys",
   ]);
 
-/**
- * Lift interleaved romaji lines out of a fetched lyric set.
- *
- * Bilingual sources ship the transcription as its own timestamped line, which
- * the parser faithfully turns into a peer lyric. Extracting it here — at the
- * single point where lines enter the store — keeps romanization out of the
- * lyric list entirely, so it can only surface as the attached sub-line under
- * its primary line while the Romanized-lyrics toggle is on.
- *
- * A complete source set seeds the romanization cache (identity set), so
- * enabling the toggle shows the source transcription without running the
- * romanizer. A partial set is still shown, but the identity stays null so the
- * romanizer recomputes a full set on enable.
- */
 function normalizeFetchedLyrics(lines: LyricLine[]): {
   lines: LyricLine[];
   romanizedLines: string[];
@@ -171,9 +157,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
               rawLrc: online.raw_lrc,
             });
           }
-        } catch {
-          // Network failure is non-fatal; keep original local lyrics.
-        }
+        } catch {}
       }
     } catch (e) {
       if (gen !== fetchGeneration) return;

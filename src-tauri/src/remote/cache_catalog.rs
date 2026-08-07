@@ -198,9 +198,7 @@ impl CacheCatalog {
 
         for row in &rows {
             let data_path = Path::new(&row.data_path);
-            // Resolve the data path relative to the cache dir when it is not
-            // absolute (catalog stores a relative filename for portability
-            // across app-data-dir moves).
+            // Catalog may store a relative filename (portable across app-data moves).
             let absolute = if data_path.is_absolute() {
                 data_path.to_path_buf()
             } else {
@@ -213,19 +211,18 @@ impl CacheCatalog {
             };
 
             if !file_ok {
-                // Catalog row is inconsistent with disk — discard the row.
-                // The data file (if present but wrong size) is left for the
-                // orphan scan below to clean up.
+                // Inconsistent row — discard; orphan scan cleans wrong-size files.
                 let _ = control_db::delete_cache_entry(&conn, &row.cache_key);
                 continue;
             }
 
-            known_files.insert(row.data_path.clone());
+            // Match orphan scan keys (file names under cache_dir).
+            if let Some(name) = absolute.file_name() {
+                known_files.insert(name.to_string_lossy().into_owned());
+            }
         }
 
-        // Orphan scan: delete data files in the cache dir with no catalog row.
-        // Only files ending in `.cache` are considered so temp/part files from
-        // other subsystems are not touched.
+        // Delete `.cache` files with no catalog row (leave other subsystems' temps).
         if let Ok(entries) = fs::read_dir(&self.cache_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -374,8 +371,7 @@ impl CacheCatalog {
             return Ok(false);
         };
 
-        // Identity mismatch (should not happen since cache_key is derived from
-        // the identity, but defend against a manually-edited catalog).
+        // Defend against a manually-edited catalog identity mismatch.
         if row.library_id != identity.library_id
             || row.relative_path != identity.relative_path
             || row.expected_size != identity.expected_size as i64
@@ -393,17 +389,13 @@ impl CacheCatalog {
             return Ok(false);
         }
 
-        // Validate persisted ranges against the actual file length so a
-        // corrupted sidecar cannot expose zero-filled sparse gaps as
-        // downloaded data.
+        // Every range end must be within the real file length.
         let ranges = ranges_from_json(&row.downloaded_ranges_json)?;
         if !ranges_within_file(&ranges, file_len) {
             return Ok(false);
         }
 
-        // Complete entries must be re-verified (re-hashed) before first reuse
-        // after an unclean shutdown. `verified_at_ms` is set on successful
-        // verification; a `None` value means "not yet verified this session".
+        // Re-hash complete entries once per session when verified_at_ms is unset.
         if row.complete && row.verified_at_ms.is_none() {
             if let Some(expected_digest) = &row.content_digest {
                 let actual = sha256_file(&data_path)?;
@@ -419,9 +411,7 @@ impl CacheCatalog {
                     Some(current_unix_time_ms()),
                 )?;
             } else {
-                // No stored digest — compute and store one now so future
-                // verifications are cheap. This is the content-digest fallback
-                // path for providers that do not expose a revision token.
+                // No stored digest: compute and store one (providers without revision tokens).
                 let digest = sha256_file(&data_path)?;
                 control_db::update_cache_entry_ranges(
                     &conn,

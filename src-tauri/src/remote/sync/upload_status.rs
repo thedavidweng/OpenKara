@@ -40,12 +40,9 @@ fn resolve_durable_state_for_status_update(
     upload_state: UploadState,
     error: Option<&CommandError>,
 ) -> OperationState {
-    // Retryable failures must land as RetryWait so recovery can reschedule.
-    // Non-retryable failures become terminal Failed.
+    // Retryable → RetryWait; non-retryable → Failed. Never demote durable RetryWait.
     if matches!(upload_state, UploadState::Failed) {
         if let Some(existing) = existing {
-            // Executor already recorded RetryWait — the UI path is
-            // projection-only and must not demote control plane to Failed.
             if matches!(existing.state, OperationState::RetryWait) {
                 return OperationState::RetryWait;
             }
@@ -333,18 +330,11 @@ pub(crate) fn mark_upload_status(
     detail: Option<String>,
     error: Option<CommandError>,
 ) -> CommandResult<UploadStatusSnapshot> {
-    // Persist to the durable control DB. We look up the most recent Publish
-    // operation for this library+song to update it in place. If none exists
-    // (e.g. status update before the publish row was created), we create a
-    // new row with a UUID operation_id.
+    // Upsert the latest Publish row for this library+song (UUID op id when new).
     let mut durable_state_for_snapshot = upload_state.clone();
     if let Some(ref library_id) = remote_library_id {
         let now = control_db_now_ms();
 
-        // Try to load the existing row to preserve created_at_ms and
-        // attempt_count across updates. Look up by library+song rather than
-        // a fixed operation_id derived from the song_id, because each
-        // publish now gets a unique UUID operation_id.
         let existing = {
             let conn = state
                 .remote
@@ -379,8 +369,7 @@ pub(crate) fn mark_upload_status(
             .map(|e| e.operation_id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        // Preserve multi-song payloads written by the mutation layer. Only
-        // replace song_ids when the existing row has none (legacy / new row).
+        // Keep multi-song payloads; append song_id when missing.
         let mut existing_payload = existing
             .as_ref()
             .and_then(|e| OperationPayload::from_json(&e.payload_json).ok())
@@ -525,11 +514,7 @@ pub fn get_all_upload_statuses(state: &AppState) -> CommandResult<Vec<UploadStat
     let snapshots: Vec<UploadStatusSnapshot> = operations
         .iter()
         .filter(|op| op.operation_kind == OperationKind::Publish)
-        // Skip batch outbox entries that have no song_ids — these are
-        // internal recovery bookkeeping (e.g. prepare_and_mutate records
-        // a placeholder before song_ids are known). Surfacing them as
-        // user-visible uploads would show a phantom "Running" entry that
-        // never completes.
+        // Hide empty song_ids placeholders (internal pre-bind bookkeeping).
         .filter(|op| {
             OperationPayload::from_json(&op.payload_json)
                 .map(|p| !p.song_ids.is_empty())

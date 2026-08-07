@@ -139,8 +139,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const songs = await api.getLibrary();
       set({ songs });
 
-      // Hydrate separation statuses from the database so previously
-      // separated songs show as "completed" after app restart.
       try {
         const statuses = await api.getAllSeparationStatuses();
         const statusMap: Record<string, SeparationStatusSnapshot> = {};
@@ -148,11 +146,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           statusMap[s.song_id] = s;
         }
         set({ separationStatuses: statusMap });
-      } catch {
-        // Non-fatal: separation statuses will remain empty
-      }
+      } catch {}
 
-      // Hydrate upload statuses so in-progress uploads survive app restart.
       try {
         const uploads = await api.getAllUploadStatuses();
         const uploadMap: Record<string, UploadStatusSnapshot> = {};
@@ -160,9 +155,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           uploadMap[s.song_id] = s;
         }
         set({ uploadStatuses: uploadMap });
-      } catch {
-        // Non-fatal: upload statuses will remain empty
-      }
+      } catch {}
     } catch (e) {
       notifyError(e);
     }

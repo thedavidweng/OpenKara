@@ -240,7 +240,6 @@ pub(crate) fn register_remote_library(
         None,
     );
     let remote_provider = create_repository_storage(app_data_dir, &provisional_library)?;
-    // CreateOrOpen: first attach may create marker/layout and seed openkara.db.
     let remote_revision = remote_provider.initialize_or_sync()?;
     let library = RegisteredLibrary::remote(
         library_id.clone(),
@@ -388,8 +387,7 @@ fn update_remote_repository_credentials(
         existing.remote_revision().map(str::to_owned),
     );
     let remote_provider = create_repository_storage(app_data_dir, &provisional_library)?;
-    // RequireExisting: Reauthorize must open an already-initialized remote root
-    // (marker + openkara.db), never silently create a new library layout.
+    // Reauthorize: open existing root only (never create layout).
     let remote_revision = remote_provider.refresh_existing()?;
 
     mark_session_binding(state, &session_id, &remote_root_locator, &display_name)?;

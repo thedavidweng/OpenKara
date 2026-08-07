@@ -321,7 +321,7 @@ pnpm tauri dev               # start dev server with hot reload
 ### Running Tests
 
 ```bash
-cd src-tauri && cargo test -q   # backend tests (175+; see AGENTS.md for CI notes)
+cd src-tauri && cargo test -q   # backend tests (175+; see .agents/skills/ci-notes)
 pnpm lint                    # oxlint
 pnpm format                  # oxfmt check
 node --run check:standards   # standards route

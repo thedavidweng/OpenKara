@@ -715,7 +715,7 @@
     "execution_provider_unavailable": "Proveedor de ejecución no disponible",
     "executionProviderUnavailableMessage": "El proveedor seleccionado no es compatible con este dispositivo. Cambia a CPU en Ajustes.",
     "modelUnavailableMessage": "El modelo de separación o ONNX Runtime no está listo. Espera a que termine la configuración e inténtalo de nuevo.",
-    "runtimePostDownloadTimeoutMessage": "La instalación del runtime agotó el tiempo después de la descarga. Inténtalo de nuevo.",
+    "runtimePostDownloadTimeoutMessage": "La instalación del runtime agotó el tiempo después de la descarga. Abre Ajustes → Acerca de, copia la información de depuración e inténtalo de nuevo.",
     "runtime_post_download_timeout": "Tiempo de espera de configuración del runtime",
     "separation_failed": "La separación falló",
     "internal": "Error interno",

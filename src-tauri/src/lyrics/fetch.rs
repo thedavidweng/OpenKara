@@ -119,10 +119,8 @@ pub fn lookup_query_from_song(song: &Song) -> Option<LyricsLookupQuery> {
         track_name: song.title.clone()?,
         artist_name: song.artist.clone()?,
         album_name: song.album.clone(),
-        // A duration of 0 means "unknown" — sending duration=0 to LRCLIB
-        // skews matching, so omit it and let artist/title/album drive the
-        // lookup instead.
-        duration_seconds: if song.duration_ms > 0 {
+        // LRCLIB: omit unknown/sub-second durations (never send duration=0).
+        duration_seconds: if song.duration_ms >= 1_000 {
             Some((song.duration_ms / 1_000) as u64)
         } else {
             None
@@ -198,13 +196,7 @@ pub fn read_embedded_lyrics(path: &Path) -> Result<Option<String>> {
 }
 
 fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
-    // Priority: .ttml > .lys > .lrc
-    // Validate each sidecar by attempting to parse; skip malformed files and
-    // fall through to the next format so a valid lower-priority sidecar is used.
-    //
-    // Extension matching is case-insensitive to support Windows-originated
-    // libraries on case-sensitive filesystems (Linux), where `song.LRC` and
-    // `song.lrc` are distinct files.
+    // Priority .ttml > .lys > .lrc; case-insensitive extensions; skip unparseable.
     let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return Ok(None);
     };
@@ -212,9 +204,7 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
         return Ok(None);
     };
 
-    // Collect matching sidecar paths by scanning the directory once.
-    // Use PathBuf (not String) to preserve byte-exact paths on Linux where
-    // paths may contain non-UTF-8 bytes.
+    // PathBuf keeps non-UTF-8 path bytes on Linux.
     let mut candidates: Vec<(PathBuf, LyricsSource)> = Vec::new();
     let entries = fs::read_dir(parent)
         .with_context(|| format!("failed to read sidecar directory {}", parent.display()))?;

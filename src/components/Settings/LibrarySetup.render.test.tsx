@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockOpen = vi.hoisted(() => vi.fn());
 const mockCreateLocalLibrary = vi.hoisted(() => vi.fn());
 const mockRunRemoteLibraryRegistrationFlow = vi.hoisted(() => vi.fn());
+const mockSetLanguage = vi.hoisted(() => vi.fn());
 const mockSetStemMode = vi.hoisted(() => vi.fn());
 const mockSetModelVariant = vi.hoisted(() => vi.fn());
 
@@ -32,7 +33,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 vi.mock("@/lib/tauri", () => ({
-  setLanguage: vi.fn().mockResolvedValue(undefined),
+  setLanguage: mockSetLanguage,
   createLocalLibrary: mockCreateLocalLibrary,
   registerLocalLibrary: vi.fn(),
   setStemMode: mockSetStemMode,
@@ -72,6 +73,8 @@ vi.mock("@/lib/i18n", () => ({
     { code: "zh-CN", nameKey: "languageNames.zh-CN" },
   ],
   detectSystemLanguage: () => "en",
+  resolveAppLanguage: (persisted: string | null | undefined) =>
+    persisted && persisted.trim().length > 0 ? persisted.trim() : "en",
 }));
 
 vi.mock("./remote-library-flow", () => ({
@@ -89,6 +92,8 @@ describe("LibrarySetup destructive error surfaces", () => {
     mockOpen.mockReset();
     mockCreateLocalLibrary.mockReset();
     mockRunRemoteLibraryRegistrationFlow.mockReset();
+    mockSetLanguage.mockReset();
+    mockSetLanguage.mockResolvedValue({ language: "en" });
     mockSetStemMode.mockReset();
     mockSetStemMode.mockResolvedValue(undefined);
     mockSetModelVariant.mockReset();
@@ -235,9 +240,80 @@ describe("LibrarySetup destructive error surfaces", () => {
 
     await clickButtonContaining("setup.getStarted");
 
+    expect(mockSetLanguage).toHaveBeenCalled();
     expect(mockSetStemMode).toHaveBeenCalledWith("four_stem");
     expect(mockSetModelVariant).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  test("keeps OOBE active when language save fails on finish", async () => {
+    const onComplete = vi.fn();
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LibrarySetup onComplete={onComplete} />);
+    });
+
+    const clickButtonContaining = async (text: string) => {
+      const button = Array.from(container.querySelectorAll("button")).find(
+        (candidate) => candidate.textContent?.includes(text),
+      );
+      expect(button, `no button containing ${text}`).toBeTruthy();
+      await act(async () => {
+        button?.click();
+      });
+    };
+
+    await clickButtonContaining("English");
+    mockOpen.mockResolvedValue("/tmp/karaoke");
+    mockCreateLocalLibrary.mockResolvedValue(undefined);
+    await clickButtonContaining("Create new local library");
+
+    mockSetLanguage.mockRejectedValue(new Error("lang save failed"));
+    await clickButtonContaining("setup.getStarted");
+
+    expect(container.innerHTML).toContain("lang save failed");
+    expect(container.innerHTML).toContain("text-[var(--color-destructive)]");
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(mockSetStemMode).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  test("keeps OOBE active when stem mode save fails on finish", async () => {
+    const onComplete = vi.fn();
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LibrarySetup onComplete={onComplete} />);
+    });
+
+    const clickButtonContaining = async (text: string) => {
+      const button = Array.from(container.querySelectorAll("button")).find(
+        (candidate) => candidate.textContent?.includes(text),
+      );
+      expect(button, `no button containing ${text}`).toBeTruthy();
+      await act(async () => {
+        button?.click();
+      });
+    };
+
+    await clickButtonContaining("English");
+    mockOpen.mockResolvedValue("/tmp/karaoke");
+    mockCreateLocalLibrary.mockResolvedValue(undefined);
+    await clickButtonContaining("Create new local library");
+
+    mockSetStemMode.mockRejectedValue(new Error("stem save failed"));
+    await clickButtonContaining("setup.getStarted");
+
+    expect(container.innerHTML).toContain("stem save failed");
+    expect(onComplete).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

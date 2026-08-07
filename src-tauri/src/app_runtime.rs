@@ -19,12 +19,7 @@ use std::{
 };
 use tauri::{Emitter, Manager, Runtime};
 
-/// Resolve the application data directory.
-///
-/// When the binary is built with `automation-smoke`, callers may set
-/// `OPENKARA_APP_DATA_DIR` so installed-app UI Automation and fault suites
-/// share the same isolated tree as the automation driver. Normal user builds
-/// always use the OS-managed app data path.
+/// App data dir; `OPENKARA_APP_DATA_DIR` overrides under `automation-smoke`.
 fn resolve_app_data_dir<R: Runtime>(app: &tauri::App<R>) -> anyhow::Result<PathBuf> {
     #[cfg(feature = "automation-smoke")]
     if let Ok(override_dir) = std::env::var("OPENKARA_APP_DATA_DIR") {
@@ -167,10 +162,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
     ));
 
-    // A config problem must never brick startup (issue #208). `load_config`
-    // already quarantines a corrupt file and returns `Ok(None)`; a residual
-    // I/O error here is treated as recoverable too, falling back to defaults
-    // instead of aborting the app.
+    // Config load failures fall back to defaults; never brick startup.
     let app_config = match config::load_config(&app_data_dir) {
         Ok(config) => config,
         Err(err) => {
@@ -247,10 +239,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .and_then(|config| config.remote_cache_bytes_limit);
     let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
 
-    // Run startup recovery for the durable remote control plane. The recovery
-    // pass completes before the executor thread processes pending work.
-    // It must not block library startup because it runs after the control DB
-    // is open.
     run_remote_recovery(&remote_state, &app_data_dir);
 
     let shell_state = AppShell::new(
@@ -349,35 +337,18 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         );
     }
 
-    // Last statement on purpose: the deadline must start when the event loop
-    // starts, not when setup starts. See `spawn_window_reveal_watchdog`.
+    // Last: deadline starts when the event loop starts, not during setup work.
     spawn_window_reveal_watchdog(app);
 
     Ok(())
 }
 
-/// Deadline for the native reveal watchdog, measured from the end of
-/// `setup_app`.
-///
-/// RATIONALE: the main window starts hidden and the reveal is a frontend
-/// handshake (`window_ready`), but macOS suspends animation frames *and* JS
-/// timers in a WKWebView whose window has never been shown. With both
-/// suspended no frontend path out of the hidden state survives, and the app
-/// runs as an invisible process the user can only kill from Activity Monitor.
-///
-/// 2 s is chosen against the healthy handshake budget: after the event loop
-/// starts it costs at most about 900 ms (the 750 ms native-`setTheme` guard in
-/// `useThemeRuntime` plus the 120 ms reveal backstop, on top of two local IPC
-/// reads), so the flash-free path keeps better than 2x headroom to win.
+/// Watchdog reveal if the frontend `window_ready` handshake never arrives.
+/// macOS suspends WKWebView timers/frames until the window is shown, so a
+/// failed handshake can leave an invisible process without this fallback.
 const WINDOW_REVEAL_WATCHDOG: Duration = Duration::from_secs(2);
 
-/// Reveals the main window if the frontend handshake never arrives.
-///
-/// Spawned as the last step of `setup_app` because Tauri runs the setup hook
-/// on the main thread before the event loop starts: `window_ready` cannot be
-/// served until setup returns, so an earlier deadline would charge startup
-/// work (an ONNX Runtime load, a library scan) against the frontend's budget
-/// and fire on healthy launches.
+/// Spawn last in setup so startup work is not charged against the budget.
 fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
     let Some(window) = app.get_webview_window("main") else {
         return;
@@ -630,15 +601,6 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 continue;
             }
 
-            // AirPlay scene content and local playback telemetry are separate
-            // concerns. `airplay_audience_active` previously meant merely that
-            // the projected scene mode was lyrics/CDG, which is true whenever a
-            // song is loaded on macOS even with no AirPlay route selected. Using
-            // it to suppress this emitter removed the local WebView's only
-            // post-seek `buffering` -> `playing` clock update and froze lyrics.
-            // Always publish local transport position/state; AirPlay surfaces
-            // consume their own displayed-position clock independently.
-
             if should_emit_playback_position(
                 last_emitted_position,
                 last_emitted_state.as_deref(),
@@ -669,10 +631,7 @@ fn should_emit_playback_position(
     let state_changed = last_state != Some(snapshot.state.as_str());
     let is_playing_changed = last_is_playing != Some(snapshot.is_playing);
 
-    // State transitions must be emitted even at an unchanged position. A
-    // streaming seek intentionally holds position while buffering; the
-    // buffering -> playing edge is what lets the frontend resume its local
-    // monotonic clock without running lyrics ahead of silent audio.
+    // Emit state edges even when position is held (e.g. buffering after seek).
     position_delta_ms > 16 || state_changed || is_playing_changed
 }
 
@@ -742,16 +701,7 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
     });
 }
 
-/// Run the startup recovery pass for the durable remote control plane.
-///
-/// This transitions interrupted operations (running/committing/verifying →
-/// retry_wait, prepared → cancelled/pending/conflicted). The executor thread
-/// re-executes pending work after app state initialization.
-///
-/// The recovery pass runs after the control DB is open and must not block
-/// library startup. Errors are logged but do not abort app startup — a
-/// failed recovery leaves operations in their pre-recovery states, which is
-/// safe because the next startup will retry recovery.
+/// Transition interrupted remote ops; errors are logged, never abort startup.
 fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
     use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
 
@@ -799,9 +749,7 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
     if let Ok(part_cleanup_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
         recover_stale_part_files_for_all_libraries(app_data_dir, &part_cleanup_conn);
     } else {
-        // Fail closed: without the control plane we cannot tell which
-        // partials are resumable. Leave every `*.part.*` file in place
-        // rather than deleting them as orphans.
+        // Fail closed: keep all partials when control plane is unavailable.
         tracing::warn!(
             "control DB unavailable during part-file recovery; \
              preserving all partial downloads (fail-closed)"
@@ -809,20 +757,8 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
     }
 }
 
-/// Project unprojected library-DB publish outbox rows into remote-state.db.
-/// Fail closed: never delete / mark projected unless control projection
-/// succeeded. Leave outbox retryable on any error.
-/// Whether a residual library outbox row may be deleted because a terminal
-/// control-DB operation already covers its intent.
-///
-/// Safe only when:
-/// - operation `library_id` matches the outbox library
-/// - terminal payload is non-empty
-/// - every outbox song id is in the terminal payload (outbox ⊆ payload)
-///
-/// Empty terminal payload must never authorize deleting a non-empty outbox.
-/// `payload ⊆ outbox` is intentionally rejected so a partial payload cannot
-/// discard unmerged songs still sitting in the outbox.
+/// Residual outbox may drop only when a terminal op covers the same library
+/// and payload is a non-empty superset of outbox song ids (not the reverse).
 fn residual_outbox_safe_to_drop(
     op_library_id: &str,
     outbox_library_id: &str,
@@ -911,9 +847,7 @@ fn project_library_outboxes_into_control_db(
             }
             let projected = match get_operation(&control, &row.operation_id) {
                 Ok(Some(existing)) if existing.state.is_terminal() => {
-                    // Projection already finished (or op completed). Do not
-                    // reopen a terminal row — only drop residual outbox when
-                    // residual_outbox_safe_to_drop says the intent is covered.
+                    // Terminal row: drop residual outbox only when intent is covered.
                     let payload_ids = crate::remote::control_db::OperationPayload::from_json(
                         &existing.payload_json,
                     )

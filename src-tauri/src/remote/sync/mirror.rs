@@ -339,13 +339,7 @@ pub fn mirror_local_library_to_remote<R: tauri::Runtime>(
         )));
     }
 
-    // Temporarily swap active_library_id to the remote library so that
-    // resolve_active_remote (used by publish_song_internal) finds it during
-    // the sync. Store the original in pending_mirror_restore_active_library_id
-    // and set pending_mirror_restore=true so startup can recover if the app
-    // crashes mid-sync. The boolean flag is necessary because the original
-    // active_library_id may be None (unset), which would be
-    // indistinguishable from "no pending operation" without the flag.
+    // pending_mirror_restore is required: original active_library_id may be None.
     let original_active_library_id = config.active_library_id.clone();
     config.active_library_id = Some(remote_library_id.to_owned());
     config.pending_mirror_restore = true;

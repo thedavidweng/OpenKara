@@ -1,25 +1,41 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ToastContainer } from "./ToastContainer";
 
-const { mockNotificationState } = vi.hoisted(() => ({
-  mockNotificationState: {
-    notifications: [] as Array<{
-      id: string;
-      type: "error" | "warning" | "success" | "info";
-      title: string;
-      message: string;
-      retryable: boolean;
-      retryAction?: () => void;
-    }>,
-    dismissNotification: vi.fn(),
-  },
-}));
+const { mockNotificationState, mockCopyDebugInfo, mockNotifyError } =
+  vi.hoisted(() => ({
+    mockNotificationState: {
+      notifications: [] as Array<{
+        id: string;
+        type: "error" | "warning" | "success" | "info";
+        title: string;
+        message: string;
+        retryable: boolean;
+        retryAction?: () => void;
+      }>,
+      dismissNotification: vi.fn(),
+    },
+    mockCopyDebugInfo: vi.fn().mockResolvedValue(undefined),
+    mockNotifyError: vi.fn(),
+  }));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
+}));
+
+vi.mock("@/lib/debug-info", () => ({
+  copyDebugInfo: mockCopyDebugInfo,
+}));
+
+vi.mock("@/lib/errors", () => ({
+  notifyError: mockNotifyError,
 }));
 
 vi.mock("@/stores/notification-store", () => ({
@@ -29,6 +45,13 @@ vi.mock("@/stores/notification-store", () => ({
 }));
 
 describe("ToastContainer", () => {
+  beforeEach(() => {
+    mockCopyDebugInfo.mockReset();
+    mockCopyDebugInfo.mockResolvedValue(undefined);
+    mockNotifyError.mockReset();
+    mockNotificationState.dismissNotification.mockReset();
+  });
+
   test("renders nothing when there are no notifications", () => {
     mockNotificationState.notifications = [];
 
@@ -129,6 +152,24 @@ describe("ToastContainer", () => {
     expect(markup).toContain("common.tryAgain");
   });
 
+  test("shows copy debug info on error notifications", () => {
+    mockNotificationState.notifications = [
+      {
+        id: "n-5b",
+        type: "error",
+        title: "Runtime Setup Timeout",
+        message: "Timed out after download",
+        retryable: true,
+        retryAction: vi.fn(),
+      },
+    ];
+
+    const markup = renderToStaticMarkup(<ToastContainer />);
+
+    expect(markup).toContain("settings.about.copyDebugInfo");
+    expect(markup).toContain("common.tryAgain");
+  });
+
   test("does not show a retry button for non-retryable notifications", () => {
     mockNotificationState.notifications = [
       {
@@ -143,8 +184,24 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).not.toContain("common.tryAgain");
+    expect(markup).toContain("settings.about.copyDebugInfo");
   });
 
+  test("does not show copy debug info on success notifications", () => {
+    mockNotificationState.notifications = [
+      {
+        id: "n-6b",
+        type: "success",
+        title: "Done",
+        message: "",
+        retryable: false,
+      },
+    ];
+
+    const markup = renderToStaticMarkup(<ToastContainer />);
+
+    expect(markup).not.toContain("settings.about.copyDebugInfo");
+  });
   test("renders multiple notifications simultaneously", () => {
     mockNotificationState.notifications = [
       {
@@ -199,5 +256,120 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).toContain("No Details");
+  });
+
+  test("copies debug info when the error action is clicked", async () => {
+    mockNotificationState.notifications = [
+      {
+        id: "n-11",
+        type: "error",
+        title: "Fail",
+        message: "details",
+        retryable: false,
+      },
+    ];
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<ToastContainer />);
+    });
+
+    const copyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "settings.about.copyDebugInfo",
+    );
+    expect(copyButton).toBeTruthy();
+
+    await act(async () => {
+      copyButton?.click();
+    });
+
+    expect(mockCopyDebugInfo).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("settings.about.copied");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("reports copy failures through notifyError", async () => {
+    mockCopyDebugInfo.mockRejectedValueOnce(new Error("clipboard blocked"));
+    mockNotificationState.notifications = [
+      {
+        id: "n-12",
+        type: "error",
+        title: "Fail",
+        message: "details",
+        retryable: false,
+      },
+    ];
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<ToastContainer />);
+    });
+
+    const copyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "settings.about.copyDebugInfo",
+    );
+    expect(copyButton).toBeTruthy();
+
+    await act(async () => {
+      copyButton?.click();
+    });
+
+    expect(mockNotifyError).toHaveBeenCalledWith(expect.any(Error));
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("retry action dismisses the toast after invoking the callback", async () => {
+    const retryAction = vi.fn();
+    mockNotificationState.notifications = [
+      {
+        id: "n-13",
+        type: "error",
+        title: "Fail",
+        message: "details",
+        retryable: true,
+        retryAction,
+      },
+    ];
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<ToastContainer />);
+    });
+
+    const retryButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "common.tryAgain",
+    );
+    expect(retryButton).toBeTruthy();
+
+    await act(async () => {
+      retryButton?.click();
+    });
+
+    expect(retryAction).toHaveBeenCalledOnce();
+    expect(mockNotificationState.dismissNotification).toHaveBeenCalledWith(
+      "n-13",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

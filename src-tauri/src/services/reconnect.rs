@@ -1,37 +1,9 @@
-//! Playback reconnect coordinator for remote streaming sources (PR #7,
-//! issue #151 defects #8, #11, #12).
+//! Playback reconnect for remote streaming mid-fetch failures.
 //!
-//! When the active remote streaming source's range fetch fails with a
-//! transient error mid-playback, the coordinator re-resolves the source,
-//! swaps it in atomically, and preserves the playback timeline. It is
-//! implemented as a testable unit driven by injected closures so the live
-//! playback loop (in `services::playback`) and the test harness share the
-//! same retry/classification/event-emission logic.
-//!
-//! ## What is retried
-//!
-//! Transient failures only, classified via [`ReconnectError`] (which mirrors
-//! `remote::errors::RemoteErrorKind`):
-//! - network unavailable / timeout (`ReconnectError::Transient`)
-//! - provider 5xx (`ReconnectError::Transient`)
-//! - credential expiry (`ReconnectError::CredentialExpired`) — triggers a
-//!   single-flight credential refresh before the next attempt
-//!
-//! ## What is NOT retried
-//!
-//! Permanent failures abort immediately and surface a terminal error:
-//! - not found / forbidden (`ReconnectError::NotFound`)
-//! - stale request (`ReconnectError::Stale`) — the user skipped past the song
-//!
-//! ## Events
-//!
-//! The coordinator emits three events through the injected [`EventSink`]:
-//! - [`ReconnectEvent::Reconnecting`] before each re-resolve attempt (PR #8
-//!   renders a "reconnecting…" state from this)
-//! - [`ReconnectEvent::Resync`] when the new source could not seek to the
-//!   exact requested position and snapped to a preceding boundary
-//! - [`ReconnectEvent::Failed`] after the attempt budget is exhausted or a
-//!   permanent error occurs
+//! Re-resolves the source, swaps it atomically, and preserves timeline position.
+//! Shared retry logic for live playback and tests (injected closures).
+//! Retries transient and credential-expired errors; aborts on not-found/forbidden/stale.
+//! Emits Reconnecting, Resync (seek snap), and Failed via the event sink.
 
 use crate::audio::remote_source::FetchEvent;
 use crate::remote::cache_catalog::CachePinGuard;
@@ -212,8 +184,7 @@ impl Default for ReconnectConfig {
         Self {
             max_attempts: DEFAULT_MAX_RECONNECT_ATTEMPTS,
             policy: RetryPolicy {
-                // Short backoff for playback reconnect: the user is waiting
-                // in real time, so cap the ceiling low.
+                // Low ceiling: user is waiting in real time.
                 max_retries: DEFAULT_MAX_RECONNECT_ATTEMPTS,
                 initial_delay: Duration::from_millis(500),
                 max_delay: Duration::from_secs(4),
@@ -272,8 +243,7 @@ where
 {
     let mut attempt: u32 = 0;
     loop {
-        // Stale guard: if the user skipped past this song, abort silently.
-        // No terminal event — the new song's load owns the UI now.
+        // Stale (user skipped): abort with no terminal event.
         if !is_current() {
             return Err(ReconnectError::Stale);
         }
@@ -284,11 +254,6 @@ where
         }
 
         attempt += 1;
-        // Emit a reconnecting event before the attempt so PR #8 can show a
-        // "reconnecting…" state. The reason is derived from the previous
-        // failure (transient / credential expired) — on the first attempt
-        // there is no prior failure, so the trigger was the fetch-event
-        // thread's transient-failure signal.
         let reason = if attempt == 1 {
             "transient fetch failure".to_owned()
         } else {
@@ -304,12 +269,7 @@ where
 
         match re_resolve() {
             Ok(mut resolved) => {
-                // Timeline preservation (defect #12): seek the new source to
-                // the position the old source was at when the failure
-                // occurred. The seek closure reports the actual position;
-                // when it cannot seek exactly, it snaps to the nearest
-                // preceding boundary and the coordinator emits a Resync
-                // event.
+                // Seek to pre-failure position; Resync when snapped to a boundary.
                 let outcome = seek_source(&mut resolved.source, position_ms);
                 if outcome.is_resync() {
                     event_sink.emit(ReconnectEvent::Resync {
@@ -326,8 +286,6 @@ where
                 });
             }
             Err(error) => {
-                // Non-retryable errors abort immediately and surface a
-                // terminal event.
                 if !error.retryable() {
                     event_sink.emit(ReconnectEvent::Failed {
                         song_id: song_id.to_owned(),
@@ -337,14 +295,11 @@ where
                     return Err(error);
                 }
 
-                // Credential expiry: trigger the single-flight refresh
-                // before the next attempt. Non-credential errors do not
-                // refresh (defect #10 / PR #5 single-flight invariant).
+                // Credential expiry: single-flight refresh before next attempt.
                 if error == ReconnectError::CredentialExpired {
                     refresh_credentials();
                 }
 
-                // Budget exhausted: surface a terminal error.
                 if attempt >= config.max_attempts {
                     event_sink.emit(ReconnectEvent::Failed {
                         song_id: song_id.to_owned(),
@@ -354,9 +309,6 @@ where
                     return Err(error);
                 }
 
-                // Backoff between attempts using the shared full-jitter
-                // policy so reconnect timing is consistent with the rest of
-                // the remote retry story.
                 let delay = full_jitter_delay(&config.policy, attempt - 1, rng);
                 if !delay.is_zero() {
                     sleep_fn(delay);

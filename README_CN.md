@@ -276,7 +276,7 @@ pnpm tauri dev               # 启动开发服务器（支持热更新）
 ### 运行测试
 
 ```bash
-cd src-tauri && cargo test -q   # 后端测试（175+；CI 行为见 AGENTS.md）
+cd src-tauri && cargo test -q   # 后端测试（175+；CI 见 .agents/skills/ci-notes）
 pnpm lint                    # oxlint 检查
 pnpm format                  # oxfmt 格式检查
 ```

@@ -1,3 +1,4 @@
+import { resolveAppLanguage } from "@/lib/i18n";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -50,7 +51,7 @@ export function createInitialSettingsOverlaySnapshot(
       modelUpdate: null,
       runtimeStatus: null,
       runtimeUpdate: null,
-      language: initialSettings.language ?? "en",
+      language: resolveAppLanguage(initialSettings.language),
       hideBatchSeparate: initialSettings.hideBatchSeparate,
       coverArtBackdrop: initialSettings.coverArtBackdrop,
       hideUpgradeAll: initialSettings.hideUpgradeAll,
@@ -155,9 +156,7 @@ export function createSettingsOverlayActions(
           },
         },
       });
-    } catch {
-      // Model status is display-only and should not block the rest of settings.
-    }
+    } catch {}
   };
 
   const refreshRuntimeStatus = async () => {
@@ -176,9 +175,7 @@ export function createSettingsOverlayActions(
           error: status.error?.message ?? null,
         },
       });
-    } catch {
-      // Runtime status is display-only.
-    }
+    } catch {}
   };
 
   const applyModelVariant = async (variant: ModelVariant) => {
@@ -246,7 +243,6 @@ export function createSettingsOverlayActions(
         },
         runtimeUpdate: null,
       });
-      // Refresh model statuses too since model actions may now be enabled.
       await refreshModelStatuses();
     } catch (error) {
       dependencies.notifyError(error);
@@ -308,7 +304,6 @@ export function createSettingsOverlayActions(
       try {
         await dependencies.api.deleteRuntime();
         await refreshRuntimeStatus();
-        // Refresh model statuses since model actions may now be disabled.
         await refreshModelStatuses();
       } catch (error) {
         dependencies.notifyError(error);
@@ -365,7 +360,7 @@ export function createSettingsOverlayActions(
         patchState({
           stemMode: settingsResult.value.stem_mode,
           modelVariant: settingsResult.value.model_variant,
-          language: settingsResult.value.language ?? "en",
+          language: resolveAppLanguage(settingsResult.value.language),
           hideBatchSeparate: settingsResult.value.hide_batch_separate,
           coverArtBackdrop: settingsResult.value.cover_art_backdrop,
           hideUpgradeAll: settingsResult.value.hide_upgrade_all,

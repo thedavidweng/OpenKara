@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "Penyedia Eksekusi Tidak Tersedia",
     "executionProviderUnavailableMessage": "Penyedia yang dipilih tidak kompatibel dengan perangkat ini. Ganti ke CPU di Pengaturan.",
     "modelUnavailableMessage": "Model pemisahan atau ONNX Runtime belum siap. Tunggu hingga penyiapan selesai, lalu coba lagi.",
-    "runtimePostDownloadTimeoutMessage": "Penyiapan runtime melebihi batas waktu setelah pengunduhan. Coba lagi.",
+    "runtimePostDownloadTimeoutMessage": "Penyiapan runtime melebihi batas waktu setelah pengunduhan. Buka Pengaturan → Tentang, salin info debug, lalu coba lagi.",
     "runtime_post_download_timeout": "Batas waktu penyiapan runtime",
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",

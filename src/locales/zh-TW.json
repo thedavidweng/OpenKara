@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "執行提供者無法使用",
     "executionProviderUnavailableMessage": "選取的提供者與此裝置不相容。請在設定中切換至 CPU。",
     "modelUnavailableMessage": "分離模型或 ONNX Runtime 尚未準備完成。請等待設定完成後重試。",
-    "runtimePostDownloadTimeoutMessage": "執行階段在下載後安裝逾時。請重試。",
+    "runtimePostDownloadTimeoutMessage": "執行環境在下載後安裝逾時。請開啟 偏好設定 → 關於，複製除錯資訊後重試。",
     "runtime_post_download_timeout": "執行階段設定逾時",
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",

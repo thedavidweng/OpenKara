@@ -1,9 +1,5 @@
 export interface LyricsTimeFrame {
   positionMs: number;
-  /**
-   * True for the next sampled frame after a seek latch. Consumed once —
-   * equivalent to AMLL's isSeek argument on setCurrentTime.
-   */
   isSeek: boolean;
 }
 

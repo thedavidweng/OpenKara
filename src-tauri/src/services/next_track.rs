@@ -49,10 +49,6 @@ fn normalize_to_output_format(
         audio.sample_rate_hz = target_sample_rate;
     }
 
-    // Recompute duration_ms from the normalized samples. Guard against
-    // division by zero — a valid decoded audio should always have a non-zero
-    // sample rate, but the DecodedAudio struct does not enforce this
-    // invariant at construction time.
     if audio.sample_rate_hz > 0 {
         if let Some(frames) = audio.samples.len().checked_div(audio.channels) {
             audio.duration_ms = (frames as u64 * 1000) / audio.sample_rate_hz as u64;
@@ -105,8 +101,6 @@ fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usiz
     if src_rate == dst_rate || channels == 0 || samples.is_empty() {
         return samples.to_vec();
     }
-    // Guard against zero rates — would produce a zero or infinite ratio and
-    // a division by zero in the frame count computation below.
     if src_rate == 0 || dst_rate == 0 {
         return samples.to_vec();
     }

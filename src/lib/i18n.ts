@@ -1,12 +1,6 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-/**
- * Display order for the language pickers, in the issue #227 priority order.
- * Listing a code here is purely an ordering hint — a code with no file/name is
- * simply skipped — so the full roster can sit here up front and every language
- * lands in a stable, deterministic slot the moment its file is added.
- */
 const LANGUAGE_PRIORITY = [
   "en",
   "zh-CN",
@@ -69,7 +63,6 @@ export function detectSystemLanguage(): string {
   const nav = navigator.language;
   const supported = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 
-  // 1. Exact match on the full BCP-47 tag (e.g. "pt-BR", "zh-CN").
   if (supported.has(nav)) return nav;
 
   const parts = nav.toLowerCase().split("-");
@@ -85,16 +78,26 @@ export function detectSystemLanguage(): string {
     if (supported.has("zh-TW")) return "zh-TW";
   }
 
-  // 3. Portuguese collapses to the single pt-BR bundle we ship.
   if (base === "pt" && supported.has("pt-BR")) return "pt-BR";
 
-  // 4. General base-tag fallback: the bare base code (e.g. "ja"), then any
-  //    locale whose code shares the base (e.g. "de-AT" -> "de").
   if (supported.has(base)) return base;
   const shared = SUPPORTED_LANGUAGES.find(
     (l) => l.code.toLowerCase().split("-")[0] === base,
   );
   return shared?.code ?? "en";
+}
+
+export function resolveAppLanguage(
+  persistedLanguage: string | null | undefined,
+  detectSystem: () => string = detectSystemLanguage,
+): string {
+  if (typeof persistedLanguage === "string") {
+    const trimmed = persistedLanguage.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return detectSystem();
 }
 
 function setDocumentLanguage(language: string): void {

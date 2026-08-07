@@ -1,3 +1,4 @@
+import { resolveAppLanguage } from "@/lib/i18n";
 import type { AppSettings } from "@/types/ipc";
 
 interface StartupSettingsDependencies {
@@ -17,6 +18,9 @@ export async function loadStartupSettings({
 
   hydrateAppSettings(settings);
 
-  const language = settings.language ?? detectFallbackLanguage();
+  const language = resolveAppLanguage(
+    settings.language,
+    detectFallbackLanguage,
+  );
   await changeLanguage(language);
 }

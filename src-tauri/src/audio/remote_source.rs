@@ -45,13 +45,7 @@ impl BandwidthMonitor {
         let threshold = self.slow_threshold.load(Ordering::Relaxed);
         self.is_slow.store(new_bps < threshold, Ordering::Relaxed);
 
-        // Estimate network RTT by subtracting transfer time from total elapsed.
-        // Using the previous throughput EWMA as the transfer-rate estimate:
-        //   rtt ≈ elapsed − bytes / prev_bps
-        // This separates network latency from bulk transfer time. Without this,
-        // latency_us tracks total fetch duration (which grows with fetch size)
-        // and the adaptive prefetch formula converges to the ceiling on any
-        // non-trivial connection, defeating the adaptivity.
+        // rtt ≈ elapsed − bytes/prev_bps so latency_us is not fetch-size dependent.
         let prev_bps = prev as f64;
         let transfer_secs = if prev_bps > 0.0 {
             bytes as f64 / prev_bps
@@ -247,10 +241,7 @@ impl ProviderFetcher {
         }
 
         let refresh_result = refresh();
-        // Install success (token + epoch) or leave failure visible under the
-        // same in-flight lock, THEN clear the slot and notify waiters. If
-        // waiters wake before the epoch advances they can read a stale
-        // generation and wrongly return false even when refresh succeeded.
+        // Install token+epoch under the in-flight lock before clearing/notifying waiters.
         {
             let mut in_flight = self
                 .refresh_in_flight
@@ -326,8 +317,7 @@ impl ProviderFetcher {
             return Err(FetchError::HttpStatus(status));
         }
 
-        // Stream the body with a per-read idle timeout instead of buffering it
-        // all under a single total-body deadline. See `STREAMING_READ_TIMEOUT`.
+        // Per-read idle timeout (not one total-body deadline). See `STREAMING_READ_TIMEOUT`.
         read_range_body(&mut response, length)
     }
 }
@@ -336,17 +326,11 @@ impl HttpFetcher for ProviderFetcher {
     fn fetch_range(&self, _url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
         match self.execute_request(offset, length) {
             Ok(bytes) => {
-                // Do NOT advance credential_generation here. That counter is
-                // the refresh epoch: only a successful refresh leader may
-                // advance it. Advancing on ordinary 200s lets waiters mistake
-                // an unrelated success for a completed refresh after a failed
-                // leader (P1 acceptance finding).
+                // Do not advance credential_generation on ordinary 200s (refresh epoch only).
                 Ok(bytes)
             }
             Err(FetchError::HttpStatus(401)) if self.token_refresh.is_some() => {
-                // Authentication expired — run a single-flight refresh and
-                // retry once with the new token. 401 is the token-expiry
-                // signal; 403 is permission denial and is NOT retried here.
+                // 401: single-flight refresh + one retry. 403 is not retried.
                 let refreshed = self.single_flight_refresh()?;
                 if refreshed {
                     self.execute_request(offset, length)
@@ -534,8 +518,7 @@ pub fn spawn_fetch_thread(
     Arc<BandwidthMonitor>,
     std::thread::JoinHandle<()>,
 ) {
-    // Build the client with explicit connect + per-request (idle) timeouts so a
-    // half-open/stalled connection cannot hang the fetch thread forever (#204).
+    // Explicit connect + idle timeouts so a stalled connection cannot hang (#204).
     let client = build_streaming_client(STREAMING_CONNECT_TIMEOUT, STREAMING_READ_TIMEOUT);
     spawn_fetch_thread_with_fetcher(
         url,
@@ -619,8 +602,7 @@ impl HttpFetcher for ReqwestFetcher {
             return Err(FetchError::RateLimited(retry_after));
         }
 
-        // Stream the body with a per-read idle timeout instead of buffering it
-        // all under a single total-body deadline. See `STREAMING_READ_TIMEOUT`.
+        // Per-read idle timeout (not one total-body deadline). See `STREAMING_READ_TIMEOUT`.
         read_range_body(&mut response, length)
     }
 }
@@ -722,12 +704,7 @@ fn fetch_loop(
                     }
                 }
 
-                // R10: After a successful fetch, drain stale queued Fetch
-                // commands. During fast scrubbing, many Fetch commands
-                // accumulate — we discard all but the most recent non-Fetch
-                // command so the fetch thread doesn't waste time on ranges the
-                // player has already moved past.  We only drain after success;
-                // after a failure we keep processing to honour retries.
+                // After success, drop stale Fetch cmds (keep last non-Fetch); not after failure.
                 if fetch_succeeded {
                     let mut last_non_fetch: Option<FetchCommand> = None;
                     while let Ok(cmd) = rx.try_recv() {

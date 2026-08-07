@@ -714,7 +714,7 @@
     "execution_provider_unavailable": "Yürütme sağlayıcısı kullanılamıyor",
     "executionProviderUnavailableMessage": "Seçilen sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",
     "modelUnavailableMessage": "Ayırma modeli veya ONNX Runtime hazır değil. Kurulum bitene kadar bekleyin, sonra tekrar deneyin.",
-    "runtimePostDownloadTimeoutMessage": "Çalışma zamanı kurulumu indirme sonrasında zaman aşımına uğradı. Tekrar deneyin.",
+    "runtimePostDownloadTimeoutMessage": "Çalışma zamanı kurulumu indirme sonrasında zaman aşımına uğradı. Ayarlar → Hakkında bölümünden hata ayıklama bilgisini kopyalayıp tekrar deneyin.",
     "runtime_post_download_timeout": "Çalışma zamanı kurulumu zaman aşımı",
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",

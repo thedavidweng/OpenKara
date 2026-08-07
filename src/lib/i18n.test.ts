@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it } from "vitest";
-import i18next, { SUPPORTED_LANGUAGES, detectSystemLanguage } from "./i18n";
+import i18next, {
+  SUPPORTED_LANGUAGES,
+  detectSystemLanguage,
+  resolveAppLanguage,
+} from "./i18n";
 
 const supported = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));
 
@@ -63,6 +67,18 @@ describe("detectSystemLanguage", () => {
     expect(detectSystemLanguage()).toBe("en");
   });
 
+  it("keeps a stored app language even when the OS locale differs", () => {
+    setNavigatorLanguage("zh-CN");
+    expect(resolveAppLanguage("en")).toBe("en");
+    expect(resolveAppLanguage("ja", () => "zh-CN")).toBe("ja");
+  });
+
+  it("uses the system recommend only when no app language is stored", () => {
+    expect(resolveAppLanguage(null, () => "ko")).toBe("ko");
+    expect(resolveAppLanguage(undefined, () => "de")).toBe("de");
+    expect(resolveAppLanguage("   ", () => "fr")).toBe("fr");
+  });
+
   it("uses canonical BCP-47 tags for every shipped locale", () => {
     for (const { code } of SUPPORTED_LANGUAGES) {
       expect(Intl.getCanonicalLocales(code)).toEqual([code]);
@@ -90,6 +106,9 @@ describe("detectSystemLanguage", () => {
       "The separation model or ONNX Runtime is not ready. Wait for setup to finish, then try again.",
     );
     expect(error).not.toMatch(/[\u3400-\u9fff]/u);
+    const timeout = i18next.t("errors.runtimePostDownloadTimeoutMessage");
+    expect(timeout.toLowerCase()).toContain("debug info");
+    expect(timeout).not.toMatch(/[\u3400-\u9fff]/u);
   });
 
   it("keeps runtime bootstrap status and errors in Simplified Chinese", async () => {

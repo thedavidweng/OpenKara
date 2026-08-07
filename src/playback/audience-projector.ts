@@ -4,17 +4,12 @@ import type {
   PlaybackStateSnapshot,
 } from "@/types/ipc";
 
-/** Fixed AirPlay viewport contract shared by the projector and TV renderer. */
 export const AIRPLAY_AUDIENCE_VIEWPORT = {
   width_px: 1280,
   height_px: 720,
   bottom_inset_px: 0,
 } as const;
 
-/**
- * Inputs for pure audience projection.
- * Adapters (AirPlay sync, local fullscreen) gather these from stores/hooks.
- */
 export interface AudienceProjectorInput {
   playbackSnapshot: PlaybackStateSnapshot | null;
   lyricsSongId: string | null;

@@ -45,7 +45,10 @@ const sample: DebugInfo = {
   runtime_version: "v1.27.1",
   runtime_artifact_id: "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
   runtime_target_triple: "aarch64-apple-darwin",
+  runtime_path: "/tmp/runtimes/rt/libonnxruntime.dylib",
   execution_provider: "xnnpack",
+  directml_available: false,
+  language: "en",
   log_file: "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log",
 };
 

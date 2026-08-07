@@ -333,9 +333,6 @@ pub fn open_control_db(path: &Path) -> CommandResult<Connection> {
         ))
     })?;
 
-    // Enable WAL so readers never block the writer. This is a persistent
-    // property of the database file, but setting it on every open is cheap
-    // and makes the behavior explicit.
     conn.execute_batch("PRAGMA journal_mode=WAL;")
         .map_err(|e| database_error(format!("failed to enable WAL on control DB: {e}")))?;
 
@@ -343,19 +340,14 @@ pub fn open_control_db(path: &Path) -> CommandResult<Connection> {
     Ok(conn)
 }
 
-/// Apply all remote-state migrations. Idempotent: every statement uses
-/// `CREATE TABLE IF NOT EXISTS` (migration 001) or checks for column existence
-/// before adding (migration 002), so running this on an already-migrated
-/// database is a no-op.
+/// Apply remote-state migrations (idempotent).
 pub fn apply_migrations(connection: &Connection) -> CommandResult<()> {
     for migration in REMOTE_STATE_MIGRATIONS {
         connection
             .execute_batch(migration)
             .map_err(|e| database_error(format!("failed to apply control DB migration: {e}")))?;
     }
-    // Migration 002: add repository_id and writer_id columns. ALTER TABLE ADD
-    // COLUMN is not idempotent in SQLite, so we check for column existence
-    // before adding.
+    // ALTER ADD COLUMN is not idempotent; existence-checked in helper.
     apply_migration_002_manifest_columns(connection)?;
     Ok(())
 }

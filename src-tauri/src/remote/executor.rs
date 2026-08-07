@@ -143,11 +143,7 @@ fn run_publish_protocol(
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
         .and_then(|m| m.revision);
 
-    // If a manifest exists but the provider returns no revision (CAS token),
-    // fail closed. Without a revision, conditional_replace becomes a
-    // conditional-create instead of a compare-and-swap, which violates the
-    // CAS guarantee and can cause lost updates on providers that omit ETags
-    // (e.g. some WebDAV servers).
+    // Fail closed: no revision token would turn conditional_replace into a create.
     if current_manifest.is_some() && manifest_revision.is_none() {
         return Err(RemoteError::new(
             RemoteErrorKind::ProviderCapabilityUnavailable,
@@ -161,16 +157,8 @@ fn run_publish_protocol(
     let target_generation = expected_generation + 1;
 
     if current_generation != expected_generation {
-        // Crash window after a successful manifest CAS: the remote advanced
-        // exactly one generation by this writer, but local completion was
-        // never recorded. Detect our own accepted commit and finish durably
-        // instead of surfacing a false RemoteConflict that would leave the
-        // working copy dirty forever.
-        //
-        // Identity is operation-scoped: writer_id alone is insufficient after
-        // coalescing may have expanded the payload and cleared a prior
-        // candidate. Require operation_id (when present on the manifest) and
-        // an exact match against the durable immutable candidate digest/size.
+        // Accepted-commit crash window: remote advanced, local complete missed.
+        // Match by operation_id + candidate digest/size (not writer_id alone).
         if current_generation == target_generation {
             if let Some(ref m) = current_manifest {
                 if is_accepted_commit_for_operation(m, ctx, op) {
@@ -209,12 +197,6 @@ fn run_publish_protocol(
     let persisted_candidate = load_persisted_candidate(ctx, op, &payload)?;
     let working_db_path = ctx.working_copy_root.join("openkara.db");
 
-    // --- Steps 3-4: Asset verification for a new freeze ---
-    //
-    // Before the first freeze, the working DB is stable under the per-library
-    // commit lock. Capture a deterministic fingerprint of every candidate-
-    // referenced remote object's size/revision so retries can verify the same
-    // asset set without consulting mutable local files.
     let fresh_asset_fingerprint = if persisted_candidate.is_none() {
         transition_state(
             ctx,
@@ -251,10 +233,6 @@ fn run_publish_protocol(
         candidate_assets_fingerprint,
         op,
     ) = if let Some(candidate) = persisted_candidate {
-        // The candidate DB, not the mutable working DB, defines this retry's
-        // asset set. Recompute remote metadata and require the exact fingerprint
-        // captured before the original freeze. This detects missing, truncated,
-        // or replaced remote assets without reading newer local bytes.
         let actual_fingerprint =
             verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate.path, false)?;
         if actual_fingerprint != candidate.asset_fingerprint {
@@ -298,9 +276,7 @@ fn run_publish_protocol(
             )
         })?;
 
-        // Machine-local control metadata must not ship with a generation
-        // candidate. Fail closed: open/cleanup failure aborts publication
-        // before integrity/digest/upload so outbox rows cannot CAS.
+        // Strip machine-local outbox from the candidate before CAS (fail closed).
         {
             let cand = rusqlite::Connection::open(&path).map_err(|e| {
                 let _ = std::fs::remove_file(&path);
@@ -391,9 +367,6 @@ fn run_publish_protocol(
             format!("failed to read candidate for upload: {e}"),
         )
     })?;
-    // Generation-specific path: no CAS conflict here. The CAS point is the
-    // manifest replacement (step 10). Do NOT delete the local candidate on
-    // upload failure — a restart must resume the same immutable bytes.
     upload_candidate_database(
         ctx.provider,
         ctx.working_copy_root,
@@ -404,9 +377,7 @@ fn run_publish_protocol(
         &op.operation_id,
         ctx.control_db,
     )?;
-    // Verify the remote object matches the immutable candidate digest by
-    // downloading it back to a temp path. Size-only checks are insufficient
-    // when a resumable session could have mixed two candidates of equal size.
+    // Digest verify: size-only misses equal-size mixed resumable sessions.
     verify_remote_candidate_digest(
         ctx.provider,
         &db_remote_path,
@@ -446,9 +417,6 @@ fn run_publish_protocol(
         }
     }
 
-    // Close the candidate-upload race window: immediately before manifest CAS,
-    // re-stat every candidate-referenced asset and require the exact metadata
-    // fingerprint captured before freeze.
     let pre_cas_asset_fingerprint =
         verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate_path, false)?;
     if pre_cas_asset_fingerprint != candidate_assets_fingerprint {
@@ -481,8 +449,6 @@ fn run_publish_protocol(
         ConditionalSource::Bytes(manifest_json.into_bytes()),
         manifest_revision.as_deref(),
     )?;
-    // A CAS failure is a conflict — do NOT retry as unconditional.
-    // The RemoteError is propagated as-is via the `?` operator.
 
     transition_state(
         ctx,
@@ -858,9 +824,7 @@ fn verify_referenced_assets(
                 )
             })?;
 
-            // Local files are authoritative only before the first candidate
-            // freeze. On retry, the same path may contain bytes from a newer
-            // local mutation; the persisted remote fingerprint is authoritative.
+            // After freeze, remote fingerprint is authoritative (working copy may have newer bytes).
             if compare_local_size {
                 if let Some(remote_size) = remote_meta.size_bytes {
                     let local_path = working_copy_root.join(path);
@@ -909,9 +873,7 @@ fn upload_candidate_database(
     operation_id: &str,
     control_db: &rusqlite::Connection,
 ) -> Result<(), RemoteError> {
-    // Staging path used only for providers that read from the working copy
-    // via `upload_file`. The immutable candidate under `.openkara/candidates/`
-    // is the durable source of truth and is not deleted here.
+    // Staging is for `upload_file` providers; durable candidate is not deleted here.
     let local_staging = working_copy_root.join(remote_relative_path);
     if let Some(parent) = local_staging.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
@@ -968,9 +930,7 @@ fn upload_candidate_database(
             .upload_file(remote_relative_path)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     }
-    // Staging is not the durable candidate — safe to remove after a successful
-    // upload attempt. The `.openkara/candidates/<op>.sqlite` file remains until
-    // local completion is recorded.
+    // Staging is disposable after upload; durable candidate remains until local complete.
     let _ = std::fs::remove_file(&local_staging);
     Ok(())
 }
@@ -1215,8 +1175,7 @@ fn record_completed(
     } else if working_matches_candidate {
         (LocalState::Clean, None)
     } else {
-        // Working DB diverged after freeze (e.g. late mutation not yet
-        // projected). Keep Dirty so automatic pull cannot overwrite it.
+        // Working DB diverged after freeze — keep Dirty (block automatic pull).
         (LocalState::Dirty, None)
     };
 
@@ -1261,8 +1220,7 @@ fn record_completed(
     tx.commit()
         .map_err(|e| database_error(format!("failed to commit completion transaction: {e}")))?;
 
-    // The immutable candidate is no longer needed once local completion is
-    // durable. Best-effort removal — a leftover is cleaned by deferred GC.
+    // Best-effort candidate removal after durable local complete.
     if let Ok(payload) = OperationPayload::from_json(&op.payload_json) {
         if let Some(rel) = payload.candidate_relative_path {
             let path = ctx.working_copy_root.join(rel);
@@ -1292,10 +1250,7 @@ fn record_failure(
             (OperationState::RetryWait, LocalState::Publishing)
         }
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
-        // StaleRequest is a playback-only abort (the user skipped past the
-        // song). It is not an operation failure — treat it as cancelled,
-        // mirroring OperationCancelled (Dirty so an in-flight publish stays
-        // dirty rather than being reported clean).
+        // Playback-only abort; treat like cancel (Dirty, not Clean).
         RemoteErrorKind::StaleRequest => (OperationState::Cancelled, LocalState::Dirty),
     };
 
@@ -1366,9 +1321,7 @@ fn schedule_gc_on_conn(
         operation_id: gc_op_id,
         library_id: library_id.to_owned(),
         operation_kind: OperationKind::Gc,
-        // RetryWait with a future next_attempt_at_ms enforces the safety
-        // delay: the executor skips operations whose next_attempt is in the
-        // future, so GC cannot run immediately after publish.
+        // Future next_attempt_at_ms: executor skips until the GC safety delay elapses.
         state: OperationState::RetryWait,
         expected_generation: Some(committed_generation),
         target_generation: None,
@@ -1423,17 +1376,13 @@ pub(crate) fn execute_gc(
     let now = current_unix_time_ms();
     let committed_generation = op.expected_generation.unwrap_or(0);
 
-    // The previous generation is retained as a rollback safety net. Generations
-    // older than that are safe to delete because no reader can be mid-pull on
-    // them (the manifest advanced at least two generations ago).
+    // Retain previous generation as rollback; delete older ones.
     let retain_floor = committed_generation.saturating_sub(1);
 
     let manifest = read_manifest(provider)?;
     if let Some(ref m) = manifest {
         if m.generation < committed_generation {
-            // The remote has not yet advanced to the generation this GC was
-            // scheduled for. Skip — a future GC will clean up after the
-            // manifest advances.
+            // Manifest lag: skip; a later GC will collect after advance.
             tracing::info!(
                 "skipping GC for library {}: manifest generation {} < expected {}",
                 library_id,
@@ -1448,14 +1397,7 @@ pub(crate) fn execute_gc(
         }
     }
 
-    // Delete old database generations: 1..=retain_floor-1.
-    // Generation 0 is reserved. Both the legacy `<generation>.sqlite` object
-    // and the operation-scoped `<generation>/` directory are attempted so
-    // repositories created before and after this hardening remain collectible.
-    //
-    // Never delete the global `.openkara/staging` root here. Another device can
-    // have an in-flight WebDAV staged upload under that prefix; deleting the
-    // shared root would let a local GC corrupt a concurrent writer before CAS.
+    // Never delete shared staging; only gen dirs below retain_floor.
     let mut transient_failures = 0;
     let mut permanent_failures = 0;
     for gen in 1..retain_floor {
@@ -1468,9 +1410,7 @@ pub(crate) fn execute_gc(
                     tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
                 }
                 Err(e) => {
-                    // Only explicit missing-object (404 / not found) is
-                    // idempotent success. Permission/auth/capability errors
-                    // must keep GC non-completed.
+                    // 404 is idempotent success; auth/capability errors keep GC retryable.
                     let msg = e.message.to_ascii_lowercase();
                     let is_not_found = msg.contains("not found")
                         || msg.contains("404")
@@ -1516,7 +1456,6 @@ pub(crate) fn execute_gc(
     }
 
     if transient_failures > 0 {
-        // Leave the GC operation retryable — do NOT mark it Completed.
         let mut updated = op.clone();
         updated.state = OperationState::RetryWait;
         updated.next_attempt_at_ms = Some(now + GC_RETRY_BACKOFF_MS);
@@ -1525,8 +1464,6 @@ pub(crate) fn execute_gc(
         return Ok(());
     }
 
-    // Mark the GC operation as completed only after every target has been
-    // successfully deleted or confirmed absent (404).
     let mut updated = op.clone();
     updated.state = OperationState::Completed;
     updated.updated_at_ms = now;
@@ -1608,9 +1545,7 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         .cloned()
         .collect();
 
-    // If the remote DB contains songs not in the local DB (or vice versa) and
-    // the local operation's affected songs overlap with the remote-only set,
-    // the changes are NOT disjoint — require explicit user choice.
+    // Overlap between local-affected and remote-only songs requires user choice.
     let affected_songs = OperationPayload::from_json(&op.payload_json)
         .map(|p| p.song_ids)
         .unwrap_or_default();

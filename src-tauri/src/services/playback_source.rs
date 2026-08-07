@@ -59,7 +59,6 @@ pub(crate) fn load_playback_source(
     is_current: impl Fn() -> bool,
 ) -> Result<PlaybackSourceLoad, PlaybackError> {
     if song.is_remote_stems() {
-        // Remote stems must be fully materialized before synchronous decode.
         RemoteContent::new(app_data_dir)
             .ensure_stem_files_cached(library_root, connection, song, request_id, is_current)
             .map_err(map_stem_materialization_error)?;

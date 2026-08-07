@@ -94,7 +94,6 @@ export function FullscreenControls() {
         return;
       }
 
-      // Don't intercept keys when focus is inside an editable field.
       const target = event.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||

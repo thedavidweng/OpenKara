@@ -56,9 +56,7 @@ interface SettingsState {
   librarySortMode: AppSettingsSnapshot["librarySortMode"];
   themePreference: AppSettingsSnapshot["themePreference"];
   updatePolicy: AppSettingsSnapshot["updatePolicy"];
-  /** Monotonic generation for optimistic theme-preference mutations. */
   themePreferenceMutationGeneration: number;
-  /** Monotonic generation for optimistic update-policy mutations. */
   updatePolicyMutationGeneration: number;
   toggle: () => void;
   close: () => void;
@@ -196,14 +194,6 @@ interface OptimisticField<T> {
   reconcileSnapshot: (value: T) => T;
 }
 
-/**
- * Tracks a field's committed backend value alongside its locally pending
- * mutations. A later request starts from an optimistic value, so it cannot
- * safely use that value as its failure rollback target. Instead, render the
- * newest still-pending value and otherwise fall back to the last confirmed
- * value. This preserves the user's most recent intent without ever settling
- * on a rejected optimistic value.
- */
 function createOptimisticField<T>(initialValue: T): OptimisticField<T> {
   let latestGeneration = 0;
   let confirmedGeneration = 0;
@@ -344,8 +334,6 @@ export function createSettingsStore(
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
-          // Each EQ command returns a full snapshot, but this command owns
-          // only eqEnabled. Applying the other field would race a slider edit.
           syncPatch({
             eqEnabled: eqEnabledField.confirm(
               generation,
@@ -365,8 +353,6 @@ export function createSettingsStore(
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
-          // Each EQ command returns a full snapshot, but this command owns
-          // only eqGainsDb. Applying the other field would race a toggle edit.
           syncPatch({
             eqGainsDb: eqGainsField.confirm(
               generation,
@@ -478,8 +464,6 @@ export function createSettingsStore(
         try {
           const settings = await api.setThemePreference(preference);
           if (get().themePreferenceMutationGeneration === generation) {
-            // Reconcile through syncAppSettings so pending EQ / sort-mode
-            // optimistic fields are not clobbered by the full snapshot.
             syncAppSettings(settings);
           }
         } catch (error) {
@@ -508,8 +492,6 @@ export function createSettingsStore(
         try {
           const settings = await api.setUpdatePolicy(policy);
           if (get().updatePolicyMutationGeneration === generation) {
-            // Reconcile through syncAppSettings so pending EQ / sort-mode
-            // optimistic fields are not clobbered by the full snapshot.
             syncAppSettings(settings);
           }
         } catch (error) {

@@ -79,11 +79,6 @@ export class KaraokeFillController {
     this.lastUpdateTime = 0;
   }
 
-  /**
-   * Set the target alpha values for the mask gradient.
-   * bright: alpha for the filled portion (0-1). Past lines: 1.0, active sweep: 0.2
-   * dark: alpha for the unfilled portion (0-1). Typically 1.0
-   */
   setTargetAlpha(bright: number, dark: number) {
     this.targetBrightAlpha = bright;
     this.targetDarkAlpha = dark;

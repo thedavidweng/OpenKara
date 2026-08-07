@@ -169,9 +169,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       airPlayOutput,
       localAudienceOutputActive,
       direction,
-    ).catch(() => {
-      // Remote paging must not interrupt the operator's local view.
-    });
+    ).catch(() => {});
   };
 
   if (!songId) {

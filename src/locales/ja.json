@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "実行プロバイダーを利用できません",
     "executionProviderUnavailableMessage": "選択したプロバイダーはこのデバイスと互換性がありません。設定で CPU に切り替えてください。",
     "modelUnavailableMessage": "分離モデルまたは ONNX Runtime の準備ができていません。セットアップが完了するまで待ってから、もう一度お試しください。",
-    "runtimePostDownloadTimeoutMessage": "ダウンロード後のランタイム設定がタイムアウトしました。もう一度お試しください。",
+    "runtimePostDownloadTimeoutMessage": "ダウンロード後のランタイム設定がタイムアウトしました。設定 → 情報 でデバッグ情報をコピーしてから、もう一度お試しください。",
     "runtime_post_download_timeout": "ランタイム設定のタイムアウト",
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",

@@ -239,13 +239,7 @@ impl AudioProducer {
 
     pub fn signal_flush(&self) {
         self.flush_epoch.fetch_add(1, Ordering::Relaxed);
-        // Clear flush_done before publishing needs_flush. If needs_flush is set
-        // first, a concurrent audio callback can see it, run acknowledge_flush
-        // (setting flush_done = true), and return before we reset flush_done to
-        // false here — the producer would then poll a flag that never flips,
-        // time out, and push post-seek samples before the ring buffer drains.
-        // Release ordering on needs_flush guarantees the consumer observes
-        // flush_done = false before it acts on needs_flush = true.
+        // flush_done before needs_flush: avoid concurrent ack of a stale true.
         self.flush_done.store(false, Ordering::Release);
         self.needs_flush.store(true, Ordering::Release);
 
@@ -498,9 +492,7 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     let mut sample_rate = codec_params.sample_rate;
     let mut channels = codec_params.channels.as_ref().map(|c| c.count());
 
-    // Some containers don't expose sample rate / channel layout in the
-    // codec params.  symphonia only populates these after decoding the
-    // first packet, so try that before giving up.
+    // symphonia may populate sample rate/channels only after the first packet.
     if sample_rate.is_none() || channels.is_none() {
         if let Ok(mut decoder) = symphonia::default::get_codecs()
             .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
@@ -640,12 +632,7 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         metadata_vec.push(meta);
     }
 
-    // Validate stem timeline consistency. The source-domain mix bus
-    // (issue #143) pops the same source-frame range from every stem, so
-    // mismatched sample_rate or channels would cause one stem to exhaust
-    // early and stall the transport. Duration is checked when available —
-    // a mismatch signals different source material even though the exact
-    // frame count is only known after full decode.
+    // Stem rate/channels must match: mix bus pops the same source-frame range (#143).
     if metadata_vec.len() > 1 {
         let first = &metadata_vec[0];
         for (i, meta) in metadata_vec.iter().enumerate().skip(1) {

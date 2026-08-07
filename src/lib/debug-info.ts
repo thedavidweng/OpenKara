@@ -10,6 +10,9 @@ export function formatDebugInfo(
   const modelVersion = info.model_installed_version ?? "—";
   const runtimeArtifact = info.runtime_artifact_id ?? "—";
 
+  const runtimePath = info.runtime_path.trim() === "" ? "—" : info.runtime_path;
+  const language = info.language ?? "system";
+
   return [
     `${t("app.name")} · ${t("settings.about.label")}`,
     `${t("settings.about.version")}: ${info.app_version} (${t("settings.about.build")} ${info.build_sha})`,
@@ -17,7 +20,10 @@ export function formatDebugInfo(
     `${t("settings.about.catalog")}: ${info.catalog_generation} · ${info.catalog_release_id}`,
     `${t("settings.about.model")}: ${info.model_variant} · ${info.model_state} · ${modelVersion} · ${info.model_pinned_version}`,
     `${t("settings.about.runtime")}: ${info.runtime_state} · ${info.runtime_version} · ${runtimeArtifact} · ${info.runtime_target_triple}`,
+    `Runtime path: ${runtimePath}`,
     `${t("settings.about.executionProvider")}: ${info.execution_provider}`,
+    `DirectML available: ${info.directml_available}`,
+    `UI language: ${language}`,
     `${t("settings.about.logFile")}: ${info.log_file}`,
   ].join("\n");
 }

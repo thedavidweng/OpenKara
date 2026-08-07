@@ -36,10 +36,7 @@ impl<T> ModelCache<T> {
         let key = key.into();
 
         if self.cached_key.as_deref() != Some(key.as_str()) {
-            // Demucs model loads are large enough that re-reading from disk for every
-            // song dominates batch separation time. The cache stays single-instance
-            // on purpose: current separation is sequential, so reuse matters more
-            // than parallelism here.
+            // Single-entry cache: sequential separation reuses the loaded model.
             self.cached_key = None;
             self.cached_model = None;
         }

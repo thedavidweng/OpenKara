@@ -713,7 +713,7 @@
     "execution_provider_unavailable": "실행 제공자를 사용할 수 없음",
     "executionProviderUnavailableMessage": "선택한 제공자는 이 기기와 호환되지 않습니다. 설정에서 CPU로 전환하세요.",
     "modelUnavailableMessage": "분리 모델 또는 ONNX Runtime이 준비되지 않았습니다. 설정이 완료될 때까지 기다린 후 다시 시도하세요.",
-    "runtimePostDownloadTimeoutMessage": "다운로드 후 런타임 설정 시간이 초과되었습니다. 다시 시도하세요.",
+    "runtimePostDownloadTimeoutMessage": "다운로드 후 런타임 설정 시간이 초과되었습니다. 설정 → 정보에서 디버그 정보를 복사한 뒤 다시 시도하세요.",
     "runtime_post_download_timeout": "런타임 설정 시간 초과",
     "separation_failed": "분리 실패",
     "internal": "내부 오류",

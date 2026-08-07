@@ -3,7 +3,6 @@ import type {
   SeparationStatusSnapshot,
 } from "@/types/ipc";
 
-/** Enqueue when a different song is already loaded (karaoke host flow). */
 export function shouldEnqueueInsteadOfReplacingCurrentSong(
   currentSnapshot: PlaybackStateSnapshot | null,
   requestedSongId: string,

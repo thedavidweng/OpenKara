@@ -37,8 +37,6 @@ const EQ_PRESETS = [
   gains: readonly [number, number, number, number, number];
 }>;
 
-// Sliders move on a 0.5 dB grid, so half a step cleanly separates "matches
-// the preset" from "user nudged a band".
 const EQ_PRESET_MATCH_EPSILON = 0.25;
 
 function matchEqPreset(gains: EqGains): string | null {
@@ -113,8 +111,6 @@ export function SettingsEqSection() {
     });
   };
 
-  // Highlight the preset the current draft matches; null renders as
-  // "Custom". Matching against the draft (not the committed store state)
   const activePresetKey = matchEqPreset(draft);
 
   const applyPreset = (

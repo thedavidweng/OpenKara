@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/stores/bootstrap-store", () => ({
   useBootstrapStore: {
@@ -206,6 +206,23 @@ function createHarness(overrides?: {
 }
 
 describe("createInitialSettingsOverlaySnapshot", () => {
+  let originalNavigatorLanguage: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalNavigatorLanguage = Object.getOwnPropertyDescriptor(
+      navigator,
+      "language",
+    );
+  });
+
+  afterEach(() => {
+    if (originalNavigatorLanguage) {
+      Object.defineProperty(navigator, "language", originalNavigatorLanguage);
+    } else {
+      Reflect.deleteProperty(navigator, "language");
+    }
+  });
+
   test("returns the correct initial shape with default settings", () => {
     const snapshot = createInitialSettingsOverlaySnapshot();
 
@@ -255,7 +272,12 @@ describe("createInitialSettingsOverlaySnapshot", () => {
     });
   });
 
-  test("defaults language to 'en' when initialSettings.language is null", () => {
+  test("shows the active app language when stored language is still null", () => {
+    Object.defineProperty(navigator, "language", {
+      value: "ja-JP",
+      configurable: true,
+    });
+
     const snapshot = createInitialSettingsOverlaySnapshot({
       hydrated: true,
       stemMode: "two_stem",
@@ -277,10 +299,35 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       updatePolicy: "notify",
     });
 
-    expect(snapshot.state.language).toBe("en");
+    expect(snapshot.state.language).toBe("ja");
     expect(snapshot.state.stemMode).toBe("two_stem");
     expect(snapshot.state.modelVariant).toBe("htdemucs");
     expect(snapshot.state.coverArtBackdrop).toBe(false);
+  });
+
+  test("keeps a stored English language even when the OS locale would differ", () => {
+    const snapshot = createInitialSettingsOverlaySnapshot({
+      hydrated: true,
+      stemMode: "two_stem",
+      modelVariant: "htdemucs",
+      language: "en",
+      hideBatchSeparate: false,
+      coverArtBackdrop: false,
+      hideUpgradeAll: false,
+      lyricsFontStep: 0,
+      executionProvider: "cpu",
+      availableExecutionProviders: ["cpu"],
+      compatibleExecutionProviders: ["cpu"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
+      librarySortMode: "recently_imported",
+      themePreference: "dark",
+      updatePolicy: "notify",
+    });
+
+    expect(snapshot.state.language).toBe("en");
   });
 
   test("uses provided initialSettings values", () => {

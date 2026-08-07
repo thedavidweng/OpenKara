@@ -47,8 +47,7 @@ fn publish_artwork_derivatives(
         return Ok(());
     };
     let Some(cover_art) = record.cover_art.as_deref() else {
-        // The original BLOB is the source of truth for a derivative. Do not
-        // propagate DB paths that cannot be tied to an authoritative cover.
+        // Derivatives must resolve from the original cover BLOB, not orphan paths.
         return Ok(());
     };
 
@@ -67,10 +66,7 @@ fn publish_artwork_derivatives(
             .map(|bytes| bytes.is_some())
             .unwrap_or(false);
 
-    // Regenerate if a path is missing, malformed, belongs to different cover
-    // bytes, or points at an invalid WebP. The conditional database update
-    // prevents a stale publisher from overwriting derivatives after concurrent
-    // cover-art replacement.
+    // Regenerate bad derivatives; conditional DB update vs concurrent cover replace.
     let (thumb_path, preview_path) = if derivatives_are_usable {
         (expected_thumb, expected_preview)
     } else {
@@ -90,9 +86,7 @@ fn publish_artwork_derivatives(
         ) {
             Ok(true) => (derivatives.thumb_path, derivatives.preview_path),
             Ok(false) => {
-                // The just-generated deterministic files may have no row left
-                // referencing them. Delete only when reference counting proves
-                // they are not shared by another song.
+                // Delete unreferenced generated files only (shared paths stay).
                 for path in [&derivatives.thumb_path, &derivatives.preview_path] {
                     let _ = artwork::delete_artwork_derivative_if_unreferenced(
                         local_connection,
@@ -231,9 +225,7 @@ fn publish_content_addressed_asset(
         )?;
     }
 
-    // The destination filename claims `digest`; prove the staged bytes match
-    // before and after provider upload so a concurrently modified source cannot
-    // be published under a false content address.
+    // Filename claims digest — verify staged bytes before and after upload.
     let staged_digest = crate::remote::atomic_download::sha256_file(&destination)?;
     if staged_digest != digest {
         return Err(CommandError::from(LibraryError::Internal(format!(
@@ -382,10 +374,7 @@ pub(crate) fn update_remote_song(
     if remote_mode == "stems_remote" {
         song.file_path = None;
     }
-    // Updating cover_art without updating its paired derivative paths would
-    // leave the remote DB pointing at stale artwork if a later upload fails.
-    // Commit the song update and derivative-path invalidation together; the
-    // paths are repopulated only after both derivative uploads succeed.
+    // Invalidate derivative paths with cover_art so a failed upload cannot leave stale paths.
     let transaction = connection
         .transaction()
         .map_err(|error| database_error(error.to_string()))?;
@@ -423,8 +412,7 @@ pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
         return Ok(());
     }
 
-    // Resolve target library: prefer the durable operation's library_id so a
-    // post-mutation library switch cannot redirect the publish.
+    // Prefer durable op.library_id so a library switch cannot redirect publish.
     let target_library_id = if let Some(op_id) = operation_id {
         let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -510,8 +498,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 ) -> CommandResult<UploadStatusSnapshot> {
     state.remote.ensure_available()?;
 
-    // Resolve the durable operation FIRST so the target library is taken from
-    // op.library_id — not the currently active library (user may have switched).
+    // Target library from op.library_id, not the currently active library.
     let (resolved_op, remote_library) = {
         let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -557,8 +544,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         ))));
     }
 
-    // Per-library commit lock serializes the full publish (assets + freeze + CAS)
-    // and coalesces concurrent pending ops under one generation advance.
+    // Per-library commit lock: serialize assets + freeze + CAS.
     let commit_lock = state.remote.commit_lock(&remote_library_id);
     let _commit_guard = commit_lock
         .lock()
@@ -582,9 +568,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         }
     }
 
-    // Working-copy root comes from the operation's library, never active.
-    // prepare under lock uses the same registered library object (not a
-    // re-resolved "active" root).
+    // Working-copy root from the operation's library, never the active library.
     let remote_library = {
         let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -600,9 +584,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     let same_root = true;
     let provider = create_repository_storage(&state.shell.app_data_dir, &remote_library)?;
 
-    // Phase 1: CAS-boundary ops must reconcile before any new freeze. Running
-    // a later Pending first would see A's generation as a conflict and leave
-    // A unrecovered.
+    // Phase 1: CAS-boundary ops before any new freeze.
     reconcile_cas_boundary_ops(state, &remote_library_id, &remote_library, &remote_root)?;
 
     let preferred_still_live = {
@@ -615,9 +597,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         }
     };
 
-    // Phase 2: merge ALL remaining Pending/RetryWait (including future
-    // backoff) into one survivor — shared working DB cannot publish a
-    // partial change set.
+    // Phase 2: merge remaining Pending/RetryWait into one survivor.
     let primary_id = if preferred_still_live {
         resolved_op.operation_id.clone()
     } else {
@@ -711,8 +691,6 @@ fn publish_song_internal<R: tauri::Runtime>(
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
-    // Upload every song in the (merged) durable payload under the commit lock,
-    // then freeze/CAS once.
     let mut publish_result: CommandResult<()> = Ok(());
     for sid in &song_ids_to_publish {
         if let Err(error) = upload_one_song_assets(
@@ -730,8 +708,7 @@ fn publish_song_internal<R: tauri::Runtime>(
     }
 
     if let Err(error) = publish_result {
-        // Asset stage failed before the executor. Retryable network faults
-        // land as durable RetryWait on this exact operation_id.
+        // Pre-executor asset failure: retryable → RetryWait; non-retryable → Failed.
         let failure = mark_upload_status_for_operation(
             state,
             &operation_id,
@@ -746,10 +723,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         return Err(error);
     }
 
-    // --- Transactional manifest commit via the executor ---
-    //
-    // `upload-complete` is emitted ONLY after the manifest CAS succeeds.
-    // Failure is persisted by the executor; UI only projects durable state.
+    // `upload-complete` only after manifest CAS; UI projects durable state.
     let commit_result = commit_via_executor(
         state,
         &remote_library,
@@ -824,9 +798,7 @@ fn upload_one_song_assets(
                     "song {song_id} must have cached stems before publishing to a remote repository"
                 )))
             })?;
-        // Fixed `stems/<song-id>/<name>` paths are unsafe with concurrent
-        // writers: a CAS loser can overwrite assets referenced by the winner.
-        // Store every stem at a path derived from its bytes instead.
+        // Byte-addressed stem paths: fixed song-id paths race under concurrent writers.
         let remote_stem_entry =
             publish_content_addressed_stem_entry(&stem_entry, local_root, remote_root, provider)?;
         upsert_stem_entry(remote_connection, &remote_stem_entry)?;
@@ -842,9 +814,7 @@ fn upload_one_song_assets(
         )?;
         sync_song_lyrics_to_remote(local_connection, remote_connection, song_id)?;
     } else {
-        // Store original/Media+G objects under byte-addressed paths as well.
-        // This supports legacy logical song IDs and prevents an overwrite race
-        // even when two writers publish different bytes for the same old path.
+        // Byte-addressed original/Media+G paths (same concurrent-writer race).
         let mut remote_song = song.clone();
         if let Some(file_path) = song.file_path.as_deref() {
             remote_song.file_path = Some(publish_content_addressed_asset(
@@ -915,15 +885,8 @@ pub(crate) fn reconcile_cas_boundary_ops(
     };
 
     for op in cas_ops {
-        // Candidate-bound operations already completed asset upload and
-        // size-aware verification. Never replay assets from the mutable working
-        // copy here: a newer mutation may have replaced the same stem/artwork
-        // path. The executor verifies the immutable candidate plus its persisted
-        // remote-asset fingerprint before it can reach manifest CAS.
-        // A CAS-boundary failure must stop this library queue. Continuing with
-        // a younger Pending operation would either observe the unresolved CAS
-        // as a false conflict or freeze the shared working DB while the older
-        // change set is no longer represented by a live operation.
+        // CAS-boundary ops: never re-upload from the mutable working copy;
+        // a failure must stop the library queue before younger Pending ops.
         commit_via_executor(
             state,
             remote_library,
@@ -933,9 +896,7 @@ pub(crate) fn reconcile_cas_boundary_ops(
         )?;
     }
 
-    // Defensive invariant: successful reconciliation must leave no live
-    // candidate-bound operation behind. Callers may start the merge/freeze
-    // phase only after this check succeeds.
+    // No live CAS-boundary op may remain before merge/freeze.
     let unresolved = {
         let conn = state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -1066,8 +1027,7 @@ pub(crate) fn merge_pending_ops_for_publish(
             ))));
         }
 
-        // Post-CAS survivors must reconcile alone — do not absorb peers or
-        // clear their candidate identity before accepted-commit can run.
+        // Post-CAS survivors reconcile alone (keep candidate identity).
         let primary_may_have_cas = may_have_crossed_cas_boundary(&primary);
 
         let primary_payload = OperationPayload::from_json(&primary.payload_json)?;
@@ -1111,10 +1071,7 @@ pub(crate) fn merge_pending_ops_for_publish(
             if primary_may_have_cas {
                 continue;
             }
-            // Shared working DB: future RetryWait MUST still be merged into
-            // the survivor (and the library waits on max next_attempt_at_ms).
-            // Skipping would freeze B's local rows under A's CAS while B
-            // remains durable-uncommitted.
+            // Shared working DB: future RetryWait must still merge into the survivor.
             let other_payload = OperationPayload::from_json(&other.payload_json)?;
             if other_payload.whole_repository {
                 whole_repository = true;
@@ -1151,10 +1108,7 @@ pub(crate) fn merge_pending_ops_for_publish(
         sorted_original.sort();
         sorted_merged.sort();
         let song_set_changed = sorted_original != sorted_merged;
-        // Any new song/change set invalidates a previously frozen candidate —
-        // otherwise a RetryWait op would reuse an A-only candidate after
-        // merging B into the payload. CAS-boundary primaries never merge, so
-        // this only clears candidates for pure pre-CAS coalesces.
+        // New song_ids invalidate a pre-CAS frozen candidate (would publish a partial set).
         let invalidate_candidate = !primary_may_have_cas && (merged_secondary || song_set_changed);
         if invalidate_candidate {
             if let Some(rel) = payload.candidate_relative_path.take() {
@@ -1174,15 +1128,12 @@ pub(crate) fn merge_pending_ops_for_publish(
             payload.detail = Some("Publishing to remote".to_owned());
         }
         primary.payload_json = payload.to_json()?;
-        // Rebind expected_generation only when we did not freeze a candidate
-        // against a prior generation. CAS-boundary ops keep their original
-        // expected_generation so accepted-commit can match expected+1.
+        // CAS-boundary ops keep original expected_generation for accepted-commit.
         if !primary_may_have_cas {
             primary.expected_generation = Some(committed);
         }
         primary.state = OperationState::Pending;
-        // Preserve the latest Retry-After among merged peers (and primary).
-        // Never clear a future backoff by coalescing.
+        // Keep max Retry-After among merged peers; never clear future backoff.
         primary.next_attempt_at_ms = match inherited_next_attempt {
             Some(t) if t > now => Some(t),
             _ => None,
@@ -1253,8 +1204,7 @@ fn resolve_or_create_publish_operation(
         return Ok(op);
     }
 
-    // Explicit re-publish without a mutation outbox: mint a fresh identity.
-    // Terminal rows are never reused.
+    // Explicit re-publish: mint a fresh identity (never reuse terminal rows).
     let song_ids = if batch_song_ids.is_empty() {
         vec![fallback_song_id.to_owned()]
     } else {
@@ -1467,8 +1417,7 @@ pub(crate) fn publish_songs_to_remote<R: tauri::Runtime>(
         snapshots.push(snapshot);
     }
 
-    // One background publication for the whole set. Without a pre-bound
-    // operation_id this mints a single fresh op covering all song_ids.
+    // One background publication for the whole set (fresh op if unbound).
     let background_state = state.clone();
     let background_handle = app_handle.clone();
     let song_ids_bg = song_ids.clone();

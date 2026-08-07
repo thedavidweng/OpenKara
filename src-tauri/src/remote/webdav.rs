@@ -370,27 +370,15 @@ pub(crate) fn webdav_conditional_put(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Staged upload + server-side MOVE
-//
-// WebDAV servers vary in their support for partial PUT / Content-Range, so we
-// do NOT claim `resumable_upload = true`. Instead, large uploads use a safe
-// staging path: upload to `.openkara/staging/<op-id>/<filename>.part`, verify,
-// then MOVE to the final path. The MOVE is server-side when the server
-// supports it (most WebDAV servers do), avoiding a re-upload.
-//
-// The staging path is operation-scoped so concurrent operations do not
-// collide. A changed provider_revision invalidates the staged partial — the
-// caller discards it and starts a new staging upload.
-// ---------------------------------------------------------------------------
+// Staged upload: PUT to `.openkara/staging/<op-id>/…`, then server-side MOVE.
+// Partial PUT / Content-Range support varies, so `resumable_upload` stays false.
 
 pub(crate) fn webdav_staging_url(
     root_url: &str,
     operation_id: &str,
     relative_path: &str,
 ) -> CommandResult<String> {
-    // Sanitize the relative path into a single filename segment so the staged
-    // object lives under `.openkara/staging/<op-id>/` without nested dirs.
+    // Flat filename under `.openkara/staging/<op-id>/` (no nested dirs).
     let flat_name = relative_path.replace('/', "_");
     join_url(
         root_url,
@@ -436,8 +424,7 @@ pub(crate) fn webdav_move_staged_to_final(
     username: &str,
     password: &str,
 ) -> CommandResult<Option<String>> {
-    // webdav_send does not support custom headers, so we build the MOVE
-    // request directly with the Destination + Overwrite headers.
+    // MOVE needs Destination + Overwrite; webdav_send has no custom headers.
     let response = client
         .request(
             Method::from_bytes(b"MOVE").expect("MOVE should parse"),
@@ -1170,9 +1157,7 @@ impl RemoteMediaSource for WebDAVProvider<'_> {
             })?;
         }
 
-        // Open for write at a specific offset. We intentionally do NOT
-        // truncate — the file may already contain bytes from a prior range
-        // download, and truncating would destroy them.
+        // Do not truncate: prior range bytes on the part file must survive.
         #[allow(clippy::suspicious_open_options)]
         let mut file = OpenOptions::new()
             .write(true)
@@ -1191,15 +1176,7 @@ impl RemoteMediaSource for WebDAVProvider<'_> {
             )
         })?;
 
-        // Stream the body straight to the destination as it arrives instead of
-        // buffering the whole chunk with `response.bytes()`. The buffered call
-        // imposed one total-body deadline per chunk (an 8 MiB chunk needed
-        // >= 68 KB/s just to finish); streaming makes the client timeout a
-        // per-read idle timeout, so a slow-but-steady link makes progress and
-        // an interruption leaves the bytes received so far durable on disk for
-        // sub-chunk resume (issue #205). For a 206 the body is exactly
-        // `length` bytes; for a 200 full-body fallback (offset == 0 only) the
-        // whole file arrives and is written from the start.
+        // Stream to disk (idle timeout + durable partials); not full-body buffer (#205).
         let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
             .map_err(|error| {
                 RemoteError::new(
@@ -1208,11 +1185,7 @@ impl RemoteMediaSource for WebDAVProvider<'_> {
                 )
             })?;
 
-        // Validate body length. For a 206 response, the body must be exactly
-        // `length` bytes. For a 200 full-body response (offset == 0 only),
-        // the body must be at least `length` bytes. A truncated transfer is a
-        // transport failure, not corruption, so it stays retryable and the
-        // partial bytes on disk are preserved for resume.
+        // Truncation is transport failure (retryable); keep partial bytes.
         if status == StatusCode::PARTIAL_CONTENT {
             if written != length {
                 return Err(RemoteError::new(

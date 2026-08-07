@@ -37,13 +37,7 @@ export const DEFAULT_AIRPLAY_OUTPUT_STATE: AirPlayOutputStateEvent = {
 interface PlayerState {
   snapshot: PlaybackStateSnapshot | null;
   positionMs: number;
-  /** monotonic-ms timestamp of the last authoritative position update;
-   * null when playback is paused/stopped so extrapolation halts. */
   playingSinceMs: number | null;
-  /**
-   * Monotonic host-owned seek edge. Lyrics consume this only after the
-   * authoritative Tauri seek response has been applied to the playback clock.
-   */
   seekRevision: number;
   airPlayOutput: AirPlayOutputStateEvent;
   localAudienceOutputActive: boolean;
@@ -62,7 +56,6 @@ interface PlayerState {
   updateSnapshot: (snapshot: PlaybackStateSnapshot) => void;
   loadState: () => Promise<void>;
   playNextFromQueue: (endedSongId: string) => Promise<void>;
-  /** #88: Reconcile queue after a gapless track-transitioned event. */
   onTrackTransitioned: (fromSongId: string, toSongId: string) => void;
   skipForward: () => Promise<void>;
   skipBack: () => Promise<void>;
@@ -177,7 +170,6 @@ export function createPlayerStore(
 ) {
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
-  // Assigned synchronously inside create() before any subscriber can run.
   let sessionRef!: PlaybackSession;
 
   const store = create<PlayerState>((set, get) => {
@@ -186,7 +178,6 @@ export function createPlayerStore(
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
 
-    // Reactive adapter: session owns lifecycle + clock; store mirrors for UI.
     const session = createPlaybackSession({
       transport: sessionTransport,
       queue: {

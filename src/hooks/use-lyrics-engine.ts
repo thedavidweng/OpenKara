@@ -26,8 +26,6 @@ import { usePlayerStore } from "@/stores/player-store";
 
 const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 
-// Coalesce continuous resize (drag-resizing the window, sidebar animation)
-// into a single re-anchor snap once the viewport settles (#202).
 const RESIZE_REANCHOR_DEBOUNCE_MS = 120;
 
 export function useLyricsEngine(input: {

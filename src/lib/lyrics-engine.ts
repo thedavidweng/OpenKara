@@ -10,9 +10,6 @@ import { usePlayerStore } from "@/stores/player-store";
 import type { Spring } from "@/lib/spring";
 
 const USER_SCROLL_PAUSE_MS = 4000;
-
-// Playback jumps larger than this (and larger than natural rAF advance) are
-// treated as seeks — matching AMLL's setCurrentTime(..., isSeek) / resetScroll.
 const SEEK_JUMP_MS = 400;
 
 export { USER_SCROLL_PAUSE_MS, SEEK_JUMP_MS };
@@ -22,8 +19,7 @@ let autoScrollUnlockSuppressed = false;
 
 export function requestLyricsAutoScrollResume(): void {
   autoScrollResumeGeneration += 1;
-  // Stay suppressed until the engine consumes the resume and writes scrollTop
-  // through withProgrammatic — otherwise click scroll-into-view unlocks follow.
+  // Suppress unlock until withProgrammatic writes scrollTop (click scroll-into-view).
   autoScrollUnlockSuppressed = true;
 }
 
@@ -103,7 +99,6 @@ export function createUserScrollGuard(
     if (programmaticDepth > 0) {
       return;
     }
-    // Ignore no-op / sub-pixel noise after programmatic writes.
     if (Math.abs(container.scrollTop - lastProgrammaticScrollTop) < 1) {
       return;
     }
@@ -237,11 +232,6 @@ export function computeLineChangeLyricsScrollTop(
   return getScrollTopForLineIndex(container, activeIndex);
 }
 
-/**
- * Detect a discontinuous playback jump (click-to-seek / scrub).
- * Mature lyric players (AMLL) take an explicit isSeek flag; we infer the same
- * from the clock so scroll can resetScroll without coupling LyricLine → engine.
- */
 export function isLyricsPlaybackSeekJump(
   previousAdjustedMs: number | null,
   adjustedMs: number,
@@ -251,7 +241,7 @@ export function isLyricsPlaybackSeekJump(
     return false;
   }
   const delta = Math.abs(adjustedMs - previousAdjustedMs);
-  // Allow 2× realtime plus a small slack for timer jitter / IPC catch-up.
+  // 2× realtime + slack for timer jitter / IPC catch-up.
   const maxNaturalAdvanceMs = dtSeconds * 1000 * 2 + 50;
   return delta > Math.max(SEEK_JUMP_MS, maxNaturalAdvanceMs);
 }
@@ -278,7 +268,6 @@ export function tickLyricsEngineScroll(input: {
   container: HTMLElement;
   lines: { time_ms: number }[];
   adjustedMs: number;
-  /** AMLL isSeek — explicit discontinuous jump from the host time feed. */
   isSeek?: boolean;
   scrollState: LyricsEngineScrollState;
   userScrollGuard: UserScrollGuard | null;
@@ -305,8 +294,6 @@ export function tickLyricsEngineScroll(input: {
     lastResumeGenerationRef,
   } = scrollState;
 
-  // Infer backend-driven position snaps that did not pass through the player
-  // store. Normal UI seeks arrive through the host-owned explicit isSeek edge.
   const seekJump = isLyricsPlaybackSeekJump(
     prevAdjustedMsRef.current,
     adjustedMs,
@@ -332,8 +319,6 @@ export function tickLyricsEngineScroll(input: {
     targetScrollTopRef.current = null;
   }
 
-  // In audience seek mode, the guard may still be active from a prior browse —
-  // but we must write scrollTop this frame to snap to the clicked line.
   if (!audienceSeekUnlock && userScrollGuard?.isActive()) {
     bindSpringToViewport(scrollSpring, container);
     targetScrollTopRef.current = container.scrollTop;
@@ -410,7 +395,7 @@ export interface LyricsEngineFrameInput {
   reducedMotion: boolean;
   dt: number;
   positionMs: number;
-  /** AMLL isSeek for this frame. */
+
   isSeek: boolean;
   audienceMode?: boolean;
 }

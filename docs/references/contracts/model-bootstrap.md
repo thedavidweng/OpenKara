@@ -340,12 +340,14 @@ install emits `installing`, then `probing`, then `activating`; these states
 clear `downloaded_bytes` and `total_bytes` because the remaining work is not a
 byte-counted download. The worker stages the verified install before probing;
 the application process loads ORT under its own watchdog before it commits the
-first-install active slot. A failed install, probe, or activation emits
-`runtime-bootstrap-error` with `state = "failed"`. Its `error.code` is
-`runtime_post_download_timeout` when the post-download watchdog expires;
-other bootstrap failures use `model_unavailable`. A verified runtime
-directory or archive cache remains available for a retry, so a retry does not
-download the same artifact again.
+first-install active slot. On Windows, the process sets the DLL search
+directory to the runtime install folder before loading `onnxruntime.dll` so
+companion libraries next to that DLL resolve correctly. A failed install,
+probe, or activation emits `runtime-bootstrap-error` with `state = "failed"`.
+Its `error.code` is `runtime_post_download_timeout` when the post-download
+watchdog expires; other bootstrap failures use `model_unavailable`. A verified
+runtime directory or archive cache remains available for a retry, so a retry
+prefers activating the staged install before starting another download.
 
 #### `runtime-bootstrap-ready`
 

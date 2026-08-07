@@ -84,19 +84,16 @@ impl OlaRing {
         let ring_end = self.base_frame + chunk_size;
 
         if chunk_start_frame >= ring_end {
-            // No overlap with current ring contents — flush everything
-            // and reset the ring to start at this chunk.
+            // No overlap with ring contents — flush and reset base.
             self.flush_all(sink)?;
             self.accum.fill(0.0);
             self.norm.fill(0.0);
             self.base_frame = chunk_start_frame;
         } else {
-            // Check if the chunk would extend beyond the ring capacity.
             let ring_offset = chunk_start_frame - self.base_frame;
             let chunk_end_in_ring = ring_offset + chunk_frame_count;
             if chunk_end_in_ring > chunk_size {
-                // Shift the ring so the chunk fits. This flushes finalized
-                // frames (those before chunk_start_frame) through the sink.
+                // Shift so the chunk fits; flushes finalized frames via sink.
                 self.shift_to(chunk_start_frame, sink)?;
             }
         }

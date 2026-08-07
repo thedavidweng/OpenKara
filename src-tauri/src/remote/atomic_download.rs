@@ -121,8 +121,6 @@ pub(crate) fn atomic_download(
         })?;
     }
 
-    // Clean up a stale temp file from a previous attempt so the provider
-    // writes into a fresh file.
     let _ = fs::remove_file(&temp_path);
 
     let result = run_atomic_download(provider, opts, &temp_path);
@@ -139,7 +137,6 @@ fn run_atomic_download(
     opts: AtomicDownloadOptions,
     temp_path: &Path,
 ) -> CommandResult<()> {
-    // 1. Download to the temp path. Provider internals are not modified.
     provider
         .download_file(opts.relative_path, temp_path)
         .map_err(AtomicDownloadError::DownloadFailed)?;
@@ -171,13 +168,9 @@ fn run_atomic_download(
         }
     }
 
-    // 4. fsync the temp file so its bytes are durable before the rename.
+    // fsync before rename so a crash cannot leave a truncated final path.
     fsync_file(temp_path)?;
 
-    // 5. Atomically rename temp -> destination. On POSIX this replaces the
-    //    destination atomically; on Windows same-volume rename also replaces.
-    //    Callers that need to preserve the old destination (database pulls)
-    //    must rename it aside first — see `atomic_database_pull`.
     fs::rename(temp_path, opts.destination).map_err(|e| {
         AtomicDownloadError::Io(std::io::Error::other(format!(
             "failed to atomically rename {} -> {}: {e}",
@@ -186,8 +179,7 @@ fn run_atomic_download(
         )))
     })?;
 
-    // 6. fsync the parent directory so the rename is durable on POSIX.
-    //    On Windows directory fsync is not meaningful; guard with cfg.
+    // Parent fsync makes the rename durable on POSIX (no-op on Windows).
     fsync_parent(opts.destination)?;
 
     Ok(())
@@ -278,13 +270,12 @@ pub(crate) fn resumable_atomic_download(
             .as_ref()
             .map(|p| p.transferred_bytes)
             .unwrap_or(0)
-            > 0;
+            > 0
+        && temp_path.exists();
 
     let result = if can_resume {
         run_resumable_download(provider, &opts, &temp_path, existing_part.as_ref().unwrap())
     } else {
-        // Fresh download: clean up any stale temp file and delegate to the
-        // non-resumable path.
         let _ = fs::remove_file(&temp_path);
         run_atomic_download(
             provider,
@@ -299,11 +290,20 @@ pub(crate) fn resumable_atomic_download(
         )
     };
 
-    // On success, delete the transfer-part row so a future restart does not
-    // resume against a non-existent partial.
+    // Drop transfer-part on success so restart does not resume a finished file.
     if result.is_ok() {
-        let _ =
-            crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
+        if let Err(error) =
+            crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id)
+        {
+            // Destination already holds the verified file; orphan rows are
+            // ignored on next attempt because resume requires temp_path.exists().
+            if !opts.destination.exists() {
+                return Err(internal_error(format!(
+                    "download finished but transfer-part cleanup failed and destination is missing: {}",
+                    error.message
+                )));
+            }
+        }
     } else if result.as_ref().err().is_some_and(|e| {
         let msg = e.message.to_ascii_lowercase();
         msg.contains("integrity")
@@ -363,8 +363,7 @@ fn download_to_part_resumable(
                 && p.direction == crate::remote::control_db::TransferDirection::Download
         });
 
-    // Identity: size + digest must match for resume. A changed remote object
-    // invalidates the partial.
+    // Resume only when size+digest match; otherwise discard the partial.
     let mut offset = 0u64;
     if let Some(ref part) = existing {
         let size_ok = part.expected_size == Some(expected_size as i64);
@@ -394,12 +393,7 @@ fn download_to_part_resumable(
         let verified_bytes = media_source
             .download_range(relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
-                // Persist progress before returning so a restart resumes.
-                // Providers stream range bytes straight to the part file, so a
-                // mid-chunk interruption leaves durable bytes on disk. Persist
-                // the actual on-disk length (not the chunk start) so the resume
-                // continues from within the chunk instead of re-downloading it
-                // (issue #205 sub-chunk resume).
+                // Persist on-disk length (not chunk start) for sub-chunk resume (#205).
                 let durable = durable_part_len(temp_path, offset, expected_size);
                 let now = crate::remote::types::current_unix_time_ms();
                 let _ = crate::remote::control_db::upsert_transfer_part(
@@ -459,8 +453,7 @@ fn run_resumable_download(
     let mut offset = existing.transferred_bytes.max(0) as u64;
     let total = opts.expected_size;
 
-    // If the persisted offset already matches the expected size, the download
-    // was complete but the rename did not happen. Skip to validation.
+    // Complete download, rename pending — skip fetch, validate+rename.
     if offset >= total {
         return validate_and_rename(
             temp_path,
@@ -470,14 +463,7 @@ fn run_resumable_download(
         );
     }
 
-    // Open the temp file in append mode for resumed chunks. If the file does
-    // not exist (e.g. the temp was cleaned up but the DB row remained), start
-    // from offset 0. Otherwise clamp the resume point to the file's actual
-    // length: providers stream range bytes straight to the part file, so a
-    // prior interruption may have left MORE durable bytes than the last
-    // chunk-boundary offset (sub-chunk progress). Resuming from the true
-    // on-disk length avoids re-downloading bytes already on disk, and never
-    // leaves a gap (we never resume past what was written).
+    // Clamp resume to on-disk length (sub-chunk durable bytes may exceed last chunk offset).
     if !temp_path.exists() {
         offset = 0;
     } else {
@@ -491,10 +477,7 @@ fn run_resumable_download(
         let verified_bytes = media_source
             .download_range(opts.relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
-                // Streaming providers leave durable bytes on a mid-chunk
-                // interruption; persist the actual on-disk length so a restart
-                // resumes from within the chunk instead of re-downloading it
-                // (issue #205 sub-chunk resume).
+                // Persist on-disk length for sub-chunk resume (#205).
                 let durable = durable_part_len(temp_path, chunk_start, total);
                 if durable > existing.transferred_bytes.max(0) as u64 {
                     let now = crate::remote::types::current_unix_time_ms();
@@ -520,10 +503,7 @@ fn run_resumable_download(
                 ))
             })?;
 
-        // Advance by the verified byte count returned by the provider,
-        // not by the requested length. This handles servers that return
-        // fewer bytes than requested (short response) or a full-body
-        // response for offset == 0.
+        // Advance by provider-returned count (short or full-body 200 responses).
         if verified_bytes == 0 {
             return Err(internal_error(format!(
                 "resumable download made no progress at offset {offset}"
@@ -643,16 +623,11 @@ fn fsync_parent(path: &Path) -> CommandResult<()> {
     }
     #[cfg(not(unix))]
     {
-        // Windows does not support directory fsync; the file fsync above is
-        // the best-effort durability guarantee. This is a no-op.
+        // Directory fsync is not meaningful on Windows.
         let _ = parent;
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Atomic database pull with integrity checks + last-known-good
-// ---------------------------------------------------------------------------
 
 /// Options for an atomic database pull. The candidate is downloaded to a temp
 /// file, integrity-checked, then atomically renamed over the working
@@ -721,13 +696,10 @@ pub(crate) fn atomic_database_pull(
         ))
     })?;
 
-    // Do NOT wipe a resumable partial at the start. A transfer row with
-    // non-zero progress means the part file is still useful across restart.
+    // Keep resumable part files across restart (transfer row with progress).
     let result = run_database_pull(provider, control_db_conn, &destination, &temp_path, &opts);
 
-    // On failure, only remove the temp when it is not a resumable partial with
-    // durable transfer progress. Transient network failures must leave the
-    // part file and transfer row intact.
+    // On failure, remove temp only when there is no durable transfer progress.
     if result.is_err() {
         let has_resumable_progress =
             crate::remote::control_db::list_transfer_parts(control_db_conn, opts.operation_id)
@@ -809,9 +781,7 @@ fn run_database_pull(
 
     activate_verified_database_candidate(temp_path, destination)?;
 
-    // 10. Update local repository state only after activation succeeds.
-    //     Advance committed_generation from the manifest so the executor's
-    //     generation precondition can detect stale pulls.
+    // Control-DB state only after activation; advance committed_generation.
     update_repository_state_after_pull(
         control_db_conn,
         opts.library_id,
@@ -845,16 +815,12 @@ pub(crate) fn activate_verified_database_candidate(
 ) -> CommandResult<()> {
     verify_sqlite_integrity(candidate)?;
 
-    // Schema compatibility: songs table must exist with a hash column.
     verify_schema_compatibility(candidate)?;
-
-    // Durable bytes before rename.
     fsync_file(candidate)?;
 
     let lkg_path = last_known_good_path(destination);
     let mut preserved_lkg = false;
     if destination.exists() {
-        // If a stale LKG exists, remove it first so the rename target is clear.
         let _ = fs::remove_file(&lkg_path);
         fs::rename(destination, &lkg_path).map_err(|e| {
             internal_error(format!(
@@ -866,8 +832,7 @@ pub(crate) fn activate_verified_database_candidate(
     }
 
     if let Err(e) = fs::rename(candidate, destination) {
-        // The rename failed after we moved the old DB aside. Restore the
-        // last-known-good so the working copy is not left without a database.
+        // Restore LKG if the candidate install failed after moving the old DB aside.
         if preserved_lkg && lkg_path.exists() {
             if let Err(restore_err) = fs::rename(&lkg_path, destination) {
                 return Err(internal_error(format!(

@@ -21,7 +21,10 @@ const sample: DebugInfo = {
   runtime_version: "v1.27.1",
   runtime_artifact_id: "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
   runtime_target_triple: "aarch64-apple-darwin",
+  runtime_path: "/tmp/runtimes/rt/libonnxruntime.dylib",
   execution_provider: "xnnpack",
+  directml_available: false,
+  language: "en",
   log_file: "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log",
 };
 
@@ -42,7 +45,10 @@ describe("formatDebugInfo", () => {
       "v1.27.1",
       "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
       "aarch64-apple-darwin",
+      "/tmp/runtimes/rt/libonnxruntime.dylib",
       "xnnpack",
+      "DirectML available: false",
+      "UI language: en",
       "openkara.<date>.log",
     ]) {
       expect(text).toContain(fragment);
@@ -66,7 +72,7 @@ describe("formatDebugInfo", () => {
   test("is stable, newline-delimited plain text", () => {
     const lines = formatDebugInfo(sample).split("\n");
     expect(lines[0]).toBe("OpenKara · About");
-    expect(lines).toHaveLength(8);
+    expect(lines).toHaveLength(11);
   });
 });
 

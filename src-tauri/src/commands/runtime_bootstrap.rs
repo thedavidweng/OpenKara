@@ -372,9 +372,7 @@ pub(crate) fn prepare_runtime_download(
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> bool {
     let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
-    // A runtime loaded into this process can never be replaced in place,
-    // even when the slots were just deleted — treat any loaded runtime as
-    // the update (candidate + restart) flow.
+    // Loaded runtime is process-final → update (candidate + restart) flow.
     let is_update = inventory.active.is_some()
         || inventory.legacy_path.is_some()
         || crate::separator::model::loaded_runtime_path().is_some();
@@ -398,6 +396,12 @@ pub fn install_and_load_runtime_blocking(
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> anyhow::Result<PathBuf> {
     let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
+
+    if let Some(path) =
+        try_activate_staged_runtime(app_data_dir, &runtime.artifact_id, status, emit)?
+    {
+        return Ok(path);
+    }
 
     let base = snapshot_from_disk(app_data_dir);
 
@@ -425,6 +429,41 @@ pub fn install_and_load_runtime_blocking(
     Ok(installed.library_path)
 }
 
+fn try_activate_staged_runtime(
+    app_data_dir: &Path,
+    artifact_id: &str,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+) -> anyhow::Result<Option<PathBuf>> {
+    let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
+    if inventory.active.is_some() {
+        return Ok(None);
+    }
+
+    let installed = match inventory.candidate {
+        Some(candidate) if candidate.record.artifact_id == artifact_id => candidate,
+        _ => match runtime_bootstrap::installed_runtime(app_data_dir, artifact_id) {
+            Some(existing) if runtime_bootstrap::verify_runtime_files(&existing)? => existing,
+            _ => return Ok(None),
+        },
+    };
+
+    if !runtime_bootstrap::verify_runtime_files(&installed)? {
+        return Ok(None);
+    }
+
+    let base = snapshot_from_disk(app_data_dir);
+    report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Probing);
+    ensure_runtime_loaded_with_watchdog(&installed.library_path)?;
+    report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
+    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+
+    let snapshot = snapshot_from_disk(app_data_dir);
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_READY_EVENT, snapshot);
+    Ok(Some(installed.library_path))
+}
+
 pub fn download_and_stage_candidate_blocking(
     app_data_dir: &Path,
     catalog: &VerifiedCatalog,
@@ -433,11 +472,7 @@ pub fn download_and_stage_candidate_blocking(
 ) -> anyhow::Result<()> {
     let runtime = catalog::resolve_runtime(&catalog.manifest, catalog::current_target_triple())?;
 
-    // Runtime/model compatibility gate: the staged runtime must support a
-    // catalog model for every installed variant. The manifest validator
-    // guarantees same-generation reciprocity, so this check exists to fail
-    // loudly if that invariant is ever violated rather than staging an
-    // incompatible candidate.
+    // Fail closed if the staged runtime cannot serve every installed model variant.
     for variant in [
         crate::config::ModelVariant::Htdemucs,
         crate::config::ModelVariant::HtdemucsFt,
@@ -484,9 +519,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
-    // A runtime committed into this process is what separation will use,
-    // regardless of what the slots say (e.g. after delete + reinstall the
-    // old library stays mapped until restart).
+    // Process-committed runtime wins over slot inventory (mapped until restart).
     if let Some(loaded) = crate::separator::model::loaded_runtime_path() {
         return Ok(loaded.to_path_buf());
     }
@@ -494,9 +527,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
     let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
 
-    // A worker can be terminated after it has installed and staged a runtime
-    // but before activation. Recover that candidate by identity rather than
-    // resolving the embedded catalog and starting a second download.
+    // Recover a staged candidate left by a killed worker; do not re-download.
     if inventory.active.is_none() && inventory.candidate.is_some() {
         if let Some(plan) = runtime_bootstrap::begin_startup(app_data_dir)
             .map_err(|error| model_bootstrap_error(error.to_string()))?
@@ -630,8 +661,7 @@ pub fn download_runtime(
     let catalog = download_runtime_source(&state.shell.catalog_cache)?;
 
     if RUNTIME_DOWNLOAD_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        // A download is already running; report its current state instead
-        // of spawning a second install racing on the same directories.
+        // Already running — report current state; do not race a second install.
         return get_runtime_bootstrap_status_from_state(&status);
     }
 
@@ -744,8 +774,7 @@ pub async fn check_runtime_updates(
                 *cache = Some(catalog);
             }
 
-            // Surface update availability through the lifecycle state so the UI
-            // and status consumers see it without re-deriving from the report.
+            // Mirror update availability into lifecycle state for UI consumers.
             if matches!(
                 report.state,
                 catalog::ModelUpdateState::UpdateAvailable
@@ -952,13 +981,7 @@ mod tests {
 
     #[test]
     fn staging_candidate_rejects_runtime_that_does_not_support_a_model() {
-        // The manifest validator guarantees same-generation runtime/model
-        // reciprocity, so this defensive gate should never fire in practice.
-        // It must still bail loudly — rather than stage a runtime that cannot
-        // serve an installed model — if that invariant is ever violated. We
-        // reduce the catalog to a single active runtime for the current target
-        // and strip its supported-model list so the gate is the only reachable
-        // outcome; the bail happens before any download, so no I/O is needed.
+        // Force the compatibility gate: strip supported-model list on the only runtime.
         let mut catalog = catalog::embedded_catalog().clone();
         let mut runtime = catalog.manifest.artifacts.runtimes[0].clone();
         runtime.target_triple = Some(catalog::current_target_triple().to_owned());

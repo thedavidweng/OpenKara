@@ -34,7 +34,13 @@ Status: accepted | superseded by NNNN | deprecated
 
 ## Writing rules
 
-Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. Use short sentences. Use active voice. Use one topic per sentence. Use one word for one meaning. Do not edit accepted ADRs in place. Supersede a record. Write a new record. Update the old `Status` line. Do not delete accepted records. Do not rewrite accepted records.
+Write new ADRs in ASD-STE100 Simplified English. See `docs/agents/engineering.md`
+for the rules. Use short sentences. Use active voice. Use one topic per
+sentence. Use one word for one meaning.
+
+Do not rewrite accepted ADRs. To supersede one: write a new ADR, then change
+only the old ADR’s `Status` line (for example to `superseded by NNNN`). Leave
+every other line of the old ADR untouched. Do not delete accepted records.
 
 ## Index
 
@@ -58,3 +64,5 @@ Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. 
 - [0018 — Remote Repository modules own complete lifecycles](./0018-remote-repository-module-ownership.md)
 - [0019 — Execution provider selection uses host capability](./0019-execution-provider-selection-uses-host-capability.md)
 - [0020 — Validate execution provider compatibility before separation](./0020-validate-execution-provider-compatibility.md)
+- [0021 — App language is sticky after choice](./0021-app-language-is-sticky-after-choice.md)
+- [0022 — Windows runtime load uses the install directory](./0022-windows-runtime-load-uses-install-directory.md)
