@@ -147,10 +147,11 @@ jobs:
             --json databaseId,status \
             --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "pending" or .status == "waiting")] | .[0].databaseId // empty')"
           if [ -z "${in_flight}" ]; then
-            echo "No recent Nightly evidence and no in-flight run; dispatching nightly-hardening for ${GITHUB_SHA}."
+            echo "No recent Nightly evidence and no in-flight run; dispatching nightly-hardening for ${GITHUB_SHA} on ref ${GITHUB_REF_NAME}."
+            # workflow_dispatch rejects bare SHAs; release runs carry the tag ref.
             gh workflow run nightly-hardening.yml \
               --repo "${GH_REPO}" \
-              --ref "${GITHUB_SHA}"
+              --ref "${GITHUB_REF_NAME}"
           else
             echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
           fi
