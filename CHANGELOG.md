@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.1](https://github.com/thedavidweng/OpenKara/compare/v0.13.0...v0.13.1) (2026-08-08)
+
+
+### Features
+
+* **catalog:** advance embedded snapshot to generation 12 ([#347](https://github.com/thedavidweng/OpenKara/issues/347)) ([f5add55](https://github.com/thedavidweng/OpenKara/commit/f5add5568bcc4adc54784b5154c324c97989b569))
+
+
+### Bug Fixes
+
+* **ci:** self-sufficient release nightly-evidence gate + stabilize Home/End e2e ([#342](https://github.com/thedavidweng/OpenKara/issues/342)) ([8b190f3](https://github.com/thedavidweng/OpenKara/commit/8b190f3e8768ef7092a0a7fce0528ffa782b420e))
+* **deps:** override vulnerable transitive nanoid and postcss ([#346](https://github.com/thedavidweng/OpenKara/issues/346)) ([a967fec](https://github.com/thedavidweng/OpenKara/commit/a967fecd3a0d6835d0d0e02eceaa60fc77e9d044))
+* **runtime:** fall back to CPU Windows runtime on DirectML load timeout ([#343](https://github.com/thedavidweng/OpenKara/issues/343)) ([df1b6ab](https://github.com/thedavidweng/OpenKara/commit/df1b6abe53d1a8ce732e6619e0b1bdde14b8bb4d))
+
 ## [0.13.0](https://github.com/thedavidweng/OpenKara/compare/v0.12.1...v0.13.0) (2026-08-07)
 
 
