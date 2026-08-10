@@ -31,7 +31,7 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 const CPU_FALLBACK_NOTICE: &str = "cpu-runtime-fallback-after-directml-timeout";
 
-const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
 static RUNTIME_PARENT_LOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static RUNTIME_PARENT_LOAD_TIMED_OUT: AtomicBool = AtomicBool::new(false);
@@ -372,9 +372,10 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
         Err(mpsc::RecvTimeoutError::Timeout) => {
             RUNTIME_PARENT_LOAD_TIMED_OUT.store(true, Ordering::SeqCst);
             anyhow::bail!(
-                "{}: ONNX Runtime load did not finish within {} seconds",
+                "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
                 crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
-                RUNTIME_PARENT_LOAD_TIMEOUT.as_secs()
+                RUNTIME_PARENT_LOAD_TIMEOUT.as_secs(),
+                crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
             )
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -1004,13 +1005,20 @@ mod tests {
     #[test]
     fn post_download_timeout_marker_maps_to_a_structured_error() {
         let error = bootstrap_command_error_from_message(&format!(
-            "{}: runtime load did not finish",
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
+            "{}: runtime load did not finish\n\n{}",
+            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
+            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
         ));
 
         assert_eq!(
             error.code,
             crate::commands::error::ErrorCode::RuntimePostDownloadTimeout
+        );
+        assert!(
+            error
+                .message
+                .contains(crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT),
+            "timeout error must carry the diagnostic hint for the user"
         );
     }
 
