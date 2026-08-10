@@ -328,9 +328,6 @@ fn report_worker_progress(
     }
 }
 
-/// Construct the parent-process load-timeout error message. Extracted so the
-/// funnel test exercises the production format (including the diagnostic hint)
-/// rather than reconstructing it by hand.
 fn runtime_parent_load_timeout_message() -> String {
     format!(
         "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
