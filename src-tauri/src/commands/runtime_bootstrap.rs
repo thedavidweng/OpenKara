@@ -31,7 +31,7 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 const CPU_FALLBACK_NOTICE: &str = "cpu-runtime-fallback-after-directml-timeout";
 
-const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
 static RUNTIME_PARENT_LOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static RUNTIME_PARENT_LOAD_TIMED_OUT: AtomicBool = AtomicBool::new(false);
@@ -328,6 +328,15 @@ fn report_worker_progress(
     }
 }
 
+fn runtime_parent_load_timeout_message() -> String {
+    format!(
+        "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
+        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
+        RUNTIME_PARENT_LOAD_TIMEOUT.as_secs(),
+        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
+    )
+}
+
 /// Load ORT in the application process without allowing a native loader hang
 /// to block the command executor forever. A timed-out load poisons this
 /// process; a restart is required before another attempt can use ORT.
@@ -371,11 +380,7 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
         Ok(Err(error)) => Err(anyhow::anyhow!(error)),
         Err(mpsc::RecvTimeoutError::Timeout) => {
             RUNTIME_PARENT_LOAD_TIMED_OUT.store(true, Ordering::SeqCst);
-            anyhow::bail!(
-                "{}: ONNX Runtime load did not finish within {} seconds",
-                crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
-                RUNTIME_PARENT_LOAD_TIMEOUT.as_secs()
-            )
+            anyhow::bail!(runtime_parent_load_timeout_message())
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             anyhow::bail!("ONNX Runtime load watchdog exited before reporting a result")
@@ -1003,14 +1008,17 @@ mod tests {
 
     #[test]
     fn post_download_timeout_marker_maps_to_a_structured_error() {
-        let error = bootstrap_command_error_from_message(&format!(
-            "{}: runtime load did not finish",
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
-        ));
+        let error = bootstrap_command_error_from_message(&runtime_parent_load_timeout_message());
 
         assert_eq!(
             error.code,
             crate::commands::error::ErrorCode::RuntimePostDownloadTimeout
+        );
+        assert!(
+            error
+                .message
+                .contains(crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT),
+            "timeout error must carry the diagnostic hint for the user"
         );
     }
 

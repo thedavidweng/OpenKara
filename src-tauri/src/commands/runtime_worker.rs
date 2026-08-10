@@ -20,7 +20,13 @@ use std::{
 pub const RUNTIME_WORKER_ARG: &str = "--runtime-bootstrap-worker";
 pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER: &str = "runtime_post_download_timeout";
 
-const POST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(target_os = "windows")]
+pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT: &str = "On a VM/server this is usually antivirus or a slow virtual disk. In an Administrator PowerShell, temporarily disable Defender real-time monitoring (`Set-MpPreference -DisableRealtimeMonitoring $true`) and retry; afterwards re-enable it with `Set-MpPreference -DisableRealtimeMonitoring $false`. If it then loads, add a permanent exclusion with `Add-MpPreference -ExclusionPath \"$env:APPDATA\\com.openkara.desktop\\runtimes\"`.";
+
+#[cfg(not(target_os = "windows"))]
+pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT: &str = "On a VM/server this is usually antivirus scanning or a slow virtual disk. Temporarily disable real-time antivirus scanning and retry; if it then loads, add a permanent exclusion for the runtimes directory.";
+
+const POST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const RUNTIME_DOWNLOAD_CACHE_DIR: &str = "runtime-download-cache";
 const RUNTIME_DOWNLOAD_TEMP_PREFIX: &str = "artifact.download.";
@@ -543,7 +549,7 @@ pub fn install_runtime_with_worker(
                 .unwrap_or_else(|| "post-download".to_owned());
             guard.complete();
             bail!(
-                "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime {} did not finish within {} seconds after download (phase={phase}){}",
+                "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime {} did not finish within {} seconds after download (phase={phase}){}\n\n{RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT}",
                 runtime.artifact_id,
                 timeout.as_secs_f64(),
                 if details.trim().is_empty() {
