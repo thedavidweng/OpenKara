@@ -1,6 +1,6 @@
 [package]
 name = "openkara"
-version = "0.13.1"
+version = "0.13.2"
 description = "OpenKara desktop shell"
 authors = ["OpenKara contributors"]
 license = "Apache-2.0"
