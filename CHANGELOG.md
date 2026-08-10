@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.2](https://github.com/thedavidweng/OpenKara/compare/v0.13.1...v0.13.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **runtime:** harden ORT DLL load on slow/AV-heavy Windows VMs ([#284](https://github.com/thedavidweng/OpenKara/issues/284)) ([#350](https://github.com/thedavidweng/OpenKara/issues/350)) ([b29ff3f](https://github.com/thedavidweng/OpenKara/commit/b29ff3fede506c68f21ed74480a07742db974b7c))
+
 ## [0.13.1](https://github.com/thedavidweng/OpenKara/compare/v0.13.0...v0.13.1) (2026-08-08)
 
 
