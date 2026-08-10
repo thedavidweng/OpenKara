@@ -106,14 +106,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/aotuv_lancer_vorbis_sys/aotuv_lancer_vorbis_sys-0.1.5.crate",
-    "sha256": "1c22da1eae146e1ac2956da45bd1856b2f9ad788e6f7af535b861df497d726a1",
-    "dest": "cargo/vendor/aotuv_lancer_vorbis_sys-0.1.5"
+    "url": "https://static.crates.io/crates/aotuv_lancer_vorbis_sys/aotuv_lancer_vorbis_sys-0.1.6.crate",
+    "sha256": "5bc4fd1a61860d2f1198b60bedd30910eaffa978f1ee6214dfb24ac70d589225",
+    "dest": "cargo/vendor/aotuv_lancer_vorbis_sys-0.1.6"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"1c22da1eae146e1ac2956da45bd1856b2f9ad788e6f7af535b861df497d726a1\",\"files\":{}}",
-    "dest": "cargo/vendor/aotuv_lancer_vorbis_sys-0.1.5",
+    "contents": "{\"package\":\"5bc4fd1a61860d2f1198b60bedd30910eaffa978f1ee6214dfb24ac70d589225\",\"files\":{}}",
+    "dest": "cargo/vendor/aotuv_lancer_vorbis_sys-0.1.6",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -3863,14 +3863,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ogg_next_sys/ogg_next_sys-0.1.4.crate",
-    "sha256": "4c990730c2782b922815753a62af535e4205267df190dfbd8aa5d74e11d7dcc3",
-    "dest": "cargo/vendor/ogg_next_sys-0.1.4"
+    "url": "https://static.crates.io/crates/ogg_next_sys/ogg_next_sys-0.1.5.crate",
+    "sha256": "ed2d7a48e247c2bb07e633aefb65a38648ea58c7eedd4e4408a5861721ab049b",
+    "dest": "cargo/vendor/ogg_next_sys-0.1.5"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"4c990730c2782b922815753a62af535e4205267df190dfbd8aa5d74e11d7dcc3\",\"files\":{}}",
-    "dest": "cargo/vendor/ogg_next_sys-0.1.4",
+    "contents": "{\"package\":\"ed2d7a48e247c2bb07e633aefb65a38648ea58c7eedd4e4408a5861721ab049b\",\"files\":{}}",
+    "dest": "cargo/vendor/ogg_next_sys-0.1.5",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -7048,14 +7048,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/vorbis_rs/vorbis_rs-0.5.5.crate",
-    "sha256": "874075ad757c0f6031d4706ed75703a9ba6c711164a0b1dab55af86800cd618f",
-    "dest": "cargo/vendor/vorbis_rs-0.5.5"
+    "url": "https://static.crates.io/crates/vorbis_rs/vorbis_rs-0.5.6.crate",
+    "sha256": "49c5da94d280f7a27e8c937e9b73df2da3e23a2583f48471fd8fb4c72f9c1933",
+    "dest": "cargo/vendor/vorbis_rs-0.5.6"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"874075ad757c0f6031d4706ed75703a9ba6c711164a0b1dab55af86800cd618f\",\"files\":{}}",
-    "dest": "cargo/vendor/vorbis_rs-0.5.5",
+    "contents": "{\"package\":\"49c5da94d280f7a27e8c937e9b73df2da3e23a2583f48471fd8fb4c72f9c1933\",\"files\":{}}",
+    "dest": "cargo/vendor/vorbis_rs-0.5.6",
     "dest-filename": ".cargo-checksum.json"
   },
   {
