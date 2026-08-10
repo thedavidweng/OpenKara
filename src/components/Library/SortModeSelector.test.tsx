@@ -100,6 +100,10 @@ describe("SortModeSelector", () => {
       "sort-mode-selector",
     ) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "title_asc" } });
+    // setIsPending(true) runs inside the change handler's first await; wait
+    // for React to commit that re-render rather than assuming a synchronous
+    // flush (jsdom schedules it as a microtask, which races under load).
+    await screen.findByTestId("sort-mode-selector");
     expect(select.disabled).toBe(true);
     resolveMutation();
     await screen.findByTestId("sort-mode-selector");
