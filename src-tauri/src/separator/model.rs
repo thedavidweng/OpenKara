@@ -203,14 +203,17 @@ fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
     );
 
     #[cfg(target_os = "windows")]
-    prepare_windows_runtime_dll_search(runtime_path)?;
-
-    // Read the library into the page cache before the loader maps it. On some
-    // Windows VMs (e.g. PVE/KVM), a real-time AV scan or a cold/slow virtual
-    // disk stalls section mapping inside `LoadLibraryW` long enough to trip the
-    // load watchdog; reading first lets the scan finish and warms the disk so
-    // the subsequent load is fast. Best-effort: never block the load on this.
-    let _ = fs::read(runtime_path);
+    {
+        prepare_windows_runtime_dll_search(runtime_path)?;
+        // Synchronously read the library into the page cache before the loader
+        // maps it. On some Windows VMs (e.g. PVE/KVM), a real-time AV scan or a
+        // cold/slow virtual disk stalls section mapping inside `LoadLibraryW`
+        // long enough to trip the load watchdog; reading first lets the scan
+        // finish and warms the disk so the subsequent load is fast. Read errors
+        // are ignored — this is a best-effort hint that must never block the
+        // load.
+        let _ = fs::read(runtime_path);
+    }
 
     let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
     anyhow::ensure!(

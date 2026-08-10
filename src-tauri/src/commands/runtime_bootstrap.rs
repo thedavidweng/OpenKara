@@ -328,6 +328,18 @@ fn report_worker_progress(
     }
 }
 
+/// Construct the parent-process load-timeout error message. Extracted so the
+/// funnel test exercises the production format (including the diagnostic hint)
+/// rather than reconstructing it by hand.
+fn runtime_parent_load_timeout_message() -> String {
+    format!(
+        "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
+        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
+        RUNTIME_PARENT_LOAD_TIMEOUT.as_secs(),
+        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
+    )
+}
+
 /// Load ORT in the application process without allowing a native loader hang
 /// to block the command executor forever. A timed-out load poisons this
 /// process; a restart is required before another attempt can use ORT.
@@ -371,12 +383,7 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
         Ok(Err(error)) => Err(anyhow::anyhow!(error)),
         Err(mpsc::RecvTimeoutError::Timeout) => {
             RUNTIME_PARENT_LOAD_TIMED_OUT.store(true, Ordering::SeqCst);
-            anyhow::bail!(
-                "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
-                crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
-                RUNTIME_PARENT_LOAD_TIMEOUT.as_secs(),
-                crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
-            )
+            anyhow::bail!(runtime_parent_load_timeout_message())
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             anyhow::bail!("ONNX Runtime load watchdog exited before reporting a result")
@@ -1004,11 +1011,7 @@ mod tests {
 
     #[test]
     fn post_download_timeout_marker_maps_to_a_structured_error() {
-        let error = bootstrap_command_error_from_message(&format!(
-            "{}: runtime load did not finish\n\n{}",
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
-        ));
+        let error = bootstrap_command_error_from_message(&runtime_parent_load_timeout_message());
 
         assert_eq!(
             error.code,

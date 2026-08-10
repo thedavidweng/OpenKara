@@ -2,7 +2,7 @@
 
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SortModeSelector } from "./SortModeSelector";
 
 const { mockUseSettingsStore, mockUseTranslation, mockSetLibrarySortMode } =
@@ -100,13 +100,11 @@ describe("SortModeSelector", () => {
       "sort-mode-selector",
     ) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "title_asc" } });
-    // setIsPending(true) runs inside the change handler's first await; wait
-    // for React to commit that re-render rather than assuming a synchronous
-    // flush (jsdom schedules it as a microtask, which races under load).
-    await screen.findByTestId("sort-mode-selector");
-    expect(select.disabled).toBe(true);
+    // handleChange sets isPending(true) before awaiting setLibrarySortMode(mode),
+    // but React commits that re-render on a microtask. Wait for the disabled
+    // state rather than assuming a synchronous flush (jsdom races under load).
+    await waitFor(() => expect(select.disabled).toBe(true));
     resolveMutation();
-    await screen.findByTestId("sort-mode-selector");
-    expect(select.disabled).toBe(false);
+    await waitFor(() => expect(select.disabled).toBe(false));
   });
 });

@@ -19,7 +19,7 @@ use std::{
 
 pub const RUNTIME_WORKER_ARG: &str = "--runtime-bootstrap-worker";
 pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER: &str = "runtime_post_download_timeout";
-pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT: &str = "On a VM/server this is usually antivirus or a slow virtual disk. In an Administrator PowerShell, temporarily disable Defender real-time protection (`Set-MpPreference -DisableRealtimeProtection $true`) and retry; if it then loads, add a permanent exclusion with `Add-MpPreference -ExclusionPath \"$env:APPDATA\\com.openkara.desktop\\runtimes\"`.";
+pub const RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT: &str = "On a VM/server this is usually antivirus or a slow virtual disk. In an Administrator PowerShell, temporarily disable Defender real-time monitoring (`Set-MpPreference -DisableRealtimeMonitoring $true`) and retry; if it then loads, add a permanent exclusion with `Add-MpPreference -ExclusionPath \"$env:APPDATA\\com.openkara.desktop\\runtimes\"`.";
 
 const POST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
