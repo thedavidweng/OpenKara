@@ -3967,27 +3967,27 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ort/ort-2.0.0-rc.12.crate",
-    "sha256": "d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133",
-    "dest": "cargo/vendor/ort-2.0.0-rc.12"
+    "url": "https://static.crates.io/crates/ort/ort-2.0.0-rc.13.crate",
+    "sha256": "4336a1e2b38848325241c72889086886004e589b7c74f335e60a8e8db5138a0b",
+    "dest": "cargo/vendor/ort-2.0.0-rc.13"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133\",\"files\":{}}",
-    "dest": "cargo/vendor/ort-2.0.0-rc.12",
+    "contents": "{\"package\":\"4336a1e2b38848325241c72889086886004e589b7c74f335e60a8e8db5138a0b\",\"files\":{}}",
+    "dest": "cargo/vendor/ort-2.0.0-rc.13",
     "dest-filename": ".cargo-checksum.json"
   },
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ort-sys/ort-sys-2.0.0-rc.12.crate",
-    "sha256": "d7b497d21a8b6fbb4b5a544f8fadb77e801a09ae0add9e411d31c6f89e3c1e90",
-    "dest": "cargo/vendor/ort-sys-2.0.0-rc.12"
+    "url": "https://static.crates.io/crates/ort-sys/ort-sys-2.0.0-rc.13.crate",
+    "sha256": "cf211e3776eea6aec988552fa118dd746d70e1b1e5e244058d1c98015f3e5872",
+    "dest": "cargo/vendor/ort-sys-2.0.0-rc.13"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"d7b497d21a8b6fbb4b5a544f8fadb77e801a09ae0add9e411d31c6f89e3c1e90\",\"files\":{}}",
-    "dest": "cargo/vendor/ort-sys-2.0.0-rc.12",
+    "contents": "{\"package\":\"cf211e3776eea6aec988552fa118dd746d70e1b1e5e244058d1c98015f3e5872\",\"files\":{}}",
+    "dest": "cargo/vendor/ort-sys-2.0.0-rc.13",
     "dest-filename": ".cargo-checksum.json"
   },
   {
