@@ -5072,14 +5072,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/schemars/schemars-1.2.1.crate",
-    "sha256": "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc",
-    "dest": "cargo/vendor/schemars-1.2.1"
+    "url": "https://static.crates.io/crates/schemars/schemars-1.2.2.crate",
+    "sha256": "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a",
+    "dest": "cargo/vendor/schemars-1.2.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc\",\"files\":{}}",
-    "dest": "cargo/vendor/schemars-1.2.1",
+    "contents": "{\"package\":\"687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a\",\"files\":{}}",
+    "dest": "cargo/vendor/schemars-1.2.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -5098,14 +5098,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/schemars_derive/schemars_derive-1.2.1.crate",
-    "sha256": "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f",
-    "dest": "cargo/vendor/schemars_derive-1.2.1"
+    "url": "https://static.crates.io/crates/schemars_derive/schemars_derive-1.2.2.crate",
+    "sha256": "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba",
+    "dest": "cargo/vendor/schemars_derive-1.2.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f\",\"files\":{}}",
-    "dest": "cargo/vendor/schemars_derive-1.2.1",
+    "contents": "{\"package\":\"d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba\",\"files\":{}}",
+    "dest": "cargo/vendor/schemars_derive-1.2.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -5223,6 +5223,19 @@
     "type": "inline",
     "contents": "{\"package\":\"18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711\",\"files\":{}}",
     "dest": "cargo/vendor/serde_derive_internals-0.29.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/serde_derive_internals/serde_derive_internals-0.30.0.crate",
+    "sha256": "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd",
+    "dest": "cargo/vendor/serde_derive_internals-0.30.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd\",\"files\":{}}",
+    "dest": "cargo/vendor/serde_derive_internals-0.30.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
