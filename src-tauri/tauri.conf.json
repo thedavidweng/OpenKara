@@ -52,7 +52,8 @@
     ],
     "resources": {
       "generated/oauth": "oauth",
-      "icons/Assets.car": "Assets.car"
+      "icons/Assets.car": "Assets.car",
+      "resources/windows/vcredist": "vcredist"
     },
     "macOS": {
       "signingIdentity": "-",
