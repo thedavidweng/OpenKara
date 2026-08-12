@@ -688,8 +688,17 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 return Err(command_error);
             }
             if plan.proving_candidate {
-                runtime_bootstrap::finish_activation_success(app_data_dir)
-                    .map_err(|error| model_bootstrap_error(error.to_string()))?;
+                if let Err(error) = runtime_bootstrap::finish_activation_success(app_data_dir) {
+                    let command_error = model_bootstrap_error(error.to_string());
+                    record_runtime_failure(
+                        app_data_dir,
+                        status,
+                        emit,
+                        command_error.clone(),
+                        Some(RuntimeBootstrapFailurePhase::Activate),
+                    );
+                    return Err(command_error);
+                }
             }
             let ready = snapshot_from_disk(app_data_dir);
             store_snapshot(status, ready.clone());
