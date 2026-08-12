@@ -87,7 +87,11 @@ jobs:
     name: Verify Nightly evidence
     needs: prepare-release
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # Resolves or waits for a full Nightly build (macOS Intel leg ~30m).
+    # Budget: checkout/setup + dispatch (~1-2m), then a 44-minute evidence
+    # poll (real Nightly runs take 43+ minutes), then conclusion + download.
+    # Must stay above the poll deadline so the poll's own error surfaces
+    # instead of the runner killing the job mid-loop.
+    timeout-minutes: 50
     concurrency:
       group: verify-nightly-evidence-${{ github.repository }}-${{ github.sha }}
       cancel-in-progress: false
@@ -156,10 +160,12 @@ jobs:
             echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
           fi
 
-          # Poll almost up to the job's 45-minute timeout-minutes: real Nightly
-          # runs have taken 43+ minutes, so a shorter deadline fails cold
-          # releases that would still succeed within the job budget.
-          deadline=$(( $(date +%s) + 44 * 60 ))
+          # Real Nightly runs have taken 43+ minutes; a shorter deadline fails
+          # cold releases that would still succeed within the job budget. The
+          # job's timeout-minutes reserves headroom above this for the setup
+          # steps before the poll and the download after it.
+          poll_minutes=44
+          deadline=$(( $(date +%s) + poll_minutes * 60 ))
           nightly_run=""
           while [ "$(date +%s)" -lt "${deadline}" ]; do
             nightly_run="$(gh run list \
@@ -176,7 +182,7 @@ jobs:
           done
 
           if [ -z "${nightly_run}" ]; then
-            echo "::error::Dispatched Nightly run did not finish within 44 minutes for commit ${GITHUB_SHA}."
+            echo "::error::Dispatched Nightly run did not finish within ${poll_minutes} minutes for commit ${GITHUB_SHA}."
             exit 1
           fi
 

@@ -14,9 +14,13 @@ describe("nightly installers workflow", () => {
 
   test("runs on a daily schedule with a force-capable manual dispatch", () => {
     expect(workflow).toContain("schedule:");
+    // Any daily time is fine (the exact hour is an operational choice, not a
+    // contract); what must hold is that the schedule stays daily.
     expect(workflow).toMatch(/cron: "\d+ \d+ \* \* \*"/);
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).toContain("force:");
+    expect(workflow).toContain("type: boolean");
+    expect(workflow).toContain('if [ "${FORCE}" = "true" ]; then');
     // Scheduled runs skip when main has not moved since the last nightly.
     expect(workflow).toContain('gh api "repos/${GH_REPO}/commits/nightly"');
     expect(workflow).toContain("should_build=false");
