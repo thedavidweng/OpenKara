@@ -29,6 +29,7 @@ const readyRuntime: RuntimeStatusView = {
   candidate_version: null,
   restart_required: false,
   error: null,
+  failure_phase: null,
 };
 
 const downloadedStatus: ModelStatusView = {
@@ -129,6 +130,20 @@ describe("SettingsModelVariantSection", () => {
     expect(html).toContain("settings.runtime.corrupt");
     expect(html).not.toContain("settings.runtime.retryButton");
     expect(html).not.toContain("settings.runtime.installButton");
+  });
+
+  test("describes a runtime load failure without blaming the network", () => {
+    const html = render({
+      runtimeStatus: {
+        ...readyRuntime,
+        state: "failed",
+        error: "LoadLibraryExW failed for onnxruntime.dll",
+        failure_phase: "probe",
+      },
+    });
+
+    expect(html).toContain("settings.runtime.loadFailed");
+    expect(html).not.toContain("settings.runtime.downloadFailed");
   });
 
   test("keeps the variant picker and model-update button visible while the runtime is missing", () => {

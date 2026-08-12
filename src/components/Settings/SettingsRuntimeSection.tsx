@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { formatBytes } from "@/lib/format";
+import { runtimeFailureStatusKey } from "@/lib/runtime-failure-copy";
 import type { UpdatePolicy } from "@/types/ipc";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
@@ -60,7 +61,7 @@ export function SettingsRuntimeSection() {
       case "corrupt":
         return t("settings.runtime.corrupt");
       case "failed":
-        return t("settings.runtime.downloadFailed");
+        return t(runtimeFailureStatusKey(runtime?.failure_phase));
       case "missing":
         return t("settings.runtime.statusMissing");
       default:
@@ -93,7 +94,7 @@ export function SettingsRuntimeSection() {
     runtimeState === "corrupt"
       ? t("settings.runtime.corrupt")
       : runtimeState === "failed"
-        ? t("settings.runtime.downloadFailed")
+        ? t(runtimeFailureStatusKey(runtime?.failure_phase))
         : t("settings.runtime.installRequired");
 
   return (

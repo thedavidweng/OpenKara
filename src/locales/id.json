@@ -423,6 +423,8 @@
       "downloading": "Mengunduh ONNX Runtime...",
       "corrupt": "ONNX Runtime yang terinstal rusak. Instal ulang untuk mengaktifkan unduhan model.",
       "downloadFailed": "Unduhan ONNX Runtime gagal. Periksa koneksi Anda dan coba lagi.",
+      "installFailed": "ONNX Runtime sudah diunduh tetapi gagal diinstal. Ini bukan masalah jaringan — periksa detail kesalahan di bawah.",
+      "loadFailed": "ONNX Runtime sudah diunduh tetapi tidak dapat dimuat di sistem ini. Ini bukan masalah jaringan — periksa detail kesalahan di bawah.",
       "retryButton": "Instal Ulang ONNX Runtime",
       "statusReady": "Terinstal dan siap.",
       "statusMissing": "Belum terinstal.",
@@ -458,6 +460,10 @@
         "activatingRuntime": "Mengaktifkan ONNX Runtime...",
         "downloadFailed": "Unduhan ONNX Runtime gagal: {{error}}",
         "downloadFailedHint": "Periksa koneksi Anda, lalu coba unduh lagi.",
+        "installFailed": "Instalasi ONNX Runtime gagal: {{error}}",
+        "installFailedHint": "Unduhan selesai tetapi instalasi gagal; ini bukan masalah jaringan. Mencoba lagi aman.",
+        "loadFailed": "Gagal memuat ONNX Runtime: {{error}}",
+        "loadFailedHint": "Runtime sudah diunduh tetapi tidak dapat dimuat; ini bukan masalah jaringan. Periksa detail kesalahan.",
         "retryDownload": "Coba Lagi"
       },
       "cpuFallbackToast": {

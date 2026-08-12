@@ -947,6 +947,7 @@ mod tests {
                         candidate_version: None,
                         restart_required: false,
                         error: None,
+                        failure_phase: None,
                         cpu_fallback_notice: None,
                     },
                 )),

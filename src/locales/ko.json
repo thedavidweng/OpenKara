@@ -423,6 +423,8 @@
       "downloading": "ONNX Runtime 다운로드 중...",
       "corrupt": "설치된 ONNX Runtime이 손상됐어요. 다시 설치하면 모델을 다운로드할 수 있어요.",
       "downloadFailed": "ONNX Runtime 다운로드에 실패했어요. 연결을 확인하고 다시 시도하세요.",
+      "installFailed": "ONNX Runtime을 다운로드했지만 설치에 실패했어요. 네트워크 문제가 아니에요. 아래 오류 세부 정보를 확인하세요.",
+      "loadFailed": "ONNX Runtime을 다운로드했지만 이 시스템에서 불러올 수 없어요. 네트워크 문제가 아니에요. 아래 오류 세부 정보를 확인하세요.",
       "retryButton": "ONNX Runtime 다시 설치",
       "statusReady": "설치되어 준비됐어요.",
       "statusMissing": "설치되지 않았어요.",
@@ -458,6 +460,10 @@
         "activatingRuntime": "ONNX Runtime 활성화 중...",
         "downloadFailed": "ONNX Runtime 다운로드 실패: {{error}}",
         "downloadFailedHint": "연결을 확인한 뒤 다운로드를 다시 시도하세요.",
+        "installFailed": "ONNX Runtime 설치 실패: {{error}}",
+        "installFailedHint": "다운로드는 완료됐지만 설치에 실패했어요. 네트워크 문제가 아니며, 다시 시도해도 안전해요.",
+        "loadFailed": "ONNX Runtime 불러오기 실패: {{error}}",
+        "loadFailedHint": "런타임은 다운로드됐지만 불러올 수 없어요. 네트워크 문제가 아니에요. 오류 세부 정보를 확인하세요.",
         "retryDownload": "다시 시도"
       },
       "cpuFallbackToast": {

@@ -28,6 +28,7 @@ const readyRuntime: RuntimeStatusView = {
   candidate_version: null,
   restart_required: false,
   error: null,
+  failure_phase: null,
 };
 
 function render(state: Partial<SettingsOverlayState>) {
@@ -211,6 +212,32 @@ describe("SettingsRuntimeSection", () => {
     expect(html).toContain("settings.runtime.downloadFailed");
     expect(html).toContain("settings.runtime.retryButton");
   });
+
+  test.each([
+    ["download", "settings.runtime.downloadFailed"],
+    ["install", "settings.runtime.installFailed"],
+    ["probe", "settings.runtime.loadFailed"],
+    ["activate", "settings.runtime.loadFailed"],
+  ] as const)(
+    "describes a failure in the %s phase without blaming the network for post-download failures",
+    (phase, expectedKey) => {
+      const html = render({
+        runtimeStatus: {
+          ...readyRuntime,
+          state: "failed",
+          error: "LoadLibraryExW failed for onnxruntime.dll",
+          failure_phase: phase,
+        },
+      });
+
+      expect(html).toContain(expectedKey);
+      expect(html).toContain("LoadLibraryExW failed for onnxruntime.dll");
+      expect(html).toContain("settings.runtime.retryButton");
+      if (phase !== "download") {
+        expect(html).not.toContain("settings.runtime.downloadFailed");
+      }
+    },
+  );
 
   test("never claims the runtime is up to date when the check says it is not installed", () => {
     const update: RuntimeUpdateView = {

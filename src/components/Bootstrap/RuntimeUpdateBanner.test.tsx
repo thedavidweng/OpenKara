@@ -195,4 +195,72 @@ describe("RuntimeUpdateBanner", () => {
       );
     });
   });
+
+  test.each([
+    [
+      "install",
+      "settings.runtime.banner.installFailed",
+      "settings.runtime.banner.installFailedHint",
+    ],
+    [
+      "probe",
+      "settings.runtime.banner.loadFailed",
+      "settings.runtime.banner.loadFailedHint",
+    ],
+    [
+      "activate",
+      "settings.runtime.banner.loadFailed",
+      "settings.runtime.banner.loadFailedHint",
+    ],
+  ] as const)(
+    "a failure in the %s phase never claims the download failed",
+    (phase, message, hint) => {
+      setStatus("failed", {
+        active_artifact_id: null,
+        failure_phase: phase,
+        error: {
+          code: "model_unavailable",
+          message: "LoadLibraryExW failed for onnxruntime.dll",
+          retryable: true,
+          fallback: "retry",
+        },
+      });
+      render(<RuntimeUpdateBanner />);
+
+      expect(screen.getByText(message)).toBeTruthy();
+      expect(screen.getByText(hint)).toBeTruthy();
+      expect(
+        screen.queryByText("settings.runtime.banner.downloadFailed"),
+      ).toBeNull();
+      expect(
+        screen.queryByText("settings.runtime.banner.downloadFailedHint"),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", {
+          name: "settings.runtime.banner.retryDownload",
+        }),
+      ).toBeTruthy();
+    },
+  );
+
+  test("a download-phase failure keeps the check-your-connection copy", () => {
+    setStatus("failed", {
+      active_artifact_id: null,
+      failure_phase: "download",
+      error: {
+        code: "network_unavailable",
+        message: "network unreachable",
+        retryable: true,
+        fallback: "retry",
+      },
+    });
+    render(<RuntimeUpdateBanner />);
+
+    expect(
+      screen.getByText("settings.runtime.banner.downloadFailed"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("settings.runtime.banner.downloadFailedHint"),
+    ).toBeTruthy();
+  });
 });

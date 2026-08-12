@@ -583,6 +583,12 @@ export type RuntimeBootstrapState =
   | "corrupt"
   | "failed";
 
+export type RuntimeBootstrapFailurePhase =
+  | "download"
+  | "install"
+  | "probe"
+  | "activate";
+
 export interface RuntimeBootstrapStatusSnapshot {
   state: RuntimeBootstrapState;
   runtime_path: string;
@@ -594,6 +600,7 @@ export interface RuntimeBootstrapStatusSnapshot {
   candidate_version: string | null;
   restart_required: boolean;
   error: CommandError | null;
+  failure_phase?: RuntimeBootstrapFailurePhase | null;
   cpu_fallback_notice?: string | null;
 }
 

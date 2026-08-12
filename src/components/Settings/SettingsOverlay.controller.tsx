@@ -136,6 +136,7 @@ export function SettingsOverlayProvider({
           candidate_version: runtimeBootstrapStatus.candidate_version,
           restart_required: runtimeBootstrapStatus.restart_required,
           error: runtimeBootstrapStatus.error?.message ?? null,
+          failure_phase: runtimeBootstrapStatus.failure_phase ?? null,
         },
       },
     }));

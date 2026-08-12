@@ -423,6 +423,8 @@
       "downloading": "ONNX Runtime をダウンロード中...",
       "corrupt": "インストールされている ONNX Runtime が破損しています。再インストールするとモデルのダウンロードが有効になります。",
       "downloadFailed": "ONNX Runtime のダウンロードに失敗しました。接続を確認して再試行してください。",
+      "installFailed": "ONNX Runtime はダウンロードされましたが、インストールに失敗しました。ネットワークの問題ではありません。下記のエラー詳細を確認してください。",
+      "loadFailed": "ONNX Runtime はダウンロードされましたが、このシステムでは読み込めません。ネットワークの問題ではありません。下記のエラー詳細を確認してください。",
       "retryButton": "ONNX Runtime を再インストール",
       "statusReady": "インストール済みで使用可能です。",
       "statusMissing": "インストールされていません。",
@@ -458,6 +460,10 @@
         "activatingRuntime": "ONNX Runtime を有効化中...",
         "downloadFailed": "ONNX Runtime のダウンロードに失敗しました: {{error}}",
         "downloadFailedHint": "接続を確認してから、ダウンロードを再試行してください。",
+        "installFailed": "ONNX Runtime のインストールに失敗しました: {{error}}",
+        "installFailedHint": "ダウンロードは完了しましたが、インストールに失敗しました。ネットワークの問題ではないため、再試行しても安全です。",
+        "loadFailed": "ONNX Runtime の読み込みに失敗しました: {{error}}",
+        "loadFailedHint": "ONNX Runtime はダウンロード済みですが読み込めません。ネットワークの問題ではありません。エラー詳細を確認してください。",
         "retryDownload": "再試行"
       },
       "cpuFallbackToast": {

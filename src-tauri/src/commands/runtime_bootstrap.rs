@@ -53,6 +53,56 @@ pub enum RuntimeBootstrapState {
     Failed,
 }
 
+/// Bootstrap step where a `Failed` snapshot's error originated. Lets the UI
+/// stop blaming the network for install, load-probe, and activation failures
+/// (#284 was a `LoadLibraryExW` failure presented as a download failure).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeBootstrapFailurePhase {
+    Download,
+    Install,
+    Probe,
+    Activate,
+}
+
+/// Transparent wrapper that tags a bootstrap error with the phase it came
+/// from. Display forwards to the wrapped error, so user-visible messages and
+/// the marker-based `CommandError` mapping are unchanged.
+#[derive(Debug)]
+pub(crate) struct PhasedBootstrapError {
+    phase: RuntimeBootstrapFailurePhase,
+    source: anyhow::Error,
+}
+
+impl std::fmt::Display for PhasedBootstrapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.source, f)
+    }
+}
+
+impl std::error::Error for PhasedBootstrapError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+pub(crate) fn with_failure_phase(
+    error: anyhow::Error,
+    phase: RuntimeBootstrapFailurePhase,
+) -> anyhow::Error {
+    anyhow::Error::new(PhasedBootstrapError {
+        phase,
+        source: error,
+    })
+}
+
+pub(crate) fn failure_phase_of(error: &anyhow::Error) -> Option<RuntimeBootstrapFailurePhase> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<PhasedBootstrapError>())
+        .map(|phased| phased.phase)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeBootstrapStatusSnapshot {
     pub state: RuntimeBootstrapState,
@@ -65,6 +115,8 @@ pub struct RuntimeBootstrapStatusSnapshot {
     pub candidate_version: Option<String>,
     pub restart_required: bool,
     pub error: Option<CommandError>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_phase: Option<RuntimeBootstrapFailurePhase>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_fallback_notice: Option<String>,
 }
@@ -81,7 +133,7 @@ fn pinned_runtime_version() -> String {
 }
 
 pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrapStatusSnapshot {
-    let (state, runtime_path, version, active_artifact_id, error) =
+    let (state, runtime_path, version, active_artifact_id, error, failure_phase) =
         match (&inventory.active, &inventory.legacy_path) {
             (Some(active), _) => {
                 let state = if inventory.last_failure.is_some() {
@@ -98,6 +150,7 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
                         .last_failure
                         .as_ref()
                         .map(|failure| bootstrap_command_error_from_message(&failure.error)),
+                    None,
                 )
             }
             (None, Some(legacy_path)) => (
@@ -106,16 +159,27 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
                 LEGACY_RUNTIME_VERSION.to_owned(),
                 None,
                 None,
+                None,
             ),
             (None, None) => {
-                let (state, error) = match &inventory.last_failure {
+                // A persisted failure always means an installed runtime could
+                // not be verified or loaded — never a download problem.
+                let (state, error, failure_phase) = match &inventory.last_failure {
                     Some(failure) => (
                         RuntimeBootstrapState::Failed,
                         Some(bootstrap_command_error_from_message(&failure.error)),
+                        Some(RuntimeBootstrapFailurePhase::Probe),
                     ),
-                    None => (RuntimeBootstrapState::Missing, None),
+                    None => (RuntimeBootstrapState::Missing, None, None),
                 };
-                (state, String::new(), pinned_runtime_version(), None, error)
+                (
+                    state,
+                    String::new(),
+                    pinned_runtime_version(),
+                    None,
+                    error,
+                    failure_phase,
+                )
             }
         };
 
@@ -143,6 +207,7 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         candidate_version,
         restart_required,
         error,
+        failure_phase,
         cpu_fallback_notice,
     }
 }
@@ -249,6 +314,7 @@ fn downloading_snapshot(
         downloaded_bytes: Some(downloaded_bytes),
         total_bytes,
         error: None,
+        failure_phase: None,
         ..base.clone()
     }
 }
@@ -292,6 +358,7 @@ fn report_post_download_progress(
         downloaded_bytes: None,
         total_bytes: None,
         error: None,
+        failure_phase: None,
         ..base.clone()
     };
     store_snapshot(status, snapshot.clone());
@@ -466,9 +533,10 @@ pub fn install_and_load_runtime_blocking(
             &runtime.runtime.execution_providers,
             &err.to_string(),
         );
-        return Err(err);
+        return Err(with_failure_phase(err, RuntimeBootstrapFailurePhase::Probe));
     }
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
+        .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
     store_snapshot(status, snapshot.clone());
@@ -512,10 +580,11 @@ fn try_activate_staged_runtime(
                 &err.to_string(),
             );
         }
-        return Err(err);
+        return Err(with_failure_phase(err, RuntimeBootstrapFailurePhase::Probe));
     }
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
+        .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
     store_snapshot(status, snapshot.clone());
@@ -609,12 +678,27 @@ pub fn ensure_runtime_ready_or_install_blocking(
                     );
                 }
                 let command_error = bootstrap_command_error(error);
-                record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+                record_runtime_failure(
+                    app_data_dir,
+                    status,
+                    emit,
+                    command_error.clone(),
+                    Some(RuntimeBootstrapFailurePhase::Probe),
+                );
                 return Err(command_error);
             }
             if plan.proving_candidate {
-                runtime_bootstrap::finish_activation_success(app_data_dir)
-                    .map_err(|error| model_bootstrap_error(error.to_string()))?;
+                if let Err(error) = runtime_bootstrap::finish_activation_success(app_data_dir) {
+                    let command_error = model_bootstrap_error(error.to_string());
+                    record_runtime_failure(
+                        app_data_dir,
+                        status,
+                        emit,
+                        command_error.clone(),
+                        Some(RuntimeBootstrapFailurePhase::Activate),
+                    );
+                    return Err(command_error);
+                }
             }
             let ready = snapshot_from_disk(app_data_dir);
             store_snapshot(status, ready.clone());
@@ -638,7 +722,13 @@ pub fn ensure_runtime_ready_or_install_blocking(
     if let Some(active) = inventory.active {
         if let Err(error) = ensure_runtime_loaded_with_watchdog(&active.library_path) {
             let command_error = bootstrap_command_error(error);
-            record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+            record_runtime_failure(
+                app_data_dir,
+                status,
+                emit,
+                command_error.clone(),
+                Some(RuntimeBootstrapFailurePhase::Probe),
+            );
             return Err(command_error);
         }
         let ready = snapshot_from_disk(app_data_dir);
@@ -649,7 +739,13 @@ pub fn ensure_runtime_ready_or_install_blocking(
     if let Some(legacy_path) = inventory.legacy_path {
         if let Err(error) = ensure_runtime_loaded_with_watchdog(&legacy_path) {
             let command_error = bootstrap_command_error(error);
-            record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+            record_runtime_failure(
+                app_data_dir,
+                status,
+                emit,
+                command_error.clone(),
+                Some(RuntimeBootstrapFailurePhase::Probe),
+            );
             return Err(command_error);
         }
         let ready = snapshot_from_disk(app_data_dir);
@@ -670,8 +766,15 @@ pub fn ensure_runtime_ready_or_install_with_catalog(
 ) -> CommandResult<PathBuf> {
     prepare_runtime_download(app_data_dir, status, emit);
     install_and_load_runtime_blocking(app_data_dir, catalog, status, emit).map_err(|error| {
+        let failure_phase = failure_phase_of(&error);
         let command_error = bootstrap_command_error(error);
-        record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+        record_runtime_failure(
+            app_data_dir,
+            status,
+            emit,
+            command_error.clone(),
+            failure_phase,
+        );
         command_error
     })
 }
@@ -690,8 +793,15 @@ pub(crate) fn download_runtime_blocking_with_catalog(
     };
 
     result.map_err(|error| {
+        let failure_phase = failure_phase_of(&error);
         let command_error = bootstrap_command_error(error);
-        record_runtime_failure(app_data_dir, status, emit, command_error.clone());
+        record_runtime_failure(
+            app_data_dir,
+            status,
+            emit,
+            command_error.clone(),
+            failure_phase,
+        );
         command_error
     })
 }
@@ -701,10 +811,12 @@ fn record_runtime_failure(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
     error: CommandError,
+    failure_phase: Option<RuntimeBootstrapFailurePhase>,
 ) {
     let mut failed = snapshot_from_disk(app_data_dir);
     failed.state = RuntimeBootstrapState::Failed;
     failed.error = Some(error);
+    failed.failure_phase = failure_phase;
     store_snapshot(status, failed.clone());
     emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
 }
@@ -761,6 +873,7 @@ pub fn download_runtime(
                     let _ = app_handle.emit(event, snapshot);
                 },
                 internal_error(format!("runtime download task failed: {join_error}")),
+                None,
             );
         }
     });
@@ -929,6 +1042,115 @@ mod tests {
         let snapshot = snapshot_from_inventory(&inventory);
         assert_eq!(snapshot.state, RuntimeBootstrapState::Failed);
         assert!(snapshot.error.is_some());
+        assert_eq!(
+            snapshot.failure_phase,
+            Some(RuntimeBootstrapFailurePhase::Probe),
+            "a persisted activation failure is a verify/load problem, never a download problem"
+        );
+    }
+
+    #[test]
+    fn failure_phase_serializes_as_a_snake_case_string_and_is_omitted_when_absent() {
+        let mut snapshot = snapshot_from_inventory(&empty_inventory());
+        let json = serde_json::to_value(&snapshot).expect("serialize snapshot");
+        assert!(
+            json.get("failure_phase").is_none(),
+            "an absent failure phase must be omitted for backward compatibility"
+        );
+
+        for (phase, expected) in [
+            (RuntimeBootstrapFailurePhase::Download, "download"),
+            (RuntimeBootstrapFailurePhase::Install, "install"),
+            (RuntimeBootstrapFailurePhase::Probe, "probe"),
+            (RuntimeBootstrapFailurePhase::Activate, "activate"),
+        ] {
+            snapshot.failure_phase = Some(phase);
+            let json = serde_json::to_value(&snapshot).expect("serialize snapshot");
+            assert_eq!(json["failure_phase"], expected);
+        }
+    }
+
+    #[test]
+    fn snapshots_without_failure_phase_still_deserialize() {
+        let json = serde_json::json!({
+            "state": "failed",
+            "runtime_path": "/tmp/lib",
+            "downloaded_bytes": null,
+            "total_bytes": null,
+            "version": "v1.27.1",
+            "active_artifact_id": null,
+            "target_triple": "aarch64-apple-darwin",
+            "candidate_version": null,
+            "restart_required": false,
+            "error": null
+        });
+        let snapshot: RuntimeBootstrapStatusSnapshot =
+            serde_json::from_value(json).expect("legacy payload must deserialize");
+        assert_eq!(snapshot.failure_phase, None);
+    }
+
+    #[test]
+    fn with_failure_phase_keeps_the_message_and_survives_added_context() {
+        let error = with_failure_phase(
+            anyhow::anyhow!("LoadLibraryExW failed for onnxruntime.dll"),
+            RuntimeBootstrapFailurePhase::Probe,
+        );
+        assert_eq!(
+            error.to_string(),
+            "LoadLibraryExW failed for onnxruntime.dll"
+        );
+        assert_eq!(
+            failure_phase_of(&error),
+            Some(RuntimeBootstrapFailurePhase::Probe)
+        );
+
+        let wrapped = error.context("while preparing separation");
+        assert_eq!(
+            failure_phase_of(&wrapped),
+            Some(RuntimeBootstrapFailurePhase::Probe),
+            "the phase must survive contextual wrapping"
+        );
+
+        assert_eq!(failure_phase_of(&anyhow::anyhow!("plain error")), None);
+    }
+
+    #[test]
+    fn tagged_timeout_errors_keep_the_structured_timeout_code() {
+        let error = with_failure_phase(
+            anyhow::anyhow!(runtime_parent_load_timeout_message()),
+            RuntimeBootstrapFailurePhase::Probe,
+        );
+        let command_error = bootstrap_command_error(error);
+        assert_eq!(
+            command_error.code,
+            crate::commands::error::ErrorCode::RuntimePostDownloadTimeout
+        );
+    }
+
+    #[test]
+    fn record_runtime_failure_publishes_the_failure_phase() {
+        let status = Arc::new(Mutex::new(snapshot_from_inventory(&empty_inventory())));
+        let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();
+        {
+            let mut emit = |event, snapshot| events.push((event, snapshot));
+            record_runtime_failure(
+                std::path::Path::new("/nonexistent/openkara-failure-phase"),
+                &status,
+                &mut emit,
+                model_bootstrap_error("archive extraction failed".to_owned()),
+                Some(RuntimeBootstrapFailurePhase::Install),
+            );
+        }
+
+        let stored = status.lock().expect("status lock should succeed").clone();
+        assert_eq!(stored.state, RuntimeBootstrapState::Failed);
+        assert_eq!(
+            stored.failure_phase,
+            Some(RuntimeBootstrapFailurePhase::Install)
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, RUNTIME_BOOTSTRAP_ERROR_EVENT);
+        assert_eq!(events[0].1, stored);
     }
 
     #[test]
@@ -951,6 +1173,7 @@ mod tests {
                 candidate_version: None,
                 restart_required: false,
                 error: None,
+                failure_phase: None,
                 cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
@@ -1041,6 +1264,7 @@ mod tests {
                 candidate_version: None,
                 restart_required: false,
                 error: None,
+                failure_phase: None,
                 cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
