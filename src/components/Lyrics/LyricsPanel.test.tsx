@@ -101,6 +101,23 @@ const {
   ),
 }));
 
+const { mockLyricsSession } = vi.hoisted(() => ({
+  mockLyricsSession: {
+    scroll: {
+      requestResume: vi.fn(),
+      peekResumeGeneration: () => 0,
+      isUnlockSuppressed: () => false,
+      endUnlockSuppress: () => {},
+    },
+    getState: () => mockLyricsState,
+    readPositionMs: () => mockPlayerState.positionMs,
+    toAdjustedMs: (positionMs: number) => positionMs - mockLyricsState.offsetMs,
+    syncActiveLine: vi.fn(),
+    syncActiveWord: vi.fn(),
+    resetActiveIndexLatches: vi.fn(),
+  },
+}));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -127,6 +144,7 @@ vi.mock("@/stores/lyrics-store", () => ({
       getState: () => mockLyricsState,
     },
   ),
+  lyricsSession: mockLyricsSession,
 }));
 
 vi.mock("@/stores/settings-store", () => ({
@@ -215,6 +233,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockLyricsState.toggleLyricsAlignment.mockReset();
     mockLyricsState.songId = "song-1";
     mockLyricsState.adjustOffset.mockReset();
+    mockLyricsSession.scroll.requestResume.mockReset();
     mockSettingsState.lyricsFontStep = 0;
   });
 
@@ -245,7 +264,7 @@ describe("LyricsPanel contextual reveal", () => {
     );
   });
 
-  test("Follow button click invokes resume handler", () => {
+  test("Follow button click asks the session to resume auto-scroll", () => {
     mockLyricsState.lines = [
       line({ time_ms: 0, text: "line one", words: null }),
       line({ time_ms: 2000, text: "line two", words: null }),
@@ -267,6 +286,7 @@ describe("LyricsPanel contextual reveal", () => {
     act(() => {
       button.click();
     });
+    expect(mockLyricsSession.scroll.requestResume).toHaveBeenCalled();
 
     act(() => {
       root.unmount();

@@ -9,11 +9,9 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
+import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsStemModeSection } from "./SettingsStemModeSection";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-} from "./SettingsOverlay.context";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -42,20 +40,18 @@ vi.mock("react-i18next", async (importOriginal) => {
 describe("SettingsStemModeSection", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
-  test("renders the stem mode options and hide-upgrade-all checkbox", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        stemMode: "two_stem",
-        hideUpgradeAll: false,
-      },
+  test("renders the stem mode options and hide-upgrade-all checkbox", async () => {
+    const harness = await createInitializedSettingsHarness({
+      settings: { stem_mode: "two_stem", hide_upgrade_all: false },
     });
 
     const markup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <SettingsStemModeSection />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
 
     expect(markup).toContain("Separation Mode");
@@ -64,65 +60,51 @@ describe("SettingsStemModeSection", () => {
     expect(markup).toContain("Hide Upgrade All to 4-stem");
   });
 
-  test("checkbox is unchecked when hideUpgradeAll is false", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        stemMode: "two_stem",
-        hideUpgradeAll: false,
-      },
+  test("the checkbox mirrors the stored hide-upgrade-all preference", async () => {
+    const off = await createInitializedSettingsHarness({
+      settings: { hide_upgrade_all: false },
     });
-
     render(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={off.controller}>
         <SettingsStemModeSection />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(
+      false,
+    );
+    cleanup();
 
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
-    expect(checkbox.checked).toBe(false);
+    const on = await createInitializedSettingsHarness({
+      settings: { hide_upgrade_all: true },
+    });
+    render(
+      <SettingsControllerContext value={on.controller}>
+        <SettingsStemModeSection />
+      </SettingsControllerContext>,
+    );
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
-  test("checkbox is checked when hideUpgradeAll is true", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        stemMode: "four_stem",
-        hideUpgradeAll: true,
-      },
+  test("toggling the checkbox writes the preference", async () => {
+    const harness = await createInitializedSettingsHarness({
+      settings: { hide_upgrade_all: false },
     });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsStemModeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
-  });
-
-  test("toggling the checkbox calls toggleHideUpgradeAll", () => {
-    const toggleHideUpgradeAll = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          stemMode: "two_stem",
-          hideUpgradeAll: false,
-        },
-      },
-      { toggleHideUpgradeAll },
+    const setHideUpgradeAll = vi.spyOn(
+      harness.backend.settings,
+      "setHideUpgradeAll",
     );
 
     render(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <SettingsStemModeSection />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
-
-    const checkbox = screen.getByRole("checkbox");
     act(() => {
-      fireEvent.click(checkbox);
+      fireEvent.click(screen.getByRole("checkbox"));
     });
 
-    expect(toggleHideUpgradeAll).toHaveBeenCalledWith(true);
+    expect(setHideUpgradeAll).toHaveBeenCalledWith(true);
   });
 });

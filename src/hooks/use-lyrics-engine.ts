@@ -1,12 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
-import { Spring } from "@/lib/spring";
 import {
   createUserScrollGuard,
-  peekLyricsAutoScrollResumeGeneration,
-  readLyricsPlaybackClockMs,
-  requestLyricsAutoScrollResume,
-  syncLyricsActiveLine,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
   USER_SCROLL_PAUSE_MS,
@@ -14,14 +9,16 @@ import {
   type UserScrollGuard,
 } from "@/lib/lyrics-engine";
 import {
-  setLyricsCurrentTime,
-  sampleLyricsTimeFrame,
-} from "@/lib/lyrics-playback-time";
-import {
   lyricsLineRuntime,
   type LyricsLineRuntime,
 } from "@/lib/lyrics-line-runtime";
-import { useLyricsStore } from "@/stores/lyrics-store";
+import {
+  sampleLyricsTimeFrame,
+  setLyricsCurrentTime,
+} from "@/lib/lyrics-playback-time";
+import type { LyricsSession } from "@/lib/lyrics-session";
+import { Spring } from "@/lib/spring";
+import { lyricsSession as appLyricsSession } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 
 const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
@@ -37,6 +34,7 @@ export function useLyricsEngine(input: {
   viewportActive: boolean;
   layoutVersion?: string;
   lineRuntime?: LyricsLineRuntime;
+  session?: LyricsSession;
   onUserScrollActiveChange?: (active: boolean) => void;
 }): void {
   const {
@@ -48,6 +46,7 @@ export function useLyricsEngine(input: {
     viewportActive,
     layoutVersion = "",
     lineRuntime = lyricsLineRuntime,
+    session = appLyricsSession,
     onUserScrollActiveChange,
   } = input;
 
@@ -63,8 +62,6 @@ export function useLyricsEngine(input: {
     prevAdjustedMsRef: { current: null },
     lastResumeGenerationRef: { current: 0 },
   });
-  const prevActiveLineRef = useRef(-1);
-  const prevActiveWordIndexRef = useRef(-1);
   const lastSeekRevisionRef = useRef(usePlayerStore.getState().seekRevision);
   const engineSongIdRef = useRef<string | null | undefined>(undefined);
 
@@ -78,6 +75,7 @@ export function useLyricsEngine(input: {
     }
 
     const guard = createUserScrollGuard(container, USER_SCROLL_PAUSE_MS, {
+      scrollControl: session.scroll,
       onActiveChange: (active) => {
         onUserScrollActiveChangeRef.current?.(active);
       },
@@ -90,29 +88,29 @@ export function useLyricsEngine(input: {
       guardRef.current = null;
       onUserScrollActiveChangeRef.current?.(false);
     };
-  }, [containerRef, isPlainText, songId, viewportActive]);
+  }, [containerRef, isPlainText, session, songId, viewportActive]);
 
   useEffect(() => {
     lineRuntime.clear();
-    prevActiveLineRef.current = -1;
-    prevActiveWordIndexRef.current = -1;
-  }, [lineRuntime, songId]);
+    session.resetActiveIndexLatches();
+  }, [lineRuntime, session, songId]);
 
   useEffect(() => {
     if (isPlainText || !songId || !viewportActive) {
       return;
     }
 
-    const playerState = usePlayerStore.getState();
-    if (!shouldRunLyricsEngineLoop(playerState)) {
+    if (!shouldRunLyricsEngineLoop(usePlayerStore.getState())) {
       return;
     }
 
     const syncNow = () => {
-      const positionMs = readLyricsPlaybackClockMs();
+      const positionMs = session.readPositionMs();
       setLyricsCurrentTime(positionMs);
-      const adjustedMs = positionMs - useLyricsStore.getState().offsetMs;
-      syncLyricsActiveLine(prevActiveLineRef, adjustedMs);
+      if (!shouldRunLyricsEngineLoop(usePlayerStore.getState())) {
+        return;
+      }
+      session.syncActiveLine(session.toAdjustedMs(positionMs));
     };
     window.addEventListener("focus", syncNow);
 
@@ -133,7 +131,7 @@ export function useLyricsEngine(input: {
       scrollSpring.jumpTo(0);
       scrollState.targetScrollTopRef.current = null;
       scrollState.lastResumeGenerationRef.current =
-        peekLyricsAutoScrollResumeGeneration();
+        session.scroll.peekResumeGeneration();
 
       const container = containerRef.current;
       if (container) {
@@ -147,7 +145,7 @@ export function useLyricsEngine(input: {
         }
       }
     } else {
-      requestLyricsAutoScrollResume();
+      session.scroll.requestResume();
     }
 
     let rafId = 0;
@@ -161,10 +159,10 @@ export function useLyricsEngine(input: {
       const isSeek = playerState.seekRevision !== lastSeekRevisionRef.current;
       if (isSeek) {
         lastSeekRevisionRef.current = playerState.seekRevision;
-        requestLyricsAutoScrollResume();
+        session.scroll.requestResume();
       }
       setLyricsCurrentTime(
-        readLyricsPlaybackClockMs(() => now),
+        session.readPositionMs(() => now),
         { isSeek },
       );
       const frame = sampleLyricsTimeFrame();
@@ -174,13 +172,14 @@ export function useLyricsEngine(input: {
         isPlainText,
         scrollState,
         userScrollGuard: guardRef.current,
-        prevActiveLineRef,
-        prevActiveWordIndexRef,
+        session,
         lineRuntime,
         reducedMotion,
         dt,
         positionMs: frame.positionMs,
         isSeek: frame.isSeek,
+        hasSong: Boolean(playerState.snapshot?.song_id),
+        isPlaying: playerState.snapshot?.is_playing ?? false,
         audienceMode: presentation === "audience",
       });
 
@@ -197,6 +196,7 @@ export function useLyricsEngine(input: {
     isPlainText,
     lyricsFontStep,
     presentation,
+    session,
     songId,
     viewportActive,
     layoutVersion,
@@ -225,7 +225,7 @@ export function useLyricsEngine(input: {
       if (guardRef.current?.isActive()) {
         return;
       }
-      const { lines, activeLineIndex } = useLyricsStore.getState();
+      const { lines, activeLineIndex } = session.getState();
       if (lines.length === 0 || activeLineIndex < 0) {
         return;
       }
@@ -277,5 +277,5 @@ export function useLyricsEngine(input: {
       }
       observer.disconnect();
     };
-  }, [containerRef, isPlainText, viewportActive, songId]);
+  }, [containerRef, isPlainText, session, viewportActive, songId]);
 }

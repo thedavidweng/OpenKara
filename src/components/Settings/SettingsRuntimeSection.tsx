@@ -3,7 +3,7 @@ import { formatBytes } from "@/lib/format";
 import { runtimeFailureStatusKey } from "@/lib/runtime-failure-copy";
 import type { UpdatePolicy } from "@/types/ipc";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 
 const UPDATE_POLICY_OPTIONS = [
   {
@@ -29,10 +29,10 @@ const UPDATE_POLICY_OPTIONS = [
 
 export function SettingsRuntimeSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences, maintenance } = useSettings();
 
-  const runtime = state.runtimeStatus;
-  const update = state.runtimeUpdate;
+  const runtime = view.runtime.status;
+  const update = view.runtime.update;
   const runtimeState = runtime?.state;
 
   const isMissing = !runtime || runtimeState === "missing";
@@ -129,8 +129,8 @@ export function SettingsRuntimeSection() {
 
       {needsInstall ? (
         <button
-          onClick={() => void actions.downloadRuntime()}
-          disabled={meta.isInitializing || isDownloading}
+          onClick={() => void maintenance.installRuntime()}
+          disabled={view.isInitializing || isDownloading}
           data-testid="runtime-install-button"
           className="self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
         >
@@ -140,7 +140,7 @@ export function SettingsRuntimeSection() {
 
       {restartRequired ? (
         <button
-          onClick={() => void actions.restartApp()}
+          onClick={() => void maintenance.restartApp()}
           className="self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)]"
         >
           {t("settings.runtime.restartButton")}
@@ -150,9 +150,9 @@ export function SettingsRuntimeSection() {
       <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border-light)] pt-3">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void actions.checkRuntimeUpdates()}
+            onClick={() => void maintenance.checkRuntimeUpdates()}
             disabled={
-              meta.isInitializing ||
+              view.isInitializing ||
               isMissing ||
               downloadingCandidate ||
               update?.status === "checking"
@@ -204,7 +204,7 @@ export function SettingsRuntimeSection() {
               </span>
             </div>
             <button
-              onClick={() => void actions.updateRuntime()}
+              onClick={() => void maintenance.installRuntime()}
               disabled={downloadingCandidate}
               className="rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
             >
@@ -234,9 +234,11 @@ export function SettingsRuntimeSection() {
                 type="radio"
                 name="runtime-update-policy"
                 value={option.value}
-                checked={state.updatePolicy === option.value}
-                onChange={() => void actions.setUpdatePolicy(option.value)}
-                disabled={meta.isInitializing}
+                checked={view.preferences.updatePolicy === option.value}
+                onChange={() =>
+                  void preferences.set({ updatePolicy: option.value })
+                }
+                disabled={view.isInitializing}
                 className="mt-0.5 accent-[var(--color-accent)]"
               />
               <span className="flex flex-col">

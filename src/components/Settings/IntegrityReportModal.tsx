@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ShieldCheck, X } from "lucide-react";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import type { IntegrityReport, ManagedAssetIssue } from "@/types/ipc";
 
 const ASSET_TYPE_LABEL_KEYS: Record<string, string> = {
@@ -73,7 +73,7 @@ function ReportSection({
   selectable: boolean;
   t: TFunction;
 }) {
-  const { state, actions } = useSettingsOverlay();
+  const { view, library } = useSettings();
 
   if (count === 0) {
     return (
@@ -99,8 +99,8 @@ function ReportSection({
             key={`${issue.song_hash}-${issue.asset_type}-${issue.path}-${index}`}
             issue={issue}
             selectable={selectable}
-            selected={state.integritySelection.has(issue.song_hash)}
-            onToggle={() => actions.toggleIntegritySelection(issue.song_hash)}
+            selected={view.integrity.selection.has(issue.song_hash)}
+            onToggle={() => library.toggleIntegrityEntry(issue.song_hash)}
             t={t}
           />
         ))}
@@ -111,7 +111,8 @@ function ReportSection({
 
 export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, library, maintenance } = useSettings();
+  const integrity = view.integrity;
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = "integrity-report-modal-title";
@@ -119,10 +120,10 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
   useModalDialog({
     dialogRef,
     initialFocusRef: closeButtonRef,
-    onDismiss: actions.closeIntegrityReport,
+    onDismiss: library.dismissIntegrityReport,
   });
 
-  const hasSelection = state.integritySelection.size > 0;
+  const hasSelection = integrity.selection.size > 0;
   const totalIssues =
     report.missing_primary_media.length +
     report.empty_primary_media.length +
@@ -137,7 +138,7 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-busy={meta.integrityCleanupInProgress}
+        aria-busy={integrity.cleaningUp}
         tabIndex={-1}
         className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-xl"
       >
@@ -151,7 +152,7 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
           <button
             ref={closeButtonRef}
             type="button"
-            onClick={actions.closeIntegrityReport}
+            onClick={library.dismissIntegrityReport}
             aria-label={t("common.close")}
             className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
           >
@@ -178,11 +179,10 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
             ) : null}
           </div>
 
-          {state.integritySkippedCount != null &&
-          state.integritySkippedCount > 0 ? (
+          {integrity.skippedCount != null && integrity.skippedCount > 0 ? (
             <p className="text-[12px] text-[var(--color-text-dim)]">
               {t("settings.integrity.skippedNotice", {
-                count: state.integritySkippedCount,
+                count: integrity.skippedCount,
               })}
             </p>
           ) : null}
@@ -245,18 +245,20 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
         <div className="flex items-center justify-between border-t border-[var(--color-border-light)] px-4 py-3">
           <button
             type="button"
-            onClick={actions.closeIntegrityReport}
+            onClick={library.dismissIntegrityReport}
             className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
           >
             {t("common.close")}
           </button>
           <button
             type="button"
-            onClick={actions.openIntegrityCleanupConfirmDialog}
-            disabled={!hasSelection || meta.integrityCleanupInProgress}
+            onClick={() =>
+              void maintenance.openDialog("integrity_cleanup_confirm")
+            }
+            disabled={!hasSelection || integrity.cleaningUp}
             className="rounded-md border border-[var(--color-destructive)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] disabled:opacity-50"
           >
-            {meta.integrityCleanupInProgress
+            {integrity.cleaningUp
               ? t("common.deleting")
               : t("settings.integrity.removeSelected")}
           </button>

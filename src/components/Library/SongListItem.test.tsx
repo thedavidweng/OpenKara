@@ -2,8 +2,14 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import * as api from "@/lib/tauri";
+import { act, cleanup, fireEvent } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import type {
+  SongCommandDependencies,
+  SongCommandDialogs,
+} from "@/lib/song-commands";
+import { renderWithBackend } from "@/test-utils/backend";
 import { SongListItem } from "./SongListItem";
 import { buildSongListContextMenuItems } from "./song-list-item-menu";
 
@@ -14,7 +20,9 @@ const {
   mockSettingsState,
   mockBootstrapState,
   mockNativeContextMenu,
-  mockBuildContextMenu,
+  mockBuildMenu,
+  mockExecuteCommand,
+  songCommandDialogs,
 } = vi.hoisted(() => ({
   mockBootstrapState: {
     status: null as { state: string } | null,
@@ -51,7 +59,9 @@ const {
     close: vi.fn(),
   },
   mockNativeContextMenu: vi.fn(() => Promise.resolve()),
-  mockBuildContextMenu: vi.fn(() => []),
+  mockBuildMenu: vi.fn(() => []),
+  mockExecuteCommand: vi.fn(() => Promise.resolve()),
+  songCommandDialogs: { current: null as SongCommandDialogs | null },
 }));
 
 vi.mock("react-i18next", () => ({
@@ -111,14 +121,14 @@ vi.mock("@/stores/queue-store", () => ({
   },
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  separate: vi.fn(),
-  cancelSeparation: vi.fn(() => Promise.resolve()),
-  deleteSongs: vi.fn(),
-  batchSeparate: vi.fn(),
-  extractEmbeddedLyrics: vi.fn(),
-  fetchLyricsOnline: vi.fn(() => Promise.resolve({ lines: [] })),
-}));
+const mockCancelSeparation = vi.fn(() => Promise.resolve());
+const backend = createMockBackend({
+  overrides: { separation: { cancelSeparation: mockCancelSeparation } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
@@ -129,9 +139,11 @@ vi.mock("@/lib/native-context-menu", () => ({
   showNativeContextMenu: mockNativeContextMenu,
 }));
 
-vi.mock("./song-list-item-context-menu-build", () => ({
-  buildSongListContextMenuForSong: mockBuildContextMenu,
-  getSongListContextSongIds: (song: { hash: string }) => [song.hash],
+vi.mock("@/lib/song-commands", () => ({
+  createSongCommands: ({ dialogs }: SongCommandDependencies) => {
+    songCommandDialogs.current = dialogs;
+    return { buildMenu: mockBuildMenu, execute: mockExecuteCommand };
+  },
 }));
 
 vi.mock("./ContextMenu", () => ({
@@ -209,7 +221,7 @@ describe("SongListItem", () => {
 
     fireEvent.click(getByLabelText("library.cancelSeparation"));
 
-    expect(api.cancelSeparation).toHaveBeenCalledWith("song-cancel");
+    expect(mockCancelSeparation).toHaveBeenCalledWith("song-cancel");
 
     mockLibraryState.separationStatuses = {};
   });
@@ -279,10 +291,46 @@ describe("SongListItem", () => {
     });
 
     expect(mockNativeContextMenu).toHaveBeenCalledOnce();
+    expect(mockBuildMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ song }),
+    );
     expect(mockLibraryState.selectSong).toHaveBeenCalledWith(
       song.hash,
       { shiftKey: false, metaKey: false, ctrlKey: false },
       [song.hash],
+    );
+  });
+
+  test("dispatches one command when the new-playlist dialog is confirmed", () => {
+    const song = {
+      hash: "playlist-song",
+      file_path: "Artist/Playlist Song.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      title: "Playlist Song",
+      artist: "Artist",
+      album: null,
+      duration_ms: 180_000,
+      cover_art: null,
+      has_cover_art: false,
+      artwork_thumb_path: null,
+      imported_at: 0,
+      original_ext: "mp3",
+    };
+    const { getByRole, getByText } = render(
+      <SongListItem song={song} orderedHashes={[song.hash]} />,
+    );
+
+    act(() => songCommandDialogs.current?.createPlaylist());
+    fireEvent.change(getByRole("textbox"), { target: { value: "Duets" } });
+    fireEvent.click(getByText("common.save"));
+
+    expect(mockExecuteCommand).toHaveBeenCalledWith(
+      { id: "createPlaylistAndAdd", name: "Duets" },
+      expect.objectContaining({ song }),
     );
   });
 

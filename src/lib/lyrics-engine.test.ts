@@ -1,33 +1,15 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-
-vi.mock("@/stores/player-store", () => ({
-  usePlayerStore: { getState: vi.fn() },
-  selectCurrentPositionMs: vi.fn(),
-}));
-
-vi.mock("@/stores/lyrics-store", () => ({
-  useLyricsStore: { getState: vi.fn() },
-}));
-
+import { LyricsScrollControl } from "@/lib/lyrics-session";
 import { Spring } from "@/lib/spring";
-import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
-import { useLyricsStore } from "@/stores/lyrics-store";
 import {
   computeLineChangeLyricsScrollTop,
   createUserScrollGuard,
-  endLyricsAutoScrollUnlockSuppress,
   isLyricsPlaybackSeekJump,
-  peekLyricsAutoScrollResumeGeneration,
-  readLyricsAdjustedPlaybackMs,
-  requestLyricsAutoScrollResume,
-  resetLyricsEngineScrollControlForTests,
-  syncLyricsActiveLine,
   tickLyricsEngineScroll,
   USER_SCROLL_PAUSE_MS,
 } from "./lyrics-engine";
-import { resetLyricsPlaybackTimeForTests } from "./lyrics-playback-time";
 
 const PAUSE_MS = USER_SCROLL_PAUSE_MS;
 
@@ -35,11 +17,10 @@ function makeContainer(): HTMLDivElement {
   return document.createElement("div");
 }
 
+let scrollControl: LyricsScrollControl;
+
 beforeEach(() => {
-  // Module-level resume generation / unlock suppress / seek latch leak across
-  // cases and can make a later test pass via the wrong (explicit-resume) path.
-  resetLyricsEngineScrollControlForTests();
-  resetLyricsPlaybackTimeForTests();
+  scrollControl = new LyricsScrollControl();
 });
 
 describe("createUserScrollGuard", () => {
@@ -53,7 +34,7 @@ describe("createUserScrollGuard", () => {
 
   test("is inactive before any user interaction", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     expect(guard.isActive()).toBe(false);
 
@@ -64,7 +45,10 @@ describe("createUserScrollGuard", () => {
     vi.useRealTimers();
     const container = makeContainer();
     const onIdleRelock = vi.fn();
-    const guard = createUserScrollGuard(container, 30, { onIdleRelock });
+    const guard = createUserScrollGuard(container, 30, {
+      scrollControl,
+      onIdleRelock,
+    });
 
     expect(() => {
       container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
@@ -86,6 +70,7 @@ describe("createUserScrollGuard", () => {
     const onActiveChange = vi.fn();
     const onIdleRelock = vi.fn();
     const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
       onActiveChange,
       onIdleRelock,
     });
@@ -104,22 +89,21 @@ describe("createUserScrollGuard", () => {
 
   test("idle relock requests auto-scroll resume so viewport re-anchors", () => {
     const container = makeContainer();
-    const before = peekLyricsAutoScrollResumeGeneration();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
     expect(guard.isActive()).toBe(true);
 
     vi.advanceTimersByTime(PAUSE_MS);
     expect(guard.isActive()).toBe(false);
-    expect(peekLyricsAutoScrollResumeGeneration()).toBe(before + 1);
+    expect(scrollControl.peekResumeGeneration()).toBe(1);
 
     guard.destroy();
   });
 
   test("ignores layout-driven scroll events and unlocks during a pointer scroll", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     guard.withProgrammatic(() => {
       container.scrollTop = 120;
@@ -142,7 +126,7 @@ describe("createUserScrollGuard", () => {
 
   test("unlocks on touchmove without treating touchstart as a scroll", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     container.dispatchEvent(new Event("touchstart"));
     expect(guard.isActive()).toBe(false);
@@ -155,7 +139,7 @@ describe("createUserScrollGuard", () => {
 
   test("clear re-locks immediately (Follow / resetScroll)", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
     expect(guard.isActive()).toBe(true);
@@ -168,16 +152,16 @@ describe("createUserScrollGuard", () => {
 
   test("does not unlock from touch input while resume is suppressed", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
-    requestLyricsAutoScrollResume();
+    scrollControl.requestResume();
     container.dispatchEvent(new Event("touchstart"));
     container.dispatchEvent(new Event("touchmove"));
     container.scrollTop = 80;
     container.dispatchEvent(new Event("scroll"));
     expect(guard.isActive()).toBe(false);
 
-    endLyricsAutoScrollUnlockSuppress();
+    scrollControl.endUnlockSuppress();
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 20 }));
     expect(guard.isActive()).toBe(true);
@@ -187,7 +171,7 @@ describe("createUserScrollGuard", () => {
 
   test("ignores zero-delta wheel and no-op scroll noise", () => {
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS);
+    const guard = createUserScrollGuard(container, PAUSE_MS, { scrollControl });
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 0, deltaX: 0 }));
     expect(guard.isActive()).toBe(false);
@@ -198,6 +182,7 @@ describe("createUserScrollGuard", () => {
 
     const onActiveChange = vi.fn();
     const guard2 = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
       onActiveChange,
     });
     guard2.clear();
@@ -210,7 +195,10 @@ describe("createUserScrollGuard", () => {
   test("re-arms idle when wheel continues after an earlier unlock", () => {
     const onIdleRelock = vi.fn();
     const container = makeContainer();
-    const guard = createUserScrollGuard(container, PAUSE_MS, { onIdleRelock });
+    const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
+      onIdleRelock,
+    });
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 20 }));
     vi.advanceTimersByTime(PAUSE_MS - 100);
@@ -361,6 +349,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }],
       adjustedMs: 1000,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: true,
       dt: 0.016,
@@ -385,6 +374,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }],
       adjustedMs: 1100,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: true,
       dt: 0.016,
@@ -430,6 +420,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }],
       adjustedMs: 0,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: true,
       dt: 0.016,
@@ -443,6 +434,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }],
       adjustedMs: 1000,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: true,
       dt: 0.016,
@@ -462,6 +454,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }],
       adjustedMs: 0,
       scrollState,
+      scrollControl,
       userScrollGuard: {
         isActive: () => true,
         clear: () => {},
@@ -503,6 +496,7 @@ describe("tickLyricsEngineScroll", () => {
       adjustedMs: 1000,
       isSeek: true,
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: false,
       dt: 0.016,
@@ -536,6 +530,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
       adjustedMs: 15000,
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: false,
       dt: 0.016,
@@ -575,6 +570,7 @@ describe("tickLyricsEngineScroll", () => {
       adjustedMs: 15000,
       isSeek: true,
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: false,
       dt: 0.016,
@@ -605,13 +601,14 @@ describe("tickLyricsEngineScroll", () => {
     scrollSpring.jumpTo(0);
     scrollState.prevActiveIndexRef.current = 0;
 
-    requestLyricsAutoScrollResume();
+    scrollControl.requestResume();
 
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
       adjustedMs: 1000,
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: false,
       dt: 0.016,
@@ -625,6 +622,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
       adjustedMs: 15000,
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: false,
       dt: 0.016,
@@ -639,6 +637,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
       adjustedMs: 15016,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: false,
       dt: 0.016,
@@ -657,6 +656,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
       adjustedMs: 15000,
       scrollState,
+      scrollControl,
       userScrollGuard: {
         isActive: () => true,
         clear: () => {},
@@ -680,7 +680,7 @@ describe("tickLyricsEngineScroll", () => {
     scrollState.prevActiveIndexRef.current = 0;
     scrollState.prevAdjustedMsRef.current = 1000;
     scrollState.lastResumeGenerationRef.current =
-      peekLyricsAutoScrollResumeGeneration();
+      scrollControl.peekResumeGeneration();
     container.scrollTop = 0;
 
     container.scrollTop = 180;
@@ -699,13 +699,14 @@ describe("tickLyricsEngineScroll", () => {
     };
 
     guardActive = false;
-    requestLyricsAutoScrollResume();
+    scrollControl.requestResume();
 
     tickLyricsEngineScroll({
       container,
       lines,
       adjustedMs: 2000, // still line 0
       scrollState,
+      scrollControl,
       userScrollGuard: guard,
       reducedMotion: true, // snap without spring settle loop
       dt: 0.016,
@@ -733,6 +734,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }],
       adjustedMs: 1000,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: false,
       // Large enough that a 100ms advance is still "natural", not a seek jump.
@@ -787,6 +789,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],
       adjustedMs: 1000,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: false,
       dt: 0.016,
@@ -799,6 +802,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],
       adjustedMs: 1016,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: false,
       dt: 0.016,
@@ -810,6 +814,7 @@ describe("tickLyricsEngineScroll", () => {
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],
       adjustedMs: 2000,
       scrollState,
+      scrollControl,
       userScrollGuard: null,
       reducedMotion: true,
       dt: 0.016,
@@ -817,60 +822,5 @@ describe("tickLyricsEngineScroll", () => {
 
     expect(scrollState.prevActiveIndexRef.current).toBe(2);
     expect(container.scrollTop).toBe(320);
-  });
-});
-
-describe("syncLyricsActiveLine", () => {
-  test("updates the active line while playing", () => {
-    const setActiveLineIndex = vi.fn();
-    vi.mocked(useLyricsStore.getState).mockReturnValue({
-      lines: [
-        { time_ms: 0, text: "Intro" },
-        { time_ms: 1000, text: "Line one" },
-        { time_ms: 2000, text: "Line two" },
-        { time_ms: 3000, text: "Line three" },
-      ],
-      offsetMs: 0,
-      setActiveLineIndex,
-    } as unknown as ReturnType<(typeof useLyricsStore)["getState"]>);
-    vi.mocked(usePlayerStore.getState).mockReturnValue({
-      snapshot: { song_id: "song-1", is_playing: true },
-      positionMs: 2500,
-      playingSinceMs: 1000,
-    } as ReturnType<(typeof usePlayerStore)["getState"]>);
-    vi.mocked(selectCurrentPositionMs).mockReturnValue(2500);
-
-    const ref = { current: -1 };
-    syncLyricsActiveLine(ref, 2500);
-
-    expect(setActiveLineIndex).toHaveBeenCalledWith(2);
-    expect(ref.current).toBe(2);
-  });
-});
-
-describe("readLyricsAdjustedPlaybackMs", () => {
-  test("returns local positionMs - offsetMs (ignores AirPlay clock)", () => {
-    vi.mocked(usePlayerStore.getState).mockReturnValue({
-      snapshot: null,
-      positionMs: 5000,
-      playingSinceMs: null,
-      airPlayOutput: {
-        active: true,
-        audioActive: true,
-        routeName: "TV",
-        mode: "lyrics",
-        phase: "playing",
-        detail: null,
-        displayedPositionMs: 99999,
-        streamGeneration: 1,
-        latencyMs: 200,
-      },
-    } as ReturnType<(typeof usePlayerStore)["getState"]>);
-    vi.mocked(selectCurrentPositionMs).mockReturnValue(5000);
-    vi.mocked(useLyricsStore.getState).mockReturnValue({
-      offsetMs: 200,
-    } as ReturnType<(typeof useLyricsStore)["getState"]>);
-
-    expect(readLyricsAdjustedPlaybackMs()).toBe(4800);
   });
 });

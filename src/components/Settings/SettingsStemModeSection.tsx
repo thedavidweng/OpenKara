@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import type { StemMode } from "@/types/ipc";
 
 interface StemModeOptionProps {
@@ -37,10 +37,12 @@ function StemModeOption({
 
 export function SettingsStemModeSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences } = useSettings();
+  const { isInitializing } = view;
+  const settings = view.preferences;
 
   const selectMode = (mode: StemMode) => {
-    void actions.setStemMode(mode);
+    void preferences.set({ stemMode: mode });
   };
 
   return (
@@ -50,15 +52,15 @@ export function SettingsStemModeSection() {
     >
       <div className="flex gap-2">
         <StemModeOption
-          selected={state.stemMode === "two_stem"}
-          disabled={meta.isInitializing}
+          selected={settings.stemMode === "two_stem"}
+          disabled={isInitializing}
           title={t("settings.stemMode.twoStem")}
           description={t("settings.stemMode.twoStemDescription")}
           onClick={() => selectMode("two_stem")}
         />
         <StemModeOption
-          selected={state.stemMode === "four_stem"}
-          disabled={meta.isInitializing}
+          selected={settings.stemMode === "four_stem"}
+          disabled={isInitializing}
           title={t("settings.stemMode.fourStem")}
           description={t("settings.stemMode.fourStemDescription")}
           onClick={() => selectMode("four_stem")}
@@ -69,11 +71,11 @@ export function SettingsStemModeSection() {
         <label className="flex items-center gap-3">
           <input
             type="checkbox"
-            checked={state.hideUpgradeAll}
+            checked={settings.hideUpgradeAll}
             onChange={(event) =>
-              void actions.toggleHideUpgradeAll(event.target.checked)
+              void preferences.set({ hideUpgradeAll: event.target.checked })
             }
-            disabled={meta.isInitializing}
+            disabled={isInitializing}
             className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
           />
           <span className="text-[13px] text-[var(--color-text)]">

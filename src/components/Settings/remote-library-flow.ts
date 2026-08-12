@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type RemoteRepositoryBackend } from "@/lib/backend";
 import type {
   LibraryRegistrySnapshot,
   RemoteAuthPayload,
@@ -24,17 +24,18 @@ export interface WebDavRemoteLibraryFields {
   rootPath: string;
 }
 
-export interface RemoteLibraryFlowApi {
-  beginRemoteAuth: typeof api.beginRemoteAuth;
-  openExternalUrl: typeof api.openExternalUrl;
-  pollRemoteAuth: typeof api.pollRemoteAuth;
-  createRemoteLibrary: typeof api.createRemoteLibrary;
-  resolveRemoteLibraryCandidate: typeof api.resolveRemoteLibraryCandidate;
-  registerRemoteLibrary: typeof api.registerRemoteLibrary;
-  reauthorizeRemoteRepository: typeof api.reauthorizeRemoteRepository;
-  relocateRemoteRepository: typeof api.relocateRemoteRepository;
-  cancelRemoteAuth: typeof api.cancelRemoteAuth;
-}
+export type RemoteLibraryFlowApi = Pick<
+  RemoteRepositoryBackend,
+  | "beginRemoteAuth"
+  | "openExternalUrl"
+  | "pollRemoteAuth"
+  | "createRemoteLibrary"
+  | "resolveRemoteLibraryCandidate"
+  | "registerRemoteLibrary"
+  | "reauthorizeRemoteRepository"
+  | "relocateRemoteRepository"
+  | "cancelRemoteAuth"
+>;
 
 interface PollRemoteAuthUntilReadyOptions {
   sessionId: string;
@@ -68,17 +69,8 @@ export interface RemoteLibraryRegistrationFlowResult {
   registry: LibraryRegistrySnapshot;
 }
 
-const defaultRemoteLibraryFlowApi: RemoteLibraryFlowApi = {
-  beginRemoteAuth: api.beginRemoteAuth,
-  openExternalUrl: api.openExternalUrl,
-  pollRemoteAuth: api.pollRemoteAuth,
-  createRemoteLibrary: api.createRemoteLibrary,
-  resolveRemoteLibraryCandidate: api.resolveRemoteLibraryCandidate,
-  registerRemoteLibrary: api.registerRemoteLibrary,
-  reauthorizeRemoteRepository: api.reauthorizeRemoteRepository,
-  relocateRemoteRepository: api.relocateRemoteRepository,
-  cancelRemoteAuth: api.cancelRemoteAuth,
-};
+const defaultRemoteLibraryFlowApi: RemoteLibraryFlowApi =
+  tauriBackend.remoteRepository;
 
 function defaultWait(durationMs: number) {
   return new Promise<void>((resolve) => {

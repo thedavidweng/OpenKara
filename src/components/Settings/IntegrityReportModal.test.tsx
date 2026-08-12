@@ -1,13 +1,13 @@
+// @vitest-environment jsdom
+
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { IntegrityReportModal } from "./IntegrityReportModal";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-  type SettingsOverlayContextValue,
-} from "./SettingsOverlay.context";
+import type { SettingsController } from "@/lib/settings-controller";
+import { createSettingsHarness } from "@/test-utils/settings-controller";
 import type { IntegrityReport } from "@/types/ipc";
+import { IntegrityReportModal } from "./IntegrityReportModal";
+import { SettingsControllerContext } from "./SettingsController.context";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -72,21 +72,28 @@ const sampleReport: IntegrityReport = {
   orphaned_managed_files: ["stems/orphan1.wav", "stems/orphan2.wav"],
 };
 
-function renderWithContext(
-  node: ReactElement,
-  value: SettingsOverlayContextValue,
-) {
+function markupOf(node: ReactElement, controller: SettingsController) {
   return renderToStaticMarkup(
-    <SettingsOverlayContext value={value}>{node}</SettingsOverlayContext>,
+    <SettingsControllerContext value={controller}>
+      {node}
+    </SettingsControllerContext>,
   );
 }
 
+async function checkedHarness(report: IntegrityReport) {
+  const harness = createSettingsHarness({
+    overrides: { library: { checkLibraryIntegrity: async () => report } },
+  });
+  await harness.controller.library.checkIntegrity();
+  return harness;
+}
+
 describe("IntegrityReportModal", () => {
-  test("renders report title and summary counts", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders report title and summary counts", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("settings.integrity.reportTitle");
@@ -99,11 +106,11 @@ describe("IntegrityReportModal", () => {
     expect(markup).toContain('aria-labelledby="integrity-report-modal-title"');
   });
 
-  test("renders all five section headers with counts", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders all five section headers with counts", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("settings.integrity.missingPrimary");
@@ -113,38 +120,37 @@ describe("IntegrityReportModal", () => {
     expect(markup).toContain("settings.integrity.orphanedFiles");
   });
 
-  test("renders no-issues message for empty sections", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders no-issues message for empty sections", async () => {
+    const harness = await checkedHarness(emptyReport);
+    const markup = markupOf(
       <IntegrityReportModal report={emptyReport} />,
-      value,
+      harness.controller,
     );
 
-    const noIssuesCount = (markup.match(/settings\.integrity\.noIssues/g) ?? [])
-      .length;
-    expect(noIssuesCount).toBe(5);
+    expect((markup.match(/settings\.integrity\.noIssues/g) ?? []).length).toBe(
+      5,
+    );
     expect(markup).toContain("settings.integrity.allClean");
   });
 
-  test("renders checkboxes for primary media issues (selectable)", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders checkboxes for primary media issues (selectable)", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
-    const checkboxCount = (markup.match(/type="checkbox"/g) ?? []).length;
-    expect(checkboxCount).toBe(2);
+    expect((markup.match(/type="checkbox"/g) ?? []).length).toBe(2);
     expect(markup).toContain(
       'aria-label="settings.integrity.assetTypePrimaryMedia',
     );
   });
 
-  test("renders asset type labels for known asset types", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders asset type labels for known asset types", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("settings.integrity.assetTypePrimaryMedia");
@@ -152,74 +158,87 @@ describe("IntegrityReportModal", () => {
     expect(markup).toContain("settings.integrity.assetTypeStemVocals");
   });
 
-  test("renders orphaned file paths", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders orphaned file paths", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("stems/orphan1.wav");
     expect(markup).toContain("stems/orphan2.wav");
   });
 
-  test("renders remove-selected button", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: { integritySelection: new Set(["hash-aaaaaaaa"]) },
-    });
-    const markup = renderWithContext(
+  test("renders remove-selected and close buttons", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("settings.integrity.removeSelected");
+    expect(markup).toContain("common.close");
   });
 
-  test("renders skipped notice when integritySkippedCount is set", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: { integritySkippedCount: 3 },
+  test("renders the skipped notice after a cleanup skipped entries", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => sampleReport,
+          removeMissingLibraryEntries: async () => ({
+            deleted_song_hashes: ["hash-aaaaaaaa"],
+            skipped_song_hashes: ["a", "b", "c"],
+          }),
+        },
+      },
     });
-    const markup = renderWithContext(
+    await harness.controller.library.checkIntegrity();
+    await harness.controller.library.cleanUpIntegrity();
+
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("settings.integrity.skippedNotice");
     expect(markup).toContain("count=3");
   });
 
-  test("does not render skipped notice when integritySkippedCount is null", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders no skipped notice when nothing was skipped", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => sampleReport,
+          removeMissingLibraryEntries: async () => ({
+            deleted_song_hashes: ["hash-aaaaaaaa"],
+            skipped_song_hashes: [],
+          }),
+        },
+      },
+    });
+    await harness.controller.library.checkIntegrity();
+    await harness.controller.library.cleanUpIntegrity();
+
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).not.toContain("settings.integrity.skippedNotice");
   });
 
-  test("renders close button", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
-      <IntegrityReportModal report={emptyReport} />,
-      value,
-    );
-
-    expect(markup).toContain("common.close");
-  });
-
-  test("renders song hash prefix in issue rows", () => {
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+  test("renders song hash prefix in issue rows", async () => {
+    const harness = await checkedHarness(sampleReport);
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("hash-aa");
     expect(markup).toContain("hash-bb");
   });
 
-  test("falls back to raw asset type label for unknown asset types", () => {
+  test("falls back to raw asset type label for unknown asset types", async () => {
     const report: IntegrityReport = {
       ...emptyReport,
       missing_optional_assets: [
@@ -230,57 +249,50 @@ describe("IntegrityReportModal", () => {
         },
       ],
     };
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+    const harness = await checkedHarness(report);
+    const markup = markupOf(
       <IntegrityReportModal report={report} />,
-      value,
+      harness.controller,
     );
+
     expect(markup).toContain("custom_sidecar");
     expect(markup).toContain("extra/file.bin");
   });
 
-  test("renders empty-path placeholder for issues without a path", () => {
+  test("renders empty-path placeholder for issues without a path", async () => {
     const report: IntegrityReport = {
       ...emptyReport,
       missing_optional_assets: [
-        {
-          song_hash: "hash-nopath",
-          asset_type: "cdg",
-          path: "",
-        },
+        { song_hash: "hash-nopath", asset_type: "cdg", path: "" },
       ],
     };
-    const value = createSettingsOverlayTestContextValue();
-    const markup = renderWithContext(
+    const harness = await checkedHarness(report);
+    const markup = markupOf(
       <IntegrityReportModal report={report} />,
-      value,
+      harness.controller,
     );
+
     expect(markup).toContain("settings.integrity.emptyPath");
   });
 
-  test("shows deleting label while integrity cleanup is in progress", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: { integritySelection: new Set(["hash-aaaaaaaa"]) },
-      meta: { integrityCleanupInProgress: true },
+  test("shows deleting label while integrity cleanup is in progress", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => sampleReport,
+          removeMissingLibraryEntries: () => new Promise(() => {}),
+        },
+      },
     });
-    const markup = renderWithContext(
+    await harness.controller.library.checkIntegrity();
+    void harness.controller.library.cleanUpIntegrity();
+
+    const markup = markupOf(
       <IntegrityReportModal report={sampleReport} />,
-      value,
+      harness.controller,
     );
 
     expect(markup).toContain("common.deleting");
     expect(markup).toContain("disabled");
-  });
-
-  test("does not show skipped notice when integritySkippedCount is zero", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: { integritySkippedCount: 0 },
-    });
-    const markup = renderWithContext(
-      <IntegrityReportModal report={sampleReport} />,
-      value,
-    );
-
-    expect(markup).not.toContain("settings.integrity.skippedNotice");
   });
 });

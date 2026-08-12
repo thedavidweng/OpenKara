@@ -9,11 +9,9 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
+import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsCrossfadeSection } from "./SettingsCrossfadeSection";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-} from "./SettingsOverlay.context";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -34,23 +32,51 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
+async function createCrossfadeHarness(
+  crossfadeEnabled: boolean,
+  crossfadeDurationMs = 3_000,
+) {
+  const harness = await createInitializedSettingsHarness({
+    settings: {
+      crossfade_enabled: crossfadeEnabled,
+      crossfade_duration_ms: crossfadeDurationMs,
+    },
+  });
+  const rendered = render(
+    <SettingsControllerContext value={harness.controller}>
+      <SettingsCrossfadeSection />
+    </SettingsControllerContext>,
+  );
+
+  return {
+    harness,
+    rendered,
+    setCrossfadeEnabled: vi.spyOn(
+      harness.backend.settings,
+      "setCrossfadeEnabled",
+    ),
+    setCrossfadeDurationMs: vi.spyOn(
+      harness.backend.settings,
+      "setCrossfadeDurationMs",
+    ),
+  };
+}
+
 describe("SettingsCrossfadeSection", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
-  test("renders the enable checkbox and duration slider", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: true,
-        crossfadeDurationMs: 5_000,
-      },
+  test("renders the enable checkbox and duration slider", async () => {
+    const harness = await createInitializedSettingsHarness({
+      settings: { crossfade_enabled: true, crossfade_duration_ms: 5_000 },
     });
 
     const markup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
 
     expect(markup).toContain("Crossfade");
@@ -59,92 +85,38 @@ describe("SettingsCrossfadeSection", () => {
     expect(markup).toContain("5.0 s");
   });
 
-  test("checkbox is unchecked when crossfade is disabled", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: false,
-        crossfadeDurationMs: 3_000,
-      },
-    });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
+  test("the checkbox mirrors whether crossfade is enabled", async () => {
+    await createCrossfadeHarness(false);
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(
+      false,
     );
+    cleanup();
 
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
-    expect(checkbox.checked).toBe(false);
+    await createCrossfadeHarness(true);
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
-  test("checkbox is checked when crossfade is enabled", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: true,
-        crossfadeDurationMs: 3_000,
-      },
-    });
+  test("toggling the checkbox enables crossfade", async () => {
+    const { setCrossfadeEnabled } = await createCrossfadeHarness(false);
 
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
-  });
-
-  test("toggling the checkbox calls setCrossfadeEnabled", () => {
-    const setCrossfadeEnabled = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: false,
-          crossfadeDurationMs: 3_000,
-        },
-      },
-      { setCrossfadeEnabled },
-    );
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const checkbox = screen.getByRole("checkbox");
     act(() => {
-      fireEvent.click(checkbox);
+      fireEvent.click(screen.getByRole("checkbox"));
     });
 
     expect(setCrossfadeEnabled).toHaveBeenCalledWith(true);
   });
 
-  test("changing the slider calls setCrossfadeDurationMs after debounce", () => {
+  test("changing the slider commits after the debounce", async () => {
+    const { setCrossfadeDurationMs } = await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-      },
-      { setCrossfadeDurationMs },
-    );
 
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const slider = screen.getByRole("slider");
     act(() => {
-      fireEvent.change(slider, { target: { value: "5000" } });
+      fireEvent.change(screen.getByRole("slider"), {
+        target: { value: "5000" },
+      });
     });
-
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
 
     act(() => {
@@ -155,31 +127,14 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
-  test("pointer release flushes the debounced commit immediately", () => {
+  test("pointer release flushes the debounced commit immediately", async () => {
+    const { setCrossfadeDurationMs } = await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-        meta: { isInitializing: false },
-      },
-      { setCrossfadeDurationMs },
-    );
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
 
     const slider = screen.getByRole("slider");
     act(() => {
       fireEvent.change(slider, { target: { value: "7000" } });
     });
-
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
 
     act(() => {
@@ -190,31 +145,14 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
-  test("key release flushes the debounced commit immediately", () => {
+  test("key release flushes the debounced commit immediately", async () => {
+    const { setCrossfadeDurationMs } = await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-        meta: { isInitializing: false },
-      },
-      { setCrossfadeDurationMs },
-    );
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
 
     const slider = screen.getByRole("slider");
     act(() => {
       fireEvent.change(slider, { target: { value: "8000" } });
     });
-
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
 
     act(() => {
@@ -225,85 +163,34 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
-  test("slider is disabled when crossfade is disabled", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: false,
-        crossfadeDurationMs: 3_000,
-      },
-    });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
+  test("the slider follows whether crossfade is enabled", async () => {
+    await createCrossfadeHarness(false);
+    expect((screen.getByRole("slider") as HTMLInputElement).disabled).toBe(
+      true,
     );
+    cleanup();
 
-    const slider = screen.getByRole("slider") as HTMLInputElement;
-    expect(slider.disabled).toBe(true);
+    await createCrossfadeHarness(true);
+    expect((screen.getByRole("slider") as HTMLInputElement).disabled).toBe(
+      false,
+    );
   });
 
-  test("slider is enabled when crossfade is enabled", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: true,
-        crossfadeDurationMs: 3_000,
-      },
-      meta: { isInitializing: false },
-    });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const slider = screen.getByRole("slider") as HTMLInputElement;
-    expect(slider.disabled).toBe(false);
-  });
-
-  test("displays duration in seconds with one decimal place", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: true,
-        crossfadeDurationMs: 7_500,
-      },
-    });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
+  test("displays duration in seconds with one decimal place", async () => {
+    await createCrossfadeHarness(true, 7_500);
 
     expect(screen.getByText("7.5 s")).toBeDefined();
   });
 
-  test("change with same value as current draft does not schedule a commit", () => {
+  test("a change back to the current value schedules nothing", async () => {
+    const { setCrossfadeDurationMs } = await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-        meta: { isInitializing: false },
-      },
-      { setCrossfadeDurationMs },
-    );
 
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const slider = screen.getByRole("slider");
     act(() => {
-      fireEvent.change(slider, { target: { value: "3000" } });
+      fireEvent.change(screen.getByRole("slider"), {
+        target: { value: "3000" },
+      });
     });
-
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -312,25 +199,9 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
-  test("second change replaces the pending debounce timer", () => {
+  test("a second change replaces the pending debounce timer", async () => {
+    const { setCrossfadeDurationMs } = await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-        meta: { isInitializing: false },
-      },
-      { setCrossfadeDurationMs },
-    );
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
 
     const slider = screen.getByRole("slider");
     act(() => {
@@ -339,7 +210,6 @@ describe("SettingsCrossfadeSection", () => {
     act(() => {
       fireEvent.change(slider, { target: { value: "5000" } });
     });
-
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -349,32 +219,17 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
-  test("unmount cancels pending debounced commit without flushing", () => {
+  test("unmount cancels the pending debounced commit without flushing", async () => {
+    const { rendered, setCrossfadeDurationMs } =
+      await createCrossfadeHarness(true);
     vi.useFakeTimers();
-    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          crossfadeEnabled: true,
-          crossfadeDurationMs: 3_000,
-        },
-        meta: { isInitializing: false },
-      },
-      { setCrossfadeDurationMs },
-    );
 
-    const { unmount } = render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const slider = screen.getByRole("slider");
     act(() => {
-      fireEvent.change(slider, { target: { value: "6000" } });
+      fireEvent.change(screen.getByRole("slider"), {
+        target: { value: "6000" },
+      });
     });
-
-    unmount();
+    rendered.unmount();
 
     act(() => {
       vi.advanceTimersByTime(75);
@@ -382,26 +237,5 @@ describe("SettingsCrossfadeSection", () => {
 
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
     vi.useRealTimers();
-  });
-
-  test("default context actions are callable no-ops", async () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        crossfadeEnabled: false,
-        crossfadeDurationMs: 3_000,
-      },
-      meta: { isInitializing: false },
-    });
-
-    render(
-      <SettingsOverlayContext value={value}>
-        <SettingsCrossfadeSection />
-      </SettingsOverlayContext>,
-    );
-
-    const checkbox = screen.getByRole("checkbox", { name: "Enable crossfade" });
-    await act(async () => {
-      fireEvent.click(checkbox);
-    });
   });
 });

@@ -2,13 +2,15 @@ import { useTranslation } from "react-i18next";
 import { SUPPORTED_LANGUAGES } from "@/lib/i18n";
 import type { ThemePreference } from "@/types/ipc";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 
 const THEME_OPTIONS: ThemePreference[] = ["system", "light", "dark"];
 
 export function SettingsGeneralSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences } = useSettings();
+  const { isInitializing } = view;
+  const settings = view.preferences;
 
   return (
     <SettingsSectionCard title={t("settings.language.label")}>
@@ -30,9 +32,11 @@ export function SettingsGeneralSection() {
                   type="radio"
                   name="theme-preference"
                   value={option}
-                  checked={state.themePreference === option}
-                  onChange={() => void actions.setThemePreference(option)}
-                  disabled={meta.isInitializing}
+                  checked={settings.themePreference === option}
+                  onChange={() =>
+                    void preferences.set({ themePreference: option })
+                  }
+                  disabled={isInitializing}
                   className="accent-[var(--color-accent)]"
                 />
                 {t(`settings.appearance.${option}`)}
@@ -45,11 +49,13 @@ export function SettingsGeneralSection() {
           <label className="flex items-center gap-3">
             <input
               type="checkbox"
-              checked={state.hideBatchSeparate}
+              checked={settings.hideBatchSeparate}
               onChange={(event) =>
-                void actions.toggleHideBatchSeparate(event.target.checked)
+                void preferences.set({
+                  hideBatchSeparate: event.target.checked,
+                })
               }
-              disabled={meta.isInitializing}
+              disabled={isInitializing}
               className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
             />
             <span className="text-[13px] text-[var(--color-text)]">
@@ -65,11 +71,13 @@ export function SettingsGeneralSection() {
           <label className="flex items-center gap-3">
             <input
               type="checkbox"
-              checked={!state.coverArtBackdrop}
+              checked={!settings.coverArtBackdrop}
               onChange={(event) =>
-                void actions.toggleCoverArtBackdrop(!event.target.checked)
+                void preferences.set({
+                  coverArtBackdrop: !event.target.checked,
+                })
               }
-              disabled={meta.isInitializing}
+              disabled={isInitializing}
               className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
             />
             <span className="text-[13px] text-[var(--color-text)]">
@@ -107,9 +115,11 @@ export function SettingsGeneralSection() {
           <select
             id="settings-language"
             aria-label={t("settings.language.label")}
-            value={state.language}
-            onChange={(event) => void actions.setLanguage(event.target.value)}
-            disabled={meta.isInitializing}
+            value={settings.language}
+            onChange={(event) =>
+              void preferences.set({ language: event.target.value })
+            }
+            disabled={isInitializing}
             className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none disabled:opacity-50"
           >
             {SUPPORTED_LANGUAGES.map((language) => (

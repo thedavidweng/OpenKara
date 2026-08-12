@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 
 const mockOpen = vi.hoisted(() => vi.fn());
 const mockCreateLocalLibrary = vi.hoisted(() => vi.fn());
@@ -32,14 +33,25 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: mockOpen,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  setLanguage: mockSetLanguage,
-  createLocalLibrary: mockCreateLocalLibrary,
-  registerLocalLibrary: vi.fn(),
-  setStemMode: mockSetStemMode,
-  setModelVariant: mockSetModelVariant,
-  cancelRemoteAuth: vi.fn(),
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    settings: {
+      setLanguage: mockSetLanguage,
+      setStemMode: mockSetStemMode,
+      setModelVariant: mockSetModelVariant,
+    },
+    librarySetup: {
+      createLocalLibrary: mockCreateLocalLibrary,
+      registerLocalLibrary: vi.fn(),
+    },
+    remoteRepository: { cancelRemoteAuth: vi.fn() },
+  },
+});
 
 vi.mock("@/stores/settings-store", () => ({
   useSettingsStore: Object.assign(

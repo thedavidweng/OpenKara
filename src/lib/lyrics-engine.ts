@@ -1,40 +1,13 @@
 import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
-import {
-  findActiveLyricLineIndex,
-  findActiveWordIndex,
-} from "@/lib/lyrics-timing";
 import type { LyricsLineRuntime } from "@/lib/lyrics-line-runtime";
-import { selectCurrentPositionMs } from "@/stores/player-store";
-import { useLyricsStore } from "@/stores/lyrics-store";
-import { usePlayerStore } from "@/stores/player-store";
+import type { LyricsScrollControl, LyricsSession } from "@/lib/lyrics-session";
+import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import type { Spring } from "@/lib/spring";
 
 const USER_SCROLL_PAUSE_MS = 4000;
 const SEEK_JUMP_MS = 400;
 
 export { USER_SCROLL_PAUSE_MS, SEEK_JUMP_MS };
-
-let autoScrollResumeGeneration = 0;
-let autoScrollUnlockSuppressed = false;
-
-export function requestLyricsAutoScrollResume(): void {
-  autoScrollResumeGeneration += 1;
-  // Suppress unlock until withProgrammatic writes scrollTop (click scroll-into-view).
-  autoScrollUnlockSuppressed = true;
-}
-
-export function peekLyricsAutoScrollResumeGeneration(): number {
-  return autoScrollResumeGeneration;
-}
-
-export function endLyricsAutoScrollUnlockSuppress(): void {
-  autoScrollUnlockSuppressed = false;
-}
-
-export function resetLyricsEngineScrollControlForTests(): void {
-  autoScrollResumeGeneration = 0;
-  autoScrollUnlockSuppressed = false;
-}
 
 export interface UserScrollGuard {
   isActive: () => boolean;
@@ -48,21 +21,23 @@ export function createUserScrollGuard(
   container: HTMLElement,
   pauseMs: number,
   options: {
+    scrollControl: LyricsScrollControl;
     timers?: {
       setTimeout: typeof globalThis.setTimeout;
       clearTimeout: typeof globalThis.clearTimeout;
     };
     onActiveChange?: (active: boolean) => void;
     onIdleRelock?: () => void;
-  } = {},
+  },
 ): UserScrollGuard {
+  const scrollControl = options.scrollControl;
   const timers = options.timers ?? {
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
   };
   const onActiveChange = options.onActiveChange;
   const onIdleRelock =
-    options.onIdleRelock ?? (() => requestLyricsAutoScrollResume());
+    options.onIdleRelock ?? (() => scrollControl.requestResume());
 
   let unlocked = false;
   let programmaticDepth = 0;
@@ -88,7 +63,7 @@ export function createUserScrollGuard(
   };
 
   const unlockFromUser = () => {
-    if (autoScrollUnlockSuppressed) {
+    if (scrollControl.isUnlockSuppressed()) {
       return;
     }
     setUnlocked(true);
@@ -166,55 +141,6 @@ export function createUserScrollGuard(
   };
 }
 
-export function readLyricsAdjustedPlaybackMs(
-  nowMs = () => performance.now(),
-): number {
-  const playerState = usePlayerStore.getState();
-  const { offsetMs } = useLyricsStore.getState();
-  const positionMs = selectCurrentPositionMs(
-    {
-      snapshot: playerState.snapshot,
-      positionMs: playerState.positionMs,
-      playingSinceMs: playerState.playingSinceMs,
-    },
-    nowMs,
-  );
-  return positionMs - offsetMs;
-}
-
-export function readLyricsPlaybackClockMs(
-  nowMs = () => performance.now(),
-): number {
-  const playerState = usePlayerStore.getState();
-  return selectCurrentPositionMs(
-    {
-      snapshot: playerState.snapshot,
-      positionMs: playerState.positionMs,
-      playingSinceMs: playerState.playingSinceMs,
-    },
-    nowMs,
-  );
-}
-
-export function syncLyricsActiveLine(
-  prevIndexRef: { current: number },
-  adjustedMs: number,
-): void {
-  const state = usePlayerStore.getState();
-  const { lines, setActiveLineIndex } = useLyricsStore.getState();
-
-  if (!state.snapshot?.song_id || lines.length === 0) {
-    return;
-  }
-
-  const index = findActiveLyricLineIndex(lines, adjustedMs);
-
-  if (index !== prevIndexRef.current) {
-    prevIndexRef.current = index;
-    setActiveLineIndex(index);
-  }
-}
-
 export function computeLineChangeLyricsScrollTop(
   container: HTMLElement,
   lines: { time_ms: number }[],
@@ -270,6 +196,7 @@ export function tickLyricsEngineScroll(input: {
   adjustedMs: number;
   isSeek?: boolean;
   scrollState: LyricsEngineScrollState;
+  scrollControl: LyricsScrollControl;
   userScrollGuard: UserScrollGuard | null;
   reducedMotion: boolean;
   dt: number;
@@ -281,6 +208,7 @@ export function tickLyricsEngineScroll(input: {
     adjustedMs,
     isSeek = false,
     scrollState,
+    scrollControl,
     userScrollGuard,
     reducedMotion,
     dt,
@@ -301,7 +229,7 @@ export function tickLyricsEngineScroll(input: {
   );
   prevAdjustedMsRef.current = adjustedMs;
 
-  const resumeGeneration = peekLyricsAutoScrollResumeGeneration();
+  const resumeGeneration = scrollControl.peekResumeGeneration();
   const explicitResume = resumeGeneration !== lastResumeGenerationRef.current;
   if (explicitResume) {
     lastResumeGenerationRef.current = resumeGeneration;
@@ -330,7 +258,7 @@ export function tickLyricsEngineScroll(input: {
 
   if (target === null) {
     if (shouldResetScroll) {
-      endLyricsAutoScrollUnlockSuppress();
+      scrollControl.endUnlockSuppress();
     }
     if (audienceSeekUnlock && userScrollGuard) {
       userScrollGuard.unlockWithIdleRelock();
@@ -358,7 +286,7 @@ export function tickLyricsEngineScroll(input: {
     targetScrollTopRef.current = snapTarget;
     prevActiveIndexRef.current = activeIndex;
     if (shouldResetScroll) {
-      endLyricsAutoScrollUnlockSuppress();
+      scrollControl.endUnlockSuppress();
     }
     if (audienceSeekUnlock && userScrollGuard) {
       userScrollGuard.unlockWithIdleRelock();
@@ -389,14 +317,15 @@ export interface LyricsEngineFrameInput {
   isPlainText: boolean;
   scrollState: LyricsEngineScrollState;
   userScrollGuard: UserScrollGuard | null;
-  prevActiveLineRef: { current: number };
-  prevActiveWordIndexRef: { current: number };
+  session: LyricsSession;
   lineRuntime: LyricsLineRuntime;
   reducedMotion: boolean;
   dt: number;
   positionMs: number;
 
   isSeek: boolean;
+  hasSong: boolean;
+  isPlaying: boolean;
   audienceMode?: boolean;
 }
 
@@ -406,56 +335,45 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     isPlainText,
     scrollState,
     userScrollGuard,
-    prevActiveLineRef,
-    prevActiveWordIndexRef,
+    session,
     lineRuntime,
     reducedMotion,
     dt,
     positionMs,
     isSeek,
+    hasSong,
+    isPlaying,
     audienceMode = false,
   } = input;
 
-  const playerState = usePlayerStore.getState();
-  const lyricsState = useLyricsStore.getState();
-  const adjustedMs = positionMs - lyricsState.offsetMs;
+  const adjustedMs = session.toAdjustedMs(positionMs);
 
-  if (playerState.snapshot?.song_id) {
-    syncLyricsActiveLine(prevActiveLineRef, adjustedMs);
-
-    const syncedLyricsState = useLyricsStore.getState();
-    const activeLine =
-      syncedLyricsState.lines[syncedLyricsState.activeLineIndex];
-    if (activeLine?.words && activeLine.words.length > 0) {
-      const activeWordIndex = findActiveWordIndex(activeLine.words, adjustedMs);
-      if (activeWordIndex !== prevActiveWordIndexRef.current) {
-        prevActiveWordIndexRef.current = activeWordIndex;
-        syncedLyricsState.setActiveWordIndex(activeWordIndex);
-      }
-    } else if (prevActiveWordIndexRef.current !== -1) {
-      prevActiveWordIndexRef.current = -1;
-      syncedLyricsState.setActiveWordIndex(-1);
-    }
+  if (hasSong) {
+    session.syncActiveLine(adjustedMs);
+    session.syncActiveWord(adjustedMs);
   }
 
+  const { activeLineIndex, lines } = session.getState();
+
   lineRuntime.tick({
-    activeLineIndex: useLyricsStore.getState().activeLineIndex,
+    activeLineIndex,
     adjustedMs,
-    isPlaying: playerState.snapshot?.is_playing ?? false,
+    isPlaying,
     dt,
     isPlainText,
   });
 
-  if (isPlainText || !container || lyricsState.lines.length === 0) {
+  if (isPlainText || !container || lines.length === 0) {
     return;
   }
 
   tickLyricsEngineScroll({
     container,
-    lines: lyricsState.lines,
+    lines,
     adjustedMs,
     isSeek,
     scrollState,
+    scrollControl: session.scroll,
     userScrollGuard,
     reducedMotion,
     dt,
@@ -463,8 +381,8 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
   });
 }
 
-export function shouldRunLyricsEngineLoop(
-  playerState: ReturnType<typeof usePlayerStore.getState>,
-): boolean {
+export function shouldRunLyricsEngineLoop(playerState: {
+  snapshot: { song_id: string | null } | null;
+}): boolean {
   return Boolean(playerState.snapshot?.song_id);
 }

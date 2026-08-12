@@ -13,10 +13,14 @@ import { SearchBox } from "@/components/Library/SearchBox";
 import { SongList } from "@/components/Library/SongList";
 import { SortModeSelector } from "@/components/Library/SortModeSelector";
 import { songCanBeSeparated } from "@/lib/song-media";
+import {
+  batchSeparationInProgress,
+  batchSeparationLabelArgs,
+} from "@/lib/task-progress";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { notifyError } from "@/lib/errors";
 
 interface SidebarProps {
@@ -28,6 +32,7 @@ const batchActionClassName =
   "rounded-[12px] border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] px-3 py-2 text-[13px] hover:border-[var(--sidebar-control-border)] hover:bg-[var(--sidebar-row-overlay-bg)]";
 
 export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
+  const { maintenance } = useBackend();
   const { t } = useTranslation();
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
@@ -101,12 +106,10 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
     if (previewMode) {
       return;
     }
-    api.batchSeparate([]).catch(notifyError);
+    maintenance.batchSeparate([]).catch(notifyError);
   };
 
-  const isBatchRunning =
-    batchSeparation != null &&
-    batchSeparation.completed + batchSeparation.failed < batchSeparation.total;
+  const isBatchRunning = batchSeparationInProgress(batchSeparation);
 
   return (
     <div
@@ -260,25 +263,24 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
 
       {!(shouldHideButton && !isBatchRunning && batchSeparation == null) && (
         <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
-          {isBatchRunning ? (
+          {batchSeparation != null ? (
             <div className="text-center text-[11px] text-[var(--color-text-dim)]">
-              {t("sidebar.separating", {
-                current: Math.min(
-                  batchSeparation.completed + 1,
-                  batchSeparation.total,
-                ),
-                total: batchSeparation.total,
-              })}
-            </div>
-          ) : batchSeparation != null ? (
-            <div className="text-center text-[11px] text-[var(--color-text-dim)]">
-              {t("sidebar.separationComplete", {
-                done: batchSeparation.completed,
-              })}
-              {batchSeparation.skipped > 0 &&
-                `, ${t("sidebar.skipped", { count: batchSeparation.skipped })}`}
-              {batchSeparation.failed > 0 &&
-                `, ${t("sidebar.failed", { count: batchSeparation.failed })}`}
+              {isBatchRunning ? (
+                t(
+                  "sidebar.separating",
+                  batchSeparationLabelArgs(batchSeparation),
+                )
+              ) : (
+                <>
+                  {t("sidebar.separationComplete", {
+                    done: batchSeparation.completed,
+                  })}
+                  {batchSeparation.skipped > 0 &&
+                    `, ${t("sidebar.skipped", { count: batchSeparation.skipped })}`}
+                  {batchSeparation.failed > 0 &&
+                    `, ${t("sidebar.failed", { count: batchSeparation.failed })}`}
+                </>
+              )}
             </div>
           ) : showUpgradeButton ? (
             <button
@@ -331,7 +333,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           onConfirm={() => {
             setShowUpgradeConfirm(false);
             if (!previewMode) {
-              api.batchSeparate([]).catch(notifyError);
+              maintenance.batchSeparate([]).catch(notifyError);
             }
           }}
           onCancel={() => setShowUpgradeConfirm(false)}
