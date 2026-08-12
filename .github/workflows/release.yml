@@ -156,7 +156,10 @@ jobs:
             echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
           fi
 
-          deadline=$(( $(date +%s) + 40 * 60 ))
+          # Poll almost up to the job's 45-minute timeout-minutes: real Nightly
+          # runs have taken 43+ minutes, so a shorter deadline fails cold
+          # releases that would still succeed within the job budget.
+          deadline=$(( $(date +%s) + 44 * 60 ))
           nightly_run=""
           while [ "$(date +%s)" -lt "${deadline}" ]; do
             nightly_run="$(gh run list \
@@ -173,7 +176,7 @@ jobs:
           done
 
           if [ -z "${nightly_run}" ]; then
-            echo "::error::Dispatched Nightly run did not finish within 40 minutes for commit ${GITHUB_SHA}."
+            echo "::error::Dispatched Nightly run did not finish within 44 minutes for commit ${GITHUB_SHA}."
             exit 1
           fi
 
