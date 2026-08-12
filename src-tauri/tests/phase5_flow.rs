@@ -149,6 +149,9 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
 
     mock.assert();
     drop(harness);
+    // cleanup_dir removes lib_dir, which holds the SQLite file this connection
+    // still has open; Windows refuses to delete it until the handle is closed.
+    drop(connection);
     cleanup_dir(&fixture_dir);
     cleanup_dir(&lib_dir);
 }
