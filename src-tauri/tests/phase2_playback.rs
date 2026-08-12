@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 
+mod support;
+
 use openkara_lib::{
     audio::{
         decode,
         playback::{PlaybackController, PlaybackStateSnapshot},
     },
     cache,
-    commands::{import::import_songs_from_paths, playback::play_song_from_library},
+    commands::import::import_songs_from_paths,
     library_root::LibraryRoot,
 };
-use rusqlite::Connection;
 
 fn fixture_path(directory: &str, filename: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -94,26 +95,27 @@ fn playback_controller_advances_and_stops_at_track_end() {
 }
 
 #[test]
-fn play_song_from_library_loads_track_by_hash() {
-    let connection = Connection::open_in_memory().expect("in-memory database should open");
-    cache::apply_migrations(&connection).expect("migrations should succeed");
-
+fn track_load_starts_an_imported_song_by_hash() {
     let tmp = tempfile::tempdir().expect("temp dir should create");
     let library =
         LibraryRoot::create(tmp.path().join("lib").as_path()).expect("library should create");
+    cache::initialize_library_database(&library.database_path())
+        .expect("library database should initialize");
+    let connection =
+        cache::open_database(&library.database_path()).expect("library database should open");
+
     let import_result = import_songs_from_paths(
         &connection,
         &library,
         &[fixture_path("metadata", "fixture.mp3")],
     );
     assert_eq!(import_result.imported.len(), 1);
-
     let song_hash = import_result.imported[0].hash.clone();
-    let mut controller = PlaybackController::default();
 
-    let snapshot =
-        play_song_from_library(&connection, &library, &mut controller, &song_hash, 10_000)
-            .expect("play helper should load and start track");
+    let harness = support::PlaybackHarness::new(&library);
+    let snapshot = harness
+        .play(&song_hash)
+        .expect("the track-load path should install the imported song");
 
     assert_snapshot(&snapshot, Some(song_hash.as_str()), true, 0);
     assert!(snapshot.duration_ms.is_some());
