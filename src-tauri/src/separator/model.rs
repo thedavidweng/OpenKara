@@ -195,6 +195,107 @@ fn prepare_windows_runtime_dll_search(runtime_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Map a Win32 error code returned by `LoadLibraryExW` to a short human
+/// description for the runtime-load error message. The numeric and hex codes
+/// are always appended because the table is intentionally narrow — unknown
+/// codes still surface enough detail for triage.
+#[cfg(target_os = "windows")]
+fn describe_win32_load_error(code: u32) -> String {
+    // System error constants from winerror.h.
+    const ERROR_MOD_NOT_FOUND: u32 = 126;
+    const ERROR_BAD_EXE_FORMAT: u32 = 193;
+    const ERROR_INVALID_PARAMETER: u32 = 87;
+    const ERROR_FILE_NOT_FOUND: u32 = 2;
+    const ERROR_ACCESS_DENIED: u32 = 5;
+    const ERROR_SHARING_VIOLATION: u32 = 32;
+    const ERROR_SXS_DLL_NOT_FOUND: u32 = 14090;
+    const ERROR_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT_EMPTY: u32 = 14002;
+
+    let hint = match code {
+        ERROR_MOD_NOT_FOUND => {
+            "a DLL that onnxruntime.dll depends on is missing. The VC++ CRT \
+             DLLs it needs (vcruntime140, vcruntime140_1, msvcp140, \
+             msvcp140_1) ship next to openkara.exe, so this usually means an \
+             incomplete app install"
+        }
+        ERROR_FILE_NOT_FOUND => "the runtime file was not found at the given path",
+        ERROR_BAD_EXE_FORMAT => {
+            "the runtime DLL is for a different architecture than the app \
+             (e.g. x86_64 vs arm64) or is corrupt"
+        }
+        ERROR_INVALID_PARAMETER => "Windows rejected the load flags or path",
+        ERROR_ACCESS_DENIED => "the app does not have permission to read the runtime DLL",
+        ERROR_SHARING_VIOLATION => {
+            "the runtime DLL is locked by another process or an antivirus scan"
+        }
+        ERROR_SXS_DLL_NOT_FOUND | ERROR_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT_EMPTY => {
+            "a side-by-side (WinSxS) dependency of onnxruntime.dll is missing"
+        }
+        _ => "Windows did not provide a recognized reason for this code",
+    };
+    format!("{hint} (Win32 error {code} / 0x{code:08X})")
+}
+
+/// Probe-load the runtime DLL once before handing the path to `ort`. This
+/// supersedes the page-cache warmup that preceded it and does two things the
+/// earlier `fs::read` could not:
+///
+/// 1. It resolves the imports and runs `DllMain`, so the first-touch cost (disk
+///    reads, antivirus scan) is paid under our control rather than inside
+///    `ort`'s load watchdog. The probe releases its reference before returning,
+///    so `ort::init_from` still performs a full load; what carries over is the
+///    warm file cache, not a loaded module.
+/// 2. On failure it captures the real `GetLastError` code. `ort` wraps
+///    `libloading`, whose `Display` impl drops the OS error and prints only
+///    "LoadLibraryExW failed" (see libloading `error.rs`). Calling the loader
+///    ourselves lets us attach the actual code so the failure isn't opaque.
+///
+/// The call mirrors the load `ort` performs — `libloading`'s `Library::new`
+/// is `LoadLibraryExW(path, NULL, 0)` — so both loads resolve dependencies
+/// through the same standard search order (application directory carrying the
+/// app-local VC++ CRT first, then the `SetDllDirectoryW` runtime directory
+/// carrying DirectML.dll) and the probe fails exactly when the real load
+/// would fail.
+///
+/// Returns `Ok(())` on a successful probe-load or `Err(message)` with a rich
+/// diagnostic otherwise.
+#[cfg(target_os = "windows")]
+fn probe_load_windows_runtime(runtime_path: &Path) -> std::result::Result<(), String> {
+    use windows::{
+        core::HSTRING,
+        Win32::Foundation::{FreeLibrary, GetLastError},
+        Win32::System::LibraryLoader::{LoadLibraryExW, LOAD_LIBRARY_FLAGS},
+    };
+
+    let path = HSTRING::from(runtime_path.as_os_str());
+    // SAFETY: `path` is owned by HSTRING for the call. Null file handle and
+    // zero flags replicate libloading's `Library::new`, keeping the probe's
+    // dependency resolution identical to the real `ort` load.
+    let handle = unsafe { LoadLibraryExW(&path, None, LOAD_LIBRARY_FLAGS(0)) };
+    match handle {
+        Ok(module) => {
+            // Release the probe's reference so `ort::init_from` holds the only
+            // one. The refcount can reach zero here, in which case Windows
+            // unloads the module and `ort` performs a fresh load — normal
+            // loader work and `DllMain` included — off the warm file cache.
+            // SAFETY: `module` was just returned by a successful LoadLibraryExW.
+            let _ = unsafe { FreeLibrary(module) };
+            Ok(())
+        }
+        Err(_) => {
+            // `LoadLibraryExW` returns a `windows_core::Error` whose embedded
+            // code matches GetLastError; read it directly to avoid relying on
+            // its formatting.
+            let code = unsafe { GetLastError() }.0;
+            Err(format!(
+                "failed to load ONNX Runtime DLL at {}: {}",
+                runtime_path.display(),
+                describe_win32_load_error(code)
+            ))
+        }
+    }
+}
+
 fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
     anyhow::ensure!(
         runtime_path.is_file(),
@@ -205,14 +306,10 @@ fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
         prepare_windows_runtime_dll_search(runtime_path)?;
-        // Synchronously read the library into the page cache before the loader
-        // maps it. On some Windows VMs (e.g. PVE/KVM), a real-time AV scan or a
-        // cold/slow virtual disk stalls section mapping inside `LoadLibraryW`
-        // long enough to trip the load watchdog; reading first lets the scan
-        // finish and warms the disk so the subsequent load is fast. Read errors
-        // are ignored — this is a best-effort hint that must never block the
-        // load.
-        let _ = fs::read(runtime_path);
+        // Probe-load the runtime DLL before `ort::init_from` runs so a load
+        // failure carries the real `GetLastError` code instead of the opaque
+        // "LoadLibraryExW failed" string `ort`/`libloading` produce.
+        probe_load_windows_runtime(runtime_path).map_err(|message| anyhow::anyhow!(message))?;
     }
 
     let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
@@ -989,5 +1086,38 @@ mod tests {
             Some(Path::new("/data/runtimes/rt-1"))
         );
         assert_eq!(runtime_dll_search_dir(Path::new("onnxruntime.dll")), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn describe_win32_load_error_includes_code_and_known_hint() {
+        // The most common cause of an instant LoadLibraryExW failure for a
+        // /MD-built onnxruntime.dll on a stripped Server image is a missing
+        // VC++ runtime dependency.
+        let missing = describe_win32_load_error(126);
+        assert!(
+            missing.contains("vcruntime140") && missing.contains("msvcp140"),
+            "missing-dep hint should name the app-local CRT DLLs: {missing}"
+        );
+        assert!(
+            missing.contains("126") && missing.contains("0x0000007E"),
+            "numeric + hex code should appear: {missing}"
+        );
+
+        let bad_arch = describe_win32_load_error(193);
+        assert!(
+            bad_arch.contains("architecture") || bad_arch.contains("corrupt"),
+            "bad-exe-format hint should explain the cause: {bad_arch}"
+        );
+        assert!(bad_arch.contains("193") && bad_arch.contains("0x000000C1"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn describe_win32_load_error_handles_unknown_codes() {
+        // Unknown codes still surface enough detail for triage.
+        let unknown = describe_win32_load_error(0x12345678);
+        assert!(unknown.contains("305419896"));
+        assert!(unknown.contains("0x12345678"));
     }
 }
