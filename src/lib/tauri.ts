@@ -1,6 +1,4 @@
 import { tauriBackend } from "@/lib/backend";
-import { tauriInvoke } from "@/lib/tauri/invoke";
-import type { CoverArtBytes, CoverArtSize } from "@/types/ipc";
 
 export type { RemoteConflictResolution } from "@/lib/backend";
 
@@ -204,6 +202,11 @@ export function getCdgStatus(
   ...args: Parameters<typeof tauriBackend.cdg.getCdgStatus>
 ): ReturnType<typeof tauriBackend.cdg.getCdgStatus> {
   return tauriBackend.cdg.getCdgStatus(...args);
+}
+export function getCoverArt(
+  ...args: Parameters<typeof tauriBackend.library.getCoverArt>
+): ReturnType<typeof tauriBackend.library.getCoverArt> {
+  return tauriBackend.library.getCoverArt(...args);
 }
 export function getCoverArtPreview(
   ...args: Parameters<typeof tauriBackend.library.getCoverArtPreview>
@@ -652,14 +655,4 @@ export function createLibrary(path: string): Promise<void> {
 
 export function openLibrary(path: string): Promise<void> {
   return tauriBackend.librarySetup.registerLocalLibrary(path);
-}
-
-export function getCoverArt(
-  hash: string,
-  size?: CoverArtSize,
-): Promise<CoverArtBytes> {
-  return tauriInvoke<CoverArtBytes>(
-    "get_cover_art",
-    size === undefined ? { hash } : { hash, size },
-  );
 }
