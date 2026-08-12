@@ -425,6 +425,8 @@
       "downloading": "Téléchargement d'ONNX Runtime...",
       "corrupt": "L'ONNX Runtime installé est corrompu. Réinstallez-le pour activer les téléchargements de modèles.",
       "downloadFailed": "Le téléchargement d'ONNX Runtime a échoué. Vérifiez votre connexion et réessayez.",
+      "installFailed": "ONNX Runtime a été téléchargé mais son installation a échoué. Ce n'est pas un problème de réseau : consultez les détails de l'erreur ci-dessous.",
+      "loadFailed": "ONNX Runtime a été téléchargé mais ne peut pas être chargé sur ce système. Ce n'est pas un problème de réseau : consultez les détails de l'erreur ci-dessous.",
       "retryButton": "Réinstaller ONNX Runtime",
       "statusReady": "Installé et prêt.",
       "statusMissing": "Non installé.",
@@ -460,6 +462,10 @@
         "activatingRuntime": "Activation d'ONNX Runtime...",
         "downloadFailed": "Échec du téléchargement d'ONNX Runtime : {{error}}",
         "downloadFailedHint": "Vérifiez votre connexion, puis relancez le téléchargement.",
+        "installFailed": "Échec de l'installation d'ONNX Runtime : {{error}}",
+        "installFailedHint": "Le téléchargement a réussi mais l'installation a échoué. Ce n'est pas un problème de réseau ; réessayer est sans risque.",
+        "loadFailed": "Échec du chargement d'ONNX Runtime : {{error}}",
+        "loadFailedHint": "Le runtime est téléchargé mais ne peut pas être chargé. Ce n'est pas un problème de réseau ; consultez les détails de l'erreur.",
         "retryDownload": "Réessayer"
       },
       "cpuFallbackToast": {

@@ -173,6 +173,7 @@ export function createSettingsOverlayActions(
           candidate_version: status.candidate_version,
           restart_required: status.restart_required,
           error: status.error?.message ?? null,
+          failure_phase: status.failure_phase ?? null,
         },
       });
     } catch {}
@@ -240,6 +241,7 @@ export function createSettingsOverlayActions(
           candidate_version: status.candidate_version,
           restart_required: status.restart_required,
           error: status.error?.message ?? null,
+          failure_phase: status.failure_phase ?? null,
         },
         runtimeUpdate: null,
       });

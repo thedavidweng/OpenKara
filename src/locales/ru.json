@@ -426,6 +426,8 @@
       "downloading": "Загрузка ONNX Runtime...",
       "corrupt": "Установленный ONNX Runtime повреждён. Переустановите его, чтобы включить загрузку моделей.",
       "downloadFailed": "Не удалось загрузить ONNX Runtime. Проверьте подключение и попробуйте снова.",
+      "installFailed": "ONNX Runtime скачан, но установить его не удалось. Это не проблема сети — проверьте сведения об ошибке ниже.",
+      "loadFailed": "ONNX Runtime скачан, но не загружается в этой системе. Это не проблема сети — проверьте сведения об ошибке ниже.",
       "retryButton": "Переустановить ONNX Runtime",
       "statusReady": "Установлено и готово.",
       "statusMissing": "Не установлено.",
@@ -461,6 +463,10 @@
         "activatingRuntime": "Активация ONNX Runtime...",
         "downloadFailed": "Не удалось загрузить ONNX Runtime: {{error}}",
         "downloadFailedHint": "Проверьте подключение, затем повторите загрузку.",
+        "installFailed": "Не удалось установить ONNX Runtime: {{error}}",
+        "installFailedHint": "Скачивание завершилось, но установка не удалась; это не проблема сети. Повторная попытка безопасна.",
+        "loadFailed": "Не удалось загрузить библиотеку ONNX Runtime: {{error}}",
+        "loadFailedHint": "ONNX Runtime скачан, но не загружается — это не проблема сети. Проверьте сведения об ошибке.",
         "retryDownload": "Повторить"
       },
       "cpuFallbackToast": {

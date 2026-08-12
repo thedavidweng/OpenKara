@@ -13,6 +13,7 @@ import type {
   ModelUpdateCheckSnapshot,
   ModelVariant,
   RegisteredLibrary,
+  RuntimeBootstrapFailurePhase,
   RuntimeBootstrapState,
   RuntimeUpdateReport,
   StemMode,
@@ -53,6 +54,7 @@ export interface RuntimeStatusView {
   candidate_version: string | null;
   restart_required: boolean;
   error: string | null;
+  failure_phase: RuntimeBootstrapFailurePhase | null;
 }
 
 export interface RuntimeUpdateView {

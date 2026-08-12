@@ -424,6 +424,8 @@
       "downloading": "ONNX Runtime downloaden...",
       "corrupt": "De geïnstalleerde ONNX Runtime is beschadigd. Installeer opnieuw om modeldownloads mogelijk te maken.",
       "downloadFailed": "De download van ONNX Runtime is mislukt. Controleer je verbinding en probeer opnieuw.",
+      "installFailed": "De ONNX Runtime is gedownload, maar de installatie is mislukt. Dit is geen netwerkprobleem: bekijk de foutdetails hieronder.",
+      "loadFailed": "De ONNX Runtime is gedownload, maar kan op dit systeem niet worden geladen. Dit is geen netwerkprobleem: bekijk de foutdetails hieronder.",
       "retryButton": "ONNX Runtime opnieuw installeren",
       "statusReady": "Geïnstalleerd en klaar.",
       "statusMissing": "Niet geïnstalleerd.",
@@ -459,6 +461,10 @@
         "activatingRuntime": "ONNX Runtime activeren...",
         "downloadFailed": "Download van ONNX Runtime mislukt: {{error}}",
         "downloadFailedHint": "Controleer je verbinding en probeer de download opnieuw.",
+        "installFailed": "Installatie van ONNX Runtime mislukt: {{error}}",
+        "installFailedHint": "De download is voltooid, maar de installatie is mislukt; dit is geen netwerkprobleem. Opnieuw proberen is veilig.",
+        "loadFailed": "Laden van ONNX Runtime mislukt: {{error}}",
+        "loadFailedHint": "De runtime is gedownload, maar kan niet worden geladen; dit is geen netwerkprobleem. Bekijk de foutdetails.",
         "retryDownload": "Opnieuw"
       },
       "cpuFallbackToast": {

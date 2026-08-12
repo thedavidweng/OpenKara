@@ -423,6 +423,8 @@
       "downloading": "正在下載 ONNX Runtime...",
       "corrupt": "已安裝的 ONNX Runtime 已損毀。請重新安裝以啟用模型下載。",
       "downloadFailed": "ONNX Runtime 下載失敗。請檢查你的網路連線後再試一次。",
+      "installFailed": "ONNX Runtime 已下載但安裝失敗。這不是網路問題，請查看下方錯誤詳情。",
+      "loadFailed": "ONNX Runtime 已下載但無法在此系統上載入。這不是網路問題，請查看下方錯誤詳情。",
       "retryButton": "重新安裝 ONNX Runtime",
       "statusReady": "已安裝並就緒。",
       "statusMissing": "尚未安裝。",
@@ -458,6 +460,10 @@
         "activatingRuntime": "正在啟用 ONNX Runtime…",
         "downloadFailed": "ONNX Runtime 下載失敗：{{error}}",
         "downloadFailedHint": "請檢查你的網路連線，然後重試下載。",
+        "installFailed": "ONNX Runtime 安裝失敗：{{error}}",
+        "installFailedHint": "下載已完成但安裝失敗，這不是網路問題。可以放心重試。",
+        "loadFailed": "ONNX Runtime 載入失敗：{{error}}",
+        "loadFailedHint": "ONNX Runtime 已下載但無法載入，這不是網路問題。請查看錯誤詳情。",
         "retryDownload": "重試"
       },
       "cpuFallbackToast": {

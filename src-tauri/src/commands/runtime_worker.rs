@@ -42,6 +42,35 @@ pub enum RuntimeWorkerPhase {
     Activating,
 }
 
+impl RuntimeWorkerPhase {
+    pub(crate) fn failure_phase(
+        self,
+    ) -> crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase {
+        use crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase;
+        match self {
+            RuntimeWorkerPhase::Downloading => RuntimeBootstrapFailurePhase::Download,
+            RuntimeWorkerPhase::Installing => RuntimeBootstrapFailurePhase::Install,
+            RuntimeWorkerPhase::Probing => RuntimeBootstrapFailurePhase::Probe,
+            RuntimeWorkerPhase::Activating => RuntimeBootstrapFailurePhase::Activate,
+        }
+    }
+}
+
+/// Tag a worker error with the last phase the worker reported, so the UI can
+/// tell a download failure from an install or load failure. Errors before the
+/// first progress entry stay untagged.
+fn tag_with_last_phase(
+    error: anyhow::Error,
+    last_phase: Option<RuntimeWorkerPhase>,
+) -> anyhow::Error {
+    match last_phase {
+        Some(phase) => {
+            crate::commands::runtime_bootstrap::with_failure_phase(error, phase.failure_phase())
+        }
+        None => error,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RuntimeWorkerRequest {
     app_data_dir: PathBuf,
@@ -548,7 +577,7 @@ pub fn install_runtime_with_worker(
                 .map(|phase| format!("{phase:?}").to_ascii_lowercase())
                 .unwrap_or_else(|| "post-download".to_owned());
             guard.complete();
-            bail!(
+            let error = anyhow::anyhow!(
                 "{RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER}: runtime {} did not finish within {} seconds after download (phase={phase}){}\n\n{RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT}",
                 runtime.artifact_id,
                 timeout.as_secs_f64(),
@@ -558,6 +587,7 @@ pub fn install_runtime_with_worker(
                     format!(": {}", details.trim())
                 }
             );
+            return Err(tag_with_last_phase(error, last_phase));
         }
 
         thread::sleep(POLL_INTERVAL);
@@ -566,7 +596,7 @@ pub fn install_runtime_with_worker(
     let details = fs::read_to_string(&stderr_path).unwrap_or_default();
     guard.complete();
     if !status.success() {
-        bail!(
+        let error = anyhow::anyhow!(
             "runtime bootstrap worker failed with {status}{}",
             if details.trim().is_empty() {
                 String::new()
@@ -574,10 +604,17 @@ pub fn install_runtime_with_worker(
                 format!(": {}", details.trim())
             }
         );
+        return Err(tag_with_last_phase(error, last_phase));
     }
 
     runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
         .context("runtime worker exited successfully without an installed runtime")
+        .map_err(|error| {
+            crate::commands::runtime_bootstrap::with_failure_phase(
+                error,
+                crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install,
+            )
+        })
 }
 
 #[cfg(test)]
@@ -599,6 +636,46 @@ mod tests {
         let mut offset = 0;
         assert_eq!(read_progress(&path, &mut offset), progress);
         assert!(read_progress(&path, &mut offset).is_empty());
+    }
+
+    #[test]
+    fn worker_phases_map_to_their_failure_phases() {
+        use crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase;
+        assert_eq!(
+            RuntimeWorkerPhase::Downloading.failure_phase(),
+            RuntimeBootstrapFailurePhase::Download
+        );
+        assert_eq!(
+            RuntimeWorkerPhase::Installing.failure_phase(),
+            RuntimeBootstrapFailurePhase::Install
+        );
+        assert_eq!(
+            RuntimeWorkerPhase::Probing.failure_phase(),
+            RuntimeBootstrapFailurePhase::Probe
+        );
+        assert_eq!(
+            RuntimeWorkerPhase::Activating.failure_phase(),
+            RuntimeBootstrapFailurePhase::Activate
+        );
+    }
+
+    #[test]
+    fn tagging_without_an_observed_phase_leaves_the_error_unclassified() {
+        use crate::commands::runtime_bootstrap::failure_phase_of;
+
+        let untagged = tag_with_last_phase(anyhow::anyhow!("spawn failed"), None);
+        assert_eq!(failure_phase_of(&untagged), None);
+        assert_eq!(untagged.to_string(), "spawn failed");
+
+        let tagged = tag_with_last_phase(
+            anyhow::anyhow!("worker died mid-extract"),
+            Some(RuntimeWorkerPhase::Installing),
+        );
+        assert_eq!(
+            failure_phase_of(&tagged),
+            Some(crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install)
+        );
+        assert_eq!(tagged.to_string(), "worker died mid-extract");
     }
 
     #[test]

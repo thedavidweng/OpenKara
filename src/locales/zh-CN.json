@@ -424,6 +424,8 @@
       "downloading": "正在下载 ONNX 运行时...",
       "corrupt": "已安装的 ONNX 运行时已损坏。请重新安装以启用模型下载。",
       "downloadFailed": "ONNX 运行时下载失败。请检查网络后重试。",
+      "installFailed": "ONNX 运行时已下载但安装失败。这不是网络问题，请查看下方错误详情。",
+      "loadFailed": "ONNX 运行时已下载但无法在此系统上加载。这不是网络问题，请查看下方错误详情。",
       "retryButton": "重新安装 ONNX 运行时",
       "statusReady": "已安装并就绪。",
       "statusMissing": "尚未安装。",
@@ -459,6 +461,10 @@
         "activatingRuntime": "正在激活 ONNX 运行时…",
         "downloadFailed": "ONNX 运行时下载失败：{{error}}",
         "downloadFailedHint": "请检查网络连接后重试下载。",
+        "installFailed": "ONNX 运行时安装失败：{{error}}",
+        "installFailedHint": "下载已完成但安装失败，这不是网络问题。可以放心重试。",
+        "loadFailed": "ONNX 运行时加载失败：{{error}}",
+        "loadFailedHint": "运行时已下载但无法加载，这不是网络问题。请查看错误详情。",
         "retryDownload": "重试"
       },
       "cpuFallbackToast": {

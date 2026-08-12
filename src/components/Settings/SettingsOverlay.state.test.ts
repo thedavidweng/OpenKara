@@ -643,6 +643,7 @@ describe("createSettingsOverlayActions - runtime updates", () => {
       candidate_version: null,
       restart_required: false,
       error: null,
+      failure_phase: null,
     };
   }
 
@@ -851,6 +852,36 @@ describe("createSettingsOverlayActions - runtime updates", () => {
     expect(runtimeStatus?.candidate_version).toBe("v1.28.0");
     expect(runtimeStatus?.restart_required).toBe(true);
     expect(harness.getSnapshot().state.runtimeUpdate).toBeNull();
+  });
+
+  test("downloadRuntime mirrors the failure phase of a failed bootstrap", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockResolvedValue({
+      state: "failed",
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: null,
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: {
+        code: "model_unavailable",
+        message: "LoadLibraryExW failed",
+        retryable: true,
+        fallback: "retry",
+      },
+      failure_phase: "probe",
+    });
+
+    await harness.actions.downloadRuntime();
+
+    const runtimeStatus = harness.getSnapshot().state.runtimeStatus;
+    expect(runtimeStatus?.state).toBe("failed");
+    expect(runtimeStatus?.failure_phase).toBe("probe");
+    expect(runtimeStatus?.error).toBe("LoadLibraryExW failed");
   });
 
   test("downloadRuntime discards the stale check report after installing", async () => {

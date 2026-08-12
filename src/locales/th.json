@@ -423,6 +423,8 @@
       "downloading": "กำลังดาวน์โหลด ONNX Runtime...",
       "corrupt": "ONNX Runtime ที่ติดตั้งไว้เสียหาย ติดตั้งใหม่เพื่อเปิดใช้การดาวน์โหลดโมเดล",
       "downloadFailed": "การดาวน์โหลด ONNX Runtime ล้มเหลว ตรวจสอบการเชื่อมต่อของคุณแล้วลองอีกครั้ง",
+      "installFailed": "ดาวน์โหลด ONNX Runtime แล้วแต่ติดตั้งไม่สำเร็จ ไม่ใช่ปัญหาเครือข่าย โปรดดูรายละเอียดข้อผิดพลาดด้านล่าง",
+      "loadFailed": "ดาวน์โหลด ONNX Runtime แล้วแต่ไม่สามารถโหลดบนระบบนี้ได้ ไม่ใช่ปัญหาเครือข่าย โปรดดูรายละเอียดข้อผิดพลาดด้านล่าง",
       "retryButton": "ติดตั้ง ONNX Runtime ใหม่",
       "statusReady": "ติดตั้งแล้วและพร้อมใช้งาน",
       "statusMissing": "ยังไม่ได้ติดตั้ง",
@@ -458,6 +460,10 @@
         "activatingRuntime": "กำลังเปิดใช้งาน ONNX Runtime...",
         "downloadFailed": "การดาวน์โหลด ONNX Runtime ล้มเหลว: {{error}}",
         "downloadFailedHint": "ตรวจสอบการเชื่อมต่อของคุณ แล้วลองดาวน์โหลดอีกครั้ง",
+        "installFailed": "การติดตั้ง ONNX Runtime ล้มเหลว: {{error}}",
+        "installFailedHint": "ดาวน์โหลดเสร็จแล้วแต่การติดตั้งล้มเหลว ไม่ใช่ปัญหาเครือข่าย ลองใหม่ได้อย่างปลอดภัย",
+        "loadFailed": "การโหลด ONNX Runtime ล้มเหลว: {{error}}",
+        "loadFailedHint": "ดาวน์โหลดรันไทม์แล้วแต่โหลดไม่ได้ ไม่ใช่ปัญหาเครือข่าย โปรดดูรายละเอียดข้อผิดพลาด",
         "retryDownload": "ลองใหม่"
       },
       "cpuFallbackToast": {

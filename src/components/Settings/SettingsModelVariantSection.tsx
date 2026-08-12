@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 import { formatBytes } from "@/lib/format";
+import { runtimeFailureStatusKey } from "@/lib/runtime-failure-copy";
 import type { ModelVariant } from "@/types/ipc";
 
 interface ModelVariantOptionProps {
@@ -99,7 +100,7 @@ export function SettingsModelVariantSection() {
             : runtimeState === "corrupt"
               ? t("settings.runtime.corrupt")
               : runtimeState === "failed"
-                ? t("settings.runtime.downloadFailed")
+                ? t(runtimeFailureStatusKey(state.runtimeStatus?.failure_phase))
                 : t("settings.modelVariant.runtimeRequired");
 
   const update = state.modelUpdate;

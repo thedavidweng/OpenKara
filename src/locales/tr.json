@@ -424,6 +424,8 @@
       "downloading": "ONNX Runtime indiriliyor...",
       "corrupt": "Kurulu ONNX Runtime bozuk. Model indirmelerini etkinleştirmek için yeniden kurun.",
       "downloadFailed": "ONNX Runtime indirmesi başarısız oldu. Bağlantınızı kontrol edip tekrar deneyin.",
+      "installFailed": "ONNX Runtime indirildi ancak kurulamadı. Bu bir ağ sorunu değil — aşağıdaki hata ayrıntılarına bakın.",
+      "loadFailed": "ONNX Runtime indirildi ancak bu sistemde yüklenemiyor. Bu bir ağ sorunu değil — aşağıdaki hata ayrıntılarına bakın.",
       "retryButton": "ONNX Runtime'ı Yeniden Kur",
       "statusReady": "Kuruldu ve hazır.",
       "statusMissing": "Kurulu değil.",
@@ -459,6 +461,10 @@
         "activatingRuntime": "ONNX Runtime etkinleştiriliyor...",
         "downloadFailed": "ONNX Runtime indirmesi başarısız oldu: {{error}}",
         "downloadFailedHint": "Bağlantınızı kontrol edin, sonra indirmeyi yeniden deneyin.",
+        "installFailed": "ONNX Runtime kurulumu başarısız oldu: {{error}}",
+        "installFailedHint": "İndirme tamamlandı ancak kurulum başarısız oldu; bu bir ağ sorunu değil. Yeniden denemek güvenlidir.",
+        "loadFailed": "ONNX Runtime yüklenemedi: {{error}}",
+        "loadFailedHint": "Runtime indirildi ancak bu sistemde yüklenemiyor; bu bir ağ sorunu değil. Hata ayrıntılarına bakın.",
         "retryDownload": "Yeniden Dene"
       },
       "cpuFallbackToast": {

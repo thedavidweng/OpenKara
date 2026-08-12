@@ -150,6 +150,7 @@ describe("SettingsOverlay sections", () => {
           candidate_version: null,
           restart_required: false,
           error: null,
+          failure_phase: null,
         },
         modelStatuses: {
           htdemucs: {
@@ -193,6 +194,7 @@ describe("SettingsOverlay sections", () => {
           candidate_version: null,
           restart_required: false,
           error: null,
+          failure_phase: null,
         },
         modelStatuses: {
           htdemucs: {

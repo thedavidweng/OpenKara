@@ -424,6 +424,8 @@
       "downloading": "ONNX Runtime wird heruntergeladen…",
       "corrupt": "Die installierte ONNX Runtime ist beschädigt. Installieren Sie sie neu, um Modell-Downloads zu aktivieren.",
       "downloadFailed": "Der Download der ONNX Runtime ist fehlgeschlagen. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "installFailed": "Die ONNX Runtime wurde heruntergeladen, konnte aber nicht installiert werden. Dies ist kein Netzwerkproblem. Prüfen Sie die Fehlerdetails unten.",
+      "loadFailed": "Die ONNX Runtime wurde heruntergeladen, kann auf diesem System aber nicht geladen werden. Dies ist kein Netzwerkproblem. Prüfen Sie die Fehlerdetails unten.",
       "retryButton": "ONNX Runtime neu installieren",
       "statusReady": "Installiert und bereit.",
       "statusMissing": "Nicht installiert.",
@@ -459,6 +461,10 @@
         "activatingRuntime": "ONNX Runtime wird aktiviert…",
         "downloadFailed": "Download der ONNX Runtime fehlgeschlagen: {{error}}",
         "downloadFailedHint": "Überprüfen Sie Ihre Verbindung und wiederholen Sie dann den Download.",
+        "installFailed": "Installation der ONNX Runtime fehlgeschlagen: {{error}}",
+        "installFailedHint": "Der Download war erfolgreich, aber die Installation ist fehlgeschlagen. Dies ist kein Netzwerkproblem; ein erneuter Versuch ist sicher.",
+        "loadFailed": "Laden der ONNX Runtime fehlgeschlagen: {{error}}",
+        "loadFailedHint": "Die Runtime ist heruntergeladen, kann aber nicht geladen werden. Dies ist kein Netzwerkproblem; prüfen Sie die Fehlerdetails.",
         "retryDownload": "Wiederholen"
       },
       "cpuFallbackToast": {

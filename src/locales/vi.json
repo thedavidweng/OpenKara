@@ -423,6 +423,8 @@
       "downloading": "Đang tải xuống ONNX Runtime...",
       "corrupt": "ONNX Runtime đã cài bị hỏng. Hãy cài lại để bật tải mô hình.",
       "downloadFailed": "Tải ONNX Runtime thất bại. Hãy kiểm tra kết nối và thử lại.",
+      "installFailed": "Đã tải ONNX Runtime nhưng cài đặt thất bại. Đây không phải lỗi mạng — hãy xem chi tiết lỗi bên dưới.",
+      "loadFailed": "Đã tải ONNX Runtime nhưng không thể nạp trên hệ thống này. Đây không phải lỗi mạng — hãy xem chi tiết lỗi bên dưới.",
       "retryButton": "Cài lại ONNX Runtime",
       "statusReady": "Đã cài đặt và sẵn sàng.",
       "statusMissing": "Chưa cài đặt.",
@@ -458,6 +460,10 @@
         "activatingRuntime": "Đang kích hoạt ONNX Runtime...",
         "downloadFailed": "Tải ONNX Runtime thất bại: {{error}}",
         "downloadFailedHint": "Hãy kiểm tra kết nối, rồi thử tải lại.",
+        "installFailed": "Cài đặt ONNX Runtime thất bại: {{error}}",
+        "installFailedHint": "Đã tải xong nhưng cài đặt thất bại; đây không phải lỗi mạng. Thử lại vẫn an toàn.",
+        "loadFailed": "Nạp ONNX Runtime thất bại: {{error}}",
+        "loadFailedHint": "Runtime đã được tải nhưng không thể nạp; đây không phải lỗi mạng. Hãy xem chi tiết lỗi.",
         "retryDownload": "Thử lại"
       },
       "cpuFallbackToast": {

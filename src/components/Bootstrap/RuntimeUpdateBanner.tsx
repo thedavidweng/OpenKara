@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { downloadRuntime, restartApp } from "@/lib/tauri";
 import { getErrorMessage, notifyError } from "@/lib/errors";
+import { runtimeFailureBannerKeys } from "@/lib/runtime-failure-copy";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 
 export function RuntimeUpdateBanner() {
@@ -138,6 +139,7 @@ export function RuntimeUpdateBanner() {
   }
 
   if (state === "failed") {
+    const failureKeys = runtimeFailureBannerKeys(status?.failure_phase);
     return (
       <div
         className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
@@ -148,14 +150,14 @@ export function RuntimeUpdateBanner() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[12px]">
             <p className="text-[var(--color-destructive)]">
-              {t("settings.runtime.banner.downloadFailed", {
+              {t(failureKeys.message, {
                 error: status?.error
                   ? getErrorMessage(status.error)
                   : t("bootstrap.unknownError"),
               })}
             </p>
             <p className="mt-0.5 text-[11px] text-[var(--color-text-dim)]">
-              {t("settings.runtime.banner.downloadFailedHint")}
+              {t(failureKeys.hint)}
             </p>
           </div>
           <button
