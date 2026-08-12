@@ -343,6 +343,18 @@ jobs:
           if ($null -eq $installedApp) {
             throw "OpenKara.exe was not found after the candidate install."
           }
+
+          # The app-local VC++ CRT DLLs must sit beside OpenKara.exe so the
+          # loader resolves onnxruntime.dll's imports on machines without the
+          # VC++ Redistributable (#284). CI runners ship the redistributable,
+          # so a misplaced DLL would not fail the runtime smoke; assert the
+          # installed layout explicitly.
+          $appDir = Split-Path -Parent $installedApp.FullName
+          foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll")) {
+            if (-not (Test-Path -Path (Join-Path $appDir $dll) -PathType Leaf)) {
+              throw "App-local VC++ CRT DLL $dll is missing beside OpenKara.exe (#284)."
+            }
+          }
           "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "OPENKARA_INSTALL_DIR=$($env:INSTALL_DIR)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
