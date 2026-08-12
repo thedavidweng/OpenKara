@@ -321,7 +321,9 @@ export function listPlaylists(
   return tauriBackend.playlist.listPlaylists(...args);
 }
 export function listRemoteLibraryRoots(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.listRemoteLibraryRoots>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.listRemoteLibraryRoots
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.listRemoteLibraryRoots> {
   return tauriBackend.remoteRepository.listRemoteLibraryRoots(...args);
 }
@@ -331,7 +333,9 @@ export function loadStems(
   return tauriBackend.playback.loadStems(...args);
 }
 export function mirrorLocalLibraryToRemote(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.mirrorLocalLibraryToRemote>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.mirrorLocalLibraryToRemote
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.mirrorLocalLibraryToRemote> {
   return tauriBackend.remoteRepository.mirrorLocalLibraryToRemote(...args);
 }
@@ -376,12 +380,18 @@ export function reSeparate(
   return tauriBackend.separation.reSeparate(...args);
 }
 export function reauthorizeRemoteRepository(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.reauthorizeRemoteRepository>
-): ReturnType<typeof tauriBackend.remoteRepository.reauthorizeRemoteRepository> {
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.reauthorizeRemoteRepository
+  >
+): ReturnType<
+  typeof tauriBackend.remoteRepository.reauthorizeRemoteRepository
+> {
   return tauriBackend.remoteRepository.reauthorizeRemoteRepository(...args);
 }
 export function refreshRemoteRepository(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.refreshRemoteRepository>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.refreshRemoteRepository
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.refreshRemoteRepository> {
   return tauriBackend.remoteRepository.refreshRemoteRepository(...args);
 }
@@ -391,12 +401,16 @@ export function registerLocalLibrary(
   return tauriBackend.librarySetup.registerLocalLibrary(...args);
 }
 export function registerRemoteLibrary(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.registerRemoteLibrary>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.registerRemoteLibrary
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.registerRemoteLibrary> {
   return tauriBackend.remoteRepository.registerRemoteLibrary(...args);
 }
 export function relocateRemoteRepository(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.relocateRemoteRepository>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.relocateRemoteRepository
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.relocateRemoteRepository> {
   return tauriBackend.remoteRepository.relocateRemoteRepository(...args);
 }
@@ -426,13 +440,19 @@ export function renamePlaylist(
   return tauriBackend.playlist.renamePlaylist(...args);
 }
 export function resolveRemoteConflict(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.resolveRemoteConflict>
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.resolveRemoteConflict
+  >
 ): ReturnType<typeof tauriBackend.remoteRepository.resolveRemoteConflict> {
   return tauriBackend.remoteRepository.resolveRemoteConflict(...args);
 }
 export function resolveRemoteLibraryCandidate(
-  ...args: Parameters<typeof tauriBackend.remoteRepository.resolveRemoteLibraryCandidate>
-): ReturnType<typeof tauriBackend.remoteRepository.resolveRemoteLibraryCandidate> {
+  ...args: Parameters<
+    typeof tauriBackend.remoteRepository.resolveRemoteLibraryCandidate
+  >
+): ReturnType<
+  typeof tauriBackend.remoteRepository.resolveRemoteLibraryCandidate
+> {
   return tauriBackend.remoteRepository.resolveRemoteLibraryCandidate(...args);
 }
 export function restartApp(
