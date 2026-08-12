@@ -160,6 +160,16 @@ jobs:
             echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
           fi
 
+          completed_run() {
+            gh run list \
+              --repo "${GH_REPO}" \
+              --workflow nightly-hardening.yml \
+              --commit "${GITHUB_SHA}" \
+              --limit 1 \
+              --json databaseId,status,conclusion \
+              --jq '.[0] | select(.status == "completed") | .databaseId // empty'
+          }
+
           # Real Nightly runs have taken 43+ minutes; a shorter deadline fails
           # cold releases that would still succeed within the job budget. The
           # job's timeout-minutes reserves headroom above this for the setup
@@ -168,18 +178,19 @@ jobs:
           deadline=$(( $(date +%s) + poll_minutes * 60 ))
           nightly_run=""
           while [ "$(date +%s)" -lt "${deadline}" ]; do
-            nightly_run="$(gh run list \
-              --repo "${GH_REPO}" \
-              --workflow nightly-hardening.yml \
-              --commit "${GITHUB_SHA}" \
-              --limit 1 \
-              --json databaseId,status,conclusion \
-              --jq '.[0] | select(.status == "completed") | .databaseId // empty')"
+            nightly_run="$(completed_run)"
             if [ -n "${nightly_run}" ]; then
               break
             fi
             sleep 30
           done
+
+          # The loop sleeps after each check, so a run that completes in the
+          # final interval would otherwise be reported as a timeout. Check
+          # once more before failing.
+          if [ -z "${nightly_run}" ]; then
+            nightly_run="$(completed_run)"
+          fi
 
           if [ -z "${nightly_run}" ]; then
             echo "::error::Dispatched Nightly run did not finish within ${poll_minutes} minutes for commit ${GITHUB_SHA}."
