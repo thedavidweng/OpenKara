@@ -2,12 +2,9 @@ use crate::{
     commands::error::{CommandError, CommandResult},
     config::{AppConfig, RegisteredLibrary},
     library::error::LibraryError,
-    remote::atomic_download::{
-        atomic_database_pull, reconcile_database_state_after_restart, DatabasePullOptions,
-    },
+    remote::atomic_download::{atomic_database_pull, DatabasePullOptions},
     remote::control_db::{get_repository_state, LocalState},
     remote::manifest::{read_manifest, MANIFEST_PATH},
-    AppState,
 };
 use rusqlite::Connection;
 use std::path::Path;
@@ -16,7 +13,7 @@ use super::super::types::{
     current_unix_time_ms, load_app_config, load_remote_root, persist_app_config,
 };
 
-use super::super::provider::create_repository_storage;
+use super::super::provider::{create_repository_storage, RepositoryStorage};
 
 pub(crate) fn update_remote_revision_in_config(
     app_data_dir: &Path,
@@ -59,11 +56,9 @@ pub(crate) fn load_registered_remote_library(
     Ok(library.clone())
 }
 
-pub(crate) fn remote_database_revision(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
+pub(in crate::remote) fn remote_database_revision(
+    provider: &dyn RepositoryStorage,
 ) -> CommandResult<Option<String>> {
-    let provider = create_repository_storage(app_data_dir, library)?;
     // Manifest revision is the staleness signal; legacy falls back to openkara.db.
     let manifest_rev = provider.get_revision(MANIFEST_PATH)?;
     if manifest_rev.is_some() {
@@ -92,53 +87,6 @@ pub(crate) fn remote_database_conflict_error(provider_revision: Option<&str>) ->
     )))
 }
 
-pub(crate) fn sync_remote_database_from_provider(
-    control_db_conn: &Connection,
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<RegisteredLibrary> {
-    // Finish a crash between rename and control-DB state update first.
-    reconcile_after_restart(control_db_conn, app_data_dir, library)?;
-
-    // Pull via manifest (or legacy root DB). Do not call initialize_or_sync —
-    // it always downloads root openkara.db and can clobber a generation working copy.
-    let provider_revision = remote_database_revision(app_data_dir, library)?;
-    if !remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
-        return Ok(library.clone());
-    }
-    pull_remote_database_atomically(
-        control_db_conn,
-        app_data_dir,
-        library,
-        provider_revision.as_deref(),
-    )
-}
-
-/// Reconcile repository state if a prior pull completed the rename but not the
-/// control-DB state update. This runs before every refresh so a crash between
-/// rename and state-update does not leave the control DB describing a stale
-/// digest.
-fn reconcile_after_restart(
-    control_db_conn: &Connection,
-    _app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    let root_path = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    if !root_path.join(".openkara-library").exists() {
-        return Ok(());
-    }
-    let root = crate::library_root::LibraryRoot::open(&root_path)
-        .map_err(crate::commands::error::internal_error)?;
-    if root.database_path().exists() {
-        let _ = reconcile_database_state_after_restart(control_db_conn, &root, library.id());
-    }
-    Ok(())
-}
-
 pub(crate) fn prepare_remote_database_for_mutation(
     control_db_conn: &Connection,
     app_data_dir: &Path,
@@ -154,9 +102,11 @@ pub(crate) fn prepare_remote_database_for_mutation(
         return Ok(library.clone());
     }
 
-    let provider_revision = remote_database_revision(app_data_dir, library)?;
+    let provider = create_repository_storage(app_data_dir, library)?;
+    let provider_revision = remote_database_revision(provider.as_ref())?;
     if remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
         return pull_remote_database_atomically(
+            provider.as_ref(),
             control_db_conn,
             app_data_dir,
             library,
@@ -174,7 +124,10 @@ pub(crate) fn prepare_remote_database_for_mutation(
 /// prove the local database has no unpublished edits. Overwriting a dirty
 /// working copy when the control plane is unavailable would silently lose
 /// local mutations.
-fn should_allow_automatic_pull(control_db_conn: &Connection, library: &RegisteredLibrary) -> bool {
+pub(in crate::remote) fn should_allow_automatic_pull(
+    control_db_conn: &Connection,
+    library: &RegisteredLibrary,
+) -> bool {
     match get_repository_state(control_db_conn, library.id()) {
         Ok(Some(state)) => matches!(state.local_state, LocalState::Clean),
         Ok(None) => true,
@@ -196,13 +149,13 @@ fn should_allow_automatic_pull(control_db_conn: &Connection, library: &Registere
 ///
 /// On failure, falls back to the existing local DB (returns the library
 /// unchanged) so the caller can proceed offline.
-fn pull_remote_database_atomically(
+pub(in crate::remote) fn pull_remote_database_atomically(
+    provider: &dyn RepositoryStorage,
     control_db_conn: &Connection,
     app_data_dir: &Path,
     library: &RegisteredLibrary,
     provider_revision: Option<&str>,
 ) -> CommandResult<RegisteredLibrary> {
-    let provider = create_repository_storage(app_data_dir, library)?;
     let root = load_remote_root(app_data_dir, library)?;
 
     // Sanitize revision for temp filenames (ETags may include quotes/slashes).
@@ -219,7 +172,7 @@ fn pull_remote_database_atomically(
         .collect();
     let operation_id = format!("pull-{sanitized_revision}");
 
-    let manifest = read_manifest(provider.as_ref())?;
+    let manifest = read_manifest(provider)?;
 
     let (remote_db_path, expected_size, expected_digest, committed_generation) = match &manifest {
         Some(m) => {
@@ -238,7 +191,7 @@ fn pull_remote_database_atomically(
     };
 
     match atomic_database_pull(
-        provider.as_ref(),
+        provider,
         control_db_conn,
         &root,
         DatabasePullOptions {
@@ -357,39 +310,6 @@ pub(crate) fn resolve_active_remote(config: &AppConfig) -> Option<RegisteredLibr
         RegisteredLibrary::Remote { .. } => Some(library.clone()),
         RegisteredLibrary::Local { .. } => None,
     })
-}
-
-pub(crate) fn refresh_remote_repository(state: &AppState) -> CommandResult<()> {
-    state.remote.ensure_available()?;
-
-    let config = load_app_config(&state.shell.app_data_dir)?;
-    let Some(active_library) = config.active_library() else {
-        return Err(CommandError::from(LibraryError::Internal(
-            "no library is currently active".to_string(),
-        )));
-    };
-
-    if matches!(active_library, RegisteredLibrary::Remote { .. }) {
-        let control_db_conn = state.remote.control_db()?.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
-        // Only pull when the working copy is Clean.
-        if !should_allow_automatic_pull(&control_db_conn, active_library) {
-            tracing::info!(
-                "skipping remote database refresh for library {} because the \
-                 working copy is not clean",
-                active_library.id()
-            );
-            return Ok(());
-        }
-        let _ = sync_remote_database_from_provider(
-            &control_db_conn,
-            &state.shell.app_data_dir,
-            active_library,
-        )?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
