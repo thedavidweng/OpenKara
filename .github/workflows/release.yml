@@ -87,7 +87,11 @@ jobs:
     name: Verify Nightly evidence
     needs: prepare-release
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # Resolves or waits for a full Nightly build (macOS Intel leg ~30m).
+    # Budget: checkout/setup + dispatch (~1-2m), then a 44-minute evidence
+    # poll (real Nightly runs take 43+ minutes), then conclusion + download.
+    # Must stay above the poll deadline so the poll's own error surfaces
+    # instead of the runner killing the job mid-loop.
+    timeout-minutes: 50
     concurrency:
       group: verify-nightly-evidence-${{ github.repository }}-${{ github.sha }}
       cancel-in-progress: false
@@ -156,24 +160,40 @@ jobs:
             echo "Nightly run ${in_flight} already in flight for ${GITHUB_SHA}; waiting on it."
           fi
 
-          deadline=$(( $(date +%s) + 40 * 60 ))
-          nightly_run=""
-          while [ "$(date +%s)" -lt "${deadline}" ]; do
-            nightly_run="$(gh run list \
+          completed_run() {
+            gh run list \
               --repo "${GH_REPO}" \
               --workflow nightly-hardening.yml \
               --commit "${GITHUB_SHA}" \
               --limit 1 \
               --json databaseId,status,conclusion \
-              --jq '.[0] | select(.status == "completed") | .databaseId // empty')"
+              --jq '.[0] | select(.status == "completed") | .databaseId // empty'
+          }
+
+          # Real Nightly runs have taken 43+ minutes; a shorter deadline fails
+          # cold releases that would still succeed within the job budget. The
+          # job's timeout-minutes reserves headroom above this for the setup
+          # steps before the poll and the download after it.
+          poll_minutes=44
+          deadline=$(( $(date +%s) + poll_minutes * 60 ))
+          nightly_run=""
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            nightly_run="$(completed_run)"
             if [ -n "${nightly_run}" ]; then
               break
             fi
             sleep 30
           done
 
+          # The loop sleeps after each check, so a run that completes in the
+          # final interval would otherwise be reported as a timeout. Check
+          # once more before failing.
           if [ -z "${nightly_run}" ]; then
-            echo "::error::Dispatched Nightly run did not finish within 40 minutes for commit ${GITHUB_SHA}."
+            nightly_run="$(completed_run)"
+          fi
+
+          if [ -z "${nightly_run}" ]; then
+            echo "::error::Dispatched Nightly run did not finish within ${poll_minutes} minutes for commit ${GITHUB_SHA}."
             exit 1
           fi
 
