@@ -37,6 +37,7 @@ dist/
 build/
 out/
 output/
+!src-tauri/src/audio/output/
 coverage/
 test-audio/
 website/_site/

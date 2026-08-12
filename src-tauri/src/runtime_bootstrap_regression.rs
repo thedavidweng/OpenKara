@@ -532,7 +532,13 @@ mod tests {
             event(command::RuntimeBootstrapState::Downloading, Some(4096)),
             event(command::RuntimeBootstrapState::Installing, None),
         ];
-        assert_eq!(events.iter().filter(is_byte_progress_event).count(), 1);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| is_byte_progress_event(event))
+                .count(),
+            1
+        );
         assert!(!has_downloading_without_bytes(&events));
     }
 
@@ -543,7 +549,10 @@ mod tests {
             event(command::RuntimeBootstrapState::Probing, None),
             event(command::RuntimeBootstrapState::Activating, None),
         ];
-        let states: Vec<_> = events.iter().map(|event| event.snapshot.state).collect();
+        let states: Vec<_> = events
+            .iter()
+            .map(|event| event.snapshot.state.clone())
+            .collect();
         assert_eq!(
             states,
             vec![

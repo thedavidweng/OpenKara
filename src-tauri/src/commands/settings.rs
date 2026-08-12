@@ -586,6 +586,7 @@ mod tests {
 
     #[test]
     fn settings_snapshot_uses_platform_default_execution_provider_when_unset() {
+        let _guard = crate::platform_capabilities::directml_timeout_test_guard();
         let settings = settings_from_config(&AppConfig {
             execution_provider: None,
             libraries: vec![],
@@ -619,6 +620,7 @@ mod tests {
 
     #[test]
     fn settings_reports_compatible_execution_providers() {
+        let _guard = crate::platform_capabilities::directml_timeout_test_guard();
         let settings = settings_from_config(&AppConfig::default());
 
         assert!(settings.compatible_execution_providers.contains(&"cpu"));

@@ -64,74 +64,11 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    match separator::runtime_bootstrap::begin_startup(&app_data_dir) {
-        Ok(Some(plan)) => {
-            if plan.proving_candidate {
-                if let Err(err) =
-                    separator::runtime_bootstrap::finish_activation_success(&app_data_dir)
-                {
-                    tracing::warn!("failed to finalize runtime activation: {err:#}");
-                }
-            } else {
-                match commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                    &plan.library_path,
-                ) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        tracing::warn!(
-                            "failed to load ONNX Runtime from {}: {err:#}",
-                            plan.library_path.display()
-                        );
-                        if !plan.is_legacy {
-                            if let Some(failed_id) = plan
-                                .record
-                                .as_ref()
-                                .map(|record| record.artifact_id.clone())
-                                .filter(|id| !id.is_empty())
-                            {
-                                record_directml_timeout_for_artifact(
-                                    &app_data_dir,
-                                    &failed_id,
-                                    &err.to_string(),
-                                );
-                                match separator::runtime_bootstrap::rollback_failed_activation(
-                                    &app_data_dir,
-                                    &failed_id,
-                                    &err.to_string(),
-                                ) {
-                                    Ok(Some(previous)) => {
-                                        if let Err(load_err) =
-                                            commands::runtime_bootstrap::ensure_runtime_loaded_with_watchdog(
-                                                &previous.library_path,
-                                            )
-                                        {
-                                            tracing::warn!(
-                                                "failed to load previous ONNX Runtime {}: {load_err:#}",
-                                                previous.library_path.display()
-                                            );
-                                        }
-                                    }
-                                    Ok(None) => {}
-                                    Err(rollback_err) => {
-                                        tracing::warn!(
-                                            "failed to record runtime load failure: {rollback_err:#}"
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::warn!(
-                                    "cannot roll back runtime load failure without an artifact id"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(None) => {}
-        Err(err) => {
-            tracing::warn!("runtime startup resolution failed: {err:#}");
-        }
+    if let Err(err) = separator::activation::resolve_and_load(
+        &app_data_dir,
+        separator::activation::CandidateProof::WorkerProbe,
+    ) {
+        tracing::warn!("runtime startup activation failed: {err:#}");
     }
 
     // Config load failures fall back to defaults; never brick startup.
@@ -346,26 +283,6 @@ fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
             tracing::warn!("reveal watchdog could not show the main window: {error}");
         }
     });
-}
-
-fn record_directml_timeout_for_artifact(
-    app_data_dir: &std::path::Path,
-    artifact_id: &str,
-    error_message: &str,
-) {
-    let Some(runtime) = separator::catalog::runtime_by_artifact_id(
-        &separator::catalog::embedded_catalog().manifest,
-        artifact_id,
-    ) else {
-        return;
-    };
-    if let Err(err) = config::record_directml_unavailable_on_timeout(
-        app_data_dir,
-        &runtime.runtime.execution_providers,
-        error_message,
-    ) {
-        tracing::warn!("failed to record directml timeout disable: {err:#}");
-    }
 }
 
 fn spawn_runtime_update_check_worker<R: Runtime>(
