@@ -48,6 +48,11 @@ candidate commit has no green Nightly evidence from the last 24 hours.
 - full fault injection on disk
 - full Playwright e2e / accessibility matrix (Chromium + WebKit)
 
+A separate nightly-installers workflow builds unsigned installers from main
+(skipping when main has not moved) and publishes them as a rolling `nightly`
+prerelease for pre-release testing. It never ships updater assets
+(latest.json / *.sig), so production auto-update ignores it.
+
 ## Release
 
 Product packaging and the Windows #284 contract. Release requires same-SHA
@@ -81,5 +86,6 @@ These concentrate on the Windows installed-app and fault-recovery path.
 - `scripts/ci/classify-changes.mjs` — PR / main path gates
 - `.github/workflows/ci.yml` — PR and main
 - `.github/workflows/nightly-hardening.yml` — full matrix
+- `.github/workflows/nightly-installers.yml` — rolling nightly prerelease
 - `.github/workflows/release.yml` — product + Windows #284 core
 - `.github/workflows/reusable-windows-installed-app.yml` — Windows lifecycle

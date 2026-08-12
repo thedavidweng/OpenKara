@@ -1,0 +1,314 @@
+name: Nightly installers
+
+# Builds installers from main once per day and publishes them as a rolling
+# `nightly` prerelease so maintainers can test unreleased fixes on real
+# machines without cutting a release. Reuses the same reusable installed-app
+# workflows as Release, but with release_build=false: unsigned bundles, no
+# tauri.release.conf.json overlay, and therefore no updater artifacts.
+#
+# Updater isolation (hard requirement): production apps poll
+# releases/latest/download/latest.json. GitHub resolves releases/latest to the
+# newest non-prerelease release, so the nightly release must always be marked
+# prerelease and must never carry latest.json or *.sig assets. The publish job
+# enforces both invariants.
+
+on:
+  schedule:
+    # 05:37 UTC: off-peak, off the whole/half hour, and after the 04:00 UTC
+    # Nightly hardening run (~45 min) so the two matrices do not compete for
+    # runners or the shared Rust cache.
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even when main has no new commits since the last nightly"
+        type: boolean
+        default: false
+
+concurrency:
+  group: nightly-installers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    name: Check for new commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+    steps:
+      - name: Compare main HEAD with the last published nightly
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          if [ "${REF_NAME}" != "main" ]; then
+            echo "::error::Nightly installers only build from main; got ${REF_NAME}."
+            exit 1
+          fi
+
+          # The rolling nightly tag points at the commit of the last published
+          # nightly. The commits API dereferences the tag; a missing tag (404)
+          # means no nightly exists yet.
+          last_sha="$(gh api "repos/${GH_REPO}/commits/nightly" --jq '.sha' 2>/dev/null || true)"
+
+          if [ "${FORCE}" = "true" ]; then
+            echo "Force build requested via workflow_dispatch."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "${last_sha}" ]; then
+            echo "No nightly tag found; building the first nightly."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif [ "${last_sha}" = "${HEAD_SHA}" ]; then
+            echo "main (${HEAD_SHA}) already has a published nightly; skipping."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits since the last nightly (${last_sha} -> ${HEAD_SHA}); building."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # release_build stays false on every leg: bundles are unsigned (--no-sign /
+  # no signing identity), the tauri.release.conf.json overlay that enables
+  # createUpdaterArtifacts is not applied, and no signing secrets are passed.
+  windows:
+    name: Nightly Windows installer (x64)
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-dist-windows-x64
+      driver_scenario: clean-install
+      run_keyboard_uia: false
+      run_fault_injection: false
+      run_runtime_bootstrap_regression: false
+      run_display_matrix: false
+      previous_version: none
+      retention_days: 7
+
+  macos-aarch64:
+    name: Nightly macOS installer (Apple Silicon)
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-dist-macos-aarch64
+      os: macos-14
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
+      scenario: clean-install
+      previous_version: none
+      retention_days: 7
+
+  macos-x86_64:
+    name: Nightly macOS installer (Intel)
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-dist-macos-x86_64
+      os: macos-15-intel
+      rust_target: x86_64-apple-darwin
+      tauri_target: x86_64-apple-darwin
+      scenario: clean-install
+      previous_version: none
+      retention_days: 7
+
+  linux:
+    name: Nightly Linux installer (x64)
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-dist-linux-x86_64
+      scenario: clean-install
+      os: ubuntu-22.04
+      rust_target: x86_64-unknown-linux-gnu
+      tauri_target: x86_64-unknown-linux-gnu
+      previous_version: none
+      retention_days: 7
+
+  publish:
+    name: Publish nightly prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [check, windows, macos-aarch64, macos-x86_64, linux]
+    # The Windows NSIS installer is the hard requirement (clean-VM testing of
+    # Windows-only fixes); macOS/Linux legs are best-effort so a flaky or
+    # queued leg cannot block the Windows package. Per-platform download steps
+    # below only pick up legs that passed their smoke gate.
+    if: >-
+      !cancelled() &&
+      needs.check.outputs.should_build == 'true' &&
+      needs.windows.result == 'success'
+    permissions:
+      contents: write # recreate the rolling nightly tag + prerelease
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nightly-dist-windows-x64-installer
+          path: ${{ runner.temp }}/nightly-download/windows-x64
+
+      - name: Download macOS installer (Apple Silicon)
+        if: needs.macos-aarch64.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nightly-dist-macos-aarch64-installer
+          path: ${{ runner.temp }}/nightly-download/macos-aarch64
+
+      - name: Download macOS installer (Intel)
+        if: needs.macos-x86_64.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nightly-dist-macos-x86_64-installer
+          path: ${{ runner.temp }}/nightly-download/macos-x86_64
+
+      - name: Download Linux installer
+        if: needs.linux.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nightly-dist-linux-x86_64-installer
+          path: ${{ runner.temp }}/nightly-download/linux-x86_64
+
+      - name: Stage nightly assets
+        env:
+          DOWNLOAD_ROOT: ${{ runner.temp }}/nightly-download
+          STAGING_DIR: ${{ runner.temp }}/nightly-assets
+        run: |
+          set -euo pipefail
+          mkdir -p "${STAGING_DIR}"
+
+          # Stable asset names give maintainers a permanent download URL
+          # (releases/download/nightly/<name>) that survives version bumps.
+          stage_one() {
+            local dir="$1" pattern="$2" dest="$3"
+            if [ ! -d "${DOWNLOAD_ROOT}/${dir}" ]; then
+              echo "Skipping ${dest}: the ${dir} leg did not pass, no artifact downloaded."
+              return 0
+            fi
+            local matches=()
+            while IFS= read -r -d '' file; do
+              matches+=("${file}")
+            done < <(find "${DOWNLOAD_ROOT}/${dir}" -type f -name "${pattern}" -print0)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one ${pattern} in ${dir}, found ${#matches[@]}."
+              return 1
+            fi
+            cp "${matches[0]}" "${STAGING_DIR}/${dest}"
+          }
+
+          stage_one windows-x64 '*setup.exe' OpenKara_nightly_x64-setup.exe
+          stage_one macos-aarch64 '*.dmg' OpenKara_nightly_aarch64.dmg
+          stage_one macos-x86_64 '*.dmg' OpenKara_nightly_x64.dmg
+          stage_one linux-x86_64 '*.AppImage' OpenKara_nightly_amd64.AppImage
+
+          # Updater isolation: fail loudly if updater-endpoint assets ever
+          # appear in the download set (they cannot with release_build=false,
+          # but this guards future workflow changes).
+          if find "${DOWNLOAD_ROOT}" -type f \( -name '*.sig' -o -name 'latest.json' \) | grep -q .; then
+            echo "::error::Updater artifacts leaked into the nightly asset set."
+            exit 1
+          fi
+
+          if [ ! -f "${STAGING_DIR}/OpenKara_nightly_x64-setup.exe" ]; then
+            echo "::error::The Windows installer is missing from the staged assets."
+            exit 1
+          fi
+
+          (cd "${STAGING_DIR}" && sha256sum -- * > SHA256SUMS)
+          ls -la "${STAGING_DIR}"
+
+      - name: Compose release title and notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_AARCH64_RESULT: ${{ needs.macos-aarch64.result }}
+          MACOS_X86_64_RESULT: ${{ needs.macos-x86_64.result }}
+          LINUX_RESULT: ${{ needs.linux.result }}
+          NOTES_FILE: ${{ runner.temp }}/nightly-notes.md
+        run: |
+          set -euo pipefail
+          subject="$(gh api "repos/${GH_REPO}/commits/${HEAD_SHA}" --jq '.commit.message' | head -n 1)"
+          built_at="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          {
+            printf 'Rolling nightly build of main for maintainer and tester use.\n\n'
+            printf -- '- Source commit: %s\n' "${HEAD_SHA}"
+            printf -- '- Commit subject: %s\n' "${subject}"
+            printf -- '- Built: %s\n\n' "${built_at}"
+            printf '> [!WARNING]\n'
+            printf '> Nightly installers are unsigned CI builds that skip the release verification\n'
+            printf '> gates. They exist for pre-release testing only. Do not redistribute.\n\n'
+            printf 'Nightly releases carry no updater manifest or signatures: installed stable\n'
+            printf 'versions are never offered a nightly, and an installed nightly moves to the\n'
+            printf 'next stable release once it ships.\n\n'
+            printf 'Platform smoke results: Windows %s, macOS Apple Silicon %s, macOS Intel %s, Linux %s.\n' \
+              "${WINDOWS_RESULT}" "${MACOS_AARCH64_RESULT}" "${MACOS_X86_64_RESULT}" "${LINUX_RESULT}"
+          } > "${NOTES_FILE}"
+          cat "${NOTES_FILE}"
+          echo "title=nightly-$(date -u +%Y%m%d)-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Recreate rolling nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+          RELEASE_TITLE: ${{ steps.notes.outputs.title }}
+          NOTES_FILE: ${{ runner.temp }}/nightly-notes.md
+          STAGING_DIR: ${{ runner.temp }}/nightly-assets
+        run: |
+          set -euo pipefail
+          # Delete-and-recreate keeps the release rolling: stale assets from a
+          # previous package version can never linger, and the nightly tag
+          # always points at the commit the assets were built from.
+          gh release delete nightly --repo "${GH_REPO}" --cleanup-tag --yes \
+            || echo "No existing nightly release to delete."
+          gh api --method DELETE "repos/${GH_REPO}/git/refs/tags/nightly" 2>/dev/null \
+            || echo "No orphan nightly tag to delete."
+
+          # --prerelease is load-bearing: GitHub resolves releases/latest (the
+          # production updater endpoint) only to non-prerelease releases.
+          gh release create nightly \
+            --repo "${GH_REPO}" \
+            --target "${TARGET_SHA}" \
+            --prerelease \
+            --title "${RELEASE_TITLE}" \
+            --notes-file "${NOTES_FILE}" \
+            "${STAGING_DIR}"/*
+
+      - name: Verify nightly release invariants
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view nightly --repo "${GH_REPO}" --json isPrerelease,assets)"
+          if [ "$(jq -r '.isPrerelease' <<<"${release_json}")" != "true" ]; then
+            echo "::error::The nightly release must stay a prerelease so releases/latest ignores it."
+            exit 1
+          fi
+          if jq -e '.assets[] | select(.name == "latest.json" or (.name | endswith(".sig")))' <<<"${release_json}" >/dev/null; then
+            echo "::error::The nightly release must not carry updater assets (latest.json / *.sig)."
+            exit 1
+          fi
+          if ! jq -e '.assets[] | select(.name == "OpenKara_nightly_x64-setup.exe")' <<<"${release_json}" >/dev/null; then
+            echo "::error::The Windows installer is missing from the nightly release."
+            exit 1
+          fi
+          echo "Nightly release verified: prerelease with $(jq '.assets | length' <<<"${release_json}") assets."
