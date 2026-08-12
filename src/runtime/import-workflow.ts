@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import type { LibraryBackend, LyricsBackend } from "@/lib/backend";
 import i18next from "@/lib/i18n";
 import { notifySuccess } from "@/lib/errors";
 import type { ImportFailure, LyricsMatch, Song } from "@/types/ipc";
@@ -9,11 +10,11 @@ import {
   type ExplicitCdgSelection,
 } from "@/lib/import-cdg-selection";
 
-export interface ImportWorkflowApi {
-  importSongs: typeof import("@/lib/tauri").importSongs;
-  importLyricsFiles: typeof import("@/lib/tauri").importLyricsFiles;
-  getLibrary: typeof import("@/lib/tauri").getLibrary;
-}
+export type ImportWorkflowApi = Pick<
+  LibraryBackend,
+  "importSongs" | "getLibrary"
+> &
+  Pick<LyricsBackend, "importLyricsFiles">;
 
 export interface RunImportWorkflowOptions {
   paths: string[];

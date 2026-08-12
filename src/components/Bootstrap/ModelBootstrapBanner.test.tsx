@@ -1,29 +1,33 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { ModelBootstrapBanner } from "./ModelBootstrapBanner";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { ModelBootstrapStatusSnapshot } from "@/types/ipc";
 
-const { mockDownloadModel, mockNotifyError } = vi.hoisted(() => ({
-  mockDownloadModel: vi.fn(),
+const { mockNotifyError } = vi.hoisted(() => ({
   mockNotifyError: vi.fn(),
 }));
+
+const mockDownloadModel = vi.fn();
+const backend = createMockBackend({
+  overrides: { settings: { downloadModel: mockDownloadModel } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
-vi.mock("@/lib/tauri", () => ({ downloadModel: mockDownloadModel }));
 vi.mock("@/lib/errors", () => ({ notifyError: mockNotifyError }));
 
 function setStatus(

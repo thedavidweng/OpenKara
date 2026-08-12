@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { LyricsPanel } from "@/components/Lyrics/LyricsPanel";
 import { CdgCanvas } from "@/components/Cdg/CdgCanvas";
 import { useCoverArtUrl } from "@/lib/cover-art";
-import { getCoverArtPreview } from "@/lib/tauri/library";
+import { useBackend } from "@/lib/backend";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -17,6 +17,7 @@ interface PlaybackStageProps {
 export function PlaybackStage({
   presentation = "standard",
 }: PlaybackStageProps) {
+  const { library } = useBackend();
   const hasCdg = useCdgStore((s) => s.hasCdg);
   const songId = usePlayerStore((s) => s.snapshot?.song_id ?? null);
   const songs = useLibraryStore((s) => s.songs);
@@ -33,7 +34,8 @@ export function PlaybackStage({
       return;
     }
     let cancelled = false;
-    getCoverArtPreview(currentSong.hash)
+    library
+      .getCoverArtPreview(currentSong.hash)
       .then((data) => {
         if (!cancelled) setFetchedCoverArt(data);
       })
@@ -41,7 +43,12 @@ export function PlaybackStage({
     return () => {
       cancelled = true;
     };
-  }, [currentSong?.hash, currentSong?.cover_art, currentSong?.has_cover_art]);
+  }, [
+    library,
+    currentSong?.hash,
+    currentSong?.cover_art,
+    currentSong?.has_cover_art,
+  ]);
 
   const nativeBackdropUrl = useCoverArtUrl(
     songId ?? "native-stage-empty",

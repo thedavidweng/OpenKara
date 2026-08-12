@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 
 const { mockGetCoverArt, mockGetCoverArtThumbnail } = vi.hoisted(() => ({
   mockGetCoverArt: vi.fn(),
@@ -13,10 +14,19 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://localhost/${encodeURI(path)}`,
 }));
 
-vi.mock("@/lib/tauri/library", () => ({
-  getCoverArt: mockGetCoverArt,
-  getCoverArtThumbnail: mockGetCoverArtThumbnail,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    library: {
+      getCoverArt: mockGetCoverArt,
+      getCoverArtThumbnail: mockGetCoverArtThumbnail,
+    },
+  },
+});
 
 const { CoverArtThumbnail } = await import("./CoverArtThumbnail");
 

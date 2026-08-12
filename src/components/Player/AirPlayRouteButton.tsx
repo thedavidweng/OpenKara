@@ -3,7 +3,7 @@ import { Airplay } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
-import { syncAirPlayRoutePicker } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import type { AirPlayRoutePickerBounds } from "@/types/ipc";
 
 function buildHostBounds(element: HTMLDivElement): AirPlayRoutePickerBounds {
@@ -25,6 +25,7 @@ export function AirPlayRouteButton({
   className = "h-8 w-8 flex items-center justify-center",
   previewMode = false,
 }: AirPlayRouteButtonProps) {
+  const { playback } = useBackend();
   const { t } = useTranslation();
   const platform = previewMode ? "mac" : getShortcutPlatform();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -41,9 +42,9 @@ export function AirPlayRouteButton({
         return;
       }
 
-      void syncAirPlayRoutePicker(buildHostBounds(hostRef.current)).catch(
-        () => {},
-      );
+      void playback
+        .syncAirPlayRoutePicker(buildHostBounds(hostRef.current))
+        .catch(() => {});
     };
 
     syncBounds();
@@ -58,9 +59,9 @@ export function AirPlayRouteButton({
     return () => {
       window.removeEventListener("resize", syncBounds);
       resizeObserver?.disconnect();
-      void syncAirPlayRoutePicker(null).catch(() => {});
+      void playback.syncAirPlayRoutePicker(null).catch(() => {});
     };
-  }, [platform, previewMode]);
+  }, [playback, platform, previewMode]);
 
   if (platform !== "mac") {
     return null;

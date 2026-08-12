@@ -4,7 +4,7 @@ import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,
 } from "@/runtime/webview-sync";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type Backend } from "@/lib/backend";
 import type {
   AppSettings,
   ExecutionProvider,
@@ -262,7 +262,9 @@ export function createSettingsStore(
   syncChannel: WebviewSyncChannel<SettingsSyncSnapshot> = createWebviewSyncChannel<SettingsSyncSnapshot>(
     "openkara.settings",
   ),
+  backend: Backend = tauriBackend,
 ) {
+  const api = backend.settings;
   const eqEnabledField = createOptimisticField(DEFAULT_APP_SETTINGS.eqEnabled);
   const eqGainsField = createOptimisticField(DEFAULT_APP_SETTINGS.eqGainsDb);
   const crossfadeEnabledField = createOptimisticField(

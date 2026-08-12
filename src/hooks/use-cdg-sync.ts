@@ -15,8 +15,8 @@ import {
   type CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
 import { ensureArrayBuffer, parseCdgFrameResponse } from "@/lib/cdg-protocol";
-import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
-import * as api from "@/lib/tauri";
+import type { CdgAvailability, CdgErrorCode } from "@/lib/backend";
+import { useBackend, type CdgBackend } from "@/lib/backend";
 
 const MIN_INTERVAL_MS = 33;
 
@@ -74,8 +74,8 @@ export type CdgFrameCoordinator = {
 };
 
 export function createCdgFrameCoordinator(deps: {
-  getCdgFrame: typeof api.getCdgFrame;
-  getCdgStatus: typeof api.getCdgStatus;
+  getCdgFrame: CdgBackend["getCdgFrame"];
+  getCdgStatus: CdgBackend["getCdgStatus"];
   onFrame: (args: {
     songId: string;
     transportGeneration: number;
@@ -208,6 +208,7 @@ export function createCdgFrameCoordinator(deps: {
 }
 
 export function useCdgSync(enabled = true): void {
+  const backend = useBackend();
   const songId = usePlayerStore((s) => s.snapshot?.song_id ?? null);
   const transportGeneration = usePlayerStore(
     (s) => s.snapshot?.transport_generation ?? 0,
@@ -226,8 +227,8 @@ export function useCdgSync(enabled = true): void {
     }
 
     const coordinator = createCdgFrameCoordinator({
-      getCdgFrame: api.getCdgFrame,
-      getCdgStatus: api.getCdgStatus,
+      getCdgFrame: backend.cdg.getCdgFrame,
+      getCdgStatus: backend.cdg.getCdgStatus,
       isCurrent: (req) => {
         const snap = usePlayerStore.getState().snapshot;
         return (
@@ -286,7 +287,7 @@ export function useCdgSync(enabled = true): void {
         coordinatorRef.current = null;
       }
     };
-  }, [enabled, setFrameVersion, setSong, setStatus]);
+  }, [backend, enabled, setFrameVersion, setSong, setStatus]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { formatBytes } from "@/lib/format";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import type { CacheUsage } from "@/types/ipc";
 
 export function SettingsRemoteCacheSection() {
+  const { remoteRepository } = useBackend();
   const { t } = useTranslation();
   const [usage, setUsage] = useState<CacheUsage | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -14,12 +15,12 @@ export function SettingsRemoteCacheSection() {
 
   const refresh = useCallback(async () => {
     try {
-      const u = await api.getRemoteCacheUsage();
+      const u = await remoteRepository.getRemoteCacheUsage();
       setUsage(u);
     } catch (err) {
       notifyError(err);
     }
-  }, []);
+  }, [remoteRepository]);
 
   useEffect(() => {
     setEvictedCount(null);
@@ -29,7 +30,7 @@ export function SettingsRemoteCacheSection() {
   const handleClear = useCallback(async () => {
     setClearing(true);
     try {
-      const count = await api.clearRemoteCache();
+      const count = await remoteRepository.clearRemoteCache();
       setEvictedCount(count);
       await refresh();
     } catch (err) {
@@ -37,7 +38,7 @@ export function SettingsRemoteCacheSection() {
     } finally {
       setClearing(false);
     }
-  }, [refresh]);
+  }, [refresh, remoteRepository]);
 
   return (
     <SettingsSectionCard

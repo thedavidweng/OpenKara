@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
+import type { CdgAvailability, CdgErrorCode } from "@/lib/backend";
 
 interface CdgState {
   hasCdg: boolean;

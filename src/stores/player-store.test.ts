@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createWebviewSyncChannel } from "@/runtime/webview-sync";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import {
+  createWebviewSyncChannel,
+  type WebviewSyncChannel,
+} from "@/runtime/webview-sync";
 import type { PlaybackPositionEvent, PlaybackStateSnapshot } from "@/types/ipc";
 import {
   createPlayerStore,
@@ -11,14 +15,6 @@ import {
 } from "./player-store";
 
 const {
-  mockPlay,
-  mockResume,
-  mockPause,
-  mockSeek,
-  mockSetVolume,
-  mockSetStemVolume,
-  mockLoadStems,
-  mockGetPlaybackState,
   mockNotifyError,
   mockAddToQueue,
   mockDequeue,
@@ -26,14 +22,6 @@ const {
   mockPopFromHistory,
   mockRemoveSongIds,
 } = vi.hoisted(() => ({
-  mockPlay: vi.fn(),
-  mockResume: vi.fn(),
-  mockPause: vi.fn(),
-  mockSeek: vi.fn(),
-  mockSetVolume: vi.fn(),
-  mockSetStemVolume: vi.fn(),
-  mockLoadStems: vi.fn(),
-  mockGetPlaybackState: vi.fn(),
   mockNotifyError: vi.fn(),
   mockAddToQueue: vi.fn(),
   mockDequeue: vi.fn(),
@@ -42,16 +30,33 @@ const {
   mockRemoveSongIds: vi.fn(),
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  play: mockPlay,
-  resume: mockResume,
-  pause: mockPause,
-  seek: mockSeek,
-  setVolume: mockSetVolume,
-  setStemVolume: mockSetStemVolume,
-  loadStems: mockLoadStems,
-  getPlaybackState: mockGetPlaybackState,
-}));
+const mockPlay = vi.fn();
+const mockResume = vi.fn();
+const mockPause = vi.fn();
+const mockSeek = vi.fn();
+const mockSetVolume = vi.fn();
+const mockSetStemVolume = vi.fn();
+const mockLoadStems = vi.fn();
+const mockGetPlaybackState = vi.fn();
+
+const backend = createMockBackend({
+  overrides: {
+    playback: {
+      play: mockPlay,
+      resume: mockResume,
+      pause: mockPause,
+      seek: mockSeek,
+      setVolume: mockSetVolume,
+      setStemVolume: mockSetStemVolume,
+      loadStems: mockLoadStems,
+      getPlaybackState: mockGetPlaybackState,
+    },
+  },
+});
+
+function makePlayerStore(syncChannel?: WebviewSyncChannel<PlayerSyncSnapshot>) {
+  return createPlayerStore(syncChannel, backend);
+}
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
@@ -74,9 +79,6 @@ vi.mock("@/stores/queue-store", () => ({
     }),
   },
 }));
-
-// Session is the real implementation under the player-store adapter.
-// Transport is mocked via @/lib/tauri above; queue/library seams are stubbed.
 
 interface FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -316,13 +318,13 @@ describe("selectSyncDisplayPositionMs", () => {
       return channel;
     };
 
-    const primary = createPlayerStore(
+    const primary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "primary",
       }),
     );
-    const secondary = createPlayerStore(
+    const secondary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "secondary",
@@ -347,7 +349,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("applies the authoritative playback snapshot when background loading starts playback", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     player.store.getState().updateSnapshot(
       playbackSnapshot({
         state: "loading",
@@ -372,7 +374,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("ignores stale position events from an older transport generation", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     player.store.getState().updateSnapshot(
       playbackSnapshot({
         song_id: "song-2",
@@ -411,7 +413,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("accepts the matching generation event that starts playback after loading", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     player.store.getState().updateSnapshot(
       playbackSnapshot({
         song_id: "song-2",
@@ -443,7 +445,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("syncs transport fields from position ticks without replacing snapshot", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     const currentSnapshot = playbackSnapshot({ is_playing: false });
     player.store.getState().updateSnapshot(currentSnapshot);
 
@@ -463,7 +465,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("keeps the snapshot stable for ordinary position ticks", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     const currentSnapshot = playbackSnapshot();
     player.store.getState().updateSnapshot(currentSnapshot);
 
@@ -480,7 +482,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("advances positionMs across multiple ordinary position ticks", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     const currentSnapshot = playbackSnapshot();
     player.store.getState().updateSnapshot(currentSnapshot);
 
@@ -509,7 +511,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("positions from the empty store via a series of position events", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
 
     player.store
       .getState()
@@ -537,7 +539,7 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("applies position-only events while playing without monotonic guard", () => {
-    const player = createPlayerStore();
+    const player = makePlayerStore();
     player.store
       .getState()
       .updateSnapshot(
@@ -579,13 +581,13 @@ describe("selectSyncDisplayPositionMs", () => {
       return channel;
     };
 
-    const primary = createPlayerStore(
+    const primary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "primary",
       }),
     );
-    const secondary = createPlayerStore(
+    const secondary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "secondary",
@@ -628,13 +630,13 @@ describe("selectSyncDisplayPositionMs", () => {
       return channel;
     };
 
-    const primary = createPlayerStore(
+    const primary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "primary",
       }),
     );
-    const secondary = createPlayerStore(
+    const secondary = makePlayerStore(
       createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
         channelFactory,
         originId: "secondary",
@@ -679,11 +681,11 @@ describe("selectSyncDisplayPositionMs", () => {
 });
 
 describe("playSong / playNow / skip / onEnded", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockPlay.mockReset();
     mockSeek.mockReset();
     mockNotifyError.mockReset();
@@ -811,11 +813,11 @@ describe("playSong / playNow / skip / onEnded", () => {
 });
 
 describe("onTrackTransitioned", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockPushToHistory.mockReset();
     mockRemoveSongIds.mockReset();
     mockGetPlaybackState.mockReset();
@@ -862,11 +864,11 @@ describe("onTrackTransitioned", () => {
 });
 
 describe("resume", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockResume.mockReset();
     mockNotifyError.mockReset();
   });
@@ -900,11 +902,11 @@ describe("resume", () => {
 });
 
 describe("pause", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockPause.mockReset();
     mockNotifyError.mockReset();
   });
@@ -972,11 +974,11 @@ describe("pause", () => {
 });
 
 describe("seek", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockSeek.mockReset();
     mockNotifyError.mockReset();
   });
@@ -1170,10 +1172,10 @@ describe("seek", () => {
 });
 
 describe("setVolume", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockSetVolume.mockReset();
     mockNotifyError.mockReset();
   });
@@ -1210,10 +1212,10 @@ describe("setVolume", () => {
 });
 
 describe("setStemVolume", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockSetStemVolume.mockReset();
     mockNotifyError.mockReset();
   });
@@ -1252,10 +1254,10 @@ describe("setStemVolume", () => {
 });
 
 describe("loadStems", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockLoadStems.mockReset();
     mockNotifyError.mockReset();
   });
@@ -1307,11 +1309,11 @@ describe("loadStems", () => {
 });
 
 describe("loadState", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
     mockGetPlaybackState.mockReset();
     mockNotifyError.mockReset();
   });
@@ -1353,11 +1355,11 @@ describe("loadState", () => {
 });
 
 describe("updateSnapshot", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
   });
 
   afterEach(() => {
@@ -1387,10 +1389,10 @@ describe("updateSnapshot", () => {
 });
 
 describe("updateAirPlayOutput", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
-    player = createPlayerStore();
+    player = makePlayerStore();
   });
 
   afterEach(() => {
@@ -1428,10 +1430,10 @@ describe("updateAirPlayOutput", () => {
 });
 
 describe("updateLocalAudienceOutputActive", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
-    player = createPlayerStore();
+    player = makePlayerStore();
   });
 
   afterEach(() => {
@@ -1448,11 +1450,11 @@ describe("updateLocalAudienceOutputActive", () => {
 });
 
 describe("startAirPlayPlainTextPagePending", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
   });
 
   afterEach(() => {
@@ -1497,11 +1499,11 @@ describe("startAirPlayPlainTextPagePending", () => {
 });
 
 describe("clearAirPlayPlainTextPagePending", () => {
-  let player: ReturnType<typeof createPlayerStore>;
+  let player: ReturnType<typeof makePlayerStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    player = createPlayerStore();
+    player = makePlayerStore();
   });
 
   afterEach(() => {

@@ -6,7 +6,7 @@ import { confirm, open } from "@tauri-apps/plugin-dialog";
 import i18next from "@/lib/i18n";
 import { copyDebugInfo } from "@/lib/debug-info";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { tauriBackend, useBackend } from "@/lib/backend";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -87,8 +87,8 @@ export async function promptImportFiles({
   openDialog = open,
   getDefaultAudioDir = audioDir,
   confirmImport = confirm,
-  expandImportPaths = api.expandImportPaths,
-  pickImportPaths = api.pickImportPaths,
+  expandImportPaths = tauriBackend.library.expandImportPaths,
+  pickImportPaths = tauriBackend.library.pickImportPaths,
 }: PromptImportFilesDependencies): Promise<void> {
   try {
     let defaultPath: string | undefined;
@@ -177,13 +177,14 @@ export async function handleAppMenuAction(
 }
 
 export function useAppMenuRuntime(enabled: boolean): void {
+  const backend = useBackend();
   const { t } = useTranslation();
   const importFiles = useLibraryStore((s) => s.importFiles);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggle);
 
   useEffect(() => {
-    void api
+    void backend.settings
       .setNativeAppMenuLabels({
         file: t("windowChrome.file"),
         edit: t("windowChrome.edit"),
@@ -197,7 +198,7 @@ export function useAppMenuRuntime(enabled: boolean): void {
         copyDebugInfo: t("windowChrome.copyDebugInfo"),
       })
       .catch(() => {});
-  }, [t]);
+  }, [backend, t]);
 
   useEffect(() => {
     if (!enabled) {
@@ -210,7 +211,12 @@ export function useAppMenuRuntime(enabled: boolean): void {
     listen<AppMenuAction>(APP_MENU_ACTION_EVENT, (event) => {
       void handleAppMenuAction(event.payload, {
         toggleSettings,
-        importFromDialog: () => promptImportFiles({ importFiles }),
+        importFromDialog: () =>
+          promptImportFiles({
+            importFiles,
+            expandImportPaths: backend.library.expandImportPaths,
+            pickImportPaths: backend.library.pickImportPaths,
+          }),
         toggleSidebar,
       });
     }).then((dispose) => {
@@ -225,5 +231,5 @@ export function useAppMenuRuntime(enabled: boolean): void {
       cancelled = true;
       unlisten?.();
     };
-  }, [enabled, importFiles, toggleSettings, toggleSidebar]);
+  }, [backend, enabled, importFiles, toggleSettings, toggleSidebar]);
 }

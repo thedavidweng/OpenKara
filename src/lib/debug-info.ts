@@ -1,4 +1,4 @@
-import { getDebugInfo } from "@/lib/tauri";
+import { tauriBackend } from "@/lib/backend";
 import type { DebugInfo } from "@/types/ipc";
 import i18next from "@/lib/i18n";
 import type { TFunction } from "i18next";
@@ -35,7 +35,7 @@ interface CopyDebugInfoDependencies {
 }
 
 export async function copyDebugInfo({
-  fetchDebugInfo = getDebugInfo,
+  fetchDebugInfo = tauriBackend.settings.getDebugInfo,
   writeText = (text: string) => navigator.clipboard.writeText(text),
   translate = i18next.t.bind(i18next),
 }: CopyDebugInfoDependencies = {}): Promise<void> {

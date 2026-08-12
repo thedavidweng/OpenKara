@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type Backend } from "@/lib/backend";
 import { createWebviewSyncChannel } from "@/runtime/webview-sync";
 import { invalidateCoverArtUrl } from "@/lib/cover-art";
 import { notifyError } from "@/lib/errors";
@@ -87,304 +87,321 @@ interface LibraryState {
   clearImportErrors: () => void;
 }
 
-let pendingCdgChoiceResolver: ((audioPath: string | null) => void) | null =
-  null;
+export function createLibraryStore(backend: Backend = tauriBackend) {
+  const { library, librarySetup, maintenance, remoteRepository, separation } =
+    backend;
 
-const librarySyncChannel = createWebviewSyncChannel<{ revision: number }>(
-  "openkara.library",
-);
-let librarySyncRevision = 0;
+  let pendingCdgChoiceResolver: ((audioPath: string | null) => void) | null =
+    null;
 
-function publishLibraryInvalidation() {
-  librarySyncRevision += 1;
-  librarySyncChannel.publish({ revision: librarySyncRevision });
-}
+  const librarySyncChannel = createWebviewSyncChannel<{ revision: number }>(
+    "openkara.library",
+  );
+  let librarySyncRevision = 0;
 
-let searchGeneration = 0;
-
-const debouncedSearch = debounce(async (query: string) => {
-  const gen = ++searchGeneration;
-  try {
-    const songs = await api.searchLibrary(query);
-    if (gen !== searchGeneration) return;
-    useLibraryStore.setState({ songs });
-  } catch (e) {
-    if (gen !== searchGeneration) return;
-    notifyError(e);
+  function publishLibraryInvalidation() {
+    librarySyncRevision += 1;
+    librarySyncChannel.publish({ revision: librarySyncRevision });
   }
-}, 300);
 
-export const useLibraryStore = create<LibraryState>((set, get) => ({
-  songs: [],
-  searchQuery: "",
-  isImporting: false,
-  importErrors: [],
-  selectedSongIds: new Set<string>(),
-  lastClickedSongId: null,
-  separationStatuses: {},
-  uploadStatuses: {},
-  filter: "all",
-  batchSeparation: null,
-  pendingImportCdgChoice: null,
+  let searchGeneration = 0;
 
-  loadLibrary: async () => {
+  const debouncedSearch = debounce(async (query: string) => {
+    const gen = ++searchGeneration;
     try {
-      try {
-        const activeLibrary = await api.getActiveLibrary();
-        if (activeLibrary?.kind === "remote") {
-          await api.refreshRemoteRepository();
-        }
-      } catch {}
-
-      const songs = await api.getLibrary();
-      set({ songs });
-
-      try {
-        const statuses = await api.getAllSeparationStatuses();
-        const statusMap: Record<string, SeparationStatusSnapshot> = {};
-        for (const s of statuses) {
-          statusMap[s.song_id] = s;
-        }
-        set({ separationStatuses: statusMap });
-      } catch {}
-
-      try {
-        const uploads = await api.getAllUploadStatuses();
-        const uploadMap: Record<string, UploadStatusSnapshot> = {};
-        for (const s of uploads) {
-          uploadMap[s.song_id] = s;
-        }
-        set({ uploadStatuses: uploadMap });
-      } catch {}
+      const songs = await library.searchLibrary(query);
+      if (gen !== searchGeneration) return;
+      store.setState({ songs });
     } catch (e) {
+      if (gen !== searchGeneration) return;
       notifyError(e);
     }
-  },
+  }, 300);
 
-  importFiles: async (paths) => {
-    set({ isImporting: true, importErrors: [] });
-    try {
-      await runImportWorkflow({
-        paths,
-        api,
-        promptForCdgChoice: get().promptForCdgChoice,
-        notifyError,
-        setImportErrors: (importErrors) => set({ importErrors }),
-        setSongs: (songs) => set({ songs }),
-        publishLibraryInvalidation,
-      });
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      set({ isImporting: false });
-    }
-  },
+  const store = create<LibraryState>((set, get) => ({
+    songs: [],
+    searchQuery: "",
+    isImporting: false,
+    importErrors: [],
+    selectedSongIds: new Set<string>(),
+    lastClickedSongId: null,
+    separationStatuses: {},
+    uploadStatuses: {},
+    filter: "all",
+    batchSeparation: null,
+    pendingImportCdgChoice: null,
 
-  promptForCdgChoice: async (request) => {
-    set({ pendingImportCdgChoice: request });
+    loadLibrary: async () => {
+      try {
+        try {
+          const activeLibrary = await librarySetup.getActiveLibrary();
+          if (activeLibrary?.kind === "remote") {
+            await remoteRepository.refreshRemoteRepository();
+          }
+        } catch {}
 
-    return new Promise((resolve) => {
-      pendingCdgChoiceResolver = resolve;
-    });
-  },
+        const songs = await library.getLibrary();
+        set({ songs });
 
-  resolveCdgChoicePrompt: (audioPath) => {
-    set({ pendingImportCdgChoice: null });
-    pendingCdgChoiceResolver?.(audioPath);
-    pendingCdgChoiceResolver = null;
-  },
+        try {
+          const statuses = await separation.getAllSeparationStatuses();
+          const statusMap: Record<string, SeparationStatusSnapshot> = {};
+          for (const s of statuses) {
+            statusMap[s.song_id] = s;
+          }
+          set({ separationStatuses: statusMap });
+        } catch {}
 
-  setSearchQuery: (query) => {
-    set({ searchQuery: query });
-    if (query.trim()) {
-      debouncedSearch(query);
-    } else {
-      debouncedSearch.cancel();
-      searchGeneration++;
-      get().loadLibrary();
-    }
-  },
-
-  searchSongs: async (query) => {
-    try {
-      const songs = await api.searchLibrary(query);
-      set({ songs });
-    } catch (e) {
-      notifyError(e);
-    }
-  },
-
-  selectSong: (songId, event, orderedHashes) => {
-    const { selectedSongIds, lastClickedSongId } = get();
-
-    if (event.shiftKey && lastClickedSongId && orderedHashes) {
-      const startIdx = orderedHashes.indexOf(lastClickedSongId);
-      const endIdx = orderedHashes.indexOf(songId);
-      if (startIdx !== -1 && endIdx !== -1) {
-        const from = Math.min(startIdx, endIdx);
-        const to = Math.max(startIdx, endIdx);
-        const rangeIds = orderedHashes.slice(from, to + 1);
-        const newSet = new Set(selectedSongIds);
-        for (const id of rangeIds) {
-          newSet.add(id);
-        }
-        set({ selectedSongIds: newSet });
+        try {
+          const uploads = await remoteRepository.getAllUploadStatuses();
+          const uploadMap: Record<string, UploadStatusSnapshot> = {};
+          for (const s of uploads) {
+            uploadMap[s.song_id] = s;
+          }
+          set({ uploadStatuses: uploadMap });
+        } catch {}
+      } catch (e) {
+        notifyError(e);
       }
-    } else if (event.metaKey || event.ctrlKey) {
-      const newSet = new Set(selectedSongIds);
-      if (newSet.has(songId)) {
-        newSet.delete(songId);
+    },
+
+    importFiles: async (paths) => {
+      set({ isImporting: true, importErrors: [] });
+      try {
+        await runImportWorkflow({
+          paths,
+          api: {
+            importSongs: library.importSongs,
+            importLyricsFiles: backend.lyrics.importLyricsFiles,
+            getLibrary: library.getLibrary,
+          },
+          promptForCdgChoice: get().promptForCdgChoice,
+          notifyError,
+          setImportErrors: (importErrors) => set({ importErrors }),
+          setSongs: (songs) => set({ songs }),
+          publishLibraryInvalidation,
+        });
+      } catch (e) {
+        notifyError(e);
+      } finally {
+        set({ isImporting: false });
+      }
+    },
+
+    promptForCdgChoice: async (request) => {
+      set({ pendingImportCdgChoice: request });
+
+      return new Promise((resolve) => {
+        pendingCdgChoiceResolver = resolve;
+      });
+    },
+
+    resolveCdgChoicePrompt: (audioPath) => {
+      set({ pendingImportCdgChoice: null });
+      pendingCdgChoiceResolver?.(audioPath);
+      pendingCdgChoiceResolver = null;
+    },
+
+    setSearchQuery: (query) => {
+      set({ searchQuery: query });
+      if (query.trim()) {
+        debouncedSearch(query);
       } else {
-        newSet.add(songId);
+        debouncedSearch.cancel();
+        searchGeneration++;
+        get().loadLibrary();
       }
-      set({ selectedSongIds: newSet, lastClickedSongId: songId });
-    } else {
-      set({
-        selectedSongIds: new Set([songId]),
-        lastClickedSongId: songId,
-      });
-    }
-  },
+    },
 
-  clearSelection: () =>
-    set({ selectedSongIds: new Set(), lastClickedSongId: null }),
-
-  clearRangeSelectionAnchor: () => set({ lastClickedSongId: null }),
-
-  setFilter: (filter) => set({ filter }),
-
-  updateSongMetadata: async (hash, title, artist) => {
-    try {
-      const updated = await api.updateSongMetadata(hash, title, artist);
-      set((state) => ({
-        songs: state.songs.map((s) =>
-          s.hash === hash
-            ? { ...s, title: updated.title, artist: updated.artist }
-            : s,
-        ),
-      }));
-      publishLibraryInvalidation();
-      return true;
-    } catch (e) {
-      notifyError(e);
-      return false;
-    }
-  },
-
-  setSongsInstrumental: async (songIds, instrumental) => {
-    try {
-      const updatedSongs = await api.setSongsInstrumental(
-        songIds,
-        instrumental,
-      );
-      const updatedByHash = new Map(
-        updatedSongs.map((song) => [song.hash, song]),
-      );
-
-      set((state) => ({
-        songs: state.songs.map((song) => updatedByHash.get(song.hash) ?? song),
-      }));
-
-      publishLibraryInvalidation();
-
-      return true;
-    } catch (e) {
-      notifyError(e);
-      return false;
-    }
-  },
-
-  setSongsLanguage: async (songIds, language) => {
-    try {
-      const updatedSongs = await api.setSongsLanguage(songIds, language);
-      const updatedByHash = new Map(
-        updatedSongs.map((song) => [song.hash, song]),
-      );
-
-      set((state) => ({
-        songs: state.songs.map((song) => updatedByHash.get(song.hash) ?? song),
-      }));
-
-      publishLibraryInvalidation();
-
-      return true;
-    } catch (e) {
-      notifyError(e);
-      return false;
-    }
-  },
-
-  extractEmbeddedCoverArt: async (songIds) => {
-    try {
-      const result = await api.extractEmbeddedCoverArt(songIds);
-
-      for (const song of result.updated_songs) {
-        invalidateCoverArtUrl(song.hash);
+    searchSongs: async (query) => {
+      try {
+        const songs = await library.searchLibrary(query);
+        set({ songs });
+      } catch (e) {
+        notifyError(e);
       }
+    },
 
-      if (result.updated_songs.length > 0) {
-        const updatedByHash = new Map(
-          result.updated_songs.map((song) => [song.hash, song]),
+    selectSong: (songId, event, orderedHashes) => {
+      const { selectedSongIds, lastClickedSongId } = get();
+
+      if (event.shiftKey && lastClickedSongId && orderedHashes) {
+        const startIdx = orderedHashes.indexOf(lastClickedSongId);
+        const endIdx = orderedHashes.indexOf(songId);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const from = Math.min(startIdx, endIdx);
+          const to = Math.max(startIdx, endIdx);
+          const rangeIds = orderedHashes.slice(from, to + 1);
+          const newSet = new Set(selectedSongIds);
+          for (const id of rangeIds) {
+            newSet.add(id);
+          }
+          set({ selectedSongIds: newSet });
+        }
+      } else if (event.metaKey || event.ctrlKey) {
+        const newSet = new Set(selectedSongIds);
+        if (newSet.has(songId)) {
+          newSet.delete(songId);
+        } else {
+          newSet.add(songId);
+        }
+        set({ selectedSongIds: newSet, lastClickedSongId: songId });
+      } else {
+        set({
+          selectedSongIds: new Set([songId]),
+          lastClickedSongId: songId,
+        });
+      }
+    },
+
+    clearSelection: () =>
+      set({ selectedSongIds: new Set(), lastClickedSongId: null }),
+
+    clearRangeSelectionAnchor: () => set({ lastClickedSongId: null }),
+
+    setFilter: (filter) => set({ filter }),
+
+    updateSongMetadata: async (hash, title, artist) => {
+      try {
+        const updated = await library.updateSongMetadata(hash, title, artist);
+        set((state) => ({
+          songs: state.songs.map((s) =>
+            s.hash === hash
+              ? { ...s, title: updated.title, artist: updated.artist }
+              : s,
+          ),
+        }));
+        publishLibraryInvalidation();
+        return true;
+      } catch (e) {
+        notifyError(e);
+        return false;
+      }
+    },
+
+    setSongsInstrumental: async (songIds, instrumental) => {
+      try {
+        const updatedSongs = await library.setSongsInstrumental(
+          songIds,
+          instrumental,
         );
+        const updatedByHash = new Map(
+          updatedSongs.map((song) => [song.hash, song]),
+        );
+
         set((state) => ({
           songs: state.songs.map(
             (song) => updatedByHash.get(song.hash) ?? song,
           ),
         }));
+
         publishLibraryInvalidation();
+
+        return true;
+      } catch (e) {
+        notifyError(e);
+        return false;
       }
+    },
 
-      for (const failure of result.failed) {
-        notifyError(failure.error);
+    setSongsLanguage: async (songIds, language) => {
+      try {
+        const updatedSongs = await library.setSongsLanguage(songIds, language);
+        const updatedByHash = new Map(
+          updatedSongs.map((song) => [song.hash, song]),
+        );
+
+        set((state) => ({
+          songs: state.songs.map(
+            (song) => updatedByHash.get(song.hash) ?? song,
+          ),
+        }));
+
+        publishLibraryInvalidation();
+
+        return true;
+      } catch (e) {
+        notifyError(e);
+        return false;
       }
+    },
 
-      return result.updated_songs.length > 0;
-    } catch (e) {
-      notifyError(e);
-      return false;
-    }
-  },
+    extractEmbeddedCoverArt: async (songIds) => {
+      try {
+        const result = await maintenance.extractEmbeddedCoverArt(songIds);
 
-  updateSeparationStatus: (status) => {
-    set((state) => ({
-      separationStatuses: {
-        ...state.separationStatuses,
-        [status.song_id]: status,
-      },
-    }));
-  },
+        for (const song of result.updated_songs) {
+          invalidateCoverArtUrl(song.hash);
+        }
 
-  clearAllSeparationStatuses: () => set({ separationStatuses: {} }),
+        if (result.updated_songs.length > 0) {
+          const updatedByHash = new Map(
+            result.updated_songs.map((song) => [song.hash, song]),
+          );
+          set((state) => ({
+            songs: state.songs.map(
+              (song) => updatedByHash.get(song.hash) ?? song,
+            ),
+          }));
+          publishLibraryInvalidation();
+        }
 
-  updateUploadStatus: (status) => {
-    set((state) => ({
-      uploadStatuses: {
-        ...state.uploadStatuses,
-        [status.song_id]: status,
-      },
-    }));
-  },
+        for (const failure of result.failed) {
+          notifyError(failure.error);
+        }
 
-  clearUploadStatus: (songId) =>
-    set((state) => {
-      if (!(songId in state.uploadStatuses)) {
-        return state;
+        return result.updated_songs.length > 0;
+      } catch (e) {
+        notifyError(e);
+        return false;
       }
+    },
 
-      const next = { ...state.uploadStatuses };
-      delete next[songId];
-      return { uploadStatuses: next };
-    }),
+    updateSeparationStatus: (status) => {
+      set((state) => ({
+        separationStatuses: {
+          ...state.separationStatuses,
+          [status.song_id]: status,
+        },
+      }));
+    },
 
-  clearAllUploadStatuses: () => set({ uploadStatuses: {} }),
+    clearAllSeparationStatuses: () => set({ separationStatuses: {} }),
 
-  updateBatchProgress: (progress) => set({ batchSeparation: progress }),
+    updateUploadStatus: (status) => {
+      set((state) => ({
+        uploadStatuses: {
+          ...state.uploadStatuses,
+          [status.song_id]: status,
+        },
+      }));
+    },
 
-  clearBatchSeparation: () => set({ batchSeparation: null }),
+    clearUploadStatus: (songId) =>
+      set((state) => {
+        if (!(songId in state.uploadStatuses)) {
+          return state;
+        }
 
-  clearImportErrors: () => set({ importErrors: [] }),
-}));
+        const next = { ...state.uploadStatuses };
+        delete next[songId];
+        return { uploadStatuses: next };
+      }),
 
-librarySyncChannel.subscribe(() => {
-  void useLibraryStore.getState().loadLibrary();
-});
+    clearAllUploadStatuses: () => set({ uploadStatuses: {} }),
+
+    updateBatchProgress: (progress) => set({ batchSeparation: progress }),
+
+    clearBatchSeparation: () => set({ batchSeparation: null }),
+
+    clearImportErrors: () => set({ importErrors: [] }),
+  }));
+
+  librarySyncChannel.subscribe(() => {
+    void store.getState().loadLibrary();
+  });
+
+  return store;
+}
+
+export const useLibraryStore = createLibraryStore();

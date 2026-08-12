@@ -1,166 +1,100 @@
-import { invoke } from "@tauri-apps/api/core";
+import type { SettingsBackend } from "@/lib/backend/types";
 import type {
   AppSettings,
   DebugInfo,
-  ExecutionProvider,
-  LibrarySortMode,
   ModelBootstrapStatusSnapshot,
   ModelStatusSnapshot,
   ModelUpdateReport,
   RuntimeBootstrapStatusSnapshot,
   RuntimeUpdateReport,
-  ThemePreference,
-  UpdatePolicy,
   WindowShellStateSnapshot,
 } from "@/types/ipc";
+import type { InvokeCommand } from "./invoke";
 
-export interface NativeAppMenuLabels {
-  file: string;
-  edit: string;
-  view: string;
-  window: string;
-  help: string;
-  import: string;
-  settings: string;
-  switchLibrary: string;
-  toggleSidebar: string;
-  copyDebugInfo: string;
-}
+export function createSettingsCommands(invoke: InvokeCommand): SettingsBackend {
+  return {
+    getSettings: () => invoke<AppSettings>("get_settings"),
 
-export function getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot> {
-  return invoke<ModelBootstrapStatusSnapshot>("get_model_bootstrap_status");
-}
+    getDebugInfo: () => invoke<DebugInfo>("get_debug_info"),
 
-export function getSettings(): Promise<AppSettings> {
-  return invoke<AppSettings>("get_settings");
-}
+    getWindowShellState: () =>
+      invoke<WindowShellStateSnapshot>("get_window_shell_state"),
 
-export function getDebugInfo(): Promise<DebugInfo> {
-  return invoke<DebugInfo>("get_debug_info");
-}
+    setNativeSidebarVisibility: (visible) =>
+      invoke<void>("set_native_sidebar_visibility", { visible }),
 
-export function getWindowShellState(): Promise<WindowShellStateSnapshot> {
-  return invoke<WindowShellStateSnapshot>("get_window_shell_state");
-}
+    windowReady: () => invoke<void>("window_ready"),
 
-export function setNativeSidebarVisibility(visible: boolean): Promise<void> {
-  return invoke<void>("set_native_sidebar_visibility", { visible });
-}
+    setNativeAppMenuLabels: (labels) =>
+      invoke<void>("set_native_app_menu_labels", { labels }),
 
-export function windowReady(): Promise<void> {
-  return invoke<void>("window_ready");
-}
+    restartApp: () => invoke<void>("restart_app"),
 
-export function setNativeAppMenuLabels(
-  labels: NativeAppMenuLabels,
-): Promise<void> {
-  return invoke<void>("set_native_app_menu_labels", { labels });
-}
+    setLanguage: (language) =>
+      invoke<AppSettings>("set_language", { language }),
 
-export function setStemMode(mode: string): Promise<AppSettings> {
-  return invoke<AppSettings>("set_stem_mode", { mode });
-}
+    setStemMode: (mode) => invoke<AppSettings>("set_stem_mode", { mode }),
 
-export function setModelVariant(variant: string): Promise<AppSettings> {
-  return invoke<AppSettings>("set_model_variant", { variant });
-}
+    setModelVariant: (variant) =>
+      invoke<AppSettings>("set_model_variant", { variant }),
 
-export function downloadModel(
-  variant: string,
-): Promise<ModelBootstrapStatusSnapshot> {
-  return invoke<ModelBootstrapStatusSnapshot>("download_model", { variant });
-}
+    setHideBatchSeparate: (value) =>
+      invoke<AppSettings>("set_hide_batch_separate", { value }),
 
-export function deleteModel(variant: string): Promise<void> {
-  return invoke<void>("delete_model", { variant });
-}
+    setCoverArtBackdrop: (value) =>
+      invoke<AppSettings>("set_cover_art_backdrop", { value }),
 
-export function getModelStatus(variant: string): Promise<ModelStatusSnapshot> {
-  return invoke<ModelStatusSnapshot>("get_model_status", { variant });
-}
+    setHideUpgradeAll: (value) =>
+      invoke<AppSettings>("set_hide_upgrade_all", { value }),
 
-export function checkModelUpdates(): Promise<ModelUpdateReport> {
-  return invoke<ModelUpdateReport>("check_model_updates");
-}
+    setExecutionProvider: (provider) =>
+      invoke<AppSettings>("set_execution_provider", { provider }),
 
-export function setLanguage(language: string): Promise<AppSettings> {
-  return invoke<AppSettings>("set_language", { language });
-}
+    setLyricsFontStep: (step) =>
+      invoke<AppSettings>("set_lyrics_font_step", { step }),
 
-export function setHideBatchSeparate(value: boolean): Promise<AppSettings> {
-  return invoke<AppSettings>("set_hide_batch_separate", { value });
-}
+    setEqEnabled: (enabled) =>
+      invoke<AppSettings>("set_eq_enabled", { enabled }),
 
-export function setCoverArtBackdrop(value: boolean): Promise<AppSettings> {
-  return invoke<AppSettings>("set_cover_art_backdrop", { value });
-}
+    setEqGains: (gainsDb) => invoke<AppSettings>("set_eq_gains", { gainsDb }),
 
-export function setHideUpgradeAll(value: boolean): Promise<AppSettings> {
-  return invoke<AppSettings>("set_hide_upgrade_all", { value });
-}
+    setCrossfadeEnabled: (enabled) =>
+      invoke<AppSettings>("set_crossfade_enabled", { enabled }),
 
-export function setExecutionProvider(
-  provider: ExecutionProvider,
-): Promise<AppSettings> {
-  return invoke<AppSettings>("set_execution_provider", { provider });
-}
+    setCrossfadeDurationMs: (durationMs) =>
+      invoke<AppSettings>("set_crossfade_duration_ms", { durationMs }),
 
-export function setLyricsFontStep(step: number): Promise<AppSettings> {
-  return invoke<AppSettings>("set_lyrics_font_step", { step });
-}
+    setLibrarySortMode: (mode) =>
+      invoke<AppSettings>("set_library_sort_mode", { mode }),
 
-export function setEqEnabled(enabled: boolean): Promise<AppSettings> {
-  return invoke<AppSettings>("set_eq_enabled", { enabled });
-}
+    setThemePreference: (preference) =>
+      invoke<AppSettings>("set_theme_preference", { preference }),
 
-export function setEqGains(
-  gainsDb: [number, number, number, number, number],
-): Promise<AppSettings> {
-  return invoke<AppSettings>("set_eq_gains", { gainsDb });
-}
+    setUpdatePolicy: (policy) =>
+      invoke<AppSettings>("set_update_policy", { policy }),
 
-export function setCrossfadeEnabled(enabled: boolean): Promise<AppSettings> {
-  return invoke<AppSettings>("set_crossfade_enabled", { enabled });
-}
+    getModelBootstrapStatus: () =>
+      invoke<ModelBootstrapStatusSnapshot>("get_model_bootstrap_status"),
 
-export function setCrossfadeDurationMs(
-  durationMs: number,
-): Promise<AppSettings> {
-  return invoke<AppSettings>("set_crossfade_duration_ms", { durationMs });
-}
+    getModelStatus: (variant) =>
+      invoke<ModelStatusSnapshot>("get_model_status", { variant }),
 
-export function setLibrarySortMode(
-  mode: LibrarySortMode,
-): Promise<AppSettings> {
-  return invoke<AppSettings>("set_library_sort_mode", { mode });
-}
+    downloadModel: (variant) =>
+      invoke<ModelBootstrapStatusSnapshot>("download_model", { variant }),
 
-export function setThemePreference(
-  preference: ThemePreference,
-): Promise<AppSettings> {
-  return invoke<AppSettings>("set_theme_preference", { preference });
-}
+    deleteModel: (variant) => invoke<void>("delete_model", { variant }),
 
-export function setUpdatePolicy(policy: UpdatePolicy): Promise<AppSettings> {
-  return invoke<AppSettings>("set_update_policy", { policy });
-}
+    checkModelUpdates: () => invoke<ModelUpdateReport>("check_model_updates"),
 
-export function checkRuntimeUpdates(): Promise<RuntimeUpdateReport> {
-  return invoke<RuntimeUpdateReport>("check_runtime_updates");
-}
+    getRuntimeBootstrapStatus: () =>
+      invoke<RuntimeBootstrapStatusSnapshot>("get_runtime_bootstrap_status"),
 
-export function restartApp(): Promise<void> {
-  return invoke<void>("restart_app");
-}
+    downloadRuntime: () =>
+      invoke<RuntimeBootstrapStatusSnapshot>("download_runtime"),
 
-export function getRuntimeBootstrapStatus(): Promise<RuntimeBootstrapStatusSnapshot> {
-  return invoke<RuntimeBootstrapStatusSnapshot>("get_runtime_bootstrap_status");
-}
+    deleteRuntime: () => invoke<void>("delete_runtime"),
 
-export function downloadRuntime(): Promise<RuntimeBootstrapStatusSnapshot> {
-  return invoke<RuntimeBootstrapStatusSnapshot>("download_runtime");
-}
-
-export function deleteRuntime(): Promise<void> {
-  return invoke<void>("delete_runtime");
+    checkRuntimeUpdates: () =>
+      invoke<RuntimeUpdateReport>("check_runtime_updates"),
+  };
 }

@@ -1,38 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useLibraryStore } from "./library-store";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { createLibraryStore } from "./library-store";
 
 const {
-  mockUpdateSongMetadata,
-  mockExtractEmbeddedCoverArt,
-  mockImportSongs,
-  mockGetLibrary,
-  mockSetSongsInstrumental,
   mockInvalidateCoverArtUrl,
   mockNotifyError,
   mockNotifySuccess,
-  mockGetActiveLibrary,
-  mockRefreshRemoteRepository,
-  mockGetAllSeparationStatuses,
-  mockGetAllUploadStatuses,
-  mockSearchLibrary,
-  mockSetSongsLanguage,
   mockRunImportWorkflow,
   mockCreateWebviewSyncChannel,
 } = vi.hoisted(() => ({
-  mockUpdateSongMetadata: vi.fn(),
-  mockExtractEmbeddedCoverArt: vi.fn(),
-  mockImportSongs: vi.fn(),
-  mockGetLibrary: vi.fn(),
-  mockSetSongsInstrumental: vi.fn(),
   mockInvalidateCoverArtUrl: vi.fn(),
   mockNotifyError: vi.fn(),
   mockNotifySuccess: vi.fn(),
-  mockGetActiveLibrary: vi.fn(),
-  mockRefreshRemoteRepository: vi.fn(),
-  mockGetAllSeparationStatuses: vi.fn(),
-  mockGetAllUploadStatuses: vi.fn(),
-  mockSearchLibrary: vi.fn(),
-  mockSetSongsLanguage: vi.fn(),
   mockRunImportWorkflow: vi.fn(),
   mockCreateWebviewSyncChannel: vi.fn().mockReturnValue({
     publish: vi.fn(),
@@ -41,19 +20,39 @@ const {
   }),
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  importSongs: mockImportSongs,
-  getLibrary: mockGetLibrary,
-  updateSongMetadata: mockUpdateSongMetadata,
-  setSongsInstrumental: mockSetSongsInstrumental,
-  extractEmbeddedCoverArt: mockExtractEmbeddedCoverArt,
-  getActiveLibrary: mockGetActiveLibrary,
-  refreshRemoteRepository: mockRefreshRemoteRepository,
-  getAllSeparationStatuses: mockGetAllSeparationStatuses,
-  getAllUploadStatuses: mockGetAllUploadStatuses,
-  searchLibrary: mockSearchLibrary,
-  setSongsLanguage: mockSetSongsLanguage,
-}));
+const mockUpdateSongMetadata = vi.fn();
+const mockExtractEmbeddedCoverArt = vi.fn();
+const mockImportSongs = vi.fn();
+const mockGetLibrary = vi.fn();
+const mockSetSongsInstrumental = vi.fn();
+const mockGetActiveLibrary = vi.fn();
+const mockRefreshRemoteRepository = vi.fn();
+const mockGetAllSeparationStatuses = vi.fn();
+const mockGetAllUploadStatuses = vi.fn();
+const mockSearchLibrary = vi.fn();
+const mockSetSongsLanguage = vi.fn();
+
+const backend = createMockBackend({
+  overrides: {
+    library: {
+      importSongs: mockImportSongs,
+      getLibrary: mockGetLibrary,
+      updateSongMetadata: mockUpdateSongMetadata,
+      setSongsInstrumental: mockSetSongsInstrumental,
+      searchLibrary: mockSearchLibrary,
+      setSongsLanguage: mockSetSongsLanguage,
+    },
+    librarySetup: { getActiveLibrary: mockGetActiveLibrary },
+    maintenance: { extractEmbeddedCoverArt: mockExtractEmbeddedCoverArt },
+    remoteRepository: {
+      refreshRemoteRepository: mockRefreshRemoteRepository,
+      getAllUploadStatuses: mockGetAllUploadStatuses,
+    },
+    separation: { getAllSeparationStatuses: mockGetAllSeparationStatuses },
+  },
+});
+
+const useLibraryStore = createLibraryStore(backend);
 
 vi.mock("@/lib/cover-art", () => ({
   invalidateCoverArtUrl: mockInvalidateCoverArtUrl,

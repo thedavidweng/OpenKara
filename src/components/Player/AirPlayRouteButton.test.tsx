@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ShortcutPlatform } from "@/lib/app-shortcuts";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { AirPlayRouteButton } from "./AirPlayRouteButton";
 
 const {
@@ -47,9 +48,16 @@ vi.mock("@/lib/app-shortcuts", () => ({
   getShortcutPlatform: mockGetShortcutPlatform,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  syncAirPlayRoutePicker: mockSyncAirPlayRoutePicker,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    playback: { syncAirPlayRoutePicker: mockSyncAirPlayRoutePicker },
+  },
+});
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,

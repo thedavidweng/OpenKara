@@ -3,13 +3,16 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { BackendProvider } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { SongPropertiesDialog } from "./SongPropertiesDialog";
 import { useLibraryStore } from "@/stores/library-store";
 import type { Song } from "@/types/ipc";
 
-const { mockGetSongProperties } = vi.hoisted(() => ({
-  mockGetSongProperties: vi.fn(),
-}));
+const mockGetSongProperties = vi.fn();
+const backend = createMockBackend({
+  overrides: { library: { getSongProperties: mockGetSongProperties } },
+});
 
 vi.mock("react-i18next", () => ({
   initReactI18next: {
@@ -17,10 +20,6 @@ vi.mock("react-i18next", () => ({
     init: () => {},
   },
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-vi.mock("@/lib/tauri", () => ({
-  getSongProperties: mockGetSongProperties,
 }));
 
 const song: Song = {
@@ -75,7 +74,11 @@ describe("SongPropertiesDialog", () => {
     root = createRoot(container);
 
     act(() => {
-      root.render(<SongPropertiesDialog song={song} onClose={() => {}} />);
+      root.render(
+        <BackendProvider backend={backend}>
+          <SongPropertiesDialog song={song} onClose={() => {}} />
+        </BackendProvider>,
+      );
     });
 
     const dialog = document.querySelector('[role="dialog"]');

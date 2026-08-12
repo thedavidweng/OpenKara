@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { formatDuration } from "@/lib/format";
-import { getWaveform } from "@/lib/tauri/playback";
+import { useBackend } from "@/lib/backend";
 import {
   bucketsForRailWidth,
   getWaveformCache,
@@ -28,6 +28,7 @@ function clampPosition(positionMs: number, durationMs: number): number {
 }
 
 export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
+  const { playback } = useBackend();
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
   const positionMs = usePlayerStore((s) => s.positionMs);
@@ -133,7 +134,8 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     }
 
     const generation = ++requestGenerationRef.current;
-    void getWaveform(songId, effectiveBuckets)
+    void playback
+      .getWaveform(songId, effectiveBuckets)
       .then((data) => {
         if (generation !== requestGenerationRef.current) return;
         waveformRef.current = data;
@@ -149,7 +151,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     return () => {
       requestGenerationRef.current += 1;
     };
-  }, [songId, effectiveBuckets, railWidth]);
+  }, [playback, songId, effectiveBuckets, railWidth]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

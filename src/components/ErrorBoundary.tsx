@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import i18next from "@/lib/i18n";
-import { windowReady } from "@/lib/tauri";
+import { BackendContext, type Backend } from "@/lib/backend";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -15,6 +15,9 @@ export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
+  static contextType = BackendContext;
+  declare context: Backend;
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -26,7 +29,7 @@ export class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Uncaught error:", error, info.componentStack);
-    void windowReady();
+    void this.context.settings.windowReady();
   }
 
   componentDidMount() {

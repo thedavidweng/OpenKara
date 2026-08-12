@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@/lib/i18n";
 import App from "./App";
+import { BackendProvider, tauriBackend } from "@/lib/backend";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TooltipProvider } from "@/components/Overlay/Tooltip";
 import { FullscreenPlayerView } from "@/components/Player/FullscreenPlayerView";
@@ -16,10 +17,12 @@ applyShellDocumentMarker();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <TooltipProvider>
-        {isFullscreenPlayer ? <FullscreenPlayerView /> : <App />}
-      </TooltipProvider>
-    </ErrorBoundary>
+    <BackendProvider backend={tauriBackend}>
+      <ErrorBoundary>
+        <TooltipProvider>
+          {isFullscreenPlayer ? <FullscreenPlayerView /> : <App />}
+        </TooltipProvider>
+      </ErrorBoundary>
+    </BackendProvider>
   </React.StrictMode>,
 );

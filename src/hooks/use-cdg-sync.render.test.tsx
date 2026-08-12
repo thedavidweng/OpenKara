@@ -5,8 +5,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const {
-  mockGetCdgFrame,
-  mockGetCdgStatus,
   mockDrawFrame,
   mockClearFrame,
   mockPostCdgFrame,
@@ -16,14 +14,6 @@ const {
   mockStartCdgSyncRequestListener,
 } = vi.hoisted(() => {
   return {
-    mockGetCdgFrame: vi.fn(),
-    mockGetCdgStatus: vi.fn().mockResolvedValue({
-      availability: "none",
-      songId: null,
-      transportGeneration: null,
-      packetCount: null,
-      errorCode: null,
-    }),
     mockDrawFrame: vi.fn(),
     mockClearFrame: vi.fn(),
     mockPostCdgFrame: vi.fn(),
@@ -31,15 +21,6 @@ const {
     mockPostCdgStatus: vi.fn(),
     mockGetCdgSyncChannel: vi.fn(() => ({})),
     mockStartCdgSyncRequestListener: vi.fn(() => () => {}),
-  };
-});
-
-vi.mock("@/lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/tauri")>();
-  return {
-    ...actual,
-    getCdgFrame: mockGetCdgFrame,
-    getCdgStatus: mockGetCdgStatus,
   };
 });
 
@@ -61,6 +42,8 @@ vi.mock("@/lib/song-media", () => ({
   songHasCdgMedia: vi.fn(() => true),
 }));
 
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { BackendProvider } from "@/lib/backend";
 import { useCdgSync } from "./use-cdg-sync";
 import {
   usePlayerStore,
@@ -108,6 +91,14 @@ function makeSnapshot(
   } as unknown as PlaybackStateSnapshot;
 }
 
+const mockGetCdgFrame = vi.fn();
+const mockGetCdgStatus = vi.fn();
+const backend = createMockBackend({
+  overrides: {
+    cdg: { getCdgFrame: mockGetCdgFrame, getCdgStatus: mockGetCdgStatus },
+  },
+});
+
 function TestComponent({ enabled }: { enabled: boolean }) {
   useCdgSync(enabled);
   return null;
@@ -117,8 +108,23 @@ describe("useCdgSync — render coverage", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
 
+  function renderCdgSync(enabled: boolean) {
+    root!.render(
+      <BackendProvider backend={backend}>
+        <TestComponent enabled={enabled} />
+      </BackendProvider>,
+    );
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetCdgStatus.mockResolvedValue({
+      availability: "none",
+      songId: null,
+      transportGeneration: null,
+      packetCount: null,
+      errorCode: null,
+    });
     mockGetCdgSyncChannel.mockReturnValue({});
     mockStartCdgSyncRequestListener.mockReturnValue(() => {});
     usePlayerStore.setState({
@@ -175,7 +181,7 @@ describe("useCdgSync — render coverage", () => {
     mockGetCdgFrame.mockResolvedValue(frame);
 
     await act(async () => {
-      root!.render(<TestComponent enabled={true} />);
+      renderCdgSync(true);
     });
 
     // Wait for the probe promise to resolve
@@ -204,7 +210,7 @@ describe("useCdgSync — render coverage", () => {
     });
 
     await act(async () => {
-      root!.render(<TestComponent enabled={true} />);
+      renderCdgSync(true);
     });
 
     await act(async () => {
@@ -234,7 +240,7 @@ describe("useCdgSync — render coverage", () => {
     mockGetCdgFrame.mockResolvedValue(frame);
 
     await act(async () => {
-      root!.render(<TestComponent enabled={true} />);
+      renderCdgSync(true);
     });
 
     await act(async () => {
@@ -267,7 +273,7 @@ describe("useCdgSync — render coverage", () => {
 
   test("disabled hook does nothing", async () => {
     await act(async () => {
-      root!.render(<TestComponent enabled={false} />);
+      renderCdgSync(false);
     });
 
     expect(mockGetCdgFrame).not.toHaveBeenCalled();
@@ -291,7 +297,7 @@ describe("useCdgSync — render coverage", () => {
     });
 
     await act(async () => {
-      root!.render(<TestComponent enabled={true} />);
+      renderCdgSync(true);
     });
 
     await act(async () => {

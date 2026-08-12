@@ -6,7 +6,7 @@ import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
 import { LOCAL_AUDIENCE_OUTPUT_STATE_EVENT } from "@/lib/plain-text-page-controls";
 import { songHasCdgMedia } from "@/lib/song-media";
 import { projectAudienceState, type AudienceProjectorInput } from "@/playback";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
@@ -26,6 +26,7 @@ export function buildAirPlayAudienceState(
 }
 
 export function useAirPlayAudienceSync(enabled = true): void {
+  const backend = useBackend();
   const { t } = useTranslation();
   const playbackSnapshot = usePlayerStore((s) => s.snapshot);
   const lyricsSongId = useLyricsStore((s) => s.songId);
@@ -46,7 +47,7 @@ export function useAirPlayAudienceSync(enabled = true): void {
       return;
     }
 
-    void api
+    void backend.playback
       .syncAirPlayAudienceState(
         buildAirPlayAudienceState({
           playbackSnapshot,
@@ -67,6 +68,7 @@ export function useAirPlayAudienceSync(enabled = true): void {
       )
       .catch(() => {});
   }, [
+    backend,
     currentSongHasCdg,
     enabled,
     hasCdg,

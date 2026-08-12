@@ -1,27 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const {
-  mockSetRotationState,
-  mockGetRotationState,
-  mockAdvanceRotation,
-  mockSetQueue,
-  mockQueueState,
-} = vi.hoisted(() => {
-  const state = { queue: [] as string[] };
-  return {
-    mockSetRotationState: vi.fn().mockResolvedValue(undefined),
-    mockGetRotationState: vi.fn(),
-    mockAdvanceRotation: vi.fn(),
-    mockSetQueue: vi.fn(),
-    mockQueueState: state,
-  };
-});
-
-vi.mock("@/lib/tauri/playlist", () => ({
-  setRotationState: mockSetRotationState,
-  getRotationState: mockGetRotationState,
-  advanceRotation: mockAdvanceRotation,
+const { mockSetQueue, mockQueueState } = vi.hoisted(() => ({
+  mockSetQueue: vi.fn(),
+  mockQueueState: { queue: [] as string[] },
 }));
+
+const mockSetRotationState = vi.fn().mockResolvedValue(undefined);
+const mockGetRotationState = vi.fn();
+const mockAdvanceRotation = vi.fn();
 
 vi.mock("@/stores/queue-store", () => ({
   useQueueStore: {
@@ -34,7 +20,20 @@ vi.mock("@/stores/queue-store", () => ({
   },
 }));
 
-import { useRotationStore } from "./rotation-store";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { createRotationStore } from "./rotation-store";
+
+const useRotationStore = createRotationStore(
+  createMockBackend({
+    overrides: {
+      playlist: {
+        setRotationState: mockSetRotationState,
+        getRotationState: mockGetRotationState,
+        advanceRotation: mockAdvanceRotation,
+      },
+    },
+  }),
+);
 
 describe("rotation-store", () => {
   beforeEach(() => {

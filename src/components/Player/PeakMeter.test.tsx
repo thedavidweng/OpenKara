@@ -1,15 +1,19 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
-
-// Mock the Tauri invoke bridge before importing the component.
-const mockGetAudioPeaks = vi.fn();
-vi.mock("@/lib/tauri/playback", () => ({
-  getAudioPeaks: () => mockGetAudioPeaks(),
-}));
-
+import type { ReactElement } from "react";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { PeakMeter } from "./PeakMeter";
+
+const mockGetAudioPeaks = vi.fn();
+const backend = createMockBackend({
+  overrides: { playback: { getAudioPeaks: () => mockGetAudioPeaks() } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 function getCanvas(container: HTMLElement): HTMLCanvasElement {
   const canvas = container.querySelector("[data-peak-meter]");

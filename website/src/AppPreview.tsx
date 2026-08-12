@@ -7,7 +7,7 @@ import { createTauriMock } from "@/mock/tauri-mock-impl";
 import { useLayoutStore } from "@/stores/layout-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import type { PlaylistSong } from "@/lib/tauri/playlist";
+import type { PlaylistSong } from "@/lib/backend";
 
 // Set up the mock Tauri IPC before the app renders so that `useAppStartupRuntime`
 // can call `invoke()` and populate stores through the real initialization path.

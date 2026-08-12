@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook as renderHookRaw, act } from "@testing-library/react";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { withBackend } from "@/test-utils/backend";
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
+
+const mockBatchSeparate = vi.fn().mockResolvedValue(undefined);
+const backend = createMockBackend({
+  overrides: { maintenance: { batchSeparate: mockBatchSeparate } },
+});
+
+function renderHook(hook: () => void) {
+  return renderHookRaw(hook, { wrapper: withBackend(backend) });
+}
 
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   WebviewWindow: {
@@ -17,10 +28,6 @@ vi.mock("@/lib/fullscreen-player", () => ({
 
 vi.mock("@/runtime/menu-runtime", () => ({
   promptImportFiles: vi.fn(),
-}));
-
-vi.mock("@/lib/tauri/maintenance", () => ({
-  batchSeparate: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/song-media", () => ({
@@ -780,9 +787,7 @@ describe("useKeyboardShortcuts", () => {
       ctrlKey: true,
       shiftKey: true,
     });
-    const batchSeparate = (await import("@/lib/tauri/maintenance"))
-      .batchSeparate as ReturnType<typeof vi.fn>;
-    expect(batchSeparate).toHaveBeenCalledWith(["abc"]);
+    expect(mockBatchSeparate).toHaveBeenCalledWith(["abc"]);
 
     usePlayerStore.setState({
       snapshot: {

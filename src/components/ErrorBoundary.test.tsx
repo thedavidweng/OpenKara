@@ -1,14 +1,21 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 const mockWindowReady = vi.fn(() => Promise.resolve());
-vi.mock("@/lib/tauri", () => ({
-  windowReady: () => mockWindowReady(),
-}));
+const backend = createMockBackend({
+  overrides: { settings: { windowReady: mockWindowReady } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 afterAll(() => {

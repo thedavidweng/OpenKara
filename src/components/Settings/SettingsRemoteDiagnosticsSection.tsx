@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend, type RemoteConflictResolution } from "@/lib/backend";
 import type { RemoteDiagnostics } from "@/types/ipc";
 
 export function SettingsRemoteDiagnosticsSection() {
+  const { remoteRepository } = useBackend();
   const { t } = useTranslation();
   const [diagnostics, setDiagnostics] = useState<RemoteDiagnostics | null>(
     null,
@@ -13,12 +14,12 @@ export function SettingsRemoteDiagnosticsSection() {
 
   const refresh = useCallback(async () => {
     try {
-      const d = await api.getRemoteDiagnostics();
+      const d = await remoteRepository.getRemoteDiagnostics();
       setDiagnostics(d);
     } catch (err) {
       notifyError(err);
     }
-  }, []);
+  }, [remoteRepository]);
 
   useEffect(() => {
     void refresh();
@@ -27,10 +28,10 @@ export function SettingsRemoteDiagnosticsSection() {
   const [resolving, setResolving] = useState(false);
 
   const resolveConflict = useCallback(
-    async (resolution: api.RemoteConflictResolution) => {
+    async (resolution: RemoteConflictResolution) => {
       setResolving(true);
       try {
-        await api.resolveRemoteConflict(resolution);
+        await remoteRepository.resolveRemoteConflict(resolution);
         await refresh();
       } catch (err) {
         notifyError(err);
@@ -38,7 +39,7 @@ export function SettingsRemoteDiagnosticsSection() {
         setResolving(false);
       }
     },
-    [refresh],
+    [refresh, remoteRepository],
   );
 
   if (!diagnostics || !diagnostics.has_active_remote) {

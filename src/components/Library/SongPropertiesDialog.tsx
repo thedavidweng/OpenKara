@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { formatDuration, formatBytes } from "@/lib/format";
 import {
   songCanBeSeparated,
@@ -57,6 +57,7 @@ export function SongPropertiesDialog({
   song,
   onClose,
 }: SongPropertiesDialogProps) {
+  const { library, maintenance, separation } = useBackend();
   const { t } = useTranslation();
   const [properties, setProperties] = useState<SongProperties | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +88,7 @@ export function SongPropertiesDialog({
   const headingId = `song-properties-heading-${song.hash}`;
 
   useEffect(() => {
-    api
+    library
       .getSongProperties(song.hash)
       .then((props) => {
         setProperties(props);
@@ -97,7 +98,7 @@ export function SongPropertiesDialog({
         setError(err?.message ?? t("songProperties.failedToLoad"));
         setLoading(false);
       });
-  }, [song.hash, t]);
+  }, [library, song.hash, t]);
 
   useModalDialog({
     dialogRef,
@@ -281,7 +282,7 @@ export function SongPropertiesDialog({
                       <button
                         type="button"
                         onClick={() => {
-                          api
+                          separation
                             .upgradeToFourStem(currentSong.hash)
                             .catch(() => {});
                         }}
@@ -297,7 +298,7 @@ export function SongPropertiesDialog({
                       <button
                         type="button"
                         onClick={() => {
-                          api
+                          maintenance
                             .downgradeToTwoStem(currentSong.hash)
                             .then((status) => {
                               useLibraryStore
@@ -362,7 +363,7 @@ export function SongPropertiesDialog({
                             type="button"
                             onClick={() => {
                               setShowReSeparate(false);
-                              api
+                              separation
                                 .reSeparate(
                                   currentSong.hash,
                                   reSeparateStemMode,

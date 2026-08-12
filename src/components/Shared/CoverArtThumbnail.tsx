@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCoverArtUrl } from "@/lib/cover-art";
-import { getCoverArt, getCoverArtThumbnail } from "@/lib/tauri/library";
+import { useBackend } from "@/lib/backend";
 import type { CoverArtBytes } from "@/types/ipc";
 
 interface CoverArtThumbnailProps {
@@ -19,6 +19,7 @@ export function CoverArtThumbnail({
   alt,
   className = "",
 }: CoverArtThumbnailProps) {
+  const { library } = useBackend();
   const [fetchedBytes, setFetchedBytes] = useState<CoverArtBytes | null>(null);
 
   const [brokenPath, setBrokenPath] = useState<string | null>(null);
@@ -32,13 +33,13 @@ export function CoverArtThumbnail({
     let cancelled = false;
     (async () => {
       try {
-        const thumb = await getCoverArtThumbnail(songHash);
+        const thumb = await library.getCoverArtThumbnail(songHash);
         if (cancelled) return;
         if (thumb) {
           setFetchedBytes(thumb);
           return;
         }
-        const full = await getCoverArt(songHash);
+        const full = await library.getCoverArt(songHash);
         if (cancelled) return;
         setFetchedBytes(full);
       } catch {}
@@ -46,7 +47,7 @@ export function CoverArtThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [songHash, coverArt, assetUrl]);
+  }, [library, songHash, coverArt, assetUrl]);
 
   const blobUrl = useCoverArtUrl(
     songHash,

@@ -8,16 +8,21 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
-import * as library from "./library";
-import * as playback from "./playback";
-import * as settings from "./settings";
-import * as lyrics from "./lyrics";
-import * as separation from "./separation";
-import * as maintenance from "./maintenance";
-import * as playlist from "./playlist";
-import * as librarySetup from "./library-setup";
-import * as remoteRepository from "./remote-repository";
-import * as cdg from "./cdg";
+import { createTauriBackend } from "@/lib/backend/tauri-backend";
+import { tauriInvoke } from "./invoke";
+
+const {
+  cdg,
+  library,
+  librarySetup,
+  lyrics,
+  maintenance,
+  playback,
+  playlist,
+  remoteRepository,
+  separation,
+  settings,
+} = createTauriBackend(tauriInvoke);
 
 beforeEach(() => {
   mockInvoke.mockReset();
@@ -498,6 +503,27 @@ describe("settings", () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const returned = await settings.windowReady();
     expect(mockInvoke).toHaveBeenCalledWith("window_ready");
+    expect(returned).toBeUndefined();
+  });
+
+  test("setNativeAppMenuLabels invokes set_native_app_menu_labels", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const labels = {
+      file: "File",
+      edit: "Edit",
+      view: "View",
+      window: "Window",
+      help: "Help",
+      import: "Import",
+      settings: "Settings",
+      switchLibrary: "Switch Library",
+      toggleSidebar: "Toggle Sidebar",
+      copyDebugInfo: "Copy debug info",
+    };
+    const returned = await settings.setNativeAppMenuLabels(labels);
+    expect(mockInvoke).toHaveBeenCalledWith("set_native_app_menu_labels", {
+      labels,
+    });
     expect(returned).toBeUndefined();
   });
 
@@ -1141,24 +1167,6 @@ describe("library-setup", () => {
       libraryId: "lib-1",
     });
     expect(returned).toBe(registrySnapshot);
-  });
-
-  test("createLibrary delegates to createLocalLibrary", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    const returned = await librarySetup.createLibrary("/new-music");
-    expect(mockInvoke).toHaveBeenCalledWith("create_library", {
-      path: "/new-music",
-    });
-    expect(returned).toBeUndefined();
-  });
-
-  test("openLibrary delegates to registerLocalLibrary", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    const returned = await librarySetup.openLibrary("/existing-music");
-    expect(mockInvoke).toHaveBeenCalledWith("open_library", {
-      path: "/existing-music",
-    });
-    expect(returned).toBeUndefined();
   });
 });
 

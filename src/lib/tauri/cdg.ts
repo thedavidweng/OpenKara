@@ -1,42 +1,17 @@
-import { invoke } from "@tauri-apps/api/core";
+import type { CdgBackend, CdgStatus } from "@/lib/backend/types";
+import type { InvokeCommand } from "./invoke";
 
-export function getCdgFrame(
-  songId: string,
-  transportGeneration: number,
-  positionMs: number,
-  lastFrameVersion: number,
-): Promise<ArrayBuffer> {
-  return invoke<ArrayBuffer>("get_cdg_frame", {
-    songId,
-    transportGeneration,
-    positionMs: Math.round(positionMs),
-    lastFrameVersion,
-  });
-}
+export function createCdgCommands(invoke: InvokeCommand): CdgBackend {
+  return {
+    getCdgFrame: (songId, transportGeneration, positionMs, lastFrameVersion) =>
+      invoke<ArrayBuffer>("get_cdg_frame", {
+        songId,
+        transportGeneration,
+        positionMs: Math.round(positionMs),
+        lastFrameVersion,
+      }),
 
-export type CdgAvailability = "none" | "loading" | "ready" | "error";
-
-export type CdgErrorCode =
-  | "missing"
-  | "empty"
-  | "invalid"
-  | "read_failed"
-  | "zip_failed";
-
-export interface CdgStatus {
-  availability: CdgAvailability;
-  songId: string | null;
-  transportGeneration: number | null;
-  packetCount: number | null;
-  errorCode: CdgErrorCode | null;
-}
-
-export function getCdgStatus(
-  songId: string,
-  transportGeneration: number,
-): Promise<CdgStatus> {
-  return invoke<CdgStatus>("get_cdg_status", {
-    songId,
-    transportGeneration,
-  });
+    getCdgStatus: (songId, transportGeneration) =>
+      invoke<CdgStatus>("get_cdg_status", { songId, transportGeneration }),
+  };
 }
