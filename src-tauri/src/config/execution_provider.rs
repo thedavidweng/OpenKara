@@ -299,16 +299,14 @@ pub fn restore_directml_timeout_state(app_config: Option<&AppConfig>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // DIRECTML_DISABLED_BY_TIMEOUT is a process-wide AtomicBool. Tests that
-    // touch it run under this lock so a parallel test cannot flip the flag
-    // between the write and the assertion.
-    static DIRECTML_TIMEOUT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::platform_capabilities::directml_timeout_test_guard;
 
     #[test]
     fn execution_provider_policy_holds_for_every_platform() {
         use ExecutionProviderPlatform as Platform;
         use ExecutionProviderPreference as Ep;
+
+        let _guard = directml_timeout_test_guard();
 
         assert!(Ep::DirectMl.is_available_for(Platform::Windows));
         for platform in [
@@ -453,6 +451,7 @@ mod tests {
 
     #[test]
     fn effective_execution_provider_defaults_to_platform_default() {
+        let _guard = directml_timeout_test_guard();
         let config = AppConfig::default();
 
         // Host-conditional expectations mirror the runtime artifact matrix:
@@ -633,6 +632,7 @@ mod tests {
     #[test]
     fn effective_execution_provider_for_falls_back_when_unset() {
         use ExecutionProviderPlatform::*;
+        let _guard = directml_timeout_test_guard();
         let config = AppConfig {
             execution_provider: None,
             ..AppConfig::default()
@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn directml_timeout_disable_downgrades_windows_default_to_cpu() {
-        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
+        let _guard = directml_timeout_test_guard();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let config = AppConfig {
             directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn explicit_user_execution_provider_overrides_timeout_disable() {
-        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
+        let _guard = directml_timeout_test_guard();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let config = AppConfig {
             execution_provider: Some(ExecutionProviderPreference::DirectMl),
@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn record_directml_unavailable_persists_flag_and_flips_process_override() {
-        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
+        let _guard = directml_timeout_test_guard();
         let tmp = tempfile::tempdir().unwrap();
         crate::platform_capabilities::set_directml_disabled_by_timeout(false);
         let providers = vec!["directml".to_owned(), "cpu".to_owned()];
