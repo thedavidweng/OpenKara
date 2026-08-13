@@ -196,7 +196,8 @@ pub fn render_output_buffer(
                 }
             }
 
-            if let Some(fade_gain) = playback.take_fade_gain() {
+            let fade_gain = playback.take_fade_gain();
+            if let Some(fade_gain) = fade_gain {
                 if fade_gain < 1.0 {
                     for sample in output[..rendered_samples].iter_mut() {
                         *sample *= fade_gain;
@@ -235,6 +236,15 @@ pub fn render_output_buffer(
                     } else {
                         for sample in remaining[..extra_rendered].iter_mut() {
                             *sample = soft_limit(*sample);
+                        }
+                    }
+                    // Keep this callback's fade gain on post-swap samples
+                    // (EOF resume), mirroring the non-crossfade path below.
+                    if let Some(fade_gain) = fade_gain {
+                        if fade_gain < 1.0 {
+                            for sample in remaining[..extra_rendered].iter_mut() {
+                                *sample *= fade_gain;
+                            }
                         }
                     }
                     peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
@@ -836,6 +846,106 @@ mod tests {
         let track = controller.current_track.as_ref().unwrap();
         assert_eq!(track.song_id, "song-b");
         assert_eq!(track.render_frame, 412);
+    }
+
+    /// #375: when the gapless swap fires inside the crossfade branch, the
+    /// samples rendered after the swap must still receive this callback's
+    /// fade gain — otherwise the level steps from `fade_gain` to full
+    /// amplitude in the middle of one buffer.
+    #[test]
+    fn crossfade_branch_gapless_swap_keeps_fade_gain_on_post_swap_samples() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{
+            ActiveCrossfade, PlaybackController, PreloadRequestGeneration, PreparedTrack,
+        };
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A (outgoing): already at EOF when the callback starts.
+        let track_a_frames = 1_000usize;
+        let mut controller = PlaybackController::default();
+        controller.start_track(
+            "song-a".to_owned(),
+            DecodedAudio {
+                sample_rate_hz: sample_rate,
+                channels,
+                duration_ms: (track_a_frames * 1_000 / sample_rate as usize) as u64,
+                samples: vec![0.4; track_a_frames * channels],
+            },
+            0,
+        );
+        controller.play(0).unwrap();
+        controller.current_track.as_mut().unwrap().render_frame = track_a_frames as u64;
+
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let make_prepared = |song_id: &str, frames: usize, amplitude: f32| PreparedTrack {
+            preload_request_generation: PreloadRequestGeneration(0),
+            preload_generation: fmt.generation,
+            song_id: song_id.to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate_hz: sample_rate,
+                channels,
+                duration_ms: (frames * 1_000 / sample_rate as usize) as u64,
+                samples: vec![amplitude; frames * channels],
+            },
+        };
+
+        // A crossfade into song-b is active while a fresh prepared track
+        // (song-c) has already been installed behind it.
+        controller.active_crossfade = Some(ActiveCrossfade {
+            prepared: make_prepared("song-b", 88_200, 0.2),
+            total_frames: 22_050,
+            rendered_frames: 0,
+            incoming_source_frame: 0,
+        });
+        assert!(controller
+            .install_prepared_track(make_prepared("song-c", 44_100, 0.5), fmt)
+            .is_ok());
+
+        // A resume fade is in progress; its gain is ~0 right after start.
+        controller.fade = crate::audio::playback::FadeState::FadingIn {
+            start: std::time::Instant::now(),
+        };
+
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = ResamplerCache::new();
+        let mut crossfade_incoming_rc = ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut crossfade_incoming_rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The outgoing track was at EOF, so the swap must have fired.
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-c",
+            "gapless swap must fire for the EOF outgoing track"
+        );
+
+        // Post-swap samples come from song-c (0.5 amplitude) and must be
+        // scaled by the active fade gain instead of jumping to full level.
+        let max_sample = output.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_sample < 0.49,
+            "post-swap samples must keep this callback's fade gain, got {max_sample}"
+        );
     }
 
     #[test]
