@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type Backend } from "@/lib/backend";
 import type { ModelBootstrapStatusSnapshot } from "@/types/ipc";
 import { mergeDownloadStatus } from "./merge-download-status";
 
@@ -9,16 +9,20 @@ interface BootstrapState {
   updateStatus: (status: ModelBootstrapStatusSnapshot) => void;
 }
 
-export const useBootstrapStore = create<BootstrapState>((set) => ({
-  status: null,
+export function createBootstrapStore(backend: Backend = tauriBackend) {
+  return create<BootstrapState>((set) => ({
+    status: null,
 
-  loadStatus: async () => {
-    const status = await api.getModelBootstrapStatus();
-    set({ status });
-  },
+    loadStatus: async () => {
+      const status = await backend.settings.getModelBootstrapStatus();
+      set({ status });
+    },
 
-  updateStatus: (incoming) =>
-    set((s) => ({
-      status: mergeDownloadStatus(s.status, incoming, "model_path"),
-    })),
-}));
+    updateStatus: (incoming) =>
+      set((s) => ({
+        status: mergeDownloadStatus(s.status, incoming, "model_path"),
+      })),
+  }));
+}
+
+export const useBootstrapStore = createBootstrapStore();

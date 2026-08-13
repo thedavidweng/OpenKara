@@ -4,11 +4,13 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
 
 const { mockGetRemoteDiagnostics, mockNotifyError, mockResolveRemoteConflict } =
@@ -28,10 +30,18 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/tauri", () => ({
-  getRemoteDiagnostics: mockGetRemoteDiagnostics,
-  resolveRemoteConflict: mockResolveRemoteConflict,
-}));
+const backend = createMockBackend({
+  overrides: {
+    remoteRepository: {
+      getRemoteDiagnostics: mockGetRemoteDiagnostics,
+      resolveRemoteConflict: mockResolveRemoteConflict,
+    },
+  },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useBackend } from "@/lib/backend";
 import { copyDebugInfo } from "@/lib/debug-info";
 import { notifyError } from "@/lib/errors";
 import {
@@ -21,6 +22,7 @@ const ACTION_BUTTON_CLASS =
 const COPIED_RESET_MS = 2000;
 
 function Toast({ notification }: { notification: Notification }) {
+  const { settings } = useBackend();
   const { t } = useTranslation();
   const dismiss = useNotificationStore((s) => s.dismissNotification);
   const [debugCopied, setDebugCopied] = useState(false);
@@ -46,7 +48,10 @@ function Toast({ notification }: { notification: Notification }) {
 
   const handleCopyDebug = async () => {
     try {
-      await copyDebugInfo({ translate: t });
+      await copyDebugInfo({
+        fetchDebugInfo: settings.getDebugInfo,
+        translate: t,
+      });
       setDebugCopied(true);
       if (copiedTimeoutRef.current !== undefined) {
         window.clearTimeout(copiedTimeoutRef.current);

@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { RuntimeUpdateBanner } from "./RuntimeUpdateBanner";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import type {
@@ -15,29 +12,33 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 
-const {
-  mockRestartApp,
-  mockDownloadRuntime,
-  mockNotifyError,
-  mockGetErrorMessage,
-} = vi.hoisted(() => ({
-  mockRestartApp: vi.fn().mockResolvedValue(undefined),
-  mockDownloadRuntime: vi.fn(),
+const { mockNotifyError, mockGetErrorMessage } = vi.hoisted(() => ({
   mockNotifyError: vi.fn(),
   mockGetErrorMessage: vi.fn(
     (error: { message?: string }) => error.message ?? "",
   ),
 }));
 
+const mockRestartApp = vi.fn().mockResolvedValue(undefined);
+const mockDownloadRuntime = vi.fn();
+const backend = createMockBackend({
+  overrides: {
+    settings: {
+      restartApp: mockRestartApp,
+      downloadRuntime: mockDownloadRuntime,
+    },
+  },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  restartApp: mockRestartApp,
-  downloadRuntime: mockDownloadRuntime,
-}));
 vi.mock("@/lib/errors", () => ({
   getErrorMessage: mockGetErrorMessage,
   notifyError: mockNotifyError,

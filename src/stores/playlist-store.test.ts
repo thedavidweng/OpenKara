@@ -1,34 +1,30 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { createPlaylistStore } from "./playlist-store";
 
-const {
-  mockListPlaylists,
-  mockCreatePlaylist,
-  mockRenamePlaylist,
-  mockDeletePlaylist,
-  mockAddSongsToPlaylist,
-  mockRemoveSongsFromPlaylist,
-  mockGetPlaylistSongs,
-} = vi.hoisted(() => ({
-  mockListPlaylists: vi.fn(),
-  mockCreatePlaylist: vi.fn(),
-  mockRenamePlaylist: vi.fn(),
-  mockDeletePlaylist: vi.fn(),
-  mockAddSongsToPlaylist: vi.fn(),
-  mockRemoveSongsFromPlaylist: vi.fn(),
-  mockGetPlaylistSongs: vi.fn(),
-}));
+const mockListPlaylists = vi.fn();
+const mockCreatePlaylist = vi.fn();
+const mockRenamePlaylist = vi.fn();
+const mockDeletePlaylist = vi.fn();
+const mockAddSongsToPlaylist = vi.fn();
+const mockRemoveSongsFromPlaylist = vi.fn();
+const mockGetPlaylistSongs = vi.fn();
 
-vi.mock("@/lib/tauri", () => ({
-  listPlaylists: mockListPlaylists,
-  createPlaylist: mockCreatePlaylist,
-  renamePlaylist: mockRenamePlaylist,
-  deletePlaylist: mockDeletePlaylist,
-  addSongsToPlaylist: mockAddSongsToPlaylist,
-  removeSongsFromPlaylist: mockRemoveSongsFromPlaylist,
-  getPlaylistSongs: mockGetPlaylistSongs,
-}));
-
-import { usePlaylistStore } from "./playlist-store";
+const usePlaylistStore = createPlaylistStore(
+  createMockBackend({
+    overrides: {
+      playlist: {
+        listPlaylists: mockListPlaylists,
+        createPlaylist: mockCreatePlaylist,
+        renamePlaylist: mockRenamePlaylist,
+        deletePlaylist: mockDeletePlaylist,
+        addSongsToPlaylist: mockAddSongsToPlaylist,
+        removeSongsFromPlaylist: mockRemoveSongsFromPlaylist,
+        getPlaylistSongs: mockGetPlaylistSongs,
+      },
+    },
+  }),
+);
 
 const mockPlaylists = [
   {

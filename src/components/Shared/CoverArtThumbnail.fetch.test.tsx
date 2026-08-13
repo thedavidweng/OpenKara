@@ -11,9 +11,9 @@ const { mockGetCoverArtThumbnail, mockGetCoverArt } = vi.hoisted(() => ({
   mockGetCoverArt: vi.fn<() => Promise<CoverArtBytes>>(),
 }));
 
-vi.mock("@/lib/tauri/library", () => ({
-  getCoverArtThumbnail: mockGetCoverArtThumbnail,
-  getCoverArt: mockGetCoverArt,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
 
 vi.mock("@/lib/cover-art", async () => {
@@ -28,7 +28,17 @@ vi.mock("@/lib/cover-art", async () => {
   };
 });
 
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { CoverArtThumbnail } from "./CoverArtThumbnail";
+
+const backend = createMockBackend({
+  overrides: {
+    library: {
+      getCoverArtThumbnail: mockGetCoverArtThumbnail,
+      getCoverArt: mockGetCoverArt,
+    },
+  },
+});
 
 describe("CoverArtThumbnail async fetch", () => {
   let container: HTMLElement;

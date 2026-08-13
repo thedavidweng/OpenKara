@@ -9,6 +9,8 @@ import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { BackendProvider } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { createRecordingRuntimeEventSource } from "@/runtime/event-source";
 import type {
   CommandError,
@@ -63,30 +65,25 @@ function completedSeparationStatus(
   };
 }
 
-const {
-  mockGetPlaybackState,
-  mockGetSettings,
-  mockSetPreloadCandidate,
-  mockNotifyError,
-  mockNotifySuccess,
-  mockNotifyWhenUnfocused,
-} = vi.hoisted(() => ({
-  mockGetPlaybackState: vi.fn(),
-  mockGetSettings: vi.fn(),
-  mockSetPreloadCandidate: vi.fn(),
-  mockNotifyError: vi.fn(),
-  mockNotifySuccess: vi.fn(),
-  mockNotifyWhenUnfocused: vi.fn(() => Promise.resolve()),
-}));
+const { mockNotifyError, mockNotifySuccess, mockNotifyWhenUnfocused } =
+  vi.hoisted(() => ({
+    mockNotifyError: vi.fn(),
+    mockNotifySuccess: vi.fn(),
+    mockNotifyWhenUnfocused: vi.fn(() => Promise.resolve()),
+  }));
 
-vi.mock("@/lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/tauri")>();
-  return {
-    ...actual,
-    getPlaybackState: mockGetPlaybackState,
-    getSettings: mockGetSettings,
-    setPreloadCandidate: mockSetPreloadCandidate,
-  };
+const mockGetPlaybackState = vi.fn();
+const mockGetSettings = vi.fn();
+const mockSetPreloadCandidate = vi.fn();
+
+const backend = createMockBackend({
+  overrides: {
+    playback: {
+      getPlaybackState: mockGetPlaybackState,
+      setPreloadCandidate: mockSetPreloadCandidate,
+    },
+    settings: { getSettings: mockGetSettings },
+  },
 });
 
 vi.mock("@/lib/errors", () => ({
@@ -157,7 +154,11 @@ async function renderHook(fn: () => void) {
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<HookHarness hookFn={fn} />);
+    root.render(
+      <BackendProvider backend={backend}>
+        <HookHarness hookFn={fn} />
+      </BackendProvider>,
+    );
     await Promise.resolve();
   });
   const unmount = () => {

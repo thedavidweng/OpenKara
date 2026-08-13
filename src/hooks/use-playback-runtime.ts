@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import i18next, { detectSystemLanguage } from "@/lib/i18n";
 import {
   usePlaybackEvents,
@@ -41,6 +41,7 @@ export function useEventListeners(
 export function useFullscreenPlaybackRuntime(
   source: RuntimeEventSource = tauriRuntimeEventSource,
 ) {
+  const backend = useBackend();
   const applyPlaybackPositionEvent = usePlayerStore(
     (state) => state.applyPlaybackPositionEvent,
   );
@@ -50,18 +51,18 @@ export function useFullscreenPlaybackRuntime(
   );
 
   useEffect(() => {
-    void api
+    void backend.playback
       .getPlaybackState()
       .then((snapshot) => updateSnapshot(snapshot))
       .catch(notifyError);
 
     void loadStartupSettings({
-      getSettings: api.getSettings,
+      getSettings: backend.settings.getSettings,
       hydrateAppSettings,
       changeLanguage: i18next.changeLanguage,
       detectFallbackLanguage: detectSystemLanguage,
     }).catch(notifyError);
-  }, [hydrateAppSettings, updateSnapshot]);
+  }, [backend, hydrateAppSettings, updateSnapshot]);
 
   usePlaybackPositionSubscription(true, applyPlaybackPositionEvent, source);
 }

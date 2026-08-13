@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { copyDebugInfo } from "@/lib/debug-info";
 import { notifyError } from "@/lib/errors";
-import { getDebugInfo } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import type { DebugInfo } from "@/types/ipc";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 
@@ -18,13 +18,15 @@ function AboutRow({ label, value }: { label: string; value: string }) {
 }
 
 export function SettingsAboutSection() {
+  const { settings } = useBackend();
   const { t } = useTranslation();
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    getDebugInfo()
+    settings
+      .getDebugInfo()
       .then((value) => {
         if (!cancelled) {
           setInfo(value);
@@ -34,11 +36,14 @@ export function SettingsAboutSection() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [settings]);
 
   const handleCopy = async () => {
     try {
-      await copyDebugInfo({ translate: t });
+      await copyDebugInfo({
+        fetchDebugInfo: settings.getDebugInfo,
+        translate: t,
+      });
       setCopied(true);
       window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
     } catch (error) {

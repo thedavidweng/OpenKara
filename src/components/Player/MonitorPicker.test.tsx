@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { MonitorPicker } from "./MonitorPicker";
 
 const {
@@ -70,9 +71,16 @@ vi.mock("@/lib/fullscreen-player", () => ({
   openFullscreenPlayer: mockOpenFullscreenPlayer,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  syncAirPlayAudienceState: mockSyncAirPlayAudienceState,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    playback: { syncAirPlayAudienceState: mockSyncAirPlayAudienceState },
+  },
+});
 
 interface MockMonitor {
   name: string | null;

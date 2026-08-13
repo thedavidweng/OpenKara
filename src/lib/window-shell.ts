@@ -3,7 +3,7 @@ import {
   getShortcutPlatform,
   type ShortcutPlatform,
 } from "@/lib/app-shortcuts";
-import { getWindowShellState as getWindowShellStateSnapshot } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import type {
   WindowShellChromeVariant,
   WindowShellStateSnapshot,
@@ -104,6 +104,7 @@ export function useWindowShellState(
   initialState?: WindowShellState,
   platform: ShortcutPlatform = getShortcutPlatform(),
 ): WindowShellState {
+  const backend = useBackend();
   const resolvedInitialState = resolveWindowShellState(platform, initialState);
   const [nativeState, setNativeState] = useState<WindowShellState | null>(null);
   const shouldHydrateNativeSnapshot = platform === "mac";
@@ -115,7 +116,8 @@ export function useWindowShellState(
 
     let cancelled = false;
 
-    getWindowShellStateSnapshot()
+    backend.settings
+      .getWindowShellState()
       .then((snapshot) => {
         if (cancelled) {
           return;
@@ -137,7 +139,7 @@ export function useWindowShellState(
     return () => {
       cancelled = true;
     };
-  }, [platform, shouldHydrateNativeSnapshot]);
+  }, [backend, platform, shouldHydrateNativeSnapshot]);
 
   if (!shouldHydrateNativeSnapshot) {
     return resolvedInitialState;

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getAudioPeaks } from "@/lib/tauri/playback";
+import { useBackend } from "@/lib/backend";
 import type { AudioPeakSnapshot } from "@/types/ipc";
 
 export function PeakMeter({
@@ -11,6 +11,7 @@ export function PeakMeter({
   height?: number;
   barGap?: number;
 } = {}) {
+  const { playback } = useBackend();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastWriteIndexRef = useRef(0);
   const lastAdvanceRef = useRef<number | null>(null);
@@ -86,7 +87,7 @@ export function PeakMeter({
       inFlight = true;
       const generation = ++requestGeneration;
       try {
-        const snapshot = await getAudioPeaks();
+        const snapshot = await playback.getAudioPeaks();
         if (cancelled || generation !== requestGeneration) return;
         const now = performance.now();
         const advanced = snapshot.writeIndex > lastWriteIndexRef.current;
@@ -149,7 +150,7 @@ export function PeakMeter({
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [width, height, barGap]);
+  }, [playback, width, height, barGap]);
 
   return (
     <canvas

@@ -1,49 +1,46 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AppSettings } from "@/types/ipc";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import type { AppSettings, LibrarySortMode } from "@/types/ipc";
 import {
   createSettingsStore,
   type SettingsSyncSnapshot,
   useSettingsStore,
 } from "./settings-store";
 
-const {
-  mockSetLyricsFontStep,
-  mockSetEqEnabled,
-  mockSetEqGains,
-  mockSetCrossfadeEnabled,
-  mockSetCrossfadeDurationMs,
-  mockSetLibrarySortMode,
-  mockSetThemePreference,
-  mockSetUpdatePolicy,
-  mockNotifyError,
-} = vi.hoisted(() => ({
-  mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
-  mockSetEqEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
-  mockSetEqGains:
-    vi.fn<
-      (
-        gainsDb: [number, number, number, number, number],
-      ) => Promise<AppSettings>
-    >(),
-  mockSetCrossfadeEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
-  mockSetCrossfadeDurationMs:
-    vi.fn<(durationMs: number) => Promise<AppSettings>>(),
-  mockSetLibrarySortMode: vi.fn<(mode: string) => Promise<AppSettings>>(),
-  mockSetThemePreference: vi.fn<(preference: string) => Promise<AppSettings>>(),
-  mockSetUpdatePolicy: vi.fn<(policy: string) => Promise<AppSettings>>(),
+const { mockNotifyError } = vi.hoisted(() => ({
   mockNotifyError: vi.fn(),
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  setLyricsFontStep: mockSetLyricsFontStep,
-  setEqEnabled: mockSetEqEnabled,
-  setEqGains: mockSetEqGains,
-  setCrossfadeEnabled: mockSetCrossfadeEnabled,
-  setCrossfadeDurationMs: mockSetCrossfadeDurationMs,
-  setLibrarySortMode: mockSetLibrarySortMode,
-  setThemePreference: mockSetThemePreference,
-  setUpdatePolicy: mockSetUpdatePolicy,
-}));
+const mockSetLyricsFontStep = vi.fn<(step: number) => Promise<AppSettings>>();
+const mockSetEqEnabled = vi.fn<(enabled: boolean) => Promise<AppSettings>>();
+const mockSetEqGains =
+  vi.fn<
+    (gainsDb: [number, number, number, number, number]) => Promise<AppSettings>
+  >();
+const mockSetCrossfadeEnabled =
+  vi.fn<(enabled: boolean) => Promise<AppSettings>>();
+const mockSetCrossfadeDurationMs =
+  vi.fn<(durationMs: number) => Promise<AppSettings>>();
+const mockSetLibrarySortMode =
+  vi.fn<(mode: LibrarySortMode) => Promise<AppSettings>>();
+const mockSetThemePreference =
+  vi.fn<(preference: string) => Promise<AppSettings>>();
+const mockSetUpdatePolicy = vi.fn<(policy: string) => Promise<AppSettings>>();
+
+const backend = createMockBackend({
+  overrides: {
+    settings: {
+      setLyricsFontStep: mockSetLyricsFontStep,
+      setEqEnabled: mockSetEqEnabled,
+      setEqGains: mockSetEqGains,
+      setCrossfadeEnabled: mockSetCrossfadeEnabled,
+      setCrossfadeDurationMs: mockSetCrossfadeDurationMs,
+      setLibrarySortMode: mockSetLibrarySortMode,
+      setThemePreference: mockSetThemePreference,
+      setUpdatePolicy: mockSetUpdatePolicy,
+    },
+  },
+});
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
@@ -125,12 +122,14 @@ describe("settings-store sync", () => {
         channelFactory,
         originId: "primary",
       }),
+      backend,
     );
     const secondary = createSettingsStore(
       actual.createWebviewSyncChannel<SettingsSyncSnapshot>("settings", {
         channelFactory,
         originId: "secondary",
       }),
+      backend,
     );
 
     primary.store.getState().open();
@@ -147,7 +146,7 @@ describe("settings-store actions", () => {
   let dispose: (() => void) | undefined;
 
   beforeEach(() => {
-    const instance = createSettingsStore();
+    const instance = createSettingsStore(undefined, backend);
     store = instance.store;
     dispose = instance.dispose;
     store.setState({

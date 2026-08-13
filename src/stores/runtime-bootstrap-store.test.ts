@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import type { RuntimeBootstrapStatusSnapshot } from "@/types/ipc";
+import { createRuntimeBootstrapStore } from "./runtime-bootstrap-store";
 
-vi.mock("@/lib/tauri", () => ({
-  getRuntimeBootstrapStatus: vi.fn(),
-}));
+const mockGetRuntimeBootstrapStatus = vi.fn();
 
-import { useRuntimeBootstrapStore } from "./runtime-bootstrap-store";
-import * as api from "@/lib/tauri";
-
-const mockGetRuntimeBootstrapStatus = vi.mocked(api.getRuntimeBootstrapStatus);
+const useRuntimeBootstrapStore = createRuntimeBootstrapStore(
+  createMockBackend({
+    overrides: {
+      settings: { getRuntimeBootstrapStatus: mockGetRuntimeBootstrapStatus },
+    },
+  }),
+);
 
 function makeSnapshot(
   overrides: Partial<RuntimeBootstrapStatusSnapshot> = {},

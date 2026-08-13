@@ -1,24 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const {
-  mockEmit,
-  mockEmitTo,
-  mockStepAirPlayPlainTextPage,
-  mockStartAirPlayPlainTextPagePending,
-} = vi.hoisted(() => ({
-  mockEmit: vi.fn(),
-  mockEmitTo: vi.fn(),
-  mockStepAirPlayPlainTextPage: vi.fn(),
-  mockStartAirPlayPlainTextPagePending: vi.fn(),
-}));
+const { mockEmit, mockEmitTo, mockStartAirPlayPlainTextPagePending } =
+  vi.hoisted(() => ({
+    mockEmit: vi.fn(),
+    mockEmitTo: vi.fn(),
+    mockStartAirPlayPlainTextPagePending: vi.fn(),
+  }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   emit: mockEmit,
   emitTo: mockEmitTo,
-}));
-
-vi.mock("@/lib/tauri", () => ({
-  stepAirPlayPlainTextPage: mockStepAirPlayPlainTextPage,
 }));
 
 vi.mock("@/stores/player-store", () => ({
@@ -30,12 +21,20 @@ vi.mock("@/stores/player-store", () => ({
   },
 }));
 
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import {
   announceLocalAudienceOutputActive,
   getAirPlayPlainTextPageLockMs,
   resolvePlainTextRemoteTarget,
   stepPlainTextRemotePage,
 } from "./plain-text-page-controls";
+
+const mockStepAirPlayPlainTextPage = vi.fn();
+const backend = createMockBackend({
+  overrides: {
+    playback: { stepAirPlayPlainTextPage: mockStepAirPlayPlainTextPage },
+  },
+});
 
 describe("plain-text page controls", () => {
   beforeEach(() => {
@@ -65,6 +64,7 @@ describe("plain-text page controls", () => {
       { active: true, phase: "buffering", latencyMs: 600 },
       true,
       "next",
+      backend.playback.stepAirPlayPlainTextPage,
     );
 
     expect(mockStepAirPlayPlainTextPage).toHaveBeenCalledWith("next");
@@ -80,6 +80,7 @@ describe("plain-text page controls", () => {
       { active: false, phase: "idle" },
       true,
       "prev",
+      backend.playback.stepAirPlayPlainTextPage,
     );
 
     expect(mockEmitTo).toHaveBeenCalledWith(
@@ -117,6 +118,7 @@ describe("plain-text page controls", () => {
       { active: true, phase: "buffering", latencyMs: 1200 },
       true,
       "next",
+      backend.playback.stepAirPlayPlainTextPage,
     );
 
     expect(mockStepAirPlayPlainTextPage).toHaveBeenCalledWith("next");

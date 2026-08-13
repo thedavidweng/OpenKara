@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type Backend } from "@/lib/backend";
 import { notifyError } from "@/lib/errors";
 import {
   createPlaybackSession,
@@ -152,22 +152,14 @@ export function selectCurrentPositionMs(
   return selectSessionPositionMs(state, nowMs);
 }
 
-const sessionTransport: PlaybackTransport = {
-  play: api.play,
-  resume: api.resume,
-  pause: api.pause,
-  seek: api.seek,
-  setVolume: api.setVolume,
-  setStemVolume: api.setStemVolume,
-  loadStems: api.loadStems,
-  getPlaybackState: api.getPlaybackState,
-};
-
 export function createPlayerStore(
   syncChannel: WebviewSyncChannel<PlayerSyncSnapshot> = createWebviewSyncChannel<PlayerSyncSnapshot>(
     "openkara.player",
   ),
+  backend: Backend = tauriBackend,
 ) {
+  const sessionTransport: PlaybackTransport = backend.playback;
+
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
   let sessionRef!: PlaybackSession;

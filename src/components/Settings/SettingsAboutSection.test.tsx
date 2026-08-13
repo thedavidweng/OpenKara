@@ -4,11 +4,13 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import type { DebugInfo } from "@/types/ipc";
 import { SettingsAboutSection } from "./SettingsAboutSection";
 
@@ -16,6 +18,14 @@ const { mockGetDebugInfo, mockNotifyError } = vi.hoisted(() => ({
   mockGetDebugInfo: vi.fn(),
   mockNotifyError: vi.fn(),
 }));
+
+const backend = createMockBackend({
+  overrides: { settings: { getDebugInfo: mockGetDebugInfo } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -25,7 +35,6 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/tauri", () => ({ getDebugInfo: mockGetDebugInfo }));
 vi.mock("@/lib/errors", () => ({ notifyError: mockNotifyError }));
 
 const sample: DebugInfo = {

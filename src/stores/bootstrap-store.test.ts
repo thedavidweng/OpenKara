@@ -1,9 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
-vi.mock("@/lib/tauri", () => ({
-  getModelBootstrapStatus: vi.fn(),
-}));
-
+import { beforeEach, describe, expect, test } from "vitest";
 import { useBootstrapStore } from "./bootstrap-store";
 
 describe("bootstrap-store updateStatus", () => {

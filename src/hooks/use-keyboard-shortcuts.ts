@@ -6,7 +6,7 @@ import { useQueueStore } from "@/stores/queue-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { promptImportFiles } from "@/runtime/menu-runtime";
 import { songCanBeSeparated } from "@/lib/song-media";
-import { batchSeparate } from "@/lib/tauri/maintenance";
+import { useBackend } from "@/lib/backend";
 import {
   closeFullscreenPlayer,
   openFullscreenPlayer,
@@ -170,6 +170,7 @@ export function handleAppKeyDown(
 }
 
 export function useKeyboardShortcuts(enabled = true): void {
+  const backend = useBackend();
   const lastVolumeRef = useRef(1);
 
   useEffect(() => {
@@ -186,7 +187,7 @@ export function useKeyboardShortcuts(enabled = true): void {
         if (!songId) return;
         const song = library.songs.find((s) => s.hash === songId);
         if (!songCanBeSeparated(song)) return;
-        void batchSeparate([songId]).catch(() => {});
+        void backend.maintenance.batchSeparate([songId]).catch(() => {});
       };
 
       const toggleMute = () => {
@@ -226,6 +227,8 @@ export function useKeyboardShortcuts(enabled = true): void {
         openImportDialog: () =>
           void promptImportFiles({
             importFiles: library.importFiles,
+            expandImportPaths: backend.library.expandImportPaths,
+            pickImportPaths: backend.library.pickImportPaths,
           }),
         toggleSettings: () => useSettingsStore.getState().toggle(),
         toggleSidebar: () => useLayoutStore.getState().toggleSidebar(),
@@ -246,5 +249,5 @@ export function useKeyboardShortcuts(enabled = true): void {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enabled]);
+  }, [backend, enabled]);
 }

@@ -22,9 +22,9 @@ describe("createCoalescingPainter", () => {
     vi.useRealTimers();
   });
 
-  test("loads without importing the tauri display-frame polling API", async () => {
+  test("loads without importing the backend display-frame polling API", async () => {
     vi.resetModules();
-    vi.doMock("@/lib/tauri", () => {
+    vi.doMock("@/lib/backend", () => {
       throw new Error("use-cdg-frame-receiver must stay message-driven");
     });
 

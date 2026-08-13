@@ -4,16 +4,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const { mockWindowReady } = vi.hoisted(() => ({
-  mockWindowReady: vi.fn(),
-}));
-
-vi.mock("@/lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/tauri")>()),
-  windowReady: mockWindowReady,
-}));
-
+import { BackendProvider } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { useAppReadyRuntime } from "./app-runtime";
+
+const mockWindowReady = vi.fn();
+const backend = createMockBackend({
+  overrides: { settings: { windowReady: mockWindowReady } },
+});
 
 function Harness({
   scheduleFrame,
@@ -63,11 +61,13 @@ describe("useAppReadyRuntime", () => {
 
     act(() => {
       root.render(
-        <Harness
-          scheduleFrame={neverFiringScheduleFrame}
-          windowShown={false}
-          setWindowShown={setWindowShown}
-        />,
+        <BackendProvider backend={backend}>
+          <Harness
+            scheduleFrame={neverFiringScheduleFrame}
+            windowShown={false}
+            setWindowShown={setWindowShown}
+          />
+        </BackendProvider>,
       );
     });
 
@@ -91,11 +91,13 @@ describe("useAppReadyRuntime", () => {
 
     act(() => {
       root.render(
-        <Harness
-          scheduleFrame={immediateScheduleFrame}
-          windowShown={false}
-          setWindowShown={setWindowShown}
-        />,
+        <BackendProvider backend={backend}>
+          <Harness
+            scheduleFrame={immediateScheduleFrame}
+            windowShown={false}
+            setWindowShown={setWindowShown}
+          />
+        </BackendProvider>,
       );
     });
 
@@ -114,11 +116,13 @@ describe("useAppReadyRuntime", () => {
 
     act(() => {
       root.render(
-        <Harness
-          scheduleFrame={vi.fn(() => 1)}
-          windowShown
-          setWindowShown={setWindowShown}
-        />,
+        <BackendProvider backend={backend}>
+          <Harness
+            scheduleFrame={vi.fn(() => 1)}
+            windowShown
+            setWindowShown={setWindowShown}
+          />
+        </BackendProvider>,
       );
     });
 

@@ -2,9 +2,10 @@ import { useEffect } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 
 export function usePreloadCandidateEffect(enabled: boolean) {
+  const backend = useBackend();
   const currentSongId =
     usePlayerStore((state) => state.snapshot?.song_id) ?? null;
   const queue = useQueueStore((state) => state.queue);
@@ -18,6 +19,6 @@ export function usePreloadCandidateEffect(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    api.setPreloadCandidate(nextCandidate).catch(notifyError);
-  }, [enabled, nextCandidate]);
+    backend.playback.setPreloadCandidate(nextCandidate).catch(notifyError);
+  }, [backend, enabled, nextCandidate]);
 }

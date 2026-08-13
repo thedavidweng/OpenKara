@@ -2,8 +2,6 @@ import { describe, expect, test, vi } from "vitest";
 import type { DebugInfo } from "@/types/ipc";
 import { copyDebugInfo, formatDebugInfo } from "./debug-info";
 
-vi.mock("@/lib/tauri", () => ({ getDebugInfo: vi.fn() }));
-
 const sample: DebugInfo = {
   app_version: "0.9.1",
   build_sha: "abc1234",

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { PlaybackStage } from "./PlaybackStage";
 import type { Song } from "@/types/ipc";
 
@@ -74,9 +75,14 @@ vi.mock("@/components/Lyrics/LyricsPanel", () => ({
   ),
 }));
 
-vi.mock("@/lib/tauri/library", () => ({
-  getCoverArtPreview: mockGetCoverArtPreview,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: { library: { getCoverArtPreview: mockGetCoverArtPreview } },
+});
 
 vi.mock("@/stores/settings-store", () => ({
   useSettingsStore: (selector: (s: { coverArtBackdrop: boolean }) => unknown) =>

@@ -1,109 +1,72 @@
-import { invoke } from "@tauri-apps/api/core";
+import type { LibraryBackend } from "@/lib/backend/types";
 import type {
   CoverArtBytes,
-  CoverArtSize,
   DeleteSongsResult,
   ExpandedImportPaths,
   ImportCandidateDetails,
-  ImportSongsOptions,
   ImportSongsResult,
   IntegrityCleanupResult,
   IntegrityReport,
   Song,
   SongProperties,
 } from "@/types/ipc";
+import type { InvokeCommand } from "./invoke";
 
-export function importSongs(
-  paths: string[],
-  options?: ImportSongsOptions,
-): Promise<ImportSongsResult> {
-  return invoke<ImportSongsResult>("import_songs", { paths, options });
-}
+export function createLibraryCommands(invoke: InvokeCommand): LibraryBackend {
+  const getCoverArt: LibraryBackend["getCoverArt"] = (hash, size) =>
+    invoke<CoverArtBytes>(
+      "get_cover_art",
+      size === undefined ? { hash } : { hash, size },
+    );
 
-export function getImportCandidateDetails(
-  paths: string[],
-): Promise<ImportCandidateDetails[]> {
-  return invoke<ImportCandidateDetails[]>("get_import_candidate_details", {
-    paths,
-  });
-}
+  return {
+    importSongs: (paths, options) =>
+      invoke<ImportSongsResult>("import_songs", { paths, options }),
 
-export function expandImportPaths(
-  paths: string[],
-): Promise<ExpandedImportPaths> {
-  return invoke<ExpandedImportPaths>("expand_import_paths", { paths });
-}
+    getImportCandidateDetails: (paths) =>
+      invoke<ImportCandidateDetails[]>("get_import_candidate_details", {
+        paths,
+      }),
 
-export function pickImportPaths(defaultPath?: string): Promise<string[]> {
-  return invoke<string[]>("pick_import_paths", {
-    defaultPath: defaultPath ?? null,
-  });
-}
+    expandImportPaths: (paths) =>
+      invoke<ExpandedImportPaths>("expand_import_paths", { paths }),
 
-export function getLibrary(): Promise<Song[]> {
-  return invoke<Song[]>("get_library");
-}
+    pickImportPaths: (defaultPath) =>
+      invoke<string[]>("pick_import_paths", {
+        defaultPath: defaultPath ?? null,
+      }),
 
-export function searchLibrary(query: string): Promise<Song[]> {
-  return invoke<Song[]>("search_library", { query });
-}
+    getLibrary: () => invoke<Song[]>("get_library"),
 
-export function updateSongMetadata(
-  hash: string,
-  title: string | null,
-  artist: string | null,
-): Promise<Song> {
-  return invoke<Song>("update_song_metadata", { hash, title, artist });
-}
+    searchLibrary: (query) => invoke<Song[]>("search_library", { query }),
 
-export function setSongsInstrumental(
-  songIds: string[],
-  instrumental: boolean,
-): Promise<Song[]> {
-  return invoke<Song[]>("set_songs_instrumental", { songIds, instrumental });
-}
+    updateSongMetadata: (hash, title, artist) =>
+      invoke<Song>("update_song_metadata", { hash, title, artist }),
 
-export function setSongsLanguage(
-  songIds: string[],
-  language: string | null,
-): Promise<Song[]> {
-  return invoke<Song[]>("set_songs_language", { songIds, language });
-}
+    setSongsInstrumental: (songIds, instrumental) =>
+      invoke<Song[]>("set_songs_instrumental", { songIds, instrumental }),
 
-export function deleteSongs(songIds: string[]): Promise<DeleteSongsResult> {
-  return invoke<DeleteSongsResult>("delete_songs", { songIds });
-}
+    setSongsLanguage: (songIds, language) =>
+      invoke<Song[]>("set_songs_language", { songIds, language }),
 
-export function getSongProperties(songId: string): Promise<SongProperties> {
-  return invoke<SongProperties>("get_song_properties", { songId });
-}
+    deleteSongs: (songIds) =>
+      invoke<DeleteSongsResult>("delete_songs", { songIds }),
 
-export function getCoverArt(
-  hash: string,
-  size?: CoverArtSize,
-): Promise<CoverArtBytes> {
-  return invoke<CoverArtBytes>(
-    "get_cover_art",
-    size === undefined ? { hash } : { hash, size },
-  );
-}
+    getSongProperties: (songId) =>
+      invoke<SongProperties>("get_song_properties", { songId }),
 
-export function getCoverArtThumbnail(hash: string): Promise<CoverArtBytes> {
-  return getCoverArt(hash, "thumb");
-}
+    getCoverArt,
 
-export function getCoverArtPreview(hash: string): Promise<CoverArtBytes> {
-  return getCoverArt(hash, "preview");
-}
+    getCoverArtThumbnail: (hash) => getCoverArt(hash, "thumb"),
 
-export function checkLibraryIntegrity(): Promise<IntegrityReport> {
-  return invoke<IntegrityReport>("check_library_integrity");
-}
+    getCoverArtPreview: (hash) => getCoverArt(hash, "preview"),
 
-export function removeMissingLibraryEntries(
-  hashes: string[],
-): Promise<IntegrityCleanupResult> {
-  return invoke<IntegrityCleanupResult>("remove_missing_library_entries", {
-    hashes,
-  });
+    checkLibraryIntegrity: () =>
+      invoke<IntegrityReport>("check_library_integrity"),
+
+    removeMissingLibraryEntries: (hashes) =>
+      invoke<IntegrityCleanupResult>("remove_missing_library_entries", {
+        hashes,
+      }),
+  };
 }

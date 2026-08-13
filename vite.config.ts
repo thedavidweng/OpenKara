@@ -118,6 +118,9 @@ export default defineConfig(async () => ({
         "src/main.tsx",
         // Web Worker
         "src/workers/romanize.worker.ts",
+        // Shared in-memory Tauri fake — a test double whose real exercise is
+        // Playwright E2E and the website preview, not vitest.
+        "src/mock/tauri-mock-impl.ts",
         // Deep Tauri native API dependencies
         "src/runtime/window-shell-runtime.ts",
         "src/runtime/theme-runtime.ts",

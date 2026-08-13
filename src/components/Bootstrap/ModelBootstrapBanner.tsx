@@ -2,11 +2,12 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyError } from "@/lib/errors";
-import { downloadModel } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 
 export function ModelBootstrapBanner() {
+  const backend = useBackend();
   const { t } = useTranslation();
   const status = useBootstrapStore((s) => s.status);
   const updateStatus = useBootstrapStore((s) => s.updateStatus);
@@ -18,7 +19,7 @@ export function ModelBootstrapBanner() {
     if (retrying) return;
     setRetrying(true);
     try {
-      const snapshot = await downloadModel(modelVariant);
+      const snapshot = await backend.settings.downloadModel(modelVariant);
       updateStatus(snapshot);
     } catch (error) {
       notifyError(error);

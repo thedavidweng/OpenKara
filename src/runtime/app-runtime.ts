@@ -14,7 +14,7 @@ import { useCdgSync } from "@/hooks/use-cdg-sync";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useFileDrop } from "@/hooks/use-file-drop";
 import { notifyError } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import i18next, { detectSystemLanguage } from "@/lib/i18n";
 import {
   useAirPlayAudienceSync,
@@ -31,6 +31,7 @@ export function useAppStartupRuntime(
   libraryReady: boolean | null,
   setLibraryReady: (ready: boolean) => void,
 ) {
+  const backend = useBackend();
   const loadLibrary = useLibraryStore((s) => s.loadLibrary);
   const loadBootstrapStatus = useBootstrapStore((s) => s.loadStatus);
   const loadPlayerState = usePlayerStore((s) => s.loadState);
@@ -39,7 +40,7 @@ export function useAppStartupRuntime(
 
   useEffect(() => {
     void loadStartupSettings({
-      getSettings: api.getSettings,
+      getSettings: backend.settings.getSettings,
       hydrateAppSettings,
       changeLanguage: i18next.changeLanguage,
       detectFallbackLanguage: detectSystemLanguage,
@@ -51,17 +52,17 @@ export function useAppStartupRuntime(
 
       void i18next.changeLanguage(detectSystemLanguage()).catch(() => {});
     });
-  }, [hydrateAppSettings, patchAppSettings]);
+  }, [backend, hydrateAppSettings, patchAppSettings]);
 
   useEffect(() => {
-    api
+    backend.librarySetup
       .getLibraryRegistry()
       .then((registry) => setLibraryReady(registry.active_library_id !== null))
       .catch((error) => {
         notifyError(error);
         setLibraryReady(false);
       });
-  }, [setLibraryReady]);
+  }, [backend, setLibraryReady]);
 
   useEffect(() => {
     if (!libraryReady) {
@@ -85,6 +86,8 @@ export function useAppReadyRuntime(
   setWindowShown: (shown: boolean) => void,
   scheduleFrame: AnimationFrameScheduler = requestAnimationFrame,
 ) {
+  const backend = useBackend();
+
   useEffect(() => {
     if (
       libraryReady === null ||
@@ -101,7 +104,7 @@ export function useAppReadyRuntime(
         return;
       }
       requested = true;
-      void api.windowReady();
+      void backend.settings.windowReady();
       setWindowShown(true);
     };
 
@@ -113,6 +116,7 @@ export function useAppReadyRuntime(
       clearTimeout(timeoutId);
     };
   }, [
+    backend,
     libraryReady,
     scheduleFrame,
     setWindowShown,

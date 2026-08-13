@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Monitor } from "lucide-react";
 import { buildAudiencePresentationSpec } from "@/lib/audience-presentation";
 import { getMonitors, openFullscreenPlayer } from "@/lib/fullscreen-player";
-import { syncAirPlayAudienceState } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 
 interface MonitorInfo {
   id: string;
@@ -73,6 +73,7 @@ function normalizeMonitors(
 }
 
 export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
+  const { playback } = useBackend();
   const { t } = useTranslation();
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [position, setPosition] = useState<MonitorPickerPosition | null>(null);
@@ -189,26 +190,28 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
   }
 
   const handleMonitorSelect = async (index: number) => {
-    await syncAirPlayAudienceState({
-      mode: "idle",
-      songId: null,
-      lines: [],
-      offsetMs: 0,
-      isLoading: false,
-      lyricsFontStep: 0,
-      messages: {
-        selectSong: t("lyrics.selectSong"),
-        loadingLyrics: t("lyrics.loadingLyrics"),
-        noLyrics: t("lyrics.noLyrics"),
-        addLyrics: t("lyrics.addLyrics"),
-      },
-      viewport: {
-        width_px: 1280,
-        height_px: 720,
-        bottom_inset_px: 0,
-      },
-      presentationSpec: buildAudiencePresentationSpec(0),
-    }).catch(() => {});
+    await playback
+      .syncAirPlayAudienceState({
+        mode: "idle",
+        songId: null,
+        lines: [],
+        offsetMs: 0,
+        isLoading: false,
+        lyricsFontStep: 0,
+        messages: {
+          selectSong: t("lyrics.selectSong"),
+          loadingLyrics: t("lyrics.loadingLyrics"),
+          noLyrics: t("lyrics.noLyrics"),
+          addLyrics: t("lyrics.addLyrics"),
+        },
+        viewport: {
+          width_px: 1280,
+          height_px: 720,
+          bottom_inset_px: 0,
+        },
+        presentationSpec: buildAudiencePresentationSpec(0),
+      })
+      .catch(() => {});
 
     openFullscreenPlayer(index);
     onClose();

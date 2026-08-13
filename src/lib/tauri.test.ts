@@ -8,351 +8,95 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
-import { getCdgFrame } from "./tauri";
+import { tauriBackend } from "@/lib/backend";
+import * as barrel from "./tauri";
 
-describe("tauri API wrappers", () => {
+type Delegate = (...args: never[]) => unknown;
+
+function delegatesOf(source: object): Map<string, Delegate> {
+  const delegates = new Map<string, Delegate>();
+  for (const [name, value] of Object.entries(source)) {
+    if (typeof value === "function") {
+      delegates.set(name, value as Delegate);
+    }
+  }
+  return delegates;
+}
+
+const backendDelegates = new Map<string, Delegate>();
+for (const group of Object.values(tauriBackend)) {
+  for (const [name, delegate] of delegatesOf(group)) {
+    backendDelegates.set(name, delegate);
+  }
+}
+
+const barrelDelegates = delegatesOf(barrel);
+
+async function commandFor(delegate: Delegate): Promise<unknown> {
+  mockInvoke.mockClear();
+  await delegate();
+  return mockInvoke.mock.calls[0]?.[0];
+}
+
+describe("transitional tauri barrel", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
-    mockInvoke.mockResolvedValue(null);
+    // An array satisfies the one command that post-processes its result
+    // (`getWaveform` reads `peaks.length`) and is inert for the rest.
+    mockInvoke.mockResolvedValue([]);
   });
 
-  test("starts remote provider auth through the dedicated backend command", async () => {
-    const { beginRemoteAuth } = await import("./tauri");
+  test("re-exports every grouped backend command", () => {
+    const missing = [...backendDelegates.keys()].filter(
+      (name) => !barrelDelegates.has(name),
+    );
 
-    await beginRemoteAuth("webdav", {
-      type: "webdav",
-      server_url: "https://dav.example.com/remote.php/dav/files/user/",
-      username: "user",
-      password: "secret",
-      root_path: "/OpenKara",
-    });
-
-    expect(mockInvoke).toHaveBeenCalledWith("begin_remote_auth", {
-      provider: "webdav",
-      payload: {
-        type: "webdav",
-        server_url: "https://dav.example.com/remote.php/dav/files/user/",
-        username: "user",
-        password: "secret",
-        root_path: "/OpenKara",
-      },
-    });
+    expect(missing).toEqual([]);
   });
 
-  test("allows Google Drive auth to start without any frontend credential payload", async () => {
-    const { beginRemoteAuth } = await import("./tauri");
+  test.each([...backendDelegates])(
+    "%s reaches the same command as the grouped backend",
+    async (name, backendDelegate) => {
+      const reExported = barrelDelegates.get(name);
+      if (!reExported) {
+        throw new Error(`${name} is not re-exported`);
+      }
 
-    await beginRemoteAuth("google_drive");
+      const expected = await commandFor(backendDelegate);
+      const actual = await commandFor(reExported);
 
-    expect(mockInvoke).toHaveBeenCalledWith("begin_remote_auth", {
-      provider: "google_drive",
-      payload: null,
-    });
-  });
+      expect(actual).toBe(expected);
+    },
+  );
 
-  test("allows Dropbox auth to start without any frontend credential payload", async () => {
-    const { beginRemoteAuth } = await import("./tauri");
+  test("createLibrary keeps the legacy create_library command", async () => {
+    await barrel.createLibrary("/library");
 
-    await beginRemoteAuth("dropbox");
-
-    expect(mockInvoke).toHaveBeenCalledWith("begin_remote_auth", {
-      provider: "dropbox",
-      payload: null,
+    expect(mockInvoke).toHaveBeenCalledWith("create_library", {
+      path: "/library",
     });
   });
 
-  test("cancels remote auth through the dedicated backend command", async () => {
-    const { cancelRemoteAuth } = await import("./tauri");
+  test("openLibrary keeps the legacy open_library command", async () => {
+    await barrel.openLibrary("/library");
 
-    await cancelRemoteAuth("session-123");
-
-    expect(mockInvoke).toHaveBeenCalledWith("cancel_remote_auth", {
-      sessionId: "session-123",
+    expect(mockInvoke).toHaveBeenCalledWith("open_library", {
+      path: "/library",
     });
   });
 
-  test("opens external URLs through the dedicated backend command", async () => {
-    const { openExternalUrl } = await import("./tauri");
+  test("getCoverArt omits size when the caller does not pass one", async () => {
+    await barrel.getCoverArt("abc");
 
-    await openExternalUrl("https://example.com/oauth");
-
-    expect(mockInvoke).toHaveBeenCalledWith("open_external_url", {
-      url: "https://example.com/oauth",
-    });
+    expect(mockInvoke).toHaveBeenCalledWith("get_cover_art", { hash: "abc" });
   });
 
-  test("sends the backend positionMs payload name", async () => {
-    await getCdgFrame("song-1", 1, 123.6, 0);
+  test("getCoverArt forwards an explicit size", async () => {
+    await barrel.getCoverArt("abc", "thumb");
 
-    expect(mockInvoke).toHaveBeenCalledWith("get_cdg_frame", {
-      songId: "song-1",
-      transportGeneration: 1,
-      positionMs: 124,
-      lastFrameVersion: 0,
+    expect(mockInvoke).toHaveBeenCalledWith("get_cover_art", {
+      hash: "abc",
+      size: "thumb",
     });
-  });
-
-  test("syncs the native AirPlay route picker bounds", async () => {
-    const { syncAirPlayRoutePicker } = await import("./tauri");
-
-    await syncAirPlayRoutePicker({
-      left_px: 12,
-      top_px: 34,
-      width_px: 140,
-      height_px: 28,
-    });
-
-    expect(mockInvoke).toHaveBeenCalledWith("sync_airplay_route_picker", {
-      bounds: {
-        left_px: 12,
-        top_px: 34,
-        width_px: 140,
-        height_px: 28,
-      },
-    });
-  });
-
-  test("expands import paths through the dedicated library command", async () => {
-    const { expandImportPaths } = await import("./tauri");
-
-    await expandImportPaths(["/music/library"]);
-
-    expect(mockInvoke).toHaveBeenCalledWith("expand_import_paths", {
-      paths: ["/music/library"],
-    });
-  });
-
-  test("opens the mixed import picker through the dedicated backend command", async () => {
-    const { pickImportPaths } = await import("./tauri");
-
-    await pickImportPaths("/music");
-
-    expect(mockInvoke).toHaveBeenCalledWith("pick_import_paths", {
-      defaultPath: "/music",
-    });
-  });
-
-  test("passes a null default path to the mixed import picker when none is available", async () => {
-    const { pickImportPaths } = await import("./tauri");
-
-    await pickImportPaths();
-
-    expect(mockInvoke).toHaveBeenCalledWith("pick_import_paths", {
-      defaultPath: null,
-    });
-  });
-
-  test("reads the library registry through the dedicated backend command", async () => {
-    const { getLibraryRegistry } = await import("./tauri");
-
-    mockInvoke.mockResolvedValueOnce({
-      active_library_id: "local:/karaoke",
-      libraries: [
-        {
-          id: "local:/karaoke",
-          kind: "local",
-          display_name: "karaoke",
-          root_path: "/karaoke",
-        },
-      ],
-    });
-
-    await getLibraryRegistry();
-
-    expect(mockInvoke).toHaveBeenCalledWith("get_library_registry");
-  });
-
-  test("syncs audience state to the AirPlay backend", async () => {
-    const { syncAirPlayAudienceState } = await import("./tauri");
-
-    await syncAirPlayAudienceState({
-      mode: "lyrics",
-      songId: "song-1",
-      lines: [
-        {
-          time_ms: 3000,
-          text: "Line",
-          words: null,
-          bg_words: null,
-          section: null,
-        },
-      ],
-      offsetMs: 100,
-      isLoading: false,
-      lyricsFontStep: 1,
-      messages: {
-        selectSong: "Select a song to start",
-        loadingLyrics: "Loading lyrics...",
-        noLyrics: "No lyrics available for this track",
-        addLyrics: "Add Lyrics",
-      },
-      viewport: {
-        width_px: 1280,
-        height_px: 720,
-        bottom_inset_px: 0,
-      },
-      presentationSpec: {
-        contentWidthRatio: 0.92,
-        contentMaxWidthPx: 1600,
-        horizontalPaddingPx: 64,
-        verticalPaddingPx: 56,
-        lineGapPx: 40,
-        fontSizePx: 96,
-        lineHeightMultiple: 1.08,
-        activeScale: 1.05,
-        statusFontSizePx: 18,
-        activeGlowBlurPx: 12,
-        activeTextColor: { red: 1, green: 1, blue: 1, alpha: 1 },
-        pastTextColor: {
-          red: 72 / 255,
-          green: 72 / 255,
-          blue: 74 / 255,
-          alpha: 1,
-        },
-        futureTextColor: {
-          red: 58 / 255,
-          green: 58 / 255,
-          blue: 60 / 255,
-          alpha: 1,
-        },
-        plainTextColor: { red: 1, green: 1, blue: 1, alpha: 1 },
-        statusTextColor: {
-          red: 142 / 255,
-          green: 142 / 255,
-          blue: 147 / 255,
-          alpha: 1,
-        },
-        activeGlowColor: { red: 1, green: 1, blue: 1, alpha: 0.8 },
-      },
-    });
-
-    expect(mockInvoke).toHaveBeenCalledWith("sync_airplay_audience_state", {
-      payload: {
-        mode: "lyrics",
-        songId: "song-1",
-        lines: [
-          {
-            time_ms: 3000,
-            text: "Line",
-            words: null,
-            bg_words: null,
-            section: null,
-          },
-        ],
-        offsetMs: 100,
-        isLoading: false,
-        lyricsFontStep: 1,
-        messages: {
-          selectSong: "Select a song to start",
-          loadingLyrics: "Loading lyrics...",
-          noLyrics: "No lyrics available for this track",
-          addLyrics: "Add Lyrics",
-        },
-        viewport: {
-          width_px: 1280,
-          height_px: 720,
-          bottom_inset_px: 0,
-        },
-        presentationSpec: {
-          contentWidthRatio: 0.92,
-          contentMaxWidthPx: 1600,
-          horizontalPaddingPx: 64,
-          verticalPaddingPx: 56,
-          lineGapPx: 40,
-          fontSizePx: 96,
-          lineHeightMultiple: 1.08,
-          activeScale: 1.05,
-          statusFontSizePx: 18,
-          activeGlowBlurPx: 12,
-          activeTextColor: { red: 1, green: 1, blue: 1, alpha: 1 },
-          pastTextColor: {
-            red: 72 / 255,
-            green: 72 / 255,
-            blue: 74 / 255,
-            alpha: 1,
-          },
-          futureTextColor: {
-            red: 58 / 255,
-            green: 58 / 255,
-            blue: 60 / 255,
-            alpha: 1,
-          },
-          plainTextColor: { red: 1, green: 1, blue: 1, alpha: 1 },
-          statusTextColor: {
-            red: 142 / 255,
-            green: 142 / 255,
-            blue: 147 / 255,
-            alpha: 1,
-          },
-          activeGlowColor: { red: 1, green: 1, blue: 1, alpha: 0.8 },
-        },
-      },
-    });
-  });
-
-  test("steps AirPlay plain-text pages through the dedicated command", async () => {
-    const { stepAirPlayPlainTextPage } = await import("./tauri");
-
-    await stepAirPlayPlainTextPage("next");
-
-    expect(mockInvoke).toHaveBeenCalledWith("step_airplay_plain_text_page", {
-      direction: "next",
-    });
-  });
-
-  test("reads the native window shell snapshot through the dedicated command", async () => {
-    const { getWindowShellState } = await import("./tauri");
-
-    await getWindowShellState();
-
-    expect(mockInvoke).toHaveBeenCalledWith("get_window_shell_state");
-  });
-
-  test("syncs native sidebar visibility through the dedicated shell command", async () => {
-    const { setNativeSidebarVisibility } = await import("./tauri");
-
-    await setNativeSidebarVisibility(false);
-
-    expect(mockInvoke).toHaveBeenCalledWith("set_native_sidebar_visibility", {
-      visible: false,
-    });
-  });
-
-  test("signals that the first app screen is ready through the shell command", async () => {
-    const { windowReady } = await import("./tauri");
-
-    await windowReady();
-
-    expect(mockInvoke).toHaveBeenCalledWith("window_ready");
-  });
-
-  test("syncs localized native app menu labels through the shell command", async () => {
-    const { setNativeAppMenuLabels } = await import("./tauri");
-    const labels = {
-      file: "File",
-      edit: "Edit",
-      view: "View",
-      window: "Window",
-      help: "Help",
-      import: "Import",
-      settings: "Settings",
-      switchLibrary: "Switch Library",
-      toggleSidebar: "Toggle Sidebar",
-      copyDebugInfo: "Copy debug info",
-    };
-
-    await setNativeAppMenuLabels(labels);
-
-    expect(mockInvoke).toHaveBeenCalledWith("set_native_app_menu_labels", {
-      labels,
-    });
-  });
-
-  test("requests an app restart through the dedicated lifecycle command", async () => {
-    const { restartApp } = await import("./tauri");
-
-    await restartApp();
-
-    expect(mockInvoke).toHaveBeenCalledWith("restart_app");
   });
 });

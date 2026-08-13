@@ -1,41 +1,24 @@
-import { invoke } from "@tauri-apps/api/core";
-import type {
-  ImportLyricsResult,
-  LyricsOnlineFetchIntent,
-  LyricsPayload,
-} from "@/types/ipc";
+import type { LyricsBackend } from "@/lib/backend/types";
+import type { ImportLyricsResult, LyricsPayload } from "@/types/ipc";
+import type { InvokeCommand } from "./invoke";
 
-export function importLyricsFiles(
-  paths: string[],
-): Promise<ImportLyricsResult> {
-  return invoke<ImportLyricsResult>("import_lyrics_files", { paths });
-}
+export function createLyricsCommands(invoke: InvokeCommand): LyricsBackend {
+  return {
+    importLyricsFiles: (paths) =>
+      invoke<ImportLyricsResult>("import_lyrics_files", { paths }),
 
-export function fetchLyrics(songId: string): Promise<LyricsPayload> {
-  return invoke<LyricsPayload>("fetch_lyrics", { songId });
-}
+    fetchLyrics: (songId) => invoke<LyricsPayload>("fetch_lyrics", { songId }),
 
-export function setLyricsOffset(songId: string, ms: number): Promise<void> {
-  return invoke<void>("set_lyrics_offset", { songId, ms });
-}
+    setLyricsOffset: (songId, ms) =>
+      invoke<void>("set_lyrics_offset", { songId, ms }),
 
-export function saveManualLyrics(
-  songId: string,
-  text: string,
-): Promise<LyricsPayload> {
-  return invoke<LyricsPayload>("save_manual_lyrics", { songId, text });
-}
+    saveManualLyrics: (songId, text) =>
+      invoke<LyricsPayload>("save_manual_lyrics", { songId, text }),
 
-export function extractEmbeddedLyrics(songId: string): Promise<LyricsPayload> {
-  return invoke<LyricsPayload>("extract_embedded_lyrics", { songId });
-}
+    extractEmbeddedLyrics: (songId) =>
+      invoke<LyricsPayload>("extract_embedded_lyrics", { songId }),
 
-export function fetchLyricsOnline(
-  songId: string,
-  intent: LyricsOnlineFetchIntent,
-): Promise<LyricsPayload> {
-  return invoke<LyricsPayload>("fetch_lyrics_online", {
-    songId,
-    intent,
-  });
+    fetchLyricsOnline: (songId, intent) =>
+      invoke<LyricsPayload>("fetch_lyrics_online", { songId, intent }),
+  };
 }

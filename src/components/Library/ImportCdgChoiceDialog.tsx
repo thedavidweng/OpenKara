@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Disc3, FileAudio2 } from "lucide-react";
 import { useLibraryStore } from "@/stores/library-store";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
@@ -14,6 +14,7 @@ function getDisplayName(path: string): string {
 }
 
 export function ImportCdgChoiceDialog() {
+  const { library } = useBackend();
   const { t } = useTranslation();
   const pendingChoice = useLibraryStore((s) => s.pendingImportCdgChoice);
   const resolveChoice = useLibraryStore((s) => s.resolveCdgChoicePrompt);
@@ -40,7 +41,7 @@ export function ImportCdgChoiceDialog() {
     }
 
     let cancelled = false;
-    void api
+    void library
       .getImportCandidateDetails(pendingChoice.audioCandidates)
       .then((details) => {
         if (cancelled) {
@@ -60,7 +61,7 @@ export function ImportCdgChoiceDialog() {
     return () => {
       cancelled = true;
     };
-  }, [pendingChoice]);
+  }, [library, pendingChoice]);
 
   if (!pendingChoice) {
     return null;

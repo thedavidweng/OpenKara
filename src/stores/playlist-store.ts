@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import * as api from "@/lib/tauri";
-import type { Playlist } from "@/lib/tauri/playlist";
+import { tauriBackend, type Backend, type Playlist } from "@/lib/backend";
+import type { PlaylistSong } from "@/lib/backend";
 
 interface PlaylistState {
   playlists: Playlist[];
@@ -21,76 +21,82 @@ interface PlaylistState {
     playlistId: string,
     songHashes: string[],
   ) => Promise<void>;
-  getPlaylistSongs: (playlistId: string) => Promise<api.PlaylistSong[]>;
+  getPlaylistSongs: (playlistId: string) => Promise<PlaylistSong[]>;
   setActivePlaylist: (playlistId: string | null) => void;
 }
 
-export const usePlaylistStore = create<PlaylistState>((set, get) => ({
-  playlists: [],
-  activePlaylistId: null,
-  isLoading: false,
-  playlistSongSets: new Map(),
+export function createPlaylistStore(backend: Backend = tauriBackend) {
+  const api = backend.playlist;
 
-  loadPlaylists: async () => {
-    set({ isLoading: true });
-    try {
-      const playlists = await api.listPlaylists();
-      set({ playlists, isLoading: false });
-      await get().loadPlaylistSongSets();
-    } catch {
-      set({ isLoading: false });
-    }
-  },
+  return create<PlaylistState>((set, get) => ({
+    playlists: [],
+    activePlaylistId: null,
+    isLoading: false,
+    playlistSongSets: new Map(),
 
-  loadPlaylistSongSets: async () => {
-    const { playlists } = get();
-    const sets = new Map<string, Set<string>>();
-    for (const p of playlists) {
-      const songs = await api.getPlaylistSongs(p.id);
-      sets.set(p.id, new Set(songs.map((s) => s.song_hash)));
-    }
-    set({ playlistSongSets: sets });
-  },
+    loadPlaylists: async () => {
+      set({ isLoading: true });
+      try {
+        const playlists = await api.listPlaylists();
+        set({ playlists, isLoading: false });
+        await get().loadPlaylistSongSets();
+      } catch {
+        set({ isLoading: false });
+      }
+    },
 
-  createPlaylist: async (name: string) => {
-    const playlist = await api.createPlaylist(name);
-    await get().loadPlaylists();
-    return playlist;
-  },
+    loadPlaylistSongSets: async () => {
+      const { playlists } = get();
+      const sets = new Map<string, Set<string>>();
+      for (const p of playlists) {
+        const songs = await api.getPlaylistSongs(p.id);
+        sets.set(p.id, new Set(songs.map((s) => s.song_hash)));
+      }
+      set({ playlistSongSets: sets });
+    },
 
-  renamePlaylist: async (playlistId: string, name: string) => {
-    await api.renamePlaylist(playlistId, name);
-    set((state) => ({
-      playlists: state.playlists.map((p) =>
-        p.id === playlistId ? { ...p, name } : p,
-      ),
-    }));
-  },
+    createPlaylist: async (name: string) => {
+      const playlist = await api.createPlaylist(name);
+      await get().loadPlaylists();
+      return playlist;
+    },
 
-  deletePlaylist: async (playlistId: string) => {
-    await api.deletePlaylist(playlistId);
-    set((state) => ({
-      activePlaylistId:
-        state.activePlaylistId === playlistId ? null : state.activePlaylistId,
-    }));
-    await get().loadPlaylists();
-  },
+    renamePlaylist: async (playlistId: string, name: string) => {
+      await api.renamePlaylist(playlistId, name);
+      set((state) => ({
+        playlists: state.playlists.map((p) =>
+          p.id === playlistId ? { ...p, name } : p,
+        ),
+      }));
+    },
 
-  addSongsToPlaylist: async (playlistId, songHashes) => {
-    await api.addSongsToPlaylist(playlistId, songHashes);
-    await get().loadPlaylists();
-  },
+    deletePlaylist: async (playlistId: string) => {
+      await api.deletePlaylist(playlistId);
+      set((state) => ({
+        activePlaylistId:
+          state.activePlaylistId === playlistId ? null : state.activePlaylistId,
+      }));
+      await get().loadPlaylists();
+    },
 
-  removeSongsFromPlaylist: async (playlistId, songHashes) => {
-    await api.removeSongsFromPlaylist(playlistId, songHashes);
-    await get().loadPlaylists();
-  },
+    addSongsToPlaylist: async (playlistId, songHashes) => {
+      await api.addSongsToPlaylist(playlistId, songHashes);
+      await get().loadPlaylists();
+    },
 
-  getPlaylistSongs: async (playlistId) => {
-    return api.getPlaylistSongs(playlistId);
-  },
+    removeSongsFromPlaylist: async (playlistId, songHashes) => {
+      await api.removeSongsFromPlaylist(playlistId, songHashes);
+      await get().loadPlaylists();
+    },
 
-  setActivePlaylist: (playlistId) => {
-    set({ activePlaylistId: playlistId });
-  },
-}));
+    getPlaylistSongs: async (playlistId) => {
+      return api.getPlaylistSongs(playlistId);
+    },
+
+    setActivePlaylist: (playlistId) => {
+      set({ activePlaylistId: playlistId });
+    },
+  }));
+}
+
+export const usePlaylistStore = createPlaylistStore();

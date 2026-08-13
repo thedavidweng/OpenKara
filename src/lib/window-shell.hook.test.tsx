@@ -3,19 +3,18 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { BackendProvider } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { MAC_WINDOW_SHELL_STATE, useWindowShellState } from "./window-shell";
 
 vi.mock("@/lib/app-shortcuts", () => ({
   getShortcutPlatform: () => "mac",
 }));
 
-const { mockGetWindowShellState } = vi.hoisted(() => ({
-  mockGetWindowShellState: vi.fn(),
-}));
-
-vi.mock("@/lib/tauri", () => ({
-  getWindowShellState: mockGetWindowShellState,
-}));
+const mockGetWindowShellState = vi.fn();
+const backend = createMockBackend({
+  overrides: { settings: { getWindowShellState: mockGetWindowShellState } },
+});
 
 describe("useWindowShellState", () => {
   beforeEach(() => {
@@ -54,7 +53,11 @@ describe("useWindowShellState", () => {
     }
 
     await act(async () => {
-      root.render(<Probe />);
+      root.render(
+        <BackendProvider backend={backend}>
+          <Probe />
+        </BackendProvider>,
+      );
     });
 
     expect(container.innerHTML).toContain('data-leading="92"');

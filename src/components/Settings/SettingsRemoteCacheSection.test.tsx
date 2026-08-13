@@ -4,11 +4,13 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { SettingsRemoteCacheSection } from "./SettingsRemoteCacheSection";
 
 const { mockGetRemoteCacheUsage, mockClearRemoteCache, mockNotifyError } =
@@ -35,10 +37,18 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/tauri", () => ({
-  getRemoteCacheUsage: mockGetRemoteCacheUsage,
-  clearRemoteCache: mockClearRemoteCache,
-}));
+const backend = createMockBackend({
+  overrides: {
+    remoteRepository: {
+      getRemoteCacheUsage: mockGetRemoteCacheUsage,
+      clearRemoteCache: mockClearRemoteCache,
+    },
+  },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,

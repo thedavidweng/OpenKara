@@ -1,9 +1,9 @@
 import { emit, emitTo } from "@tauri-apps/api/event";
-import { stepAirPlayPlainTextPage } from "@/lib/tauri";
+import { tauriBackend, type PlainTextPageDirection } from "@/lib/backend";
 import { usePlayerStore } from "@/stores/player-store";
 import type { AirPlayOutputStateEvent } from "@/types/ipc";
 
-export type PlainTextPageDirection = "prev" | "next";
+export type { PlainTextPageDirection };
 export type PlainTextRemoteTarget = "airplay" | "local";
 
 export const LOCAL_AUDIENCE_OUTPUT_STATE_EVENT =
@@ -40,6 +40,7 @@ export async function stepPlainTextRemotePage(
   },
   localAudienceOutputActive: boolean,
   direction: PlainTextPageDirection,
+  stepAirPlayPlainTextPage = tauriBackend.playback.stepAirPlayPlainTextPage,
 ): Promise<boolean> {
   const target = resolvePlainTextRemoteTarget(
     airPlayOutput,

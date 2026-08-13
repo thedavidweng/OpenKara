@@ -3,6 +3,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { PlaybackBackend } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { SeekBar } from "./SeekBar";
 import { resetWaveformCacheForTests } from "@/lib/waveform-cache";
 
@@ -52,9 +54,19 @@ vi.mock("@/stores/player-store", () => ({
   selectCurrentPositionMs: mockSelectCurrentPositionMs,
 }));
 
-vi.mock("@/lib/tauri/playback", () => ({
-  getWaveform: (...args: unknown[]) => mockGetWaveform(...args),
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    playback: {
+      getWaveform: (...args: Parameters<PlaybackBackend["getWaveform"]>) =>
+        mockGetWaveform(...args),
+    },
+  },
+});
 
 function mockCanvasContext() {
   const ctx = {

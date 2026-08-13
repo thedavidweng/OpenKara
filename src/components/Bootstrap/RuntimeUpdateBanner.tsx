@@ -1,12 +1,13 @@
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { downloadRuntime, restartApp } from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import { getErrorMessage, notifyError } from "@/lib/errors";
 import { runtimeFailureBannerKeys } from "@/lib/runtime-failure-copy";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 
 export function RuntimeUpdateBanner() {
+  const backend = useBackend();
   const { t } = useTranslation();
   const status = useRuntimeBootstrapStore((s) => s.status);
   const updateStatus = useRuntimeBootstrapStore((s) => s.updateStatus);
@@ -19,7 +20,7 @@ export function RuntimeUpdateBanner() {
     if (retrying) return;
     setRetrying(true);
     try {
-      const snapshot = await downloadRuntime();
+      const snapshot = await backend.settings.downloadRuntime();
       updateStatus(snapshot);
     } catch (error) {
       notifyError(error);
@@ -43,7 +44,7 @@ export function RuntimeUpdateBanner() {
           <button
             type="button"
             onClick={() => {
-              void restartApp().catch(notifyError);
+              void backend.settings.restartApp().catch(notifyError);
             }}
             className="shrink-0 self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[11px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 sm:self-center"
           >

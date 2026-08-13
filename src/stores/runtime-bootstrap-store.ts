@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "@/lib/tauri";
+import { tauriBackend, type Backend } from "@/lib/backend";
 import type { RuntimeBootstrapStatusSnapshot } from "@/types/ipc";
 import { mergeDownloadStatus } from "./merge-download-status";
 
@@ -9,12 +9,12 @@ interface RuntimeBootstrapState {
   updateStatus: (status: RuntimeBootstrapStatusSnapshot) => void;
 }
 
-export const useRuntimeBootstrapStore = create<RuntimeBootstrapState>(
-  (set) => ({
+export function createRuntimeBootstrapStore(backend: Backend = tauriBackend) {
+  return create<RuntimeBootstrapState>((set) => ({
     status: null,
 
     loadStatus: async () => {
-      const status = await api.getRuntimeBootstrapStatus();
+      const status = await backend.settings.getRuntimeBootstrapStatus();
       set({ status });
     },
 
@@ -22,5 +22,7 @@ export const useRuntimeBootstrapStore = create<RuntimeBootstrapState>(
       set((state) => ({
         status: mergeDownloadStatus(state.status, incoming, "runtime_path"),
       })),
-  }),
-);
+  }));
+}
+
+export const useRuntimeBootstrapStore = createRuntimeBootstrapStore();
