@@ -347,7 +347,11 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
     activation::commit_with_watchdog(path)
 }
 
-fn download_runtime_source(
+/// The catalog an install should use right now: the cached verified catalog
+/// when its generation is newer than the embedded snapshot, the embedded
+/// snapshot otherwise. Every install path resolves through this so a
+/// refreshed catalog is never silently ignored (#393).
+pub(crate) fn refreshed_or_embedded_catalog(
     catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
 ) -> CommandResult<VerifiedCatalog> {
     let embedded = catalog::embedded_catalog();
@@ -536,6 +540,7 @@ pub fn download_and_stage_candidate_blocking(
 pub fn ensure_runtime_ready_or_install_blocking(
     app_data_dir: &Path,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
     // Process-committed runtime wins over slot inventory (mapped until restart).
@@ -607,8 +612,8 @@ pub fn ensure_runtime_ready_or_install_blocking(
         };
     }
 
-    let catalog = catalog::embedded_catalog();
-    ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, catalog, emit)
+    let catalog = refreshed_or_embedded_catalog(catalog_cache)?;
+    ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, &catalog, emit)
 }
 
 fn publish_ready(
@@ -716,7 +721,7 @@ pub fn download_runtime(
 ) -> CommandResult<RuntimeBootstrapStatusSnapshot> {
     let app_data_dir = state.shell.app_data_dir.clone();
     let status = Arc::clone(&state.shell.runtime_bootstrap_status);
-    let catalog = download_runtime_source(&state.shell.catalog_cache)?;
+    let catalog = refreshed_or_embedded_catalog(&state.shell.catalog_cache)?;
 
     if RUNTIME_DOWNLOAD_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
         // Already running — report current state; do not race a second install.
@@ -1075,16 +1080,48 @@ mod tests {
     }
 
     #[test]
-    fn download_runtime_source_keeps_a_newer_verified_catalog() {
+    fn refreshed_or_embedded_catalog_keeps_a_newer_verified_catalog() {
         let mut refreshed = catalog::embedded_catalog().clone();
         refreshed.generation += 1;
         refreshed.release_id = "refreshed-release".to_owned();
         let cache = Arc::new(Mutex::new(Some(refreshed.clone())));
 
-        let selected = download_runtime_source(&cache).expect("catalog cache should resolve");
+        let selected = refreshed_or_embedded_catalog(&cache).expect("catalog cache should resolve");
 
         assert_eq!(selected.generation, refreshed.generation);
         assert_eq!(selected.release_id, refreshed.release_id);
+    }
+
+    #[test]
+    fn separation_triggered_install_resolves_from_the_refreshed_catalog() {
+        // A refreshed catalog whose generation supersedes the embedded one
+        // but lists no runtime for this target: an install that consults the
+        // refreshed catalog fails at runtime resolution, while one that
+        // silently falls back to the embedded snapshot (#393) proceeds into
+        // the download/worker path and fails much later with a worker error.
+        let mut refreshed = catalog::embedded_catalog().clone();
+        refreshed.generation += 1;
+        refreshed.release_id = "refreshed-without-runtimes".to_owned();
+        refreshed.manifest.artifacts.runtimes.clear();
+        let cache = Arc::new(Mutex::new(Some(refreshed)));
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let status = Arc::new(Mutex::new(snapshot_from_disk(tmp.path())));
+        let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();
+
+        let error = ensure_runtime_ready_or_install_blocking(
+            tmp.path(),
+            &status,
+            &cache,
+            &mut |event, snapshot| events.push((event, snapshot)),
+        )
+        .expect_err("a refreshed catalog without runtimes must fail resolution");
+
+        assert!(
+            error.message.contains("no active runtime"),
+            "the install must resolve against the refreshed catalog, not the embedded snapshot: {}",
+            error.message
+        );
     }
 
     #[test]

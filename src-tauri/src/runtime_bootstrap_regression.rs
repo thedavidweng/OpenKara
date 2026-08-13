@@ -401,6 +401,7 @@ fn run_restart(
     let result = command::ensure_runtime_ready_or_install_blocking(
         &config.app_data_dir,
         &status,
+        &Arc::new(Mutex::new(None)),
         &mut |event, snapshot| {
             events.push(RegressionEvent {
                 event: event.to_owned(),
