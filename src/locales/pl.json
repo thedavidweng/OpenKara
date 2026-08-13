@@ -415,6 +415,8 @@
       "downloaded": "Pobrano",
       "legacyOnDisk": "Stara wersja na dysku — usuń w Strefie zagrożenia, a następnie pobierz ponownie",
       "notDownloaded": "Nie pobrano",
+      "statusUnavailable": "Stan niedostępny",
+      "statusReadFailed": "Nie udało się odczytać stanu modeli.",
       "runtimeRequired": "Wymagane ONNX Runtime",
       "delete": "Usuń",
       "download": "Pobierz"
@@ -432,6 +434,7 @@
       "retryButton": "Zainstaluj ONNX Runtime ponownie",
       "statusReady": "Zainstalowane i gotowe.",
       "statusMissing": "Nie zainstalowano.",
+      "statusReadFailed": "Nie udało się odczytać stanu środowiska uruchomieniowego.",
       "version": "Wersja {{version}}",
       "checkButton": "Sprawdź aktualizacje",
       "checking": "Sprawdzanie aktualizacji...",

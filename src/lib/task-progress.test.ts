@@ -508,7 +508,7 @@ describe("createModelDownloadFlash", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  test("cancels a pending settle when the model state changes again", () => {
+  test("hides a visible flash as soon as the model state changes again", () => {
     vi.useFakeTimers();
     const emit = vi.fn();
     const flash = createModelDownloadFlash(emit);
@@ -517,9 +517,36 @@ describe("createModelDownloadFlash", () => {
     flash.observe("ready");
     vi.advanceTimersByTime(0);
     flash.observe("failed");
+
+    expect(emit.mock.calls).toEqual([[true], [false]]);
+  });
+
+  test("does not resurface the flash when the state returns to ready without a new download", () => {
+    vi.useFakeTimers();
+    const emit = vi.fn();
+    const flash = createModelDownloadFlash(emit);
+
+    flash.observe("downloading");
+    flash.observe("ready");
+    vi.advanceTimersByTime(0);
+    flash.observe("failed");
+    flash.observe("ready");
     vi.advanceTimersByTime(MODEL_DOWNLOAD_FLASH_MS * 2);
 
-    expect(emit.mock.calls).toEqual([[true]]);
+    expect(emit.mock.calls).toEqual([[true], [false]]);
+  });
+
+  test("cancels a scheduled flash that has not shown yet without emitting", () => {
+    vi.useFakeTimers();
+    const emit = vi.fn();
+    const flash = createModelDownloadFlash(emit);
+
+    flash.observe("downloading");
+    flash.observe("ready");
+    flash.observe("downloading");
+    vi.advanceTimersByTime(MODEL_DOWNLOAD_FLASH_MS * 2);
+
+    expect(emit).not.toHaveBeenCalled();
   });
 
   test("stops a scheduled flash when disposed", () => {

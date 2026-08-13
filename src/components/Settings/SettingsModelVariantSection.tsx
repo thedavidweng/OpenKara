@@ -62,6 +62,10 @@ export function SettingsModelVariantSection() {
       return t("settings.modelVariant.downloading");
     }
 
+    if (models.statusesError != null) {
+      return t("settings.modelVariant.statusUnavailable");
+    }
+
     const status = models.statuses[variant];
 
     if (status?.legacy_install_present && !status.downloaded) {
@@ -139,6 +143,13 @@ export function SettingsModelVariantSection() {
           onClick={() => void preferences.selectModelVariant("htdemucs_ft")}
         />
       </div>
+
+      {models.statusesError != null ? (
+        <p className="mt-2 text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+          {t("settings.modelVariant.statusReadFailed")}
+          {` ${models.statusesError}`}
+        </p>
+      ) : null}
 
       <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border-light)] pt-3">
         <div className="flex items-center gap-2">

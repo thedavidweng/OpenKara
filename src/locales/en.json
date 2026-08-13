@@ -413,6 +413,8 @@
       "downloaded": "Downloaded",
       "legacyOnDisk": "Old version on disk — delete in Danger Zone, then download again",
       "notDownloaded": "Not downloaded",
+      "statusUnavailable": "Status unavailable",
+      "statusReadFailed": "Couldn't read model status.",
       "runtimeRequired": "ONNX Runtime required",
       "delete": "Delete",
       "download": "Download"
@@ -430,6 +432,7 @@
       "retryButton": "Reinstall ONNX Runtime",
       "statusReady": "Installed and ready.",
       "statusMissing": "Not installed.",
+      "statusReadFailed": "Couldn't read runtime status.",
       "version": "Version {{version}}",
       "checkButton": "Check for updates",
       "checking": "Checking for updates...",

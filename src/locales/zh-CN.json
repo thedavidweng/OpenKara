@@ -413,6 +413,8 @@
       "downloaded": "已下载",
       "legacyOnDisk": "磁盘上为旧版本 — 请在「危险区」删除后重新下载",
       "notDownloaded": "未下载",
+      "statusUnavailable": "状态不可用",
+      "statusReadFailed": "无法读取模型状态。",
       "runtimeRequired": "需要 ONNX 运行时",
       "delete": "删除",
       "download": "下载"
@@ -430,6 +432,7 @@
       "retryButton": "重新安装 ONNX 运行时",
       "statusReady": "已安装并就绪。",
       "statusMissing": "尚未安装。",
+      "statusReadFailed": "无法读取运行时状态。",
       "version": "版本 {{version}}",
       "checkButton": "检查更新",
       "checking": "正在检查更新...",

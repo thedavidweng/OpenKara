@@ -412,6 +412,8 @@
       "downloaded": "Đã tải xuống",
       "legacyOnDisk": "Phiên bản cũ trên đĩa — hãy xóa trong Vùng nguy hiểm, rồi tải lại",
       "notDownloaded": "Chưa tải xuống",
+      "statusUnavailable": "Không rõ trạng thái",
+      "statusReadFailed": "Không thể đọc trạng thái mô hình.",
       "runtimeRequired": "Cần ONNX Runtime",
       "delete": "Xóa",
       "download": "Tải xuống"
@@ -429,6 +431,7 @@
       "retryButton": "Cài lại ONNX Runtime",
       "statusReady": "Đã cài đặt và sẵn sàng.",
       "statusMissing": "Chưa cài đặt.",
+      "statusReadFailed": "Không thể đọc trạng thái runtime.",
       "version": "Phiên bản {{version}}",
       "checkButton": "Kiểm tra cập nhật",
       "checking": "Đang kiểm tra cập nhật...",

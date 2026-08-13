@@ -85,12 +85,16 @@ export interface SettingsLibraryView {
 
 export interface SettingsModelsView {
   statuses: Partial<Record<ModelVariant, ModelStatusView>>;
+  /** Why the last model status read failed, or null after a successful read. */
+  statusesError: string | null;
   downloading: ModelVariant | null;
   update: ModelUpdateView | null;
 }
 
 export interface SettingsRuntimeView {
   status: RuntimeStatusView | null;
+  /** Why the last runtime status read failed, or null after a successful read. */
+  statusError: string | null;
   update: RuntimeUpdateView | null;
 }
 
@@ -210,7 +214,8 @@ export interface SettingsMaintenanceCommands {
 /**
  * Owns everything the Settings surfaces read and every mutation they can
  * start. Commands never reject: a failure lands either in `view.library.error`
- * (library work), in the matching `update` slice (update checks), or on the
+ * (library work), in the matching `update` slice (update checks), in
+ * `models.statusesError` or `runtime.statusError` (status reads), or on the
  * error reporter. Library commands also report that outcome as a
  * `LibraryCommandResult` so callers can react to a failure. The view is
  * replaced, never mutated, so consumers can compare identities.

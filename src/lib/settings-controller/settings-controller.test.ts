@@ -270,6 +270,68 @@ describe("initialize", () => {
     expect(harness.notifyError).toHaveBeenCalledTimes(2);
     expect(harness.view().isInitializing).toBe(false);
   });
+
+  test("records a failed model status read in the view instead of swallowing it", async () => {
+    let failing = true;
+    const harness = createSettingsHarness({
+      runtimeStatus: runtimeStatus(),
+      overrides: {
+        settings: {
+          getRuntimeBootstrapStatus: async () => runtimeStatus(),
+          getModelStatus: async (variant) => {
+            if (failing) {
+              throw new Error("model directory unreadable");
+            }
+            return modelStatus({ variant, downloaded: true });
+          },
+        },
+      },
+    });
+
+    await harness.controller.initialize();
+
+    expect(harness.view().models.statusesError).toBe(
+      "model directory unreadable",
+    );
+    expect(harness.view().models.statuses).toEqual({});
+    expect(harness.notifyError).not.toHaveBeenCalled();
+
+    failing = false;
+    await harness.controller.initialize();
+
+    expect(harness.view().models.statusesError).toBeNull();
+    expect(harness.view().models.statuses.htdemucs?.downloaded).toBe(true);
+  });
+
+  test("records a failed runtime status read in the view instead of swallowing it", async () => {
+    let failing = true;
+    const harness = createSettingsHarness({
+      runtimeStatus: runtimeStatus(),
+      overrides: {
+        settings: {
+          getModelStatus: async (variant) => modelStatus({ variant }),
+          getRuntimeBootstrapStatus: async () => {
+            if (failing) {
+              throw new Error("runtime probe crashed");
+            }
+            return runtimeStatus({ state: "missing" });
+          },
+        },
+      },
+    });
+
+    await harness.controller.initialize();
+
+    expect(harness.view().runtime.statusError).toBe("runtime probe crashed");
+    expect(harness.view().runtime.status?.state).toBe("ready");
+    expect(harness.notifyError).not.toHaveBeenCalled();
+
+    failing = false;
+    await harness.controller.maintenance.checkRuntimeUpdates();
+
+    expect(harness.view().runtime.statusError).toBeNull();
+    expect(harness.view().runtime.status?.state).toBe("missing");
+  });
 });
 
 describe("library commands", () => {

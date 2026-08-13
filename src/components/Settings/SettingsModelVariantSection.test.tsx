@@ -65,6 +65,7 @@ const downloadedStatus = (variant: string): ModelStatusSnapshot => ({
 async function render(options: {
   status?: RuntimeBootstrapStatusSnapshot;
   statuses?: Partial<Record<ModelVariant, ModelStatusSnapshot>>;
+  statusesError?: string;
   update?: ModelUpdateReport;
   updateError?: string;
 }) {
@@ -73,8 +74,15 @@ async function render(options: {
     overrides: {
       settings: {
         getRuntimeBootstrapStatus: async () => status,
-        getModelStatus: async (variant) =>
-          options.statuses?.[variant as ModelVariant] ?? missingStatus(variant),
+        getModelStatus: async (variant) => {
+          if (options.statusesError) {
+            throw new Error(options.statusesError);
+          }
+          return (
+            options.statuses?.[variant as ModelVariant] ??
+            missingStatus(variant)
+          );
+        },
         checkModelUpdates: async () => {
           if (options.updateError) {
             throw new Error(options.updateError);
@@ -269,5 +277,16 @@ describe("SettingsModelVariantSection", () => {
     expect(html).toContain("settings.modelUpdate.checkFailed");
     expect(html).toContain("update check failed: offline");
     expect(html).toContain("settings.modelVariant.htdemucs");
+  });
+
+  test("shows the status-read failure instead of stale model statuses", async () => {
+    const html = await render({
+      statusesError: "model directory unreadable",
+    });
+
+    expect(html).toContain("settings.modelVariant.statusUnavailable");
+    expect(html).toContain("settings.modelVariant.statusReadFailed");
+    expect(html).toContain("model directory unreadable");
+    expect(html).not.toContain("settings.modelVariant.notDownloaded");
   });
 });

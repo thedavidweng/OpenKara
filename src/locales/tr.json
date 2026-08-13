@@ -413,6 +413,8 @@
       "downloaded": "İndirildi",
       "legacyOnDisk": "Diskte eski sürüm var — Tehlikeli Bölge'den silin, sonra yeniden indirin",
       "notDownloaded": "İndirilmedi",
+      "statusUnavailable": "Durum bilinmiyor",
+      "statusReadFailed": "Model durumu okunamadı.",
       "runtimeRequired": "ONNX Runtime gerekli",
       "delete": "Sil",
       "download": "İndir"
@@ -430,6 +432,7 @@
       "retryButton": "ONNX Runtime'ı Yeniden Kur",
       "statusReady": "Kuruldu ve hazır.",
       "statusMissing": "Kurulu değil.",
+      "statusReadFailed": "Çalışma zamanı durumu okunamadı.",
       "version": "Sürüm {{version}}",
       "checkButton": "Güncellemeleri denetle",
       "checking": "Güncellemeler denetleniyor...",

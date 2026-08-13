@@ -415,6 +415,8 @@
       "downloaded": "Загружено",
       "legacyOnDisk": "На диске старая версия — удалите в «Опасной зоне», затем загрузите снова",
       "notDownloaded": "Не загружено",
+      "statusUnavailable": "Статус недоступен",
+      "statusReadFailed": "Не удалось получить статус моделей.",
       "runtimeRequired": "Требуется ONNX Runtime",
       "delete": "Удалить",
       "download": "Загрузить"
@@ -432,6 +434,7 @@
       "retryButton": "Переустановить ONNX Runtime",
       "statusReady": "Установлено и готово.",
       "statusMissing": "Не установлено.",
+      "statusReadFailed": "Не удалось получить статус среды выполнения.",
       "version": "Версия {{version}}",
       "checkButton": "Проверить обновления",
       "checking": "Проверка обновлений...",

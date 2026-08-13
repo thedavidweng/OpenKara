@@ -541,6 +541,31 @@ describe("LyricsSession active line derivation", () => {
     expect(harness.session.getState().activeWordIndex).toBe(-1);
   });
 
+  test("highlights the first word after a line change onto the previous line's word index", async () => {
+    await load(
+      harness,
+      payload({
+        lines: [
+          line(1000, "solo", [{ text: "solo", time_ms: 1000, end_ms: 1900 }]),
+          line(2000, "next word", [
+            { text: "next", time_ms: 2000, end_ms: 2400 },
+            { text: "word", time_ms: 2400, end_ms: 2900 },
+          ]),
+        ],
+      }),
+    );
+
+    harness.session.syncActiveLine(1200);
+    harness.session.syncActiveWord(1200);
+    expect(harness.session.getState().activeWordIndex).toBe(0);
+
+    harness.session.syncActiveLine(2100);
+    harness.session.syncActiveWord(2100);
+
+    expect(harness.session.getState().activeLineIndex).toBe(1);
+    expect(harness.session.getState().activeWordIndex).toBe(0);
+  });
+
   test("re-derives the same index for a new song instead of holding the latch", async () => {
     await load(harness, payload({ songId: "song-A", lines: TIMED_LINES }));
     harness.session.syncActiveLine(2000);
