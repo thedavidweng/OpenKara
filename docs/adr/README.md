@@ -66,3 +66,6 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0020 — Validate execution provider compatibility before separation](./0020-validate-execution-provider-compatibility.md)
 - [0021 — App language is sticky after choice](./0021-app-language-is-sticky-after-choice.md)
 - [0022 — Windows runtime load uses the install directory](./0022-windows-runtime-load-uses-install-directory.md)
+- [0023 — Windows runtime falls back to CPU on load timeout](./0023-windows-runtime-falls-back-to-cpu-on-load-timeout.md)
+- [0024 — Windows runtime load strategy](./0024-windows-runtime-load-strategy.md)
+- [0025 — Windows runtimes link the MSVC CRT statically](./0025-windows-runtimes-link-msvc-crt-statically.md)

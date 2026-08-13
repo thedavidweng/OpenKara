@@ -177,10 +177,10 @@ fn describe_win32_load_error(code: u32) -> String {
 
     let hint = match code {
         ERROR_MOD_NOT_FOUND => {
-            "a DLL that onnxruntime.dll depends on is missing. The VC++ CRT \
-             DLLs it needs (vcruntime140, vcruntime140_1, msvcp140, \
-             msvcp140_1) ship next to openkara.exe, so this usually means an \
-             incomplete app install"
+            "a DLL that onnxruntime.dll depends on is missing. The runtime \
+             links the MSVC CRT statically and depends only on Windows inbox \
+             components plus the DirectML.dll bundled in the runtime \
+             directory, so this usually means an incomplete runtime download"
         }
         ERROR_FILE_NOT_FOUND => "the runtime file was not found at the given path",
         ERROR_BAD_EXE_FORMAT => {
@@ -216,10 +216,9 @@ fn describe_win32_load_error(code: u32) -> String {
 ///
 /// The call mirrors the load `ort` performs — `libloading`'s `Library::new`
 /// is `LoadLibraryExW(path, NULL, 0)` — so both loads resolve dependencies
-/// through the same standard search order (application directory carrying the
-/// app-local VC++ CRT first, then the `SetDllDirectoryW` runtime directory
-/// carrying DirectML.dll) and the probe fails exactly when the real load
-/// would fail.
+/// through the same standard search order (application directory first, then
+/// the `SetDllDirectoryW` runtime directory carrying DirectML.dll) and the
+/// probe fails exactly when the real load would fail.
 ///
 /// Returns `Ok(())` on a successful probe-load or `Err(message)` with a rich
 /// diagnostic otherwise.
@@ -1231,13 +1230,13 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn describe_win32_load_error_includes_code_and_known_hint() {
-        // The most common cause of an instant LoadLibraryExW failure for a
-        // /MD-built onnxruntime.dll on a stripped Server image is a missing
-        // VC++ runtime dependency.
+        // Catalog generation 13 runtimes link the MSVC CRT statically, so
+        // error 126 no longer points at the VC++ Redistributable; the hint
+        // must steer triage toward the runtime's own dependency set.
         let missing = describe_win32_load_error(126);
         assert!(
-            missing.contains("vcruntime140") && missing.contains("msvcp140"),
-            "missing-dep hint should name the app-local CRT DLLs: {missing}"
+            missing.contains("statically") && missing.contains("incomplete runtime download"),
+            "missing-dep hint should reflect the static-CRT runtime: {missing}"
         );
         assert!(
             missing.contains("126") && missing.contains("0x0000007E"),
