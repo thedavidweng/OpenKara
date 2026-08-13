@@ -102,8 +102,6 @@ export class LyricsSession {
   readonly scroll = new LyricsScrollControl();
 
   private fetchGeneration = 0;
-  private syncedLineIndex = -1;
-  private syncedWordIndex = -1;
 
   constructor(private readonly deps: LyricsSessionDependencies) {
     this.store = create<LyricsState>(() => ({
@@ -130,7 +128,6 @@ export class LyricsSession {
 
   async load(songId: string): Promise<void> {
     const generation = ++this.fetchGeneration;
-    this.resetActiveIndexLatches();
     this.set({
       isLoading: true,
       lines: [],
@@ -170,7 +167,6 @@ export class LyricsSession {
   }
 
   clear(): void {
-    this.resetActiveIndexLatches();
     this.set({
       songId: null,
       lines: [],
@@ -241,34 +237,16 @@ export class LyricsSession {
     const { lines } = this.getState();
     if (lines.length === 0) return;
 
-    const index = findActiveLyricLineIndex(lines, adjustedMs);
-    if (index === this.syncedLineIndex) return;
-
-    this.syncedLineIndex = index;
-    this.setActiveLineIndex(index);
+    this.setActiveLineIndex(findActiveLyricLineIndex(lines, adjustedMs));
   }
 
   syncActiveWord(adjustedMs: number): void {
     const { lines, activeLineIndex } = this.getState();
     const words = lines[activeLineIndex]?.words;
 
-    if (words && words.length > 0) {
-      const index = findActiveWordIndex(words, adjustedMs);
-      if (index === this.syncedWordIndex) return;
-      this.syncedWordIndex = index;
-      this.setActiveWordIndex(index);
-      return;
-    }
-
-    if (this.syncedWordIndex === -1) return;
-    this.syncedWordIndex = -1;
-    this.setActiveWordIndex(-1);
-  }
-
-  /** Forgets what was on screen, so the next frame re-derives from scratch. */
-  resetActiveIndexLatches(): void {
-    this.syncedLineIndex = -1;
-    this.syncedWordIndex = -1;
+    this.setActiveWordIndex(
+      words && words.length > 0 ? findActiveWordIndex(words, adjustedMs) : -1,
+    );
   }
 
   toggleRomanized(): void {

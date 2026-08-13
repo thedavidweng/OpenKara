@@ -92,8 +92,7 @@ export function useLyricsEngine(input: {
 
   useEffect(() => {
     lineRuntime.clear();
-    session.resetActiveIndexLatches();
-  }, [lineRuntime, session, songId]);
+  }, [lineRuntime, songId]);
 
   useEffect(() => {
     if (isPlainText || !songId || !viewportActive) {
