@@ -3,46 +3,29 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import { copyFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { createRequire } from "node:module";
+import { join, resolve } from "node:path";
 import process from "node:process";
+import {
+  KUROMOJI_DICT_FILES,
+  resolveKuromojiDictDir,
+} from "lyric-romanizer/dict";
 
 // Tauri injects this value when remote device debugging is enabled.
 const host = process.env.TAURI_DEV_HOST;
 
-// Locate the kuromoji dictionary shipped with the lyric-romanizer dependency
-// so it can be served as a static asset instead of fetched from jsDelivr CDN.
 function kuromojiDictPlugin() {
-  const DICT_FILES = [
-    "base.dat.gz",
-    "cc.dat.gz",
-    "check.dat.gz",
-    "tid.dat.gz",
-    "tid_map.dat.gz",
-    "tid_pos.dat.gz",
-    "unk.dat.gz",
-    "unk_char.dat.gz",
-    "unk_compat.dat.gz",
-    "unk_invoke.dat.gz",
-    "unk_map.dat.gz",
-    "unk_pos.dat.gz",
-  ];
-
   return {
     name: "kuromoji-dict",
     configResolved() {
-      const require = createRequire(import.meta.url);
-      const kuromojiMain = require.resolve("@sglkc/kuromoji");
-      const kuromojiRoot = resolve(dirname(kuromojiMain), "..");
-      const srcDir = resolve(kuromojiRoot, "dict");
+      const srcDir = resolveKuromojiDictDir();
       const destDir = resolve(
         fileURLToPath(new URL(".", import.meta.url)),
         "public",
         "dict",
       );
       mkdirSync(destDir, { recursive: true });
-      for (const file of DICT_FILES) {
-        copyFileSync(resolve(srcDir, file), resolve(destDir, file));
+      for (const file of KUROMOJI_DICT_FILES) {
+        copyFileSync(join(srcDir, file), join(destDir, file));
       }
     },
   };
@@ -142,6 +125,9 @@ export default defineConfig(async () => ({
   },
   build: {
     chunkSizeWarningLimit: 1000,
+  },
+  worker: {
+    format: "es",
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

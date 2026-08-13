@@ -1,31 +1,7 @@
 import { isLatinScript } from "lyric-romanizer/detector";
-import type { Romanizer } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
-import { romanizeLinesWith } from "./romanize-options";
 
 let nextRequestId = 0;
-
-let romanizerPromise: Promise<Romanizer> | null = null;
-
-async function getRomanizer() {
-  romanizerPromise ??= import("lyric-romanizer").then(({ createRomanizer }) =>
-    createRomanizer({ japaneseDictPath: "/dict/" }),
-  );
-  return romanizerPromise;
-}
-
-async function romanizeLinesDirect(
-  lines: readonly string[],
-  language?: SongLanguage | null,
-): Promise<string[]> {
-  if (isLatinScript(lines)) {
-    return [...lines];
-  }
-
-  const romanizer = await getRomanizer();
-  return romanizeLinesWith(romanizer, lines, language);
-}
-
 let worker: Worker | null = null;
 
 function getWorker(): Worker | null {
@@ -51,8 +27,7 @@ export async function romanizeLyricsLines(
   const w = getWorker();
 
   if (!w) {
-    const result = await romanizeLinesDirect(lines, language);
-    return { result, requestId };
+    return { result: [...lines], requestId };
   }
 
   return new Promise((resolve) => {

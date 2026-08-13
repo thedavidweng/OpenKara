@@ -1,4 +1,3 @@
-import { isLatinScript } from "lyric-romanizer/detector";
 import type { Romanizer, RomanizeOptions } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
 
@@ -23,25 +22,13 @@ export async function romanizeLinesWith(
   lines: readonly string[],
   language?: SongLanguage | null,
 ): Promise<string[]> {
-  if (language === null || language === undefined) {
-    try {
-      const r = await romanizer.romanizeLines(lines);
-      return lines.map((line, index) => r.lines[index] ?? line);
-    } catch {
-      return [...lines];
-    }
+  try {
+    const result =
+      language === null || language === undefined
+        ? await romanizer.romanizeLines(lines)
+        : await romanizer.romanizeLines(lines, OPTIONS_BY_LANGUAGE[language]);
+    return lines.map((line, index) => result.lines[index] ?? line);
+  } catch {
+    return [...lines];
   }
-
-  const options = OPTIONS_BY_LANGUAGE[language];
-  return Promise.all(
-    lines.map(async (line) => {
-      if (isLatinScript([line])) return line;
-      try {
-        const r = await romanizer.romanizeLines([line], options);
-        return r.lines[0] ?? line;
-      } catch {
-        return line;
-      }
-    }),
-  );
 }
