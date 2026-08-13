@@ -21,6 +21,7 @@ pub(crate) mod provider;
 mod provider_conformance;
 pub(crate) mod recovery;
 mod registry;
+pub(crate) mod startup;
 mod sync;
 pub(crate) mod types;
 mod webdav;

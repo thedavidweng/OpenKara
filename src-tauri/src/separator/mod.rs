@@ -1,3 +1,4 @@
+pub mod activation;
 pub mod artifacts;
 pub mod bootstrap;
 pub mod catalog;

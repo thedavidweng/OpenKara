@@ -1,22 +1,16 @@
 use crate::config::ExecutionProviderPreference;
+use crate::separator::activation;
 use anyhow::{Context, Result};
 use ort::{session::builder::GraphOptimizationLevel, value::TensorElementType};
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
     time::Instant,
 };
 
-#[cfg(target_os = "windows")]
-pub const ORT_RUNTIME_FILENAME: &str = "onnxruntime.dll";
-#[cfg(target_os = "linux")]
-pub const ORT_RUNTIME_FILENAME: &str = "libonnxruntime.so";
-#[cfg(target_vendor = "apple")]
-pub const ORT_RUNTIME_FILENAME: &str = "libonnxruntime.dylib";
-
-static ORT_RUNTIME_PATH: OnceLock<PathBuf> = OnceLock::new();
-static ORT_RUNTIME_INIT_LOCK: Mutex<()> = Mutex::new(());
+pub use crate::separator::activation::{
+    ensure_runtime_loaded_from_path, loaded_runtime_path, ORT_RUNTIME_FILENAME,
+};
 
 const MODEL_CACHE_KEY_METADATA: &str = "openkara.model_cache_key";
 const OPTIMIZED_BY_METADATA: &str = "openkara.optimized_by";
@@ -104,223 +98,6 @@ pub fn default_model_path() -> PathBuf {
     let descriptor =
         crate::separator::bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs);
     default_model_path_for_filename(&descriptor.filename)
-}
-
-/// The runtime library committed into this process, when one is loaded.
-/// ORT cannot be unloaded or swapped in place — a different runtime only
-/// takes effect after a restart.
-pub fn loaded_runtime_path() -> Option<&'static Path> {
-    ORT_RUNTIME_PATH.get().map(|path| path.as_path())
-}
-
-pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
-        // Committed runtime is process-final; do not report a different path.
-        anyhow::ensure!(
-            path.as_path() == runtime_path,
-            "a different ONNX Runtime is already loaded from {}; restart to use {}",
-            path.display(),
-            runtime_path.display()
-        );
-        return Ok(path.as_path());
-    }
-
-    let _init_guard = ORT_RUNTIME_INIT_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("onnx runtime initialization lock was poisoned"))?;
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
-        anyhow::ensure!(
-            path.as_path() == runtime_path,
-            "a different ONNX Runtime is already loaded from {}; restart to use {}",
-            path.display(),
-            runtime_path.display()
-        );
-        return Ok(path.as_path());
-    }
-
-    init_ort_from_path(runtime_path)?;
-    Ok(ORT_RUNTIME_PATH
-        .get()
-        .expect("runtime path should be stored after successful initialization")
-        .as_path())
-}
-
-/// Load the bundled DirectML companion only when a DirectML session is
-/// requested. ORT resolves provider libraries by module name, so the exact
-/// artifact path must be preloaded before provider registration.
-#[cfg(target_os = "windows")]
-fn preload_directml_companion() -> Result<()> {
-    let runtime_path = ORT_RUNTIME_PATH
-        .get()
-        .context("ONNX Runtime path is not available for DirectML setup")?;
-    let runtime_dir = runtime_path
-        .parent()
-        .context("ONNX Runtime path has no parent directory")?;
-    let directml_path = runtime_dir.join("DirectML.dll");
-    ort::util::preload_dylib(&directml_path).with_context(|| {
-        format!(
-            "failed to preload bundled DirectML companion {}",
-            directml_path.display()
-        )
-    })?;
-    Ok(())
-}
-
-#[cfg(any(test, target_os = "windows"))]
-pub(crate) fn runtime_dll_search_dir(runtime_path: &Path) -> Option<&Path> {
-    runtime_path
-        .parent()
-        .filter(|dir| !dir.as_os_str().is_empty())
-}
-
-#[cfg(target_os = "windows")]
-fn prepare_windows_runtime_dll_search(runtime_path: &Path) -> Result<()> {
-    use windows::{core::HSTRING, Win32::System::LibraryLoader::SetDllDirectoryW};
-
-    let search_dir = runtime_dll_search_dir(runtime_path).with_context(|| {
-        format!(
-            "ONNX Runtime path has no parent directory: {}",
-            runtime_path.display()
-        )
-    })?;
-    let path = HSTRING::from(search_dir.as_os_str());
-    // SAFETY: `path` is a valid UTF-16 directory string owned by `HSTRING` for
-    // the duration of this call. SetDllDirectoryW copies the path.
-    unsafe { SetDllDirectoryW(&path) }.with_context(|| {
-        format!(
-            "failed to set Windows DLL search directory to {}",
-            search_dir.display()
-        )
-    })?;
-    Ok(())
-}
-
-/// Map a Win32 error code returned by `LoadLibraryExW` to a short human
-/// description for the runtime-load error message. The numeric and hex codes
-/// are always appended because the table is intentionally narrow — unknown
-/// codes still surface enough detail for triage.
-#[cfg(target_os = "windows")]
-fn describe_win32_load_error(code: u32) -> String {
-    // System error constants from winerror.h.
-    const ERROR_MOD_NOT_FOUND: u32 = 126;
-    const ERROR_BAD_EXE_FORMAT: u32 = 193;
-    const ERROR_INVALID_PARAMETER: u32 = 87;
-    const ERROR_FILE_NOT_FOUND: u32 = 2;
-    const ERROR_ACCESS_DENIED: u32 = 5;
-    const ERROR_SHARING_VIOLATION: u32 = 32;
-    const ERROR_SXS_DLL_NOT_FOUND: u32 = 14090;
-    const ERROR_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT_EMPTY: u32 = 14002;
-
-    let hint = match code {
-        ERROR_MOD_NOT_FOUND => {
-            "a DLL that onnxruntime.dll depends on is missing. The VC++ CRT \
-             DLLs it needs (vcruntime140, vcruntime140_1, msvcp140, \
-             msvcp140_1) ship next to openkara.exe, so this usually means an \
-             incomplete app install"
-        }
-        ERROR_FILE_NOT_FOUND => "the runtime file was not found at the given path",
-        ERROR_BAD_EXE_FORMAT => {
-            "the runtime DLL is for a different architecture than the app \
-             (e.g. x86_64 vs arm64) or is corrupt"
-        }
-        ERROR_INVALID_PARAMETER => "Windows rejected the load flags or path",
-        ERROR_ACCESS_DENIED => "the app does not have permission to read the runtime DLL",
-        ERROR_SHARING_VIOLATION => {
-            "the runtime DLL is locked by another process or an antivirus scan"
-        }
-        ERROR_SXS_DLL_NOT_FOUND | ERROR_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT_EMPTY => {
-            "a side-by-side (WinSxS) dependency of onnxruntime.dll is missing"
-        }
-        _ => "Windows did not provide a recognized reason for this code",
-    };
-    format!("{hint} (Win32 error {code} / 0x{code:08X})")
-}
-
-/// Probe-load the runtime DLL once before handing the path to `ort`. This
-/// supersedes the page-cache warmup that preceded it and does two things the
-/// earlier `fs::read` could not:
-///
-/// 1. It resolves the imports and runs `DllMain`, so the first-touch cost (disk
-///    reads, antivirus scan) is paid under our control rather than inside
-///    `ort`'s load watchdog. The probe releases its reference before returning,
-///    so `ort::init_from` still performs a full load; what carries over is the
-///    warm file cache, not a loaded module.
-/// 2. On failure it captures the real `GetLastError` code. `ort` wraps
-///    `libloading`, whose `Display` impl drops the OS error and prints only
-///    "LoadLibraryExW failed" (see libloading `error.rs`). Calling the loader
-///    ourselves lets us attach the actual code so the failure isn't opaque.
-///
-/// The call mirrors the load `ort` performs — `libloading`'s `Library::new`
-/// is `LoadLibraryExW(path, NULL, 0)` — so both loads resolve dependencies
-/// through the same standard search order (application directory carrying the
-/// app-local VC++ CRT first, then the `SetDllDirectoryW` runtime directory
-/// carrying DirectML.dll) and the probe fails exactly when the real load
-/// would fail.
-///
-/// Returns `Ok(())` on a successful probe-load or `Err(message)` with a rich
-/// diagnostic otherwise.
-#[cfg(target_os = "windows")]
-fn probe_load_windows_runtime(runtime_path: &Path) -> std::result::Result<(), String> {
-    use windows::{
-        core::HSTRING,
-        Win32::Foundation::{FreeLibrary, GetLastError},
-        Win32::System::LibraryLoader::{LoadLibraryExW, LOAD_LIBRARY_FLAGS},
-    };
-
-    let path = HSTRING::from(runtime_path.as_os_str());
-    // SAFETY: `path` is owned by HSTRING for the call. Null file handle and
-    // zero flags replicate libloading's `Library::new`, keeping the probe's
-    // dependency resolution identical to the real `ort` load.
-    let handle = unsafe { LoadLibraryExW(&path, None, LOAD_LIBRARY_FLAGS(0)) };
-    match handle {
-        Ok(module) => {
-            // Release the probe's reference so `ort::init_from` holds the only
-            // one. The refcount can reach zero here, in which case Windows
-            // unloads the module and `ort` performs a fresh load — normal
-            // loader work and `DllMain` included — off the warm file cache.
-            // SAFETY: `module` was just returned by a successful LoadLibraryExW.
-            let _ = unsafe { FreeLibrary(module) };
-            Ok(())
-        }
-        Err(_) => {
-            // `LoadLibraryExW` returns a `windows_core::Error` whose embedded
-            // code matches GetLastError; read it directly to avoid relying on
-            // its formatting.
-            let code = unsafe { GetLastError() }.0;
-            Err(format!(
-                "failed to load ONNX Runtime DLL at {}: {}",
-                runtime_path.display(),
-                describe_win32_load_error(code)
-            ))
-        }
-    }
-}
-
-fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
-    anyhow::ensure!(
-        runtime_path.is_file(),
-        "ONNX Runtime library is missing at {}",
-        runtime_path.display()
-    );
-
-    #[cfg(target_os = "windows")]
-    {
-        prepare_windows_runtime_dll_search(runtime_path)?;
-        // Probe-load the runtime DLL before `ort::init_from` runs so a load
-        // failure carries the real `GetLastError` code instead of the opaque
-        // "LoadLibraryExW failed" string `ort`/`libloading` produce.
-        probe_load_windows_runtime(runtime_path).map_err(|message| anyhow::anyhow!(message))?;
-    }
-
-    let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
-    anyhow::ensure!(
-        committed,
-        "failed to initialize ONNX Runtime from {} before another ORT environment was configured",
-        runtime_path.display()
-    );
-
-    let _ = ORT_RUNTIME_PATH.set(runtime_path.to_path_buf());
-    Ok(())
 }
 
 pub(crate) fn read_model_runtime_metadata(path: &Path) -> Result<ModelRuntimeMetadata> {
@@ -489,10 +266,7 @@ fn intra_thread_count(
 }
 
 fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Result<LoadedModel> {
-    anyhow::ensure!(
-        ORT_RUNTIME_PATH.get().is_some(),
-        "ONNX Runtime is not initialized; the managed runtime bootstrap must complete before model loading"
-    );
+    activation::ensure_activated()?;
     let runtime_metadata = read_model_runtime_metadata(path)?;
     // Fail unsupported spectral contracts before creating an ORT session (#172).
     ensure_spectral_core_metadata(&runtime_metadata)
@@ -529,7 +303,7 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
 
     #[cfg(target_os = "windows")]
     if matches!(ep_preference, ExecutionProviderPreference::DirectMl) {
-        preload_directml_companion()?;
+        activation::preload_directml_companion()?;
     }
 
     let ep_list = build_execution_provider_list(ep_preference, num_threads);
@@ -1076,48 +850,5 @@ mod tests {
         // On Apple Silicon the sysctl must resolve to a real P-core count.
         let cores = performance_core_count().expect("hw.perflevel0.physicalcpu should resolve");
         assert!(cores >= 1, "performance-core count must be at least 1");
-    }
-
-    #[test]
-    fn runtime_dll_search_dir_is_the_library_parent() {
-        let path = PathBuf::from("/data/runtimes/rt-1/onnxruntime.dll");
-        assert_eq!(
-            runtime_dll_search_dir(&path),
-            Some(Path::new("/data/runtimes/rt-1"))
-        );
-        assert_eq!(runtime_dll_search_dir(Path::new("onnxruntime.dll")), None);
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn describe_win32_load_error_includes_code_and_known_hint() {
-        // The most common cause of an instant LoadLibraryExW failure for a
-        // /MD-built onnxruntime.dll on a stripped Server image is a missing
-        // VC++ runtime dependency.
-        let missing = describe_win32_load_error(126);
-        assert!(
-            missing.contains("vcruntime140") && missing.contains("msvcp140"),
-            "missing-dep hint should name the app-local CRT DLLs: {missing}"
-        );
-        assert!(
-            missing.contains("126") && missing.contains("0x0000007E"),
-            "numeric + hex code should appear: {missing}"
-        );
-
-        let bad_arch = describe_win32_load_error(193);
-        assert!(
-            bad_arch.contains("architecture") || bad_arch.contains("corrupt"),
-            "bad-exe-format hint should explain the cause: {bad_arch}"
-        );
-        assert!(bad_arch.contains("193") && bad_arch.contains("0x000000C1"));
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn describe_win32_load_error_handles_unknown_codes() {
-        // Unknown codes still surface enough detail for triage.
-        let unknown = describe_win32_load_error(0x12345678);
-        assert!(unknown.contains("305419896"));
-        assert!(unknown.contains("0x12345678"));
     }
 }

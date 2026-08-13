@@ -33,7 +33,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub use super::model::ORT_RUNTIME_FILENAME;
+pub use super::activation::ORT_RUNTIME_FILENAME;
 
 pub const RUNTIME_SLOTS_SCHEMA_VERSION: &str = "openkara.app/runtime-slots-v1";
 pub const RUNTIME_RECORD_FILENAME: &str = "record.json";
