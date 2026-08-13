@@ -4,6 +4,7 @@ export {
 } from "./settings-controller";
 export { createZustandSettingsStores } from "./zustand-stores";
 export type {
+  LibraryCommandResult,
   ModelStatusView,
   ModelUpdateView,
   RuntimeStatusView,

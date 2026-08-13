@@ -201,26 +201,31 @@ export function RemoteLibraryWizard({
         throw new Error(t("settings.library.remoteLibraryMissingId"));
       }
 
-      if (
-        !isRecoveryFlow &&
-        mode === "mirror_active_local" &&
-        activeLocalLibrary
-      ) {
+      const mirrorSource =
+        !isRecoveryFlow && mode === "mirror_active_local"
+          ? activeLocalLibrary
+          : null;
+
+      if (mirrorSource) {
         await remoteRepository.mirrorLocalLibraryToRemote(
-          activeLocalLibrary.id,
+          mirrorSource.id,
           remoteLibraryId,
         );
-        await library.activate(remoteLibraryId);
-        setMessage(
-          t("settings.library.remoteLibraryCreatedAndMirroring", {
-            displayName: activeLocalLibrary.display_name,
-          }),
-        );
-      } else {
-        await library.activate(remoteLibraryId);
-        setMessage(t("settings.library.remoteLibraryConnected"));
       }
 
+      const activation = await library.activate(remoteLibraryId);
+      if (!activation.ok) {
+        setError(activation.error);
+        return;
+      }
+
+      setMessage(
+        mirrorSource
+          ? t("settings.library.remoteLibraryCreatedAndMirroring", {
+              displayName: mirrorSource.display_name,
+            })
+          : t("settings.library.remoteLibraryConnected"),
+      );
       onClose();
     } catch (err: unknown) {
       if (getErrorMessage(err) !== REMOTE_AUTH_CANCELLED) {
@@ -231,6 +236,16 @@ export function RemoteLibraryWizard({
         setLoading(false);
       }
     }
+  };
+
+  const activateExistingLibrary = async (candidateId: string) => {
+    setError(null);
+    const activation = await library.activate(candidateId);
+    if (!activation.ok) {
+      setError(activation.error);
+      return;
+    }
+    onClose();
   };
 
   const remoteLibraries = view.library.libraries.filter(
@@ -506,9 +521,7 @@ export function RemoteLibraryWizard({
                 <button
                   key={candidate.id}
                   type="button"
-                  onClick={() =>
-                    void library.activate(candidate.id).then(() => onClose())
-                  }
+                  onClick={() => void activateExistingLibrary(candidate.id)}
                   disabled={loading}
                   className="rounded-md border border-[var(--color-border-light)] px-3 py-2"
                 >

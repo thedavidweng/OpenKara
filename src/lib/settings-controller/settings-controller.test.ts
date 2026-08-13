@@ -352,6 +352,32 @@ describe("library commands", () => {
     expect(switchLibrary).not.toHaveBeenCalled();
   });
 
+  test("a successful activation reports ok to its caller", async () => {
+    const harness = createSettingsHarness();
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(harness.view().library.error).toBeNull();
+  });
+
+  test("a failed activation reports its error to the caller", async () => {
+    const harness = createSettingsHarness();
+    harness.librarySession.failOn(
+      "switchLibrary",
+      new Error("endpoint unreachable"),
+    );
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: false, error: "endpoint unreachable" });
+    expect(harness.view().library.error).toBe("endpoint unreachable");
+  });
+
   test("refreshing an active Remote Repository refreshes in place", async () => {
     const harness = createSettingsHarness({
       overrides: {

@@ -11,6 +11,7 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 import type {
+  LibraryCommandResult,
   ModelStatusView,
   SettingsController,
   SettingsControllerDependencies,
@@ -282,13 +283,18 @@ export function createSettingsController({
     refreshModelStatuses,
   });
 
-  const runLibraryWork = async (work: () => Promise<void>) => {
+  const runLibraryWork = async (
+    work: () => Promise<void>,
+  ): Promise<LibraryCommandResult> => {
     patchLibrary({ error: null });
 
     try {
       await work();
+      return { ok: true };
     } catch (error: unknown) {
-      patchLibrary({ error: getErrorMessage(error) });
+      const message = getErrorMessage(error);
+      patchLibrary({ error: message });
+      return { ok: false, error: message };
     }
   };
 
@@ -661,18 +667,18 @@ export function createSettingsController({
     library: {
       create: async (dialogTitle) => {
         const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
+        if (!directory) return { ok: true };
 
-        await runLibraryWork(() =>
+        return runLibraryWork(() =>
           librarySession.createLocalLibrary(directory),
         );
       },
 
       open: async (dialogTitle) => {
         const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
+        if (!directory) return { ok: true };
 
-        await runLibraryWork(() => librarySession.openLocalLibrary(directory));
+        return runLibraryWork(() => librarySession.openLocalLibrary(directory));
       },
 
       activate: (libraryId) =>
