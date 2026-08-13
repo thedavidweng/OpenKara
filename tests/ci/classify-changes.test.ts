@@ -195,6 +195,10 @@ describe("classifyFile", () => {
     ]);
   });
 
+  test(".coderabbit.yaml is frontend_tooling", () => {
+    expect(classifyFile(".coderabbit.yaml")).toEqual(["frontend_tooling"]);
+  });
+
   test("unmapped file has no categories", () => {
     expect(classifyFile("new-unmapped-root-config.xyz")).toEqual([]);
   });
