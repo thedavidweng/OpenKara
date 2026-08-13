@@ -1487,6 +1487,28 @@ describe("library integrity", () => {
     expect(harness.view().integrity.skippedCount).toBe(2);
   });
 
+  test("cleanup without a report still prunes the selection and records skips", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          removeMissingLibraryEntries: async () => ({
+            deleted_song_hashes: ["hash-a"],
+            skipped_song_hashes: ["hash-b"],
+          }),
+        },
+      },
+    });
+    harness.controller.library.toggleIntegrityEntry("hash-a");
+    harness.controller.library.toggleIntegrityEntry("hash-b");
+
+    await harness.controller.library.cleanUpIntegrity();
+
+    const integrity = harness.view().integrity;
+    expect(integrity.report).toBeNull();
+    expect([...integrity.selection]).toEqual(["hash-b"]);
+    expect(integrity.skippedCount).toBe(1);
+  });
+
   test("cleanup with an empty selection just closes the dialog", async () => {
     const removeMissingLibraryEntries = vi.fn();
     const harness = createSettingsHarness({

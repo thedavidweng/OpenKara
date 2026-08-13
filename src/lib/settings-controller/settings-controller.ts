@@ -548,6 +548,14 @@ export function createSettingsController({
       await stores.library.loadLibrary();
       await stores.player.loadState();
 
+      patchIntegrity({
+        selection: new Set(selectedHashes.filter((hash) => !deleted.has(hash))),
+        skippedCount:
+          result.skipped_song_hashes.length > 0
+            ? result.skipped_song_hashes.length
+            : null,
+      });
+
       if (report) {
         const keep = (issue: { song_hash: string }) =>
           !deleted.has(issue.song_hash);
@@ -561,13 +569,6 @@ export function createSettingsController({
               report.missing_optional_assets.filter(keep),
             empty_optional_assets: report.empty_optional_assets.filter(keep),
           },
-          selection: new Set(
-            selectedHashes.filter((hash) => !deleted.has(hash)),
-          ),
-          skippedCount:
-            result.skipped_song_hashes.length > 0
-              ? result.skipped_song_hashes.length
-              : null,
         });
       }
     } catch (error: unknown) {
