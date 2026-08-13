@@ -15,8 +15,10 @@ use crate::state::RemoteState;
 use crate::AppState;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 const DURABLE_OPERATION_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -39,8 +41,10 @@ pub struct StartupReport {
 ///
 /// Call once from app bootstrap, after `RemoteState` exists and before any
 /// caller may reach the control plane. Errors are logged rather than returned:
-/// startup recovery must never abort app start. The executor is a detached
-/// background poller that runs for the rest of the process lifetime.
+/// startup recovery must never abort app start. The executor polls in the
+/// background until the managed [`DurableOperationExecutor`] is told to stop;
+/// the run loop's exit handler does that via
+/// [`shutdown_durable_operation_executor`].
 pub(crate) fn prepare_control_plane<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -58,7 +62,8 @@ pub(crate) fn prepare_control_plane<R: Runtime>(
         &clock,
     );
 
-    spawn_durable_operation_executor(state.clone(), app_handle.clone());
+    let executor = spawn_durable_operation_executor(state.clone(), app_handle.clone());
+    app_handle.manage(executor);
 
     report
 }
@@ -377,26 +382,68 @@ fn recover_stale_part_files_for_libraries(
     }
 }
 
-fn spawn_durable_operation_executor<R: Runtime>(state: AppState, app_handle: AppHandle<R>) {
-    std::thread::spawn(move || {
-        let publish_changes = crate::remote::PublishChanges::new(&state, &app_handle);
-        if let Err(error) = publish_changes.recover_pending() {
-            tracing::warn!(
-                "durable operation executor initial pass failed: {:?}",
-                error
-            );
-        }
+/// Handle to the durable operation executor thread, kept in managed state so
+/// teardown can stop the poller and wait for an in-flight pass to finish
+/// instead of letting it run against an app that is going away.
+pub(crate) struct DurableOperationExecutor {
+    stop: mpsc::SyncSender<()>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+}
 
-        loop {
-            std::thread::sleep(DURABLE_OPERATION_POLL_INTERVAL);
-            if let Err(error) = publish_changes.recover_pending() {
-                tracing::warn!(
-                    "durable operation executor periodic pass failed: {:?}",
-                    error
-                );
-            }
+impl DurableOperationExecutor {
+    fn shutdown(&self) {
+        let _ = self.stop.try_send(());
+        let thread = self.thread.lock().ok().and_then(|mut slot| slot.take());
+        if let Some(thread) = thread {
+            let _ = thread.join();
         }
+    }
+}
+
+impl Drop for DurableOperationExecutor {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// Stop the durable operation executor and wait for it to finish. Called by
+/// the run loop's exit handler; a no-op when the executor was never started.
+pub(crate) fn shutdown_durable_operation_executor<R: Runtime>(app_handle: &AppHandle<R>) {
+    if let Some(executor) = app_handle.try_state::<DurableOperationExecutor>() {
+        executor.shutdown();
+    }
+}
+
+fn spawn_durable_operation_executor<R: Runtime>(
+    state: AppState,
+    app_handle: AppHandle<R>,
+) -> DurableOperationExecutor {
+    let (stop, stop_rx) = mpsc::sync_channel(1);
+    let thread = std::thread::spawn(move || {
+        let publish_changes = crate::remote::PublishChanges::new(&state, &app_handle);
+        run_durable_operation_executor(&stop_rx, DURABLE_OPERATION_POLL_INTERVAL, || {
+            if let Err(error) = publish_changes.recover_pending() {
+                tracing::warn!("durable operation executor pass failed: {:?}", error);
+            }
+        });
     });
+    DurableOperationExecutor {
+        stop,
+        thread: Mutex::new(Some(thread)),
+    }
+}
+
+/// One pass immediately, then one per poll interval, until the stop channel
+/// signals or its sender is dropped.
+fn run_durable_operation_executor(
+    stop: &mpsc::Receiver<()>,
+    poll_interval: Duration,
+    mut pass: impl FnMut(),
+) {
+    pass();
+    while let Err(mpsc::RecvTimeoutError::Timeout) = stop.recv_timeout(poll_interval) {
+        pass();
+    }
 }
 
 #[cfg(test)]
@@ -805,5 +852,66 @@ mod tests {
             &[],
             false
         ));
+    }
+
+    #[test]
+    fn the_executor_loop_stops_when_signalled() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::Instant;
+
+        let (stop, stop_rx) = mpsc::sync_channel(1);
+        let passes = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&passes);
+        let executor = std::thread::spawn(move || {
+            run_durable_operation_executor(&stop_rx, Duration::from_millis(2), move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            });
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while passes.load(Ordering::SeqCst) < 3 {
+            assert!(
+                Instant::now() < deadline,
+                "the executor should keep polling"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        stop.try_send(()).expect("stop signal");
+        executor
+            .join()
+            .expect("the executor thread should stop when signalled");
+    }
+
+    #[test]
+    fn the_executor_loop_stops_when_the_stop_handle_is_dropped() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (stop, stop_rx) = mpsc::sync_channel::<()>(1);
+        drop(stop);
+
+        let passes = AtomicUsize::new(0);
+        run_durable_operation_executor(&stop_rx, Duration::from_secs(60), || {
+            passes.fetch_add(1, Ordering::SeqCst);
+        });
+
+        assert_eq!(
+            passes.load(Ordering::SeqCst),
+            1,
+            "only the initial pass runs once the handle is gone"
+        );
+    }
+
+    #[test]
+    fn a_spawned_executor_joins_on_shutdown() {
+        let app = tauri::test::mock_app();
+        let executor =
+            spawn_durable_operation_executor(AppState::test_fixture(), app.handle().clone());
+
+        executor.shutdown();
+
+        let thread = executor.thread.lock().expect("thread slot");
+        assert!(thread.is_none(), "shutdown must join the executor thread");
     }
 }

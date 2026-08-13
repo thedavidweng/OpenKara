@@ -253,6 +253,11 @@ pub fn run() {
         .on_menu_event(app_menu::handle_menu_event);
 
     builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                remote::startup::shutdown_durable_operation_executor(app_handle);
+            }
+        });
 }
