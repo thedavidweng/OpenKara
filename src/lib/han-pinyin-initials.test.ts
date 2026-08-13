@@ -11,5 +11,7 @@ describe("hanPinyinInitial", () => {
   test("returns null for unmapped or non-Han code points", () => {
     expect(hanPinyinInitial(0x41)).toBeNull();
     expect(hanPinyinInitial(0x20000)).toBeNull();
+    expect(hanPinyinInitial(0x3400)).toBeNull();
+    expect(hanPinyinInitial(0xf900)).toBeNull();
   });
 });

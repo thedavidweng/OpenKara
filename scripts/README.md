@@ -157,8 +157,7 @@ Compiles the Icon Composer project into macOS 26 Liquid Glass assets.
 
 Builds the compact first-letter table used by the library alphabet rail.
 
-- **Input:** `pinyin-pro` (resolved from the install, including the
-  `lyric-romanizer` transitive copy)
+- **Input:** `pinyin-pro`, resolved from `lyric-romanizer/package.json`
 - **Output:** `src/lib/han-pinyin-initials.ts`
 - **Run:** `node scripts/generate-han-pinyin-initials.mjs`
 - **When to run:** after a deliberate change to the Han first-letter contract
