@@ -1036,8 +1036,9 @@ mod tests {
         let error =
             load_with_watchdog_using(&strategy, tmp.path(), &flaky, ActivationTarget::default())
                 .expect_err("a panicking load must surface an error");
+        let message = error.to_string();
         assert!(
-            error.to_string().contains("panicked"),
+            message.contains("panicked") && message.contains("scripted load panic"),
             "unexpected message: {error}"
         );
         assert_eq!(
