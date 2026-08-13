@@ -204,7 +204,7 @@ fn run_worker_with(
     // (#395). A worker killed before this point loses nothing durable — the
     // verified archive cache and the install directory make the retry a
     // re-verification, not a re-download.
-    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
+    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.install_key())?;
 
     write_progress(
         progress_path,
@@ -317,8 +317,14 @@ fn install_runtime_with_verified_archive_cache(
     catalog: &VerifiedCatalog,
     mut progress: impl FnMut(RuntimeWorkerProgress),
 ) -> Result<runtime_bootstrap::InstalledRuntime> {
-    if let Some(existing) = runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
-    {
+    // Reuse requires the installed archive digest to match the target's: a
+    // catalog generation can republish the same artifact id with different
+    // bytes, and matching on id alone turned that update into a no-op (#394).
+    if let Some(existing) = runtime_bootstrap::find_installed_runtime(
+        app_data_dir,
+        &runtime.artifact_id,
+        &runtime.archive_digest,
+    ) {
         if runtime_bootstrap::verify_runtime_files(&existing)? {
             progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
             return Ok(existing);
@@ -359,7 +365,20 @@ fn install_runtime_with_verified_archive_cache(
             &staging.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
             &record,
         )?;
-        let final_dir = runtime_bootstrap::runtime_artifact_dir(app_data_dir, &runtime.artifact_id);
+        // A different-digest install of the same artifact id may occupy the
+        // plain directory — possibly as the currently loaded runtime, whose
+        // files cannot be deleted or replaced while mapped (Windows locks
+        // them). Install side by side under a digest-qualified directory
+        // instead of clearing it.
+        let plain_dir_occupied_by_other_digest =
+            runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+                .is_some_and(|other| other.record.archive_sha256 != runtime.archive_digest);
+        let install_key = if plain_dir_occupied_by_other_digest {
+            runtime_bootstrap::runtime_install_key(&runtime.artifact_id, &runtime.archive_digest)
+        } else {
+            runtime.artifact_id.clone()
+        };
+        let final_dir = runtime_bootstrap::runtime_artifact_dir(app_data_dir, &install_key);
         if final_dir.exists() {
             fs::remove_dir_all(&final_dir).with_context(|| {
                 format!("failed to clear stale install {}", final_dir.display())
@@ -371,7 +390,7 @@ fn install_runtime_with_verified_archive_cache(
                 final_dir.display()
             )
         })?;
-        runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+        runtime_bootstrap::installed_runtime(app_data_dir, &install_key)
             .context("freshly installed runtime failed to resolve")
     })();
 
@@ -622,14 +641,18 @@ pub fn install_runtime_with_worker(
         return Err(tag_with_last_phase(error, last_phase));
     }
 
-    runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
-        .context("runtime worker exited successfully without an installed runtime")
-        .map_err(|error| {
-            crate::commands::runtime_bootstrap::with_failure_phase(
-                error,
-                crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install,
-            )
-        })
+    runtime_bootstrap::find_installed_runtime(
+        app_data_dir,
+        &runtime.artifact_id,
+        &runtime.archive_digest,
+    )
+    .context("runtime worker exited successfully without an installed runtime")
+    .map_err(|error| {
+        crate::commands::runtime_bootstrap::with_failure_phase(
+            error,
+            crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -726,6 +749,113 @@ mod tests {
         )
         .expect("write request");
         (request_path, app_data.join("worker-test.progress.json"))
+    }
+
+    /// Write a fake installed runtime for the fixture's artifact id whose
+    /// record digests match its files but whose archive digest differs from
+    /// the fixture's target archive.
+    fn write_same_id_install_with_digest(
+        app_data: &Path,
+        catalog: &VerifiedCatalog,
+        runtime: &CatalogRuntime,
+        archive_sha256: &str,
+        library_bytes: &[u8],
+    ) {
+        let dir = runtime_bootstrap::runtime_artifact_dir(app_data, &runtime.artifact_id);
+        fs::create_dir_all(&dir).expect("create install dir");
+        fs::write(
+            dir.join(runtime_bootstrap::ORT_RUNTIME_FILENAME),
+            library_bytes,
+        )
+        .expect("write library");
+        let mut record = record_from_catalog_runtime(runtime, catalog);
+        record.archive_sha256 = archive_sha256.to_owned();
+        record.files = vec![catalog::InstalledFileRecord {
+            path: runtime_bootstrap::ORT_RUNTIME_FILENAME.to_owned(),
+            size: library_bytes.len() as u64,
+            sha256: sha256_hex(library_bytes),
+        }];
+        write_artifact_record(
+            &dir.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
+            &record,
+        )
+        .expect("write record");
+    }
+
+    #[test]
+    fn a_same_id_digest_swap_installs_side_by_side_and_stages_the_new_digest() {
+        // #394: catalog generation 13 republished `...-cpu-reduced` with new
+        // bytes. Reuse keyed on the artifact id alone returned the stale
+        // gen-12 install, so the update never installed. The active install
+        // may be loaded by the running app (Windows locks mapped files), so
+        // the new digest must land side by side, not replace it.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-swap", b"gen-13-library");
+        let old_digest = sha256_hex(b"gen-12-archive");
+        write_same_id_install_with_digest(
+            dir.path(),
+            &catalog,
+            &runtime,
+            &old_digest,
+            b"gen-12-library",
+        );
+        runtime_bootstrap::write_slots(
+            dir.path(),
+            &runtime_bootstrap::RuntimeSlots {
+                active: Some("rt-swap".to_owned()),
+                ..runtime_bootstrap::RuntimeSlots::default()
+            },
+        )
+        .expect("write slots");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("the worker must install the republished digest");
+
+        let new_key = runtime_bootstrap::runtime_install_key("rt-swap", &runtime.archive_digest);
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(
+            slots.candidate.as_deref(),
+            Some(new_key.as_str()),
+            "the new digest must be staged as the candidate, not the stale same-id install"
+        );
+        assert_eq!(
+            slots.active.as_deref(),
+            Some("rt-swap"),
+            "the active slot must stay on the running install"
+        );
+
+        let stale = runtime_bootstrap::installed_runtime(dir.path(), "rt-swap")
+            .expect("the possibly-loaded active install must not be touched");
+        assert_eq!(stale.record.archive_sha256, old_digest);
+
+        let staged = runtime_bootstrap::installed_runtime(dir.path(), &new_key)
+            .expect("the new digest must be installed side by side");
+        assert_eq!(staged.record.archive_sha256, runtime.archive_digest);
+        assert!(runtime_bootstrap::verify_runtime_files(&staged).expect("verify"));
+    }
+
+    #[test]
+    fn an_install_matching_the_target_digest_is_reused_without_redownloading() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-reuse", b"same-bytes");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("first install must succeed");
+
+        // Remove the verified archive cache: a second run can only succeed
+        // by reusing the existing digest-equal install, because the download
+        // URL is unreachable.
+        fs::remove_file(runtime_cache_path(dir.path(), &runtime)).expect("drop archive cache");
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("a digest-equal install must be reused without redownloading");
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some("rt-reuse")
+        );
     }
 
     #[test]

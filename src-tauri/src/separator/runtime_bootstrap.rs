@@ -151,13 +151,55 @@ pub struct InstalledRuntime {
     pub library_path: PathBuf,
 }
 
-/// Read the installed runtime for an artifact id, when its record is valid
-/// and the main library file exists. File digests are NOT re-verified here —
-/// call `verify_runtime_files` before trusting it for activation.
-pub fn installed_runtime(app_data_dir: &Path, artifact_id: &str) -> Option<InstalledRuntime> {
-    let dir = runtime_artifact_dir(app_data_dir, artifact_id);
+impl InstalledRuntime {
+    /// The slot value naming this install: its directory name. Equal to the
+    /// artifact id except for a digest-qualified side-by-side install.
+    pub fn install_key(&self) -> String {
+        self.dir
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.record.artifact_id.clone())
+    }
+}
+
+const INSTALL_KEY_DIGEST_LEN: usize = 12;
+
+/// Directory name for an install that cannot occupy the plain artifact-id
+/// directory because a different-digest install of the same artifact id
+/// already lives there (a catalog generation republished the id with new
+/// bytes, #394). The occupied directory may be the currently loaded runtime,
+/// whose files must never be replaced in place.
+pub fn runtime_install_key(artifact_id: &str, archive_digest: &str) -> String {
+    let digest_prefix = &archive_digest[..INSTALL_KEY_DIGEST_LEN.min(archive_digest.len())];
+    format!("{artifact_id}+{digest_prefix}")
+}
+
+/// The artifact id named by a slot value, stripping a digest qualifier.
+pub fn artifact_id_of_install_key(install_key: &str) -> &str {
+    match install_key.rsplit_once('+') {
+        Some((artifact_id, digest_prefix))
+            if digest_prefix.len() == INSTALL_KEY_DIGEST_LEN
+                && digest_prefix.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+        {
+            artifact_id
+        }
+        _ => install_key,
+    }
+}
+
+fn install_key_matches_record(install_key: &str, record: &InstalledArtifactRecord) -> bool {
+    install_key == record.artifact_id
+        || install_key == runtime_install_key(&record.artifact_id, &record.archive_sha256)
+}
+
+/// Read the installed runtime for an install key (a slot value: the artifact
+/// id, or its digest-qualified form), when its record is valid and the main
+/// library file exists. File digests are NOT re-verified here — call
+/// `verify_runtime_files` before trusting it for activation.
+pub fn installed_runtime(app_data_dir: &Path, install_key: &str) -> Option<InstalledRuntime> {
+    let dir = runtime_artifact_dir(app_data_dir, install_key);
     let record = read_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME))?;
-    if record.kind != "runtime" || record.artifact_id != artifact_id {
+    if record.kind != "runtime" || !install_key_matches_record(install_key, &record) {
         return None;
     }
     let library_path = dir.join(ORT_RUNTIME_FILENAME);
@@ -166,6 +208,24 @@ pub fn installed_runtime(app_data_dir: &Path, artifact_id: &str) -> Option<Insta
         dir,
         library_path,
     })
+}
+
+/// Find an install of exactly this artifact id AND archive digest, whether
+/// it lives in the plain artifact-id directory or a digest-qualified one.
+pub fn find_installed_runtime(
+    app_data_dir: &Path,
+    artifact_id: &str,
+    archive_digest: &str,
+) -> Option<InstalledRuntime> {
+    installed_runtime(app_data_dir, artifact_id)
+        .filter(|installed| installed.record.archive_sha256 == archive_digest)
+        .or_else(|| {
+            installed_runtime(
+                app_data_dir,
+                &runtime_install_key(artifact_id, archive_digest),
+            )
+            .filter(|installed| installed.record.archive_sha256 == archive_digest)
+        })
 }
 
 /// Verify every file the record declares by size and streaming SHA-256.
@@ -225,6 +285,9 @@ pub fn delete_legacy_runtime(app_data_dir: &Path) -> Result<()> {
 pub struct StartupLoadPlan {
     pub library_path: PathBuf,
     pub record: Option<InstalledArtifactRecord>,
+    /// Slot value naming the install this plan loads. `None` for a legacy
+    /// (pre-slot) install.
+    pub install_key: Option<String>,
     /// True when this load is proving a freshly promoted candidate. The
     /// caller must report the load result through
     /// `finish_activation_success` or `rollback_failed_activation`.
@@ -255,6 +318,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 return Ok(Some(StartupLoadPlan {
                     library_path: pending.library_path,
                     record: Some(pending.record),
+                    install_key: pending_id,
                     proving_candidate: true,
                     is_legacy: false,
                 }));
@@ -283,7 +347,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 // Persist pending marker before load so a crash rolls back next launch.
                 let old_active = slots.active.take();
                 slots.previous = old_active;
-                slots.active = Some(candidate_id);
+                slots.active = Some(candidate_id.clone());
                 slots.candidate = None;
                 slots.activation_pending = true;
                 slots.activation_attempts = 1;
@@ -291,6 +355,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 return Ok(Some(StartupLoadPlan {
                     library_path: candidate.library_path,
                     record: Some(candidate.record),
+                    install_key: Some(candidate_id),
                     proving_candidate: true,
                     is_legacy: false,
                 }));
@@ -314,6 +379,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 return Ok(Some(StartupLoadPlan {
                     library_path: active.library_path,
                     record: Some(active.record),
+                    install_key: Some(active_id),
                     proving_candidate: false,
                     is_legacy: false,
                 }));
@@ -336,6 +402,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
         return Ok(Some(StartupLoadPlan {
             library_path: legacy_path,
             record: None,
+            install_key: None,
             proving_candidate: false,
             is_legacy: true,
         }));
@@ -523,21 +590,158 @@ mod tests {
         (catalog, runtime)
     }
 
-    /// Write a fake installed runtime whose record digests match the files.
-    fn write_fake_install(app_data: &Path, artifact_id: &str, library_bytes: &[u8]) {
+    /// Write a fake installed runtime whose record digests match the files,
+    /// into the directory named by `install_key`.
+    fn write_fake_install_at(
+        app_data: &Path,
+        install_key: &str,
+        artifact_id: &str,
+        archive_sha256: &str,
+        library_bytes: &[u8],
+    ) {
         let (catalog, runtime) = catalog_runtime();
-        let dir = runtime_artifact_dir(app_data, artifact_id);
+        let dir = runtime_artifact_dir(app_data, install_key);
         fs::create_dir_all(&dir).expect("create artifact dir");
         fs::write(dir.join(ORT_RUNTIME_FILENAME), library_bytes).expect("write library");
 
         let mut record = record_from_catalog_runtime(runtime, catalog);
         record.artifact_id = artifact_id.to_owned();
+        record.archive_sha256 = archive_sha256.to_owned();
         record.files = vec![crate::separator::catalog::InstalledFileRecord {
             path: ORT_RUNTIME_FILENAME.to_owned(),
             size: library_bytes.len() as u64,
             sha256: sha256_hex(library_bytes),
         }];
         write_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME), &record).expect("write record");
+    }
+
+    /// Write a fake installed runtime whose record digests match the files.
+    fn write_fake_install(app_data: &Path, artifact_id: &str, library_bytes: &[u8]) {
+        let archive_sha256 = catalog_runtime().1.archive_digest.clone();
+        write_fake_install_at(
+            app_data,
+            artifact_id,
+            artifact_id,
+            &archive_sha256,
+            library_bytes,
+        );
+    }
+
+    #[test]
+    fn an_install_key_strips_only_a_digest_qualifier() {
+        let digest = sha256_hex(b"generation-13-archive");
+        let key = runtime_install_key("rt-cpu-reduced", &digest);
+        assert_eq!(key, format!("rt-cpu-reduced+{}", &digest[..12]));
+        assert_eq!(artifact_id_of_install_key(&key), "rt-cpu-reduced");
+        assert_eq!(
+            artifact_id_of_install_key("rt-cpu-reduced"),
+            "rt-cpu-reduced"
+        );
+        assert_eq!(
+            artifact_id_of_install_key("rt+not-a-digest"),
+            "rt+not-a-digest"
+        );
+    }
+
+    #[test]
+    fn find_installed_runtime_requires_digest_equality() {
+        // #394: generation 13 republished the same artifact id with different
+        // bytes; treating any same-id install as "already installed" made the
+        // update a permanent no-op.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let installed_digest = sha256_hex(b"generation-12-archive");
+        write_fake_install_at(
+            tmp.path(),
+            "rt-swap",
+            "rt-swap",
+            &installed_digest,
+            b"gen-12-library",
+        );
+
+        assert!(
+            find_installed_runtime(tmp.path(), "rt-swap", &installed_digest).is_some(),
+            "the matching digest must resolve the existing install"
+        );
+        assert!(
+            find_installed_runtime(tmp.path(), "rt-swap", &sha256_hex(b"generation-13-archive"))
+                .is_none(),
+            "a same-id install with a different digest is NOT the requested artifact"
+        );
+    }
+
+    #[test]
+    fn a_digest_qualified_install_resolves_by_its_install_key() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let digest = sha256_hex(b"generation-13-archive");
+        let key = runtime_install_key("rt-swap", &digest);
+        write_fake_install_at(tmp.path(), &key, "rt-swap", &digest, b"gen-13-library");
+
+        let installed = installed_runtime(tmp.path(), &key)
+            .expect("a digest-qualified directory must resolve by its key");
+        assert_eq!(installed.install_key(), key);
+        assert_eq!(installed.record.artifact_id, "rt-swap");
+        assert!(
+            find_installed_runtime(tmp.path(), "rt-swap", &digest).is_some(),
+            "the digest lookup must find the side-by-side install"
+        );
+
+        // A directory whose name disagrees with its record identity is
+        // rejected, exactly like the plain-id consistency check.
+        let mismatched = runtime_install_key("rt-swap", &sha256_hex(b"other-archive"));
+        write_fake_install_at(
+            tmp.path(),
+            &mismatched,
+            "rt-swap",
+            &digest,
+            b"gen-13-library",
+        );
+        assert!(installed_runtime(tmp.path(), &mismatched).is_none());
+    }
+
+    #[test]
+    fn begin_startup_promotes_a_digest_qualified_candidate() {
+        // The gen-13 update path: the plain directory holds the active
+        // same-id install, the staged candidate lives in a digest-qualified
+        // directory. Promotion must carry the install key through the slot
+        // swap so the pending activation can be acknowledged.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old_digest = sha256_hex(b"generation-12-archive");
+        let new_digest = sha256_hex(b"generation-13-archive");
+        let new_key = runtime_install_key("rt-swap", &new_digest);
+        write_fake_install_at(tmp.path(), "rt-swap", "rt-swap", &old_digest, b"gen-12");
+        write_fake_install_at(tmp.path(), &new_key, "rt-swap", &new_digest, b"gen-13");
+        write_slots(
+            tmp.path(),
+            &RuntimeSlots {
+                active: Some("rt-swap".to_owned()),
+                candidate: Some(new_key.clone()),
+                ..RuntimeSlots::default()
+            },
+        )
+        .expect("write slots");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("plan should load the promoted candidate");
+        assert!(plan.proving_candidate);
+        assert_eq!(plan.install_key.as_deref(), Some(new_key.as_str()));
+        assert_eq!(
+            plan.record.as_ref().map(|r| r.artifact_id.as_str()),
+            Some("rt-swap"),
+            "the record keeps the catalog identity"
+        );
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active.as_deref(), Some(new_key.as_str()));
+        assert_eq!(slots.previous.as_deref(), Some("rt-swap"));
+        assert!(slots.activation_pending);
+
+        finish_activation_success(tmp.path()).expect("finish");
+        assert!(!read_slots(tmp.path()).activation_pending);
+        assert!(
+            runtime_artifact_dir(tmp.path(), "rt-swap").exists(),
+            "the previous same-id generation must survive as the rollback target"
+        );
     }
 
     #[test]

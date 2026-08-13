@@ -509,12 +509,15 @@ pub(crate) fn failure_phase_of(error: &anyhow::Error) -> Option<RuntimeBootstrap
 /// Identity of the install a caller wants committed.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ActivationTarget<'a> {
-    /// Slot artifact id. `None` for a legacy (pre-slot) install, which owns
-    /// no slot and therefore has nothing to roll back to.
-    pub artifact_id: Option<&'a str>,
+    /// Slot value naming the install (the artifact id, or its
+    /// digest-qualified form for a side-by-side install). `None` for a
+    /// legacy (pre-slot) install, which owns no slot and therefore has
+    /// nothing to roll back to.
+    pub install_key: Option<&'a str>,
     /// Execution providers the artifact advertises, when the caller already
     /// resolved them from a catalog newer than the embedded one. `None`
-    /// resolves them from the embedded catalog by `artifact_id`.
+    /// resolves them from the embedded catalog by the install key's
+    /// artifact id.
     pub execution_providers: Option<&'a [String]>,
 }
 
@@ -572,17 +575,12 @@ fn resolve_and_load_with(
         return Ok(None);
     }
 
-    let artifact_id = plan
-        .record
-        .as_ref()
-        .map(|record| record.artifact_id.as_str())
-        .filter(|artifact_id| !artifact_id.is_empty());
     load_with_watchdog_using(
         strategy,
         app_data_dir,
         &plan.library_path,
         ActivationTarget {
-            artifact_id,
+            install_key: plan.install_key.as_deref(),
             execution_providers: None,
         },
     )
@@ -597,7 +595,7 @@ fn load_with_watchdog_using(
 ) -> Result<PathBuf> {
     let error = match strategy.commit(library_path) {
         LoadOutcome::Committed => {
-            acknowledge_pending_activation(app_data_dir, target.artifact_id)?;
+            acknowledge_pending_activation(app_data_dir, target.install_key)?;
             return Ok(library_path.to_path_buf());
         }
         LoadOutcome::ProcessUnavailable(error) => {
@@ -616,7 +614,7 @@ fn load_with_watchdog_using(
     );
     record_directml_timeout(app_data_dir, target, &error);
 
-    match restore_previous_generation(strategy, app_data_dir, target.artifact_id, &error) {
+    match restore_previous_generation(strategy, app_data_dir, target.install_key, &error) {
         Some(previous) => Ok(previous),
         None => Err(with_failure_phase(
             error,
@@ -625,12 +623,12 @@ fn load_with_watchdog_using(
     }
 }
 
-fn acknowledge_pending_activation(app_data_dir: &Path, artifact_id: Option<&str>) -> Result<()> {
-    let Some(artifact_id) = artifact_id else {
+fn acknowledge_pending_activation(app_data_dir: &Path, install_key: Option<&str>) -> Result<()> {
+    let Some(install_key) = install_key else {
         return Ok(());
     };
     let slots = runtime_bootstrap::read_slots(app_data_dir);
-    if slots.activation_pending && slots.active.as_deref() == Some(artifact_id) {
+    if slots.activation_pending && slots.active.as_deref() == Some(install_key) {
         runtime_bootstrap::finish_activation_success(app_data_dir)
             .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
     }
@@ -644,21 +642,21 @@ fn acknowledge_pending_activation(app_data_dir: &Path, artifact_id: Option<&str>
 fn restore_previous_generation(
     strategy: &LoadStrategy,
     app_data_dir: &Path,
-    artifact_id: Option<&str>,
+    install_key: Option<&str>,
     error: &anyhow::Error,
 ) -> Option<PathBuf> {
-    let artifact_id = artifact_id?;
+    let install_key = install_key?;
     if runtime_bootstrap::read_slots(app_data_dir)
         .active
         .as_deref()
-        != Some(artifact_id)
+        != Some(install_key)
     {
         return None;
     }
 
     let restored = match runtime_bootstrap::rollback_failed_activation(
         app_data_dir,
-        artifact_id,
+        install_key,
         &format!("{error:#}"),
     ) {
         Ok(restored) => restored?,
@@ -689,7 +687,8 @@ fn record_directml_timeout(
     error: &anyhow::Error,
 ) {
     let from_catalog = target.execution_providers.is_none().then(|| {
-        target.artifact_id.and_then(|artifact_id| {
+        target.install_key.and_then(|install_key| {
+            let artifact_id = runtime_bootstrap::artifact_id_of_install_key(install_key);
             catalog::runtime_by_artifact_id(&catalog::embedded_catalog().manifest, artifact_id)
                 .map(|runtime| runtime.runtime.execution_providers.as_slice())
         })
@@ -981,7 +980,7 @@ mod tests {
             tmp.path(),
             &fresh,
             ActivationTarget {
-                artifact_id: Some("rt-fresh"),
+                install_key: Some("rt-fresh"),
                 execution_providers: None,
             },
         )
@@ -1078,7 +1077,7 @@ mod tests {
             tmp.path(),
             &active,
             ActivationTarget {
-                artifact_id: Some("rt-active"),
+                install_key: Some("rt-active"),
                 execution_providers: None,
             },
         )
@@ -1111,7 +1110,7 @@ mod tests {
             tmp.path(),
             &stalled,
             ActivationTarget {
-                artifact_id: Some("rt-directml"),
+                install_key: Some("rt-directml"),
                 execution_providers: Some(&providers),
             },
         )
@@ -1142,7 +1141,7 @@ mod tests {
             tmp.path(),
             &stalled,
             ActivationTarget {
-                artifact_id: Some("rt-cpu"),
+                install_key: Some("rt-cpu"),
                 execution_providers: Some(&providers),
             },
         )
@@ -1175,7 +1174,7 @@ mod tests {
             tmp.path(),
             &pending,
             ActivationTarget {
-                artifact_id: Some("rt-pending"),
+                install_key: Some("rt-pending"),
                 execution_providers: None,
             },
         )
