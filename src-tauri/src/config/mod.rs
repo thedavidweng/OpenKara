@@ -8,8 +8,8 @@ pub use execution_provider::{
     restore_directml_timeout_state, ExecutionProviderPreference,
 };
 pub use library_registry::{
-    library_display_name, library_id_for_path, migrate_legacy_library_path, LibraryKind,
-    RegisteredLibrary, RemoteLibraryConnectionConfig, RemoteLibraryProvider,
+    library_display_name, library_id_for_path, LibraryKind, RegisteredLibrary,
+    RemoteLibraryConnectionConfig, RemoteLibraryProvider,
 };
 pub use persistence::{load_config, save_config};
 pub use preferences::{LibrarySortMode, ModelVariant, StemMode, ThemePreference, UpdatePolicy};
