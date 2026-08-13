@@ -262,6 +262,12 @@ impl<'a> RemoteRepositoryLifecycle<'a> {
             .find(|entry| entry.id() == library_id)
         {
             *existing_entry = updated_library;
+        } else {
+            // The entry can vanish between the two config loads (removed while
+            // recovery was in flight). The recovery just revalidated the remote
+            // location and re-bound its credentials, so re-register the entry
+            // instead of persisting an active id that resolves to nothing.
+            config.libraries.push(updated_library);
         }
         config.active_library_id = Some(library_id);
         persist_app_config(self.app_data_dir, &config)?;
@@ -646,6 +652,72 @@ mod tests {
         assert!(
             fixture.access.opened_locations().is_empty(),
             "a rejected reauthorization must not reach the Remote Provider"
+        );
+    }
+
+    /// Deletes the registry entry while the recovery round-trip is in flight,
+    /// reproducing the race where the repository is removed between the two
+    /// config loads in `recover`.
+    struct EntryRemovingAccess<'a> {
+        inner: &'a ScriptedAccess,
+        app_data_dir: PathBuf,
+    }
+
+    impl RepositoryAccess for EntryRemovingAccess<'_> {
+        fn bind_credentials(
+            &self,
+            session: &ProviderSessionData,
+            app_data_dir: &Path,
+            library_id: &str,
+            context: BindContext,
+        ) -> CommandResult<RemoteLibraryConnectionConfig> {
+            self.inner
+                .bind_credentials(session, app_data_dir, library_id, context)
+        }
+
+        fn open_storage<'b>(
+            &self,
+            app_data_dir: &'b Path,
+            library: &'b RegisteredLibrary,
+        ) -> CommandResult<Box<dyn RepositoryStorage + 'b>> {
+            let mut config = load_app_config(&self.app_data_dir).expect("config");
+            config.libraries.clear();
+            config.active_library_id = None;
+            persist_app_config(&self.app_data_dir, &config).expect("persist removal");
+            self.inner.open_storage(app_data_dir, library)
+        }
+    }
+
+    #[test]
+    fn reauthorize_re_registers_a_repository_removed_while_in_flight() {
+        let fixture = Fixture::new();
+        fixture.access.provider.set_revision("renewed-revision");
+        let access = EntryRemovingAccess {
+            inner: &fixture.access,
+            app_data_dir: fixture.app_data_dir.clone(),
+        };
+        let lifecycle =
+            RemoteRepositoryLifecycle::with_access(&fixture.state, &fixture.app_data_dir, &access);
+
+        let snapshot = lifecycle
+            .reauthorize(
+                LIBRARY_ID.to_owned(),
+                SESSION_ID.to_owned(),
+                ORIGINAL_LOCATION.to_owned(),
+                "Repository".to_owned(),
+            )
+            .expect("reauthorize should succeed");
+
+        assert_eq!(snapshot.active_library_id.as_deref(), Some(LIBRARY_ID));
+        let config = load_app_config(&fixture.app_data_dir).expect("config");
+        assert_eq!(
+            config.active_library().map(RegisteredLibrary::id),
+            Some(LIBRARY_ID),
+            "the recovered repository must be registered and active, not a dangling id"
+        );
+        assert_eq!(
+            fixture.registered().remote_revision(),
+            Some("renewed-revision")
         );
     }
 

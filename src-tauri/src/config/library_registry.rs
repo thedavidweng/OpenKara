@@ -248,7 +248,12 @@ impl AppConfig {
             self.library_path = None;
         }
 
-        if self.active_library_id.is_none() {
+        let active_is_registered = self.active_library_id.as_deref().is_some_and(|active_id| {
+            self.libraries
+                .iter()
+                .any(|library| library.id() == active_id)
+        });
+        if !active_is_registered {
             self.active_library_id = self
                 .libraries
                 .first()
@@ -259,13 +264,14 @@ impl AppConfig {
     }
 
     pub fn active_library(&self) -> Option<&RegisteredLibrary> {
-        if let Some(active_id) = self.active_library_id.as_deref() {
-            self.libraries
-                .iter()
-                .find(|library| library.id() == active_id)
-        } else {
-            self.libraries.first()
-        }
+        self.active_library_id
+            .as_deref()
+            .and_then(|active_id| {
+                self.libraries
+                    .iter()
+                    .find(|library| library.id() == active_id)
+            })
+            .or_else(|| self.libraries.first())
     }
 }
 
@@ -338,6 +344,76 @@ mod tests {
         assert!(loaded.library_path.is_none());
         assert_eq!(loaded.libraries.len(), 1);
         assert_eq!(loaded.active_library(), loaded.libraries.first());
+    }
+
+    #[test]
+    fn dangling_active_library_id_is_repointed_on_save() {
+        let library = RegisteredLibrary::local("/Users/test/Music/A".to_owned(), "A".to_owned());
+        let normalized = AppConfig {
+            libraries: vec![library.clone()],
+            active_library_id: Some("library-missing".to_owned()),
+            ..AppConfig::default()
+        }
+        .normalize_for_save();
+
+        assert_eq!(normalized.active_library_id.as_deref(), Some(library.id()));
+    }
+
+    #[test]
+    fn dangling_active_library_id_is_dropped_when_registry_is_empty() {
+        let normalized = AppConfig {
+            active_library_id: Some("library-missing".to_owned()),
+            ..AppConfig::default()
+        }
+        .normalize_for_save();
+
+        assert!(normalized.active_library_id.is_none());
+    }
+
+    #[test]
+    fn registered_active_library_id_is_kept_on_save() {
+        let first = RegisteredLibrary::local("/Users/test/Music/A".to_owned(), "A".to_owned());
+        let second = RegisteredLibrary::local("/Users/test/Music/B".to_owned(), "B".to_owned());
+        let normalized = AppConfig {
+            libraries: vec![first, second.clone()],
+            active_library_id: Some(second.id().to_owned()),
+            ..AppConfig::default()
+        }
+        .normalize_for_save();
+
+        assert_eq!(normalized.active_library_id.as_deref(), Some(second.id()));
+    }
+
+    #[test]
+    fn active_library_falls_back_to_first_when_id_is_dangling() {
+        let library = RegisteredLibrary::local("/Users/test/Music/A".to_owned(), "A".to_owned());
+        let config = AppConfig {
+            libraries: vec![library.clone()],
+            active_library_id: Some("library-missing".to_owned()),
+            ..AppConfig::default()
+        };
+
+        assert_eq!(config.active_library(), Some(&library));
+    }
+
+    #[test]
+    fn dangling_active_library_id_is_repaired_on_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = r#"{
+          "libraries": [
+            { "kind": "local", "id": "library-1", "display_name": "A", "root_path": "/tmp/a" }
+          ],
+          "active_library_id": "library-gone"
+        }"#;
+        fs::write(tmp.path().join(CONFIG_FILENAME), raw).unwrap();
+
+        let loaded = load_config(tmp.path()).unwrap().unwrap();
+
+        assert_eq!(loaded.active_library_id.as_deref(), Some("library-1"));
+        assert_eq!(
+            loaded.active_library().map(RegisteredLibrary::id),
+            Some("library-1")
+        );
     }
 
     #[test]
