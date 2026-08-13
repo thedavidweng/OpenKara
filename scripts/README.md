@@ -153,6 +153,16 @@ Compiles the Icon Composer project into macOS 26 Liquid Glass assets.
 - **When to run:** after changing `app-icon.png` or `OpenKara.icon/icon.json`
 - **Bundle:** `Assets.car` is copied into the app via `tauri.conf.json` `bundle.resources`; `Info.plist` sets `CFBundleIconName` to `OpenKara`
 
+## `generate-han-pinyin-initials.mjs`
+
+Builds the compact first-letter table used by the library alphabet rail.
+
+- **Input:** `pinyin-pro` (resolved from the install, including the
+  `lyric-romanizer` transitive copy)
+- **Output:** `src/lib/han-pinyin-initials.ts`
+- **Run:** `node scripts/generate-han-pinyin-initials.mjs`
+- **When to run:** after a deliberate change to the Han first-letter contract
+
 ## `generate-flatpak-node-sources.mjs`
 
 Regenerates Flatpak offline pnpm dependency sources from `pnpm-lock.yaml`.

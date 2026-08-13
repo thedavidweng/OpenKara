@@ -1,6 +1,6 @@
-import { pinyin } from "pinyin-pro";
 import type { Song } from "@/types/ipc";
 import type { LibrarySortMode } from "./song-sort";
+import { hanPinyinInitial } from "./han-pinyin-initials";
 
 export const ALPHABET_BUCKETS = [
   "A",
@@ -58,12 +58,12 @@ export function bucketForSortKey(value: string | null): AlphabetBucket {
   if (grapheme.length === 0) return "#";
 
   if (HAN_REGEX.test(grapheme)) {
-    const initial = pinyin(grapheme, { pattern: "first", toneType: "none" });
-    if (!initial) return "#";
-    const codePoint = initial.codePointAt(0);
+    const codePoint = grapheme.codePointAt(0);
     if (codePoint === undefined) return "#";
-    const upper = String.fromCodePoint(codePoint).toUpperCase();
-    if (ASCII_LETTER_REGEX.test(upper)) return upper as AlphabetBucket;
+    const initial = hanPinyinInitial(codePoint);
+    if (initial && ASCII_LETTER_REGEX.test(initial)) {
+      return initial as AlphabetBucket;
+    }
     return "#";
   }
 

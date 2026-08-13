@@ -6,6 +6,7 @@ vi.mock("lyric-romanizer", () => ({
       script: "latin",
       lines,
     }),
+    warmup: async () => {},
   }),
   isLatinScript: () => true,
   detectScript: () => "latin" as const,
