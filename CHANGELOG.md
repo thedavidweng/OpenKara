@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.0](https://github.com/thedavidweng/OpenKara/compare/v0.13.2...v0.14.0) (2026-08-13)
+
+
+### Features
+
+* **catalog:** advance embedded snapshot to generation 13 (static-CRT Windows runtimes) ([d6b9505](https://github.com/thedavidweng/OpenKara/commit/d6b9505bfe98268a91115148ed8dfb3aac7d39c6))
+* **catalog:** advance embedded snapshot to generation 13 (static-CRT Windows runtimes) ([e33703d](https://github.com/thedavidweng/OpenKara/commit/e33703d520b584f9f7c8141b642f43e7bda2c40c)), closes [#363](https://github.com/thedavidweng/OpenKara/issues/363)
+
+
+### Bug Fixes
+
+* **audio:** advance crossfade overlap cursors by produced frames ([7c450f1](https://github.com/thedavidweng/OpenKara/commit/7c450f1d0a52b0ecbd505aab5ca0d9bdd2bb9ddd)), closes [#376](https://github.com/thedavidweng/OpenKara/issues/376)
+* **audio:** keep fade gain on post-swap samples in crossfade branch ([9e0491b](https://github.com/thedavidweng/OpenKara/commit/9e0491bc66d03303f5543cb00ec587cb3d052748)), closes [#375](https://github.com/thedavidweng/OpenKara/issues/375)
+* **audio:** keep transport clock advancing at exactly zero volume ([b756c8a](https://github.com/thedavidweng/OpenKara/commit/b756c8a92be0a7c498a6956b2967a62588c2b09b)), closes [#379](https://github.com/thedavidweng/OpenKara/issues/379)
+* **audio:** stop resampler cache panicking on the realtime callback ([9ea613e](https://github.com/thedavidweng/OpenKara/commit/9ea613e24fc66a7dee3d037c54aebf1c11444ed0)), closes [#378](https://github.com/thedavidweng/OpenKara/issues/378)
+* **library:** never persist an active_library_id that is not in the registry ([bb05681](https://github.com/thedavidweng/OpenKara/commit/bb0568153de94a24b47a74e58078ad0c69457021)), closes [#381](https://github.com/thedavidweng/OpenKara/issues/381)
+* **library:** reset integrity selection and skipped count for reportless cleanups ([a19ce05](https://github.com/thedavidweng/OpenKara/commit/a19ce052457494dafdf169ea2fbe8174793a8ea5)), closes [#389](https://github.com/thedavidweng/OpenKara/issues/389)
+* **library:** stop the remote wizard reporting success for a failed activation ([0e18010](https://github.com/thedavidweng/OpenKara/commit/0e180102dc816e0e255320386d8b9ce42de1d749)), closes [#385](https://github.com/thedavidweng/OpenKara/issues/385)
+* **library:** validate the delete confirmation name inside the dialog ([f8e49a2](https://github.com/thedavidweng/OpenKara/commit/f8e49a29787210a6910f29bdf5d5ba290ba5a1f8)), closes [#387](https://github.com/thedavidweng/OpenKara/issues/387)
+* **lyrics:** rederive the active word from state on line changes ([e5319c8](https://github.com/thedavidweng/OpenKara/commit/e5319c838d173dbcfcbc2ac0ed4af8eea98605fa)), closes [#384](https://github.com/thedavidweng/OpenKara/issues/384)
+* **playback:** stop the stale fetch-event listener when its source is replaced ([d1b3ed2](https://github.com/thedavidweng/OpenKara/commit/d1b3ed2b4d4180a01e51a8931c028d4e425eeb99)), closes [#382](https://github.com/thedavidweng/OpenKara/issues/382)
+* **progress:** hide an interrupted model download-complete flash ([d2bddf5](https://github.com/thedavidweng/OpenKara/commit/d2bddf5422b93ee41ec6c5107bacbd8692b72227)), closes [#386](https://github.com/thedavidweng/OpenKara/issues/386)
+* **remote:** give the durable operation executor a shutdown signal ([a3606d8](https://github.com/thedavidweng/OpenKara/commit/a3606d8d13c807012c7df895a4546264b16398cd)), closes [#383](https://github.com/thedavidweng/OpenKara/issues/383)
+* resolve 15 open bugs across audio, runtime threads, library registry, and frontend UI ([4c66fab](https://github.com/thedavidweng/OpenKara/commit/4c66fab28ccdea3428d57d12f39519c7c8285f85))
+* **runtime:** surface bootstrap failure phase instead of blaming the network ([#365](https://github.com/thedavidweng/OpenKara/issues/365)) ([d169dca](https://github.com/thedavidweng/OpenKara/commit/d169dcae63e9e673cf76a12e58f5130a41dfab44)), closes [#362](https://github.com/thedavidweng/OpenKara/issues/362)
+* **separator:** drop the app-local VC++ CRT deployment superseded by static-CRT runtimes ([992e7d1](https://github.com/thedavidweng/OpenKara/commit/992e7d1d40337938e21b8abf2c058a71ee23fab4))
+* **separator:** drop the app-local VC++ CRT deployment superseded by static-CRT runtimes ([a21b7ff](https://github.com/thedavidweng/OpenKara/commit/a21b7ff86aeea3d9b33d672c2ff79f2a81023ba6)), closes [#363](https://github.com/thedavidweng/OpenKara/issues/363)
+* **separator:** install same-id runtime updates whose archive digest changed ([e76e790](https://github.com/thedavidweng/OpenKara/commit/e76e790e09f138d24decb2f4eef84007db6e9d30)), closes [#394](https://github.com/thedavidweng/OpenKara/issues/394)
+* **separator:** install the refreshed catalog runtime on separation-triggered bootstrap ([6897238](https://github.com/thedavidweng/OpenKara/commit/6897238de34d41ed9d239507a551e8bef88d9d5e)), closes [#393](https://github.com/thedavidweng/OpenKara/issues/393)
+* **separator:** make the runtime install/update path digest-aware and probe-gated ([c2d95e9](https://github.com/thedavidweng/OpenKara/commit/c2d95e913f82ff674a8a1ea45c51bc40de0d1f79))
+* **separator:** name DirectML.dll in the missing-dependency hint and tighten ADR 0025 ([cc56559](https://github.com/thedavidweng/OpenKara/commit/cc5655997f46b1dd8ffccb8a94e1789538739fc6))
+* **separator:** never stage or replace the install the active slot names ([db91b26](https://github.com/thedavidweng/OpenKara/commit/db91b261b912aa81f376b35c856b90a9739c30d8))
+* **separator:** release the runtime load latch when the loader panics ([ad37649](https://github.com/thedavidweng/OpenKara/commit/ad376490abe812818c5780b00848ef3d36d271fa)), closes [#377](https://github.com/thedavidweng/OpenKara/issues/377)
+* **separator:** stage the runtime candidate only after its probe succeeds ([3333086](https://github.com/thedavidweng/OpenKara/commit/33330865305c8317dae66beea8ade6382adc0304)), closes [#395](https://github.com/thedavidweng/OpenKara/issues/395)
+* **separator:** surface Windows load error and bundle VC++ runtime DLLs ([#284](https://github.com/thedavidweng/OpenKara/issues/284)) ([#361](https://github.com/thedavidweng/OpenKara/issues/361)) ([d32f73d](https://github.com/thedavidweng/OpenKara/commit/d32f73d518d61af848ef96ae4bd47aeca3ddc272))
+* **settings:** keep library create and open non-rejecting ([fdb26d6](https://github.com/thedavidweng/OpenKara/commit/fdb26d632a1a55b22189cb84dc6e770183b412a2))
+* **settings:** surface model and runtime status read failures ([c86d5b0](https://github.com/thedavidweng/OpenKara/commit/c86d5b0480843f738b7de56cd040b376b1f2aa29)), closes [#388](https://github.com/thedavidweng/OpenKara/issues/388)
+* **settings:** treat a failed runtime status read as unavailable ([b20533e](https://github.com/thedavidweng/OpenKara/commit/b20533eb107675a5f92d1841ab28e5d1efbef3b7))
+
 ## [0.13.2](https://github.com/thedavidweng/OpenKara/compare/v0.13.1...v0.13.2) (2026-08-10)
 
 
