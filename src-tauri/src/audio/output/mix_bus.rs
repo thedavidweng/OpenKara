@@ -12,10 +12,10 @@ pub(super) fn mix_stem_resampled(
     device_channels: usize,
     resampler_cache: Option<&mut ResamplerCache>,
 ) -> (usize, u64) {
-    if gain == 0.0 {
-        return (0, 0);
-    }
-
+    // Zero gain must still render (silence) and consume source frames:
+    // the consumed count drives the transport clock, and skipping it
+    // freezes playback at exactly zero volume (#379). Same lockstep
+    // invariant as muted stems in the mix buses below (#143).
     if audio.sample_rate_hz == device_sample_rate {
         return mix_stem_same_rate(output, audio, start_frame, gain, device_channels);
     }
@@ -83,10 +83,6 @@ fn mix_stem_linearly_resampled(
     device_sample_rate: u32,
     device_channels: usize,
 ) -> (usize, u64) {
-    if gain == 0.0 {
-        return (0, 0);
-    }
-
     let src_rate = audio.sample_rate_hz as f64;
     let dst_rate = device_sample_rate as f64;
     let src_channels = audio.channels;
@@ -849,6 +845,126 @@ mod tests {
         } else {
             panic!("expected TwoStem streaming track");
         }
+    }
+
+    /// #379: at exactly zero master volume the transport clock must keep
+    /// advancing (rendering silence), so EOF and auto-advance still fire.
+    #[test]
+    fn zero_master_volume_still_advances_transport_clock() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::FadeState;
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let frames = sample_rate as usize; // 1 second
+
+        let mut controller = PlaybackController::default();
+        controller.start_track(
+            "song-a".to_owned(),
+            DecodedAudio {
+                sample_rate_hz: sample_rate,
+                channels,
+                duration_ms: 1_000,
+                samples: vec![0.5; frames * channels],
+            },
+            0,
+        );
+        controller.play(0).expect("track should start");
+        controller.fade = FadeState::None;
+        controller.set_volume(0.0).expect("volume should clamp");
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = ResamplerCache::new();
+        let mut rc_in = ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert_eq!(
+            controller.current_render_frame(),
+            buffer_frames as u64,
+            "transport clock must advance at zero volume"
+        );
+        assert!(
+            output.iter().all(|s| *s == 0.0),
+            "zero-volume output must be silence"
+        );
+    }
+
+    /// Rate-converted variant of the zero-volume clock test: the rubato path
+    /// must also consume source frames at zero gain.
+    #[test]
+    fn zero_master_volume_advances_clock_through_resampler() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::FadeState;
+
+        let src_rate: u32 = 44_100;
+        let device_rate: u32 = 48_000;
+        let channels: usize = 2;
+        let frames = src_rate as usize; // 1 second
+
+        let mut controller = PlaybackController::default();
+        controller.start_track(
+            "song-a".to_owned(),
+            DecodedAudio {
+                sample_rate_hz: src_rate,
+                channels,
+                duration_ms: 1_000,
+                samples: vec![0.5; frames * channels],
+            },
+            0,
+        );
+        controller.play(0).expect("track should start");
+        controller.fade = FadeState::None;
+        controller.set_volume(0.0).expect("volume should clamp");
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = ResamplerCache::new();
+        let mut rc_in = ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.current_render_frame() > 0,
+            "transport clock must advance at zero volume through the resampler"
+        );
+        assert!(
+            output.iter().all(|s| *s == 0.0),
+            "zero-volume output must be silence"
+        );
     }
 
     #[test]
