@@ -28,6 +28,7 @@ use crate::separator::runtime_bootstrap;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -378,9 +379,15 @@ impl LoadStrategy {
         let latches = Arc::clone(&self.latches);
         let runtime_path = library_path.to_path_buf();
         thread::spawn(move || {
-            let result = loader
-                .load(&runtime_path)
-                .map_err(|error| format!("{error:#}"));
+            // A panicking load must not unwind past the latch release below:
+            // `in_progress` would stay set for the process lifetime and every
+            // retry would be refused until a restart.
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                loader
+                    .load(&runtime_path)
+                    .map_err(|error| format!("{error:#}"))
+            }))
+            .unwrap_or_else(|payload| Err(load_panic_message(payload.as_ref())));
             latches.in_progress.store(false, Ordering::SeqCst);
             let _ = sender.send(result);
         });
@@ -416,6 +423,15 @@ fn load_timeout_message(timeout: Duration) -> String {
         timeout.as_secs(),
         RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
     )
+}
+
+fn load_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<&'static str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic");
+    format!("ONNX Runtime loader thread panicked: {detail}")
 }
 
 #[cfg(test)]
@@ -717,6 +733,7 @@ mod tests {
         Succeed,
         Fail(&'static str),
         Stall,
+        Panic,
     }
 
     /// Test adapter at the load-strategy seam: every path succeeds unless
@@ -769,6 +786,7 @@ mod tests {
                     thread::sleep(STALL);
                     Ok(())
                 }
+                Behaviour::Panic => panic!("scripted load panic"),
             }
         }
 
@@ -1006,6 +1024,32 @@ mod tests {
                 .starts_with(RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER),
             "unexpected message: {error}"
         );
+    }
+
+    #[test]
+    fn a_panicking_load_releases_the_latch_so_a_retry_can_proceed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let flaky = install(tmp.path(), "rt-panics");
+        let loader = ScriptedLoader::new().script(&flaky, Behaviour::Panic);
+        let strategy = strategy(&loader);
+
+        let error =
+            load_with_watchdog_using(&strategy, tmp.path(), &flaky, ActivationTarget::default())
+                .expect_err("a panicking load must surface an error");
+        assert!(
+            error.to_string().contains("panicked"),
+            "unexpected message: {error}"
+        );
+        assert_eq!(
+            failure_phase_of(&error),
+            Some(RuntimeBootstrapFailurePhase::Probe)
+        );
+
+        loader.script(&flaky, Behaviour::Succeed);
+        let loaded =
+            load_with_watchdog_using(&strategy, tmp.path(), &flaky, ActivationTarget::default())
+                .expect("the in-progress latch must be released after a panicking load");
+        assert_eq!(loaded, flaky);
     }
 
     #[test]
