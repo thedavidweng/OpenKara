@@ -40,7 +40,12 @@ export function SettingsRuntimeSection() {
     runtime?.restart_required === true ||
     runtimeState === "candidate_ready_restart_required";
 
+  const statusReadError = view.runtime.statusError;
+
   const statusLine = (() => {
+    if (statusReadError != null) {
+      return t("settings.runtime.statusReadFailed");
+    }
     switch (runtimeState) {
       case "candidate_ready_restart_required":
         return t("settings.runtime.candidateReadyRestartRequired", {
@@ -104,6 +109,11 @@ export function SettingsRuntimeSection() {
     >
       <div className="flex flex-col gap-1">
         <p className="text-[12px] text-[var(--color-text)]">{statusLine}</p>
+        {statusReadError != null ? (
+          <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+            {statusReadError}
+          </p>
+        ) : null}
         {versionLine ? (
           <p className="text-[11px] text-[var(--color-text-dim)]">
             {versionLine}

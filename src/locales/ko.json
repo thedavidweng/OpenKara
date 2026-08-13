@@ -411,6 +411,8 @@
       "downloaded": "다운로드됨",
       "legacyOnDisk": "디스크에 이전 버전이 있어요 — 위험 구역에서 삭제한 뒤 다시 다운로드하세요",
       "notDownloaded": "다운로드 안 됨",
+      "statusUnavailable": "상태 확인 불가",
+      "statusReadFailed": "모델 상태를 읽지 못했어요.",
       "runtimeRequired": "ONNX Runtime 필요",
       "delete": "삭제",
       "download": "다운로드"
@@ -428,6 +430,7 @@
       "retryButton": "ONNX Runtime 다시 설치",
       "statusReady": "설치되어 준비됐어요.",
       "statusMissing": "설치되지 않았어요.",
+      "statusReadFailed": "런타임 상태를 읽지 못했어요.",
       "version": "버전 {{version}}",
       "checkButton": "업데이트 확인",
       "checking": "업데이트 확인 중...",

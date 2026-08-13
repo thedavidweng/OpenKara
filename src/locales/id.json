@@ -411,6 +411,8 @@
       "downloaded": "Terunduh",
       "legacyOnDisk": "Versi lama di disk — hapus di Zona Bahaya, lalu unduh lagi",
       "notDownloaded": "Belum diunduh",
+      "statusUnavailable": "Status tidak tersedia",
+      "statusReadFailed": "Tidak dapat membaca status model.",
       "runtimeRequired": "ONNX Runtime diperlukan",
       "delete": "Hapus",
       "download": "Unduh"
@@ -428,6 +430,7 @@
       "retryButton": "Instal Ulang ONNX Runtime",
       "statusReady": "Terinstal dan siap.",
       "statusMissing": "Belum terinstal.",
+      "statusReadFailed": "Tidak dapat membaca status runtime.",
       "version": "Versi {{version}}",
       "checkButton": "Periksa pembaruan",
       "checking": "Memeriksa pembaruan...",

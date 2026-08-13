@@ -50,6 +50,7 @@ async function render(options: {
   status: RuntimeBootstrapStatusSnapshot;
   update?: RuntimeUpdateReport;
   updateError?: string;
+  statusReadError?: string;
 }) {
   const harness = createSettingsHarness({
     runtimeStatus: options.status,
@@ -64,11 +65,19 @@ async function render(options: {
           }
           return options.update;
         },
-        getRuntimeBootstrapStatus: async () => options.status,
+        getRuntimeBootstrapStatus: async () => {
+          if (options.statusReadError) {
+            throw new Error(options.statusReadError);
+          }
+          return options.status;
+        },
       },
     },
   });
 
+  if (options.statusReadError) {
+    await harness.controller.initialize();
+  }
   if (options.update || options.updateError) {
     await harness.controller.maintenance.checkRuntimeUpdates();
   }
@@ -278,5 +287,16 @@ describe("SettingsRuntimeSection", () => {
     expect(html).not.toContain("settings.runtime.upToDate");
     expect(html).toContain("settings.runtime.statusMissing");
     expect(html).toContain("settings.runtime.installButton");
+  });
+
+  test("replaces the status line when the runtime status cannot be read", async () => {
+    const html = await render({
+      status: runtimeStatus(),
+      statusReadError: "ipc channel closed",
+    });
+
+    expect(html).toContain("settings.runtime.statusReadFailed");
+    expect(html).toContain("ipc channel closed");
+    expect(html).not.toContain("settings.runtime.statusReady");
   });
 });

@@ -148,9 +148,15 @@ export function createSettingsController({
       error: null,
     },
     preferences: toPreferencesView(stores.preferences.getSnapshot()),
-    models: { statuses: {}, downloading: null, update: null },
+    models: {
+      statuses: {},
+      statusesError: null,
+      downloading: null,
+      update: null,
+    },
     runtime: {
       status: toRuntimeStatusView(stores.runtimeStatus.getStatus()),
+      statusError: null,
       update: null,
     },
     integrity: {
@@ -264,8 +270,11 @@ export function createSettingsController({
           htdemucs: toModelStatusView(standard),
           htdemucs_ft: toModelStatusView(fineTuned),
         },
+        statusesError: null,
       });
-    } catch {}
+    } catch (error) {
+      patchModels({ statusesError: getErrorMessage(error) });
+    }
   };
 
   const refreshRuntimeStatus = async () => {
@@ -273,8 +282,11 @@ export function createSettingsController({
       stores.runtimeStatus.updateStatus(
         await backend.settings.getRuntimeBootstrapStatus(),
       );
+      patchRuntime({ statusError: null });
       syncStores();
-    } catch {}
+    } catch (error) {
+      patchRuntime({ statusError: getErrorMessage(error) });
+    }
   };
 
   const librarySession = createLibrarySession({

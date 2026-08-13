@@ -411,6 +411,8 @@
       "downloaded": "ダウンロード済み",
       "legacyOnDisk": "古いバージョンがディスク上にあります — デンジャーゾーンで削除してから再ダウンロードしてください",
       "notDownloaded": "未ダウンロード",
+      "statusUnavailable": "状態不明",
+      "statusReadFailed": "モデルの状態を読み取れませんでした。",
       "runtimeRequired": "ONNX Runtime が必要です",
       "delete": "削除",
       "download": "ダウンロード"
@@ -428,6 +430,7 @@
       "retryButton": "ONNX Runtime を再インストール",
       "statusReady": "インストール済みで使用可能です。",
       "statusMissing": "インストールされていません。",
+      "statusReadFailed": "ランタイムの状態を読み取れませんでした。",
       "version": "バージョン {{version}}",
       "checkButton": "更新を確認",
       "checking": "更新を確認中...",
