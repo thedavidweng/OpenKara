@@ -83,6 +83,7 @@ const CATEGORY_PATTERNS = {
     "pnpm-workspace.yaml",
     "lefthook.yml",
     "codecov.yml",
+    ".coderabbit.yaml",
     "scripts/check-i18n.mjs",
     "scripts/generate-db-schema.mjs",
     "scripts/generate-mock-songs.mjs",

@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Repo YAML replaces org UI settings. Do not enable inheritance, or org
+# ASSERTIVE / 80% docstring defaults come back.
+language: en-US
+inheritance: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  poem: false
+  in_progress_fortune: false
+  collapse_walkthrough: true
+  high_level_summary_instructions: >
+    Summarize behavior change only. Do not recommend JSDoc, narrative
+    comments, or docstring coverage. Do not treat missing comments as a gap.
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!src-tauri/Cargo.lock"
+    - "!CHANGELOG.md"
+    - "!**/generated/**"
+    - "!src-tauri/gen/**"
+    - "!src-tauri/models/**"
+    - "!public/dict/**"
+    - "!src/lib/han-pinyin-initials.ts"
+    - "!packaging/flatpak/generated/**"
+    - "!src-tauri/icons/**"
+    - "!docs/references/generated/**"
+  path_instructions:
+    - path: "**/*.{ts,tsx}"
+      instructions: |
+        Follow root AGENTS.md. Do not suggest JSDoc, narrative comments, as any,
+        @ts-ignore, or @ts-expect-error. Prefer names and types. Flag missing
+        docs/references/contracts updates when a public IPC type changes.
+    - path: "src-tauri/src/**/*.rs"
+      instructions: |
+        Follow root AGENTS.md. Do not suggest routine comments. Flag missing
+        docs/references/contracts updates when a public command, payload, or
+        event changes. Never treat src-tauri/models/ as the production model
+        location.
+    - path: "docs/references/contracts/**/*.md"
+      instructions: |
+        Contracts must match the code in the same change. Flag drift between
+        this file and the TypeScript or Rust IPC types it names.
+    - path: "docs/**/*.md"
+      instructions: |
+        Technical English uses ASD-STE100 by intent. Do not rewrite README.md,
+        README_CN.md, website/, CHANGELOG.md, or docs/references/generated/.
+    - path: "**/*.{test,spec}.{ts,tsx}"
+      instructions: |
+        Tests must state the behavior they prove. A test that only mirrors an
+        implementation detail is not enough.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "warning"
+      requirements: >
+        Conventional Commits. Use feat, fix, perf, docs, chore, refactor, test,
+        or ci. A scope is optional. Do not require an issue number in the title.
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "warning"
+    custom_checks:
+      - name: IPC contract update
+        mode: "warning"
+        instructions: >
+          Pass if the diff does not change a public IPC command, payload, event,
+          or source enum. Pass if it does change one and docs/references/contracts/
+          is updated in the same pull request. Fail if the IPC surface changed
+          and no matching contract file changed.
+      - name: No type escapes
+        mode: "warning"
+        instructions: >
+          Fail if the TypeScript or TSX diff adds as any, @ts-ignore, or
+          @ts-expect-error. Pass otherwise.
+      - name: Acceptance evidence
+        mode: "warning"
+        instructions: >
+          Pass if there is no material behavior change. Pass if each acceptance
+          criterion in the PR or a linked issue names a test, a command result,
+          or a manual review. Treat PR-body tables of local build output, test
+          file names, and checked boxes as evidence. Do not require docstrings.
+          Do not fail because a production artifact is not committed.
+      - name: Do not edit CHANGELOG
+        mode: "warning"
+        instructions: >
+          Pass if CHANGELOG.md is unchanged. Pass if the only CHANGELOG.md
+          change is from release-please. Fail if a human or agent hand-edits
+          CHANGELOG.md.
+  tools:
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    markdownlint:
+      enabled: false
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - files: CONTEXT.md
+        applyTo: "**/*"
+      - files: AGENTS.md
+        applyTo: "**/*"
+      - files: docs/agents/engineering.md
+        applyTo: "**/*"
+      - files: docs/agents/domain.md
+        applyTo: "**/*"
+      - files: docs/references/product-standards.md
+        applyTo: "**/*.ts,**/*.tsx,**/*.rs,**/*.md"
+      - files: .agents/skills/verify/SKILL.md
+        applyTo: "src/**,src-tauri/**,tests/**,scripts/**"
+      - files: .agents/skills/ci-notes/SKILL.md
+        applyTo: ".github/workflows/**"
