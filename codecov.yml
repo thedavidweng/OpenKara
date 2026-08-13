@@ -29,6 +29,9 @@ coverage:
     - src/main.tsx
     # Web Worker — requires worker runtime, not available in vitest/jsdom.
     - src/workers/romanize.worker.ts
+    # Shared in-memory Tauri fake — a test double whose real exercise is
+    # Playwright E2E and the website preview, not vitest.
+    - src/mock/tauri-mock-impl.ts
     # Deep Tauri native API dependencies — require actual Tauri runtime
     # for meaningful coverage; unit-test mocks only test the mock.
     - src/runtime/window-shell-runtime.ts

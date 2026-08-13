@@ -10,6 +10,18 @@ pub fn directml_disabled_by_timeout() -> bool {
     DIRECTML_DISABLED_BY_TIMEOUT.load(Ordering::SeqCst)
 }
 
+/// Serializes tests that write `DIRECTML_DISABLED_BY_TIMEOUT` against tests
+/// that read `directml_available()` more than once in a single assertion.
+/// Without it a writer can flip the process-wide flag between two reads and
+/// the reader compares a DirectML answer against a CPU answer. The guard
+/// ignores poisoning so one failing test does not cascade into the rest.
+#[cfg(test)]
+pub(crate) fn directml_timeout_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(target_os = "windows")]
 fn probe_directml_available() -> bool {
     use windows::Win32::Graphics::{

@@ -3,6 +3,7 @@ use crate::{
         internal_error, model_bootstrap_error, runtime_post_download_timeout, CommandError,
         CommandResult,
     },
+    separator::activation::{self, ActivationTarget, CandidateProof},
     separator::catalog::{self, VerifiedCatalog},
     separator::runtime_bootstrap::{self, RuntimeInventory},
     AppState,
@@ -10,14 +11,12 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
-    },
-    thread,
-    time::Duration,
+    sync::{Arc, Mutex},
 };
 use tauri::{AppHandle, Emitter, State};
+
+pub use crate::separator::activation::RuntimeBootstrapFailurePhase;
+pub(crate) use crate::separator::activation::{failure_phase_of, with_failure_phase};
 
 pub const RUNTIME_BOOTSTRAP_PROGRESS_EVENT: &str = "runtime-bootstrap-progress";
 
@@ -30,11 +29,6 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 const CPU_FALLBACK_NOTICE: &str = "cpu-runtime-fallback-after-directml-timeout";
-
-const RUNTIME_PARENT_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
-const RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER: &str = "runtime_parent_load_in_progress";
-static RUNTIME_PARENT_LOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-static RUNTIME_PARENT_LOAD_TIMED_OUT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -51,56 +45,6 @@ pub enum RuntimeBootstrapState {
     ActivationFailedPreviousRestored,
     Corrupt,
     Failed,
-}
-
-/// Bootstrap step where a `Failed` snapshot's error originated. Lets the UI
-/// stop blaming the network for install, load-probe, and activation failures
-/// (#284 was a `LoadLibraryExW` failure presented as a download failure).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeBootstrapFailurePhase {
-    Download,
-    Install,
-    Probe,
-    Activate,
-}
-
-/// Transparent wrapper that tags a bootstrap error with the phase it came
-/// from. Display forwards to the wrapped error, so user-visible messages and
-/// the marker-based `CommandError` mapping are unchanged.
-#[derive(Debug)]
-pub(crate) struct PhasedBootstrapError {
-    phase: RuntimeBootstrapFailurePhase,
-    source: anyhow::Error,
-}
-
-impl std::fmt::Display for PhasedBootstrapError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.source, f)
-    }
-}
-
-impl std::error::Error for PhasedBootstrapError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.source.as_ref())
-    }
-}
-
-pub(crate) fn with_failure_phase(
-    error: anyhow::Error,
-    phase: RuntimeBootstrapFailurePhase,
-) -> anyhow::Error {
-    anyhow::Error::new(PhasedBootstrapError {
-        phase,
-        source: error,
-    })
-}
-
-pub(crate) fn failure_phase_of(error: &anyhow::Error) -> Option<RuntimeBootstrapFailurePhase> {
-    error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<PhasedBootstrapError>())
-        .map(|phased| phased.phase)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -395,64 +339,12 @@ fn report_worker_progress(
     }
 }
 
-fn runtime_parent_load_timeout_message() -> String {
-    format!(
-        "{}: ONNX Runtime load did not finish within {} seconds\n\n{}",
-        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
-        RUNTIME_PARENT_LOAD_TIMEOUT.as_secs(),
-        crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT,
-    )
-}
-
-/// Load ORT in the application process without allowing a native loader hang
-/// to block the command executor forever. A timed-out load poisons this
-/// process; a restart is required before another attempt can use ORT.
+/// Compatibility entry for the installed-app smoke harness, which holds a
+/// resolved startup plan but no app data directory. Slot-aware callers use
+/// `separator::activation::load_with_watchdog`.
+#[cfg(feature = "automation-smoke")]
 pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result<()> {
-    if RUNTIME_PARENT_LOAD_TIMED_OUT.load(Ordering::SeqCst) {
-        anyhow::bail!(
-            "{}: ONNX Runtime load already timed out; restart OpenKara before retrying",
-            crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER
-        );
-    }
-
-    if let Some(loaded) = crate::separator::model::loaded_runtime_path() {
-        anyhow::ensure!(
-            loaded == path,
-            "a different ONNX Runtime is already loaded from {}; restart to use {}",
-            loaded.display(),
-            path.display()
-        );
-        return Ok(());
-    }
-
-    if RUNTIME_PARENT_LOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-        anyhow::bail!(
-            "{}: ONNX Runtime load is already in progress; restart OpenKara before retrying",
-            RUNTIME_PARENT_LOAD_IN_PROGRESS_MARKER
-        );
-    }
-
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let runtime_path = path.to_path_buf();
-    thread::spawn(move || {
-        let result = crate::separator::model::ensure_runtime_loaded_from_path(&runtime_path)
-            .map(|_| ())
-            .map_err(|error| error.to_string());
-        RUNTIME_PARENT_LOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-        let _ = sender.send(result);
-    });
-
-    match receiver.recv_timeout(RUNTIME_PARENT_LOAD_TIMEOUT) {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => Err(anyhow::anyhow!(error)),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            RUNTIME_PARENT_LOAD_TIMED_OUT.store(true, Ordering::SeqCst);
-            anyhow::bail!(runtime_parent_load_timeout_message())
-        }
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            anyhow::bail!("ONNX Runtime load watchdog exited before reporting a result")
-        }
-    }
+    activation::commit_with_watchdog(path)
 }
 
 fn download_runtime_source(
@@ -478,7 +370,7 @@ pub(crate) fn prepare_runtime_download(
     // Loaded runtime is process-final → update (candidate + restart) flow.
     let is_update = inventory.active.is_some()
         || inventory.legacy_path.is_some()
-        || crate::separator::model::loaded_runtime_path().is_some();
+        || activation::loaded_runtime_path().is_some();
 
     let base = snapshot_from_disk(app_data_dir);
     let initial_state = if is_update {
@@ -527,14 +419,14 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
-    if let Err(err) = ensure_runtime_loaded_with_watchdog(&installed.library_path) {
-        let _ = crate::config::record_directml_unavailable_on_timeout(
-            app_data_dir,
-            &runtime.runtime.execution_providers,
-            &err.to_string(),
-        );
-        return Err(with_failure_phase(err, RuntimeBootstrapFailurePhase::Probe));
-    }
+    activation::load_with_watchdog(
+        app_data_dir,
+        &installed.library_path,
+        ActivationTarget {
+            artifact_id: Some(&installed.record.artifact_id),
+            execution_providers: Some(&runtime.runtime.execution_providers),
+        },
+    )?;
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
         .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
 
@@ -569,19 +461,14 @@ fn try_activate_staged_runtime(
 
     let base = snapshot_from_disk(app_data_dir);
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Probing);
-    if let Err(err) = ensure_runtime_loaded_with_watchdog(&installed.library_path) {
-        if let Some(runtime) = catalog::runtime_by_artifact_id(
-            &catalog::embedded_catalog().manifest,
-            &installed.record.artifact_id,
-        ) {
-            let _ = crate::config::record_directml_unavailable_on_timeout(
-                app_data_dir,
-                &runtime.runtime.execution_providers,
-                &err.to_string(),
-            );
-        }
-        return Err(with_failure_phase(err, RuntimeBootstrapFailurePhase::Probe));
-    }
+    activation::load_with_watchdog(
+        app_data_dir,
+        &installed.library_path,
+        ActivationTarget {
+            artifact_id: Some(&installed.record.artifact_id),
+            execution_providers: None,
+        },
+    )?;
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
     runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
         .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
@@ -652,7 +539,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
     // Process-committed runtime wins over slot inventory (mapped until restart).
-    if let Some(loaded) = crate::separator::model::loaded_runtime_path() {
+    if let Some(loaded) = activation::loaded_runtime_path() {
         return Ok(loaded.to_path_buf());
     }
 
@@ -661,49 +548,19 @@ pub fn ensure_runtime_ready_or_install_blocking(
 
     // Recover a staged candidate left by a killed worker; do not re-download.
     if inventory.active.is_none() && inventory.candidate.is_some() {
-        if let Some(plan) = runtime_bootstrap::begin_startup(app_data_dir)
-            .map_err(|error| model_bootstrap_error(error.to_string()))?
-        {
-            let failed_id = plan
-                .record
-                .as_ref()
-                .map(|record| record.artifact_id.clone())
-                .unwrap_or_default();
-            if let Err(error) = ensure_runtime_loaded_with_watchdog(&plan.library_path) {
-                if plan.proving_candidate && !failed_id.is_empty() {
-                    let _ = runtime_bootstrap::rollback_failed_activation(
-                        app_data_dir,
-                        &failed_id,
-                        &error.to_string(),
-                    );
-                }
-                let command_error = bootstrap_command_error(error);
-                record_runtime_failure(
+        match activation::resolve_and_load(app_data_dir, CandidateProof::LoadHere) {
+            Ok(Some(library_path)) => {
+                return Ok(publish_ready(app_data_dir, status, emit, library_path))
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(publish_activation_failure(
                     app_data_dir,
                     status,
                     emit,
-                    command_error.clone(),
-                    Some(RuntimeBootstrapFailurePhase::Probe),
-                );
-                return Err(command_error);
+                    error,
+                ))
             }
-            if plan.proving_candidate {
-                if let Err(error) = runtime_bootstrap::finish_activation_success(app_data_dir) {
-                    let command_error = model_bootstrap_error(error.to_string());
-                    record_runtime_failure(
-                        app_data_dir,
-                        status,
-                        emit,
-                        command_error.clone(),
-                        Some(RuntimeBootstrapFailurePhase::Activate),
-                    );
-                    return Err(command_error);
-                }
-            }
-            let ready = snapshot_from_disk(app_data_dir);
-            store_snapshot(status, ready.clone());
-            emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
-            return Ok(plan.library_path);
         }
     }
 
@@ -720,42 +577,68 @@ pub fn ensure_runtime_ready_or_install_blocking(
     }
 
     if let Some(active) = inventory.active {
-        if let Err(error) = ensure_runtime_loaded_with_watchdog(&active.library_path) {
-            let command_error = bootstrap_command_error(error);
-            record_runtime_failure(
+        let target = ActivationTarget {
+            artifact_id: Some(&active.record.artifact_id),
+            execution_providers: None,
+        };
+        return match activation::load_with_watchdog(app_data_dir, &active.library_path, target) {
+            Ok(library_path) => Ok(publish_ready(app_data_dir, status, emit, library_path)),
+            Err(error) => Err(publish_activation_failure(
                 app_data_dir,
                 status,
                 emit,
-                command_error.clone(),
-                Some(RuntimeBootstrapFailurePhase::Probe),
-            );
-            return Err(command_error);
-        }
-        let ready = snapshot_from_disk(app_data_dir);
-        store_snapshot(status, ready.clone());
-        emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
-        return Ok(active.library_path);
+                error,
+            )),
+        };
     }
     if let Some(legacy_path) = inventory.legacy_path {
-        if let Err(error) = ensure_runtime_loaded_with_watchdog(&legacy_path) {
-            let command_error = bootstrap_command_error(error);
-            record_runtime_failure(
+        return match activation::load_with_watchdog(
+            app_data_dir,
+            &legacy_path,
+            ActivationTarget::default(),
+        ) {
+            Ok(library_path) => Ok(publish_ready(app_data_dir, status, emit, library_path)),
+            Err(error) => Err(publish_activation_failure(
                 app_data_dir,
                 status,
                 emit,
-                command_error.clone(),
-                Some(RuntimeBootstrapFailurePhase::Probe),
-            );
-            return Err(command_error);
-        }
-        let ready = snapshot_from_disk(app_data_dir);
-        store_snapshot(status, ready.clone());
-        emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
-        return Ok(legacy_path);
+                error,
+            )),
+        };
     }
 
     let catalog = catalog::embedded_catalog();
     ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, catalog, emit)
+}
+
+fn publish_ready(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    library_path: PathBuf,
+) -> PathBuf {
+    let ready = snapshot_from_disk(app_data_dir);
+    store_snapshot(status, ready.clone());
+    emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
+    library_path
+}
+
+fn publish_activation_failure(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    error: anyhow::Error,
+) -> CommandError {
+    let failure_phase = failure_phase_of(&error).or(Some(RuntimeBootstrapFailurePhase::Probe));
+    let command_error = bootstrap_command_error(error);
+    record_runtime_failure(
+        app_data_dir,
+        status,
+        emit,
+        command_error.clone(),
+        failure_phase,
+    );
+    command_error
 }
 
 pub fn ensure_runtime_ready_or_install_with_catalog(
@@ -1090,34 +973,9 @@ mod tests {
     }
 
     #[test]
-    fn with_failure_phase_keeps_the_message_and_survives_added_context() {
-        let error = with_failure_phase(
-            anyhow::anyhow!("LoadLibraryExW failed for onnxruntime.dll"),
-            RuntimeBootstrapFailurePhase::Probe,
-        );
-        assert_eq!(
-            error.to_string(),
-            "LoadLibraryExW failed for onnxruntime.dll"
-        );
-        assert_eq!(
-            failure_phase_of(&error),
-            Some(RuntimeBootstrapFailurePhase::Probe)
-        );
-
-        let wrapped = error.context("while preparing separation");
-        assert_eq!(
-            failure_phase_of(&wrapped),
-            Some(RuntimeBootstrapFailurePhase::Probe),
-            "the phase must survive contextual wrapping"
-        );
-
-        assert_eq!(failure_phase_of(&anyhow::anyhow!("plain error")), None);
-    }
-
-    #[test]
     fn tagged_timeout_errors_keep_the_structured_timeout_code() {
         let error = with_failure_phase(
-            anyhow::anyhow!(runtime_parent_load_timeout_message()),
+            anyhow::anyhow!(activation::runtime_load_timeout_message()),
             RuntimeBootstrapFailurePhase::Probe,
         );
         let command_error = bootstrap_command_error(error);
@@ -1231,7 +1089,8 @@ mod tests {
 
     #[test]
     fn post_download_timeout_marker_maps_to_a_structured_error() {
-        let error = bootstrap_command_error_from_message(&runtime_parent_load_timeout_message());
+        let error =
+            bootstrap_command_error_from_message(&activation::runtime_load_timeout_message());
 
         assert_eq!(
             error.code,
