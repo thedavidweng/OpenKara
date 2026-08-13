@@ -204,7 +204,19 @@ fn run_worker_with(
     // (#395). A worker killed before this point loses nothing durable — the
     // verified archive cache and the install directory make the retry a
     // re-verification, not a re-download.
-    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.install_key())?;
+    //
+    // Reusing the install the active slot already names needs no staging:
+    // promoting a key onto itself would leave `active` and `previous` naming
+    // the same directory, and a failed activation rollback would delete the
+    // only install.
+    let install_key = installed.install_key();
+    if runtime_bootstrap::read_slots(&request.app_data_dir)
+        .active
+        .as_deref()
+        != Some(install_key.as_str())
+    {
+        runtime_bootstrap::stage_candidate(&request.app_data_dir, &install_key)?;
+    }
 
     write_progress(
         progress_path,
@@ -365,15 +377,20 @@ fn install_runtime_with_verified_archive_cache(
             &staging.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
             &record,
         )?;
-        // A different-digest install of the same artifact id may occupy the
-        // plain directory — possibly as the currently loaded runtime, whose
-        // files cannot be deleted or replaced while mapped (Windows locks
-        // them). Install side by side under a digest-qualified directory
-        // instead of clearing it.
-        let plain_dir_occupied_by_other_digest =
-            runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+        // The plain artifact-id directory is unavailable when a
+        // different-digest install of the same artifact id occupies it, or
+        // when the active slot names it even though its record is unreadable
+        // — either way it may be the currently loaded runtime, whose files
+        // cannot be deleted or replaced while mapped (Windows locks them).
+        // Install side by side under a digest-qualified directory instead of
+        // clearing it.
+        let plain_dir_unavailable = runtime_bootstrap::read_slots(app_data_dir)
+            .active
+            .as_deref()
+            == Some(runtime.artifact_id.as_str())
+            || runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
                 .is_some_and(|other| other.record.archive_sha256 != runtime.archive_digest);
-        let install_key = if plain_dir_occupied_by_other_digest {
+        let install_key = if plain_dir_unavailable {
             runtime_bootstrap::runtime_install_key(&runtime.artifact_id, &runtime.archive_digest)
         } else {
             runtime.artifact_id.clone()
@@ -832,6 +849,72 @@ mod tests {
         let staged = runtime_bootstrap::installed_runtime(dir.path(), &new_key)
             .expect("the new digest must be installed side by side");
         assert_eq!(staged.record.archive_sha256, runtime.archive_digest);
+        assert!(runtime_bootstrap::verify_runtime_files(&staged).expect("verify"));
+    }
+
+    #[test]
+    fn reusing_the_active_install_does_not_stage_it_as_candidate() {
+        // Staging the key the active slot already names would make startup
+        // promote it onto itself: `active` and `previous` end up naming the
+        // same directory, and a failed activation rollback deletes the only
+        // install.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-active", b"active-lib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("first install must succeed");
+        runtime_bootstrap::activate_first_install(dir.path(), "rt-active").expect("activate");
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("reusing the active install must succeed");
+
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-active"));
+        assert_eq!(
+            slots.candidate, None,
+            "the active install must not be staged onto itself"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_install_named_by_the_active_slot_is_not_replaced() {
+        // The active slot may name a directory whose record no longer reads
+        // (corruption), while its library is still loaded by the running
+        // app. The worker must not clear that directory; the new install
+        // goes side by side.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-broken", b"fresh-lib");
+        let plain_dir = runtime_bootstrap::runtime_artifact_dir(dir.path(), "rt-broken");
+        fs::create_dir_all(&plain_dir).expect("create broken install");
+        let loaded_library = plain_dir.join(runtime_bootstrap::ORT_RUNTIME_FILENAME);
+        fs::write(&loaded_library, b"mapped-into-the-running-process").expect("write library");
+        runtime_bootstrap::write_slots(
+            dir.path(),
+            &runtime_bootstrap::RuntimeSlots {
+                active: Some("rt-broken".to_owned()),
+                ..runtime_bootstrap::RuntimeSlots::default()
+            },
+        )
+        .expect("write slots");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("the worker must install despite the unreadable active install");
+
+        assert_eq!(
+            fs::read(&loaded_library).expect("read library"),
+            b"mapped-into-the-running-process",
+            "the directory named by the active slot must not be touched"
+        );
+        let new_key = runtime_bootstrap::runtime_install_key("rt-broken", &runtime.archive_digest);
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some(new_key.as_str())
+        );
+        let staged = runtime_bootstrap::installed_runtime(dir.path(), &new_key)
+            .expect("the new install must land side by side");
         assert!(runtime_bootstrap::verify_runtime_files(&staged).expect("verify"));
     }
 
