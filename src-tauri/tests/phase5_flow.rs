@@ -7,18 +7,13 @@ use std::{
 mod support;
 
 use openkara_lib::{
-    audio::playback::PlaybackController,
     cache,
-    commands::{
-        import::import_songs_from_paths, lyrics::set_lyrics_offset_in_connection,
-        playback::play_song_from_library,
-    },
+    commands::{import::import_songs_from_paths, lyrics::set_lyrics_offset_in_connection},
     config::{ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
     lyrics::{lrcapi::LrcApiClient, lrclib::LrcLibClient},
     separator::{job, model, model_cache::ModelCache},
 };
-use rusqlite::Connection;
 
 fn metadata_fixture_path(filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -52,9 +47,6 @@ fn initialize_test_runtime() {
 #[test]
 fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode() {
     initialize_test_runtime();
-    let connection = Connection::open_in_memory().expect("in-memory database should open");
-    cache::apply_migrations(&connection).expect("migrations should succeed");
-
     let fixture_dir = unique_temp_dir("phase5-fixture");
     cleanup_dir(&fixture_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");
@@ -70,6 +62,10 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     let lib_dir = unique_temp_dir("phase5-library");
     cleanup_dir(&lib_dir);
     let library = LibraryRoot::create(&lib_dir).expect("library should create");
+    cache::initialize_library_database(&library.database_path())
+        .expect("library database should initialize");
+    let connection =
+        cache::open_database(&library.database_path()).expect("library database should open");
     let import_result =
         import_songs_from_paths(&connection, &library, &[audio_path.display().to_string()]);
     assert_eq!(import_result.imported.len(), 1);
@@ -84,8 +80,9 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     )
     .expect("sidecar lyrics should write into library");
 
-    let mut playback = PlaybackController::default();
-    let started = play_song_from_library(&connection, &library, &mut playback, &song_id, 1_000)
+    let harness = support::PlaybackHarness::new(&library);
+    let started = harness
+        .play(&song_id)
         .expect("song should load into the playback controller");
     assert_eq!(started.song_id.as_deref(), Some(song_id.as_str()));
     assert!(!started.has_stems);
@@ -151,6 +148,10 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     assert_eq!(cached_lyrics.offset_ms, 500);
 
     mock.assert();
+    drop(harness);
+    // cleanup_dir removes lib_dir, which holds the SQLite file this connection
+    // still has open; Windows refuses to delete it until the handle is closed.
+    drop(connection);
     cleanup_dir(&fixture_dir);
     cleanup_dir(&lib_dir);
 }

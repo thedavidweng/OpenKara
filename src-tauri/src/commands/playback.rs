@@ -13,8 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
-pub use crate::services::playback::play_song_from_library;
-
 const DEFAULT_WAVEFORM_BUCKETS: usize = 200;
 
 async fn send_and_await(
@@ -46,7 +44,7 @@ pub async fn play(
     let background_state = state.inner().clone();
     let background_handle = app_handle.clone();
     Ok(tauri::async_runtime::spawn_blocking(move || {
-        services::playback::play(&background_state, &background_handle, &song_id)
+        services::track_load::start(&background_state, &background_handle, &song_id)
     })
     .await
     .map_err(|error| internal_error(format!("playback task failed: {error}")))??)
@@ -111,7 +109,7 @@ pub async fn set_stem_volume(
 pub async fn load_stems(state: State<'_, AppState>) -> CommandResult<PlaybackStateSnapshot> {
     let background_state = state.inner().clone();
     Ok(tauri::async_runtime::spawn_blocking(move || {
-        services::playback::load_stems(&background_state)
+        services::track_load::attach_stems(&background_state)
     })
     .await
     .map_err(|error| internal_error(format!("load stems task failed: {error}")))??)

@@ -1,7 +1,6 @@
-use openkara_lib::{
-    audio::playback::PlaybackController, cache, library::Song, library_root::LibraryRoot,
-    services::playback::play_song_from_library,
-};
+mod support;
+
+use openkara_lib::{cache, library::Song, library_root::LibraryRoot};
 use rusqlite::Connection;
 use std::fs;
 
@@ -41,12 +40,13 @@ fn cache_round_trip_preserves_nullable_file_path_and_audio_source_kind() {
 
 #[test]
 fn remote_stems_song_plays_from_cached_stems_without_a_local_file_path() {
-    let connection = Connection::open_in_memory().expect("in-memory database should open");
-    cache::apply_migrations(&connection).expect("migrations should succeed");
-
     let tempdir = tempfile::tempdir().expect("temp dir should create");
     let library = LibraryRoot::create(tempdir.path().join("library").as_path())
         .expect("library should create");
+    cache::initialize_library_database(&library.database_path())
+        .expect("library database should initialize");
+    let connection =
+        cache::open_database(&library.database_path()).expect("library database should open");
 
     let song = Song {
         hash: "remote-stems".to_owned(),
@@ -100,15 +100,10 @@ fn remote_stems_song_plays_from_cached_stems_without_a_local_file_path() {
         )
         .expect("stem cache row should insert");
 
-    let mut controller = PlaybackController::default();
-    let snapshot = play_song_from_library(
-        &connection,
-        &library,
-        &mut controller,
-        "remote-stems",
-        1_000,
-    )
-    .expect("remote stems playback should succeed");
+    let harness = support::PlaybackHarness::new(&library);
+    let snapshot = harness
+        .play("remote-stems")
+        .expect("remote stems playback should succeed");
 
     assert_eq!(snapshot.song_id.as_deref(), Some("remote-stems"));
     assert!(snapshot.has_stems);
