@@ -35,12 +35,20 @@ export function SettingsRuntimeSection() {
   const update = view.runtime.update;
   const runtimeState = runtime?.state;
 
-  const isMissing = !runtime || runtimeState === "missing";
+  const statusReadError = view.runtime.statusError;
+  const statusUnavailable = statusReadError != null;
+
+  const isMissing =
+    !statusUnavailable && (!runtime || runtimeState === "missing");
   const restartRequired =
-    runtime?.restart_required === true ||
-    runtimeState === "candidate_ready_restart_required";
+    !statusUnavailable &&
+    (runtime?.restart_required === true ||
+      runtimeState === "candidate_ready_restart_required");
 
   const statusLine = (() => {
+    if (statusReadError != null) {
+      return t("settings.runtime.statusReadFailed");
+    }
     switch (runtimeState) {
       case "candidate_ready_restart_required":
         return t("settings.runtime.candidateReadyRestartRequired", {
@@ -70,7 +78,7 @@ export function SettingsRuntimeSection() {
   })();
 
   const versionLine =
-    runtime && !isMissing
+    !statusUnavailable && runtime && !isMissing
       ? `${t("settings.runtime.version", {
           version: runtime.version,
         })} · ${runtime.target_triple}`
@@ -81,11 +89,13 @@ export function SettingsRuntimeSection() {
     (report?.state === "update_available" ||
       report?.state === "installed_without_identity") &&
     !restartRequired;
-  const downloadingCandidate = runtimeState === "downloading_candidate";
-  const isDownloading = runtimeState === "downloading";
+  const downloadingCandidate =
+    !statusUnavailable && runtimeState === "downloading_candidate";
+  const isDownloading = !statusUnavailable && runtimeState === "downloading";
 
   const needsInstall =
-    isMissing || runtimeState === "corrupt" || runtimeState === "failed";
+    !statusUnavailable &&
+    (isMissing || runtimeState === "corrupt" || runtimeState === "failed");
   const installLabel =
     runtimeState === "corrupt" || runtimeState === "failed"
       ? t("settings.runtime.retryButton")
@@ -104,6 +114,11 @@ export function SettingsRuntimeSection() {
     >
       <div className="flex flex-col gap-1">
         <p className="text-[12px] text-[var(--color-text)]">{statusLine}</p>
+        {statusReadError != null ? (
+          <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+            {statusReadError}
+          </p>
+        ) : null}
         {versionLine ? (
           <p className="text-[11px] text-[var(--color-text-dim)]">
             {versionLine}

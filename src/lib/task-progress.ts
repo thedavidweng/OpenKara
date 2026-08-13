@@ -225,11 +225,18 @@ export function createModelDownloadFlash(
   flashMs: number = MODEL_DOWNLOAD_FLASH_MS,
 ): ModelDownloadFlash {
   let previous: ModelBootstrapState | undefined;
+  let shown = false;
   let timers: ReturnType<typeof setTimeout>[] = [];
 
   const clearTimers = () => {
     timers.forEach((timer) => globalThis.clearTimeout(timer));
     timers = [];
+  };
+
+  const hide = () => {
+    if (!shown) return;
+    shown = false;
+    emit(false);
   };
 
   return {
@@ -239,12 +246,14 @@ export function createModelDownloadFlash(
       const downloadSettled = previous === "downloading" && state === "ready";
       previous = state;
       clearTimers();
+      hide();
       if (!downloadSettled) return;
 
       timers.push(
         globalThis.setTimeout(() => {
+          shown = true;
           emit(true);
-          timers.push(globalThis.setTimeout(() => emit(false), flashMs));
+          timers.push(globalThis.setTimeout(hide, flashMs));
         }, 0),
       );
     },

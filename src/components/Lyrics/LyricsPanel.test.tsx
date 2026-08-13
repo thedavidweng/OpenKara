@@ -114,7 +114,6 @@ const { mockLyricsSession } = vi.hoisted(() => ({
     toAdjustedMs: (positionMs: number) => positionMs - mockLyricsState.offsetMs,
     syncActiveLine: vi.fn(),
     syncActiveWord: vi.fn(),
-    resetActiveIndexLatches: vi.fn(),
   },
 }));
 

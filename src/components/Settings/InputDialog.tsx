@@ -9,6 +9,13 @@ interface InputDialogProps {
   placeholder?: string;
   initialValue?: string;
   confirmLabel?: string;
+  /**
+   * When set, confirming stays disabled until the trimmed input matches this
+   * value exactly; a non-matching input shows `mismatchHint` next to the
+   * field.
+   */
+  expectedValue?: string;
+  mismatchHint?: string;
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }
@@ -18,6 +25,8 @@ export function InputDialog({
   placeholder,
   initialValue = "",
   confirmLabel,
+  expectedValue,
+  mismatchHint,
   onConfirm,
   onCancel,
 }: InputDialogProps) {
@@ -33,6 +42,13 @@ export function InputDialog({
   });
 
   const label = confirmLabel || t("common.save");
+  const trimmedValue = value.trim();
+  const matchesExpected =
+    expectedValue === undefined || trimmedValue === expectedValue;
+  const canConfirm = trimmedValue.length > 0 && matchesExpected;
+  const showMismatchHint =
+    !matchesExpected && trimmedValue.length > 0 && mismatchHint !== undefined;
+  const mismatchHintId = "input-dialog-mismatch-hint";
 
   const dialogContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -63,15 +79,27 @@ export function InputDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && value.trim()) {
+            if (event.key === "Enter" && canConfirm) {
               event.preventDefault();
-              onConfirm(value.trim());
+              onConfirm(trimmedValue);
             }
           }}
           placeholder={placeholder}
           aria-label={title}
+          aria-invalid={showMismatchHint || undefined}
+          aria-describedby={showMismatchHint ? mismatchHintId : undefined}
           className="mt-3 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder-[var(--color-text-dimmer)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/30"
         />
+
+        {showMismatchHint && (
+          <p
+            id={mismatchHintId}
+            role="alert"
+            className="mt-2 break-words text-[12px] text-[var(--color-destructive)]"
+          >
+            {mismatchHint}
+          </p>
+        )}
 
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -81,8 +109,8 @@ export function InputDialog({
             {t("common.cancel")}
           </button>
           <button
-            onClick={() => value.trim() && onConfirm(value.trim())}
-            disabled={!value.trim()}
+            onClick={() => canConfirm && onConfirm(trimmedValue)}
+            disabled={!canConfirm}
             className="rounded-md bg-[var(--color-control-primary)] px-4 py-2 text-[13px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)] disabled:opacity-50"
           >
             {label}

@@ -602,6 +602,185 @@ describe("RemoteLibraryWizard", () => {
     container.remove();
   });
 
+  test("does not report success or close when activation fails after registration", async () => {
+    mockBeginRemoteAuth.mockResolvedValue({
+      session_id: "session-1",
+      provider: "google_drive",
+      authorization_url: null,
+      expires_at_ms: null,
+    });
+    mockCreateRemoteLibrary.mockResolvedValue({
+      provider: "google_drive",
+      remote_root_locator: "root-1",
+      remote_path_display: "Google Drive / OpenKara",
+      display_name: "Drive",
+      account_id: "account-1",
+    });
+    mockRegisterRemoteLibrary.mockResolvedValue({
+      active_library_id: "remote:new",
+      libraries: [],
+    });
+
+    const onClose = vi.fn();
+    const harness = await createInitializedSettingsHarness();
+    harness.librarySession.failOn(
+      "switchLibrary",
+      new Error("endpoint unreachable"),
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <RemoteLibraryWizard onClose={onClose} />
+        </SettingsControllerContext>,
+      );
+    });
+
+    const openRemoteButtons = [...container.querySelectorAll("button")].filter(
+      (button) =>
+        button.textContent?.includes(
+          "settings.library.connectRemoteGoogleDrive",
+        ),
+    );
+    const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
+
+    await act(async () => {
+      connectButton?.click();
+    });
+    await flushEffects();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("endpoint unreachable");
+    expect(container.textContent).not.toContain(
+      "settings.library.remoteLibraryConnected",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("keeps the wizard open and shows the error when activating an existing library fails", async () => {
+    const onClose = vi.fn();
+    const harness = await createInitializedSettingsHarness({
+      activeLibraryId: "local:/karaoke",
+      libraries: [
+        {
+          id: "local:/karaoke",
+          kind: "local",
+          display_name: "Main Library",
+          root_path: "/karaoke",
+        },
+        {
+          id: "remote:drive-1",
+          kind: "remote",
+          display_name: "Drive",
+          provider: "google_drive",
+          account_id: "account-1",
+          remote_root_locator: "root-1",
+          remote_path_display: "Google Drive / OpenKara",
+          connection_config: null,
+          cached_db_path: null,
+          remote_revision: "rev-1",
+        },
+      ],
+    });
+    harness.librarySession.failOn(
+      "switchLibrary",
+      new Error("endpoint unreachable"),
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <RemoteLibraryWizard onClose={onClose} />
+        </SettingsControllerContext>,
+      );
+    });
+
+    const existingLibraryButton = [...container.querySelectorAll("button p")]
+      .find((paragraph) => paragraph.textContent === "Drive")
+      ?.closest("button");
+    expect(existingLibraryButton).toBeTruthy();
+
+    await act(async () => {
+      existingLibraryButton?.click();
+    });
+    await flushEffects();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("endpoint unreachable");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("closes the wizard when activating an existing library succeeds", async () => {
+    const onClose = vi.fn();
+    const harness = await createInitializedSettingsHarness({
+      activeLibraryId: "local:/karaoke",
+      libraries: [
+        {
+          id: "local:/karaoke",
+          kind: "local",
+          display_name: "Main Library",
+          root_path: "/karaoke",
+        },
+        {
+          id: "remote:drive-1",
+          kind: "remote",
+          display_name: "Drive",
+          provider: "google_drive",
+          account_id: "account-1",
+          remote_root_locator: "root-1",
+          remote_path_display: "Google Drive / OpenKara",
+          connection_config: null,
+          cached_db_path: null,
+          remote_revision: "rev-1",
+        },
+      ],
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <RemoteLibraryWizard onClose={onClose} />
+        </SettingsControllerContext>,
+      );
+    });
+
+    const existingLibraryButton = [...container.querySelectorAll("button p")]
+      .find((paragraph) => paragraph.textContent === "Drive")
+      ?.closest("button");
+
+    await act(async () => {
+      existingLibraryButton?.click();
+    });
+    await flushEffects();
+
+    expect(harness.librarySession.calls).toEqual([
+      { entry: "switchLibrary", libraryId: "remote:drive-1" },
+    ]);
+    expect(onClose).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("cancels auth if opening the external browser fails", async () => {
     mockBeginRemoteAuth.mockResolvedValue({
       session_id: "session-1",

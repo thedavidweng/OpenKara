@@ -85,12 +85,16 @@ export interface SettingsLibraryView {
 
 export interface SettingsModelsView {
   statuses: Partial<Record<ModelVariant, ModelStatusView>>;
+  /** Why the last model status read failed, or null after a successful read. */
+  statusesError: string | null;
   downloading: ModelVariant | null;
   update: ModelUpdateView | null;
 }
 
 export interface SettingsRuntimeView {
   status: RuntimeStatusView | null;
+  /** Why the last runtime status read failed, or null after a successful read. */
+  statusError: string | null;
   update: RuntimeUpdateView | null;
 }
 
@@ -140,26 +144,36 @@ export interface WritablePreferences {
 
 export type SettingsPreferencePatch = Partial<WritablePreferences>;
 
+/**
+ * How a library command settled. Commands still never reject; `ok: false`
+ * carries the message recorded in `view.library.error`, so a caller can gate
+ * follow-up UI (such as closing a wizard) on success.
+ */
+export type LibraryCommandResult = { ok: true } | { ok: false; error: string };
+
 export interface SettingsLibraryCommands {
   /** Creates a Local Working Copy under a directory the user picks. */
-  create(dialogTitle: string): Promise<void>;
+  create(dialogTitle: string): Promise<LibraryCommandResult>;
   /** Registers an existing Local Working Copy the user picks. */
-  open(dialogTitle: string): Promise<void>;
+  open(dialogTitle: string): Promise<LibraryCommandResult>;
   /** Makes `libraryId` the active library. */
-  activate(libraryId: string): Promise<void>;
+  activate(libraryId: string): Promise<LibraryCommandResult>;
   /**
    * Refresh Repository for a Remote Repository, activating it first when it is
    * not already active. Ignores libraries that are not remote.
    */
-  refresh(libraryId: string): Promise<void>;
-  rename(libraryId: string, displayName: string): Promise<void>;
+  refresh(libraryId: string): Promise<LibraryCommandResult>;
+  rename(libraryId: string, displayName: string): Promise<LibraryCommandResult>;
   /** Disconnect Repository after a confirmation prompt. */
-  disconnect(libraryId: string): Promise<void>;
+  disconnect(libraryId: string): Promise<LibraryCommandResult>;
   /**
    * Delete Repository. Runs only when the prompt is accepted and
    * `confirmationName` matches the library's display name exactly.
    */
-  delete(libraryId: string, confirmationName: string): Promise<void>;
+  delete(
+    libraryId: string,
+    confirmationName: string,
+  ): Promise<LibraryCommandResult>;
   checkIntegrity(): Promise<void>;
   toggleIntegrityEntry(songHash: string): void;
   /** Removes the selected integrity entries, then re-reads the song list. */
@@ -200,9 +214,11 @@ export interface SettingsMaintenanceCommands {
 /**
  * Owns everything the Settings surfaces read and every mutation they can
  * start. Commands never reject: a failure lands either in `view.library.error`
- * (library work), in the matching `update` slice (update checks), or on the
- * error reporter. The view is replaced, never mutated, so consumers can
- * compare identities.
+ * (library work), in the matching `update` slice (update checks), in
+ * `models.statusesError` or `runtime.statusError` (status reads), or on the
+ * error reporter. Library commands also report that outcome as a
+ * `LibraryCommandResult` so callers can react to a failure. The view is
+ * replaced, never mutated, so consumers can compare identities.
  */
 export interface SettingsController {
   getView(): SettingsView;

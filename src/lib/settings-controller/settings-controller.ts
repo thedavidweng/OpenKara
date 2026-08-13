@@ -11,6 +11,7 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 import type {
+  LibraryCommandResult,
   ModelStatusView,
   SettingsController,
   SettingsControllerDependencies,
@@ -148,9 +149,15 @@ export function createSettingsController({
       error: null,
     },
     preferences: toPreferencesView(stores.preferences.getSnapshot()),
-    models: { statuses: {}, downloading: null, update: null },
+    models: {
+      statuses: {},
+      statusesError: null,
+      downloading: null,
+      update: null,
+    },
     runtime: {
       status: toRuntimeStatusView(stores.runtimeStatus.getStatus()),
+      statusError: null,
       update: null,
     },
     integrity: {
@@ -264,8 +271,11 @@ export function createSettingsController({
           htdemucs: toModelStatusView(standard),
           htdemucs_ft: toModelStatusView(fineTuned),
         },
+        statusesError: null,
       });
-    } catch {}
+    } catch (error) {
+      patchModels({ statusesError: getErrorMessage(error) });
+    }
   };
 
   const refreshRuntimeStatus = async () => {
@@ -273,8 +283,11 @@ export function createSettingsController({
       stores.runtimeStatus.updateStatus(
         await backend.settings.getRuntimeBootstrapStatus(),
       );
+      patchRuntime({ statusError: null });
       syncStores();
-    } catch {}
+    } catch (error) {
+      patchRuntime({ statusError: getErrorMessage(error) });
+    }
   };
 
   const librarySession = createLibrarySession({
@@ -282,13 +295,18 @@ export function createSettingsController({
     refreshModelStatuses,
   });
 
-  const runLibraryWork = async (work: () => Promise<void>) => {
+  const runLibraryWork = async (
+    work: () => Promise<void>,
+  ): Promise<LibraryCommandResult> => {
     patchLibrary({ error: null });
 
     try {
       await work();
+      return { ok: true };
     } catch (error: unknown) {
-      patchLibrary({ error: getErrorMessage(error) });
+      const message = getErrorMessage(error);
+      patchLibrary({ error: message });
+      return { ok: false, error: message };
     }
   };
 
@@ -542,6 +560,14 @@ export function createSettingsController({
       await stores.library.loadLibrary();
       await stores.player.loadState();
 
+      patchIntegrity({
+        selection: new Set(selectedHashes.filter((hash) => !deleted.has(hash))),
+        skippedCount:
+          result.skipped_song_hashes.length > 0
+            ? result.skipped_song_hashes.length
+            : null,
+      });
+
       if (report) {
         const keep = (issue: { song_hash: string }) =>
           !deleted.has(issue.song_hash);
@@ -555,13 +581,6 @@ export function createSettingsController({
               report.missing_optional_assets.filter(keep),
             empty_optional_assets: report.empty_optional_assets.filter(keep),
           },
-          selection: new Set(
-            selectedHashes.filter((hash) => !deleted.has(hash)),
-          ),
-          skippedCount:
-            result.skipped_song_hashes.length > 0
-              ? result.skipped_song_hashes.length
-              : null,
         });
       }
     } catch (error: unknown) {
@@ -659,21 +678,21 @@ export function createSettingsController({
     },
 
     library: {
-      create: async (dialogTitle) => {
-        const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
+      create: (dialogTitle) =>
+        runLibraryWork(async () => {
+          const directory = await selectDirectory(dialogTitle);
+          if (directory) {
+            await librarySession.createLocalLibrary(directory);
+          }
+        }),
 
-        await runLibraryWork(() =>
-          librarySession.createLocalLibrary(directory),
-        );
-      },
-
-      open: async (dialogTitle) => {
-        const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
-
-        await runLibraryWork(() => librarySession.openLocalLibrary(directory));
-      },
+      open: (dialogTitle) =>
+        runLibraryWork(async () => {
+          const directory = await selectDirectory(dialogTitle);
+          if (directory) {
+            await librarySession.openLocalLibrary(directory);
+          }
+        }),
 
       activate: (libraryId) =>
         runLibraryWork(() => librarySession.switchLibrary(libraryId)),
@@ -747,7 +766,7 @@ export function createSettingsController({
                   appName: i18next.t("app.name"),
                 });
 
-          if (!window.confirm(message) || confirmationName !== displayName) {
+          if (confirmationName !== displayName || !window.confirm(message)) {
             return;
           }
 

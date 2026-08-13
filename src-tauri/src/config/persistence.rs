@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::{AppConfig, RegisteredLibrary};
+use super::{library_registry::migrate_legacy_library_path, AppConfig};
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -41,18 +41,7 @@ pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
         }
     };
 
-    if config.libraries.is_empty() {
-        if let Some(library_path) = config.library_path.clone() {
-            let display_name = Path::new(&library_path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("OpenKara Library")
-                .to_owned();
-            config
-                .libraries
-                .push(RegisteredLibrary::local(library_path, display_name));
-        }
-    }
+    migrate_legacy_library_path(&mut config);
 
     Ok(Some(config.normalize_for_save()))
 }
@@ -154,7 +143,7 @@ fn config_path(app_data_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{library_id_for_path, StemMode};
+    use crate::config::{library_id_for_path, RegisteredLibrary, StemMode};
 
     #[test]
     fn load_returns_none_when_missing() {

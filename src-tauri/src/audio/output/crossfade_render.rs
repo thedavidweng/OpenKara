@@ -115,32 +115,48 @@ pub(super) fn render_crossfade_overlap(
             Some(incoming_resampler_cache),
         );
 
-        let mix_frames = (out_rendered.min(inc_rendered)) / device_channels;
-        for frame in 0..mix_frames {
+        let out_frames = out_rendered / device_channels;
+        let inc_frames = inc_rendered / device_channels;
+        // All cursors must advance by the frames actually produced. Advancing
+        // the write cursor by the requested chunk while the mix window and
+        // the overlap clock advance by the produced count leaves unmixed
+        // outgoing frames in the buffer, makes the tail fill overwrite
+        // committed samples, and stalls promotion (#376). A short side
+        // (source exhausted mid-overlap) contributes silence instead.
+        let progress_frames = out_frames.max(inc_frames);
+        for frame in 0..progress_frames {
             let global_overlap_index = overlap_rendered + chunk_start as u64 + frame as u64;
             let (out_gain, inc_gain) = equal_power_gains(global_overlap_index, total_overlap);
 
             let inc_base = frame * device_channels;
             for ch in 0..device_channels {
-                let out_sample = output[(chunk_start + frame) * device_channels + ch];
-                let inc_sample = crossfade_scratch[inc_base + ch];
+                let out_sample = if frame < out_frames {
+                    output[(chunk_start + frame) * device_channels + ch]
+                } else {
+                    0.0
+                };
+                let inc_sample = if frame < inc_frames {
+                    crossfade_scratch[inc_base + ch]
+                } else {
+                    0.0
+                };
                 output[(chunk_start + frame) * device_channels + ch] =
                     out_sample * out_gain + inc_sample * inc_gain;
             }
         }
 
-        rendered_output_frames += mix_frames;
+        rendered_output_frames += progress_frames;
         src_frames_advanced += out_consumed;
         outgoing_frames_consumed += out_consumed;
 
         if let Some(active) = playback.active_crossfade.as_mut() {
-            active.rendered_frames += mix_frames as u64;
+            active.rendered_frames += progress_frames as u64;
             active.incoming_source_frame += inc_consumed;
         }
 
-        chunk_start += chunk_frames;
+        chunk_start += progress_frames;
 
-        if inc_rendered == 0 && mix_frames == 0 {
+        if progress_frames == 0 {
             break;
         }
     }
@@ -1085,6 +1101,79 @@ mod tests {
                 "overlap total must be in device frames (132300), not source frames"
             );
         }
+    }
+
+    /// #376: a rate-converted overlap must keep its cursors in sync when the
+    /// outgoing resampler returns short (source exhausted near the end of the
+    /// overlap). Before the fix the overlap clock stopped advancing on short
+    /// returns, so `rendered_frames` never reached `total_frames` and the
+    /// incoming track was never promoted.
+    #[test]
+    fn crossfade_rate_converted_overlap_promotes_despite_short_resampler_returns() {
+        let device_rate: u32 = 48_000;
+        let outgoing_rate: u32 = 44_100;
+        let device_channels = 2;
+        let outgoing_total = 10 * outgoing_rate as u64;
+        let incoming_total = 20 * device_rate as u64;
+        let duration_ms = 3_000;
+        let effective_device = duration_ms as u64 * device_rate as u64 / 1000; // 144000
+        let remaining_src = effective_device * outgoing_rate as u64 / device_rate as u64;
+        let render_frame = outgoing_total - remaining_src;
+
+        let mut controller = build_crossfade_controller_mismatched_rate(
+            device_rate,
+            device_channels,
+            render_frame,
+            outgoing_total,
+            outgoing_rate,
+            incoming_total,
+            device_rate,
+            duration_ms,
+        );
+
+        let callback_frames = 512usize;
+        let mut rc = ResamplerCache::new();
+        let mut rc_in = ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+
+        // 144000 overlap frames / 512 per callback ≈ 282 callbacks. Allow
+        // slack for resampler priming, but far less than the stall budget.
+        let mut callbacks_until_promotion = None;
+        for callback in 0..400 {
+            let mut output = vec![0.0f32; callback_frames * device_channels];
+            render_output_buffer(
+                &mut controller,
+                &mut output,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut crossfade_scratch,
+                device_rate,
+                device_channels,
+                &mut rc,
+                &mut rc_in,
+                &mut EqProcessor::new(device_rate, device_channels),
+                &mut peak_acc,
+                &ring,
+            );
+            if controller.current_track.as_ref().unwrap().song_id == "song-b" {
+                callbacks_until_promotion = Some(callback + 1);
+                break;
+            }
+        }
+
+        let callbacks = callbacks_until_promotion
+            .expect("rate-converted crossfade must promote the incoming track");
+        assert!(
+            callbacks <= 320,
+            "overlap must complete near its configured duration (~282 callbacks), \
+             not stall on short resampler returns. took {callbacks} callbacks"
+        );
+        assert!(
+            controller.active_crossfade.is_none(),
+            "active crossfade must be cleared after promotion"
+        );
     }
 
     /// Promotion must use `incoming_source_frame` (source frames), not

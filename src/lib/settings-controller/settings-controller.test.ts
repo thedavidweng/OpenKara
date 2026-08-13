@@ -270,6 +270,68 @@ describe("initialize", () => {
     expect(harness.notifyError).toHaveBeenCalledTimes(2);
     expect(harness.view().isInitializing).toBe(false);
   });
+
+  test("records a failed model status read in the view instead of swallowing it", async () => {
+    let failing = true;
+    const harness = createSettingsHarness({
+      runtimeStatus: runtimeStatus(),
+      overrides: {
+        settings: {
+          getRuntimeBootstrapStatus: async () => runtimeStatus(),
+          getModelStatus: async (variant) => {
+            if (failing) {
+              throw new Error("model directory unreadable");
+            }
+            return modelStatus({ variant, downloaded: true });
+          },
+        },
+      },
+    });
+
+    await harness.controller.initialize();
+
+    expect(harness.view().models.statusesError).toBe(
+      "model directory unreadable",
+    );
+    expect(harness.view().models.statuses).toEqual({});
+    expect(harness.notifyError).not.toHaveBeenCalled();
+
+    failing = false;
+    await harness.controller.initialize();
+
+    expect(harness.view().models.statusesError).toBeNull();
+    expect(harness.view().models.statuses.htdemucs?.downloaded).toBe(true);
+  });
+
+  test("records a failed runtime status read in the view instead of swallowing it", async () => {
+    let failing = true;
+    const harness = createSettingsHarness({
+      runtimeStatus: runtimeStatus(),
+      overrides: {
+        settings: {
+          getModelStatus: async (variant) => modelStatus({ variant }),
+          getRuntimeBootstrapStatus: async () => {
+            if (failing) {
+              throw new Error("runtime probe crashed");
+            }
+            return runtimeStatus({ state: "missing" });
+          },
+        },
+      },
+    });
+
+    await harness.controller.initialize();
+
+    expect(harness.view().runtime.statusError).toBe("runtime probe crashed");
+    expect(harness.view().runtime.status?.state).toBe("ready");
+    expect(harness.notifyError).not.toHaveBeenCalled();
+
+    failing = false;
+    await harness.controller.maintenance.checkRuntimeUpdates();
+
+    expect(harness.view().runtime.statusError).toBeNull();
+    expect(harness.view().runtime.status?.state).toBe("missing");
+  });
 });
 
 describe("library commands", () => {
@@ -314,6 +376,19 @@ describe("library commands", () => {
     expect(harness.view().library.error).toBe("disk full");
   });
 
+  test("a rejecting directory picker reports the error instead of rejecting", async () => {
+    const harness = createSettingsHarness();
+    harness.selectDirectory.mockRejectedValue(new Error("picker crashed"));
+
+    const created = await harness.controller.library.create("Create library");
+    const opened = await harness.controller.library.open("Open library");
+
+    expect(created).toEqual({ ok: false, error: "picker crashed" });
+    expect(opened).toEqual({ ok: false, error: "picker crashed" });
+    expect(harness.view().library.error).toBe("picker crashed");
+    expect(harness.librarySession.calls).toEqual([]);
+  });
+
   test("the session's registry view refreshes the library slice", async () => {
     const harness = createSettingsHarness({
       overrides: {
@@ -350,6 +425,32 @@ describe("library commands", () => {
       { entry: "switchLibrary", libraryId: driveRepository.id },
     ]);
     expect(switchLibrary).not.toHaveBeenCalled();
+  });
+
+  test("a successful activation reports ok to its caller", async () => {
+    const harness = createSettingsHarness();
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(harness.view().library.error).toBeNull();
+  });
+
+  test("a failed activation reports its error to the caller", async () => {
+    const harness = createSettingsHarness();
+    harness.librarySession.failOn(
+      "switchLibrary",
+      new Error("endpoint unreachable"),
+    );
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: false, error: "endpoint unreachable" });
+    expect(harness.view().library.error).toBe("endpoint unreachable");
   });
 
   test("refreshing an active Remote Repository refreshes in place", async () => {
@@ -518,7 +619,7 @@ describe("library commands", () => {
     expect(deleteLibrary).toHaveBeenCalledWith(driveRepository.id);
   });
 
-  test("Delete Repository stops when the typed name does not match", async () => {
+  test("a mismatched name stops the delete before the native prompt", async () => {
     const deleteLibrary = vi.fn(async () => registryOf(null, []));
     const harness = createSettingsHarness({
       overrides: {
@@ -530,10 +631,11 @@ describe("library commands", () => {
       },
     });
     await harness.controller.initialize();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     await harness.controller.library.delete(driveRepository.id, "Wrong");
 
+    expect(confirm).not.toHaveBeenCalled();
     expect(deleteLibrary).not.toHaveBeenCalled();
   });
 });
@@ -1458,6 +1560,28 @@ describe("library integrity", () => {
     await harness.controller.library.cleanUpIntegrity();
 
     expect(harness.view().integrity.skippedCount).toBe(2);
+  });
+
+  test("cleanup without a report still prunes the selection and records skips", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          removeMissingLibraryEntries: async () => ({
+            deleted_song_hashes: ["hash-a"],
+            skipped_song_hashes: ["hash-b"],
+          }),
+        },
+      },
+    });
+    harness.controller.library.toggleIntegrityEntry("hash-a");
+    harness.controller.library.toggleIntegrityEntry("hash-b");
+
+    await harness.controller.library.cleanUpIntegrity();
+
+    const integrity = harness.view().integrity;
+    expect(integrity.report).toBeNull();
+    expect([...integrity.selection]).toEqual(["hash-b"]);
+    expect(integrity.skippedCount).toBe(1);
   });
 
   test("cleanup with an empty selection just closes the dialog", async () => {
