@@ -28,7 +28,6 @@ interface SongSelection {
   instrumentalSongIds: string[];
   instrumentalState: "checked" | "mixed" | "unchecked";
   language: SongLanguage | null;
-  languageSongIds: string[];
 }
 
 function asSongLanguage(language: string | null): SongLanguage | null {
@@ -75,7 +74,6 @@ function describeSelection(
       selectedSongIds.length > 0
         ? sharedLanguage(contextSongs)
         : asSongLanguage(song.language),
-    languageSongIds: selectedSongIds.length > 0 ? selectedSongIds : [song.hash],
   };
 }
 
@@ -170,7 +168,7 @@ export function createSongCommands({
 
       case "setLanguage":
         void library.setSongsLanguage(
-          describeSelection(library, song).languageSongIds,
+          describeSelection(library, song).contextSongIds,
           command.language,
         );
         return;

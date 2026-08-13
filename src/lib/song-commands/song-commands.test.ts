@@ -490,6 +490,26 @@ describe("execute – library mutations", () => {
     ]);
   });
 
+  test("applies a language to the row when the selection excludes it", async () => {
+    setUp({
+      selectedSongIds: ["song-def", "song-ghi"],
+      songs: [makeSong(), makeSong({ hash: "song-def" })],
+    });
+
+    await commands.execute(
+      { id: "setLanguage", language: "mandarin" },
+      context(),
+    );
+
+    expect(ports.calls).toEqual([
+      {
+        call: "library.setSongsLanguage",
+        songIds: ["song-abc"],
+        language: "mandarin",
+      },
+    ]);
+  });
+
   test("extracts cover art for the row alone or for the whole selection", async () => {
     setUp(THREE_SELECTED);
 

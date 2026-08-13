@@ -74,10 +74,9 @@ async function createSession(): Promise<LyricsSession> {
   const backend = createMockBackend({
     overrides: { lyrics: { fetchLyrics: async () => LYRICS } },
   });
-  const created = createTestLyricsSession({
-    backend,
-    clock: { readPositionMs: () => readPositionMs() },
-  }).session;
+  const harness = createTestLyricsSession({ backend });
+  harness.clock.readFrom(() => readPositionMs());
+  const created = harness.session;
   await created.load("song-1");
   return created;
 }

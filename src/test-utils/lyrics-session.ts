@@ -15,9 +15,9 @@ export interface RomanizeCall {
 }
 
 /**
- * Romanization that answers on the caller's next microtask. `requestId` mirrors
- * the Worker adapter: a positive id can go stale, `-1` marks a result produced
- * without leaving the caller's turn.
+ * Romanization that answers in the caller's own microtask drain. `requestId`
+ * mirrors the Worker adapter: a positive id can go stale, `-1` marks a result
+ * the caller must treat as never stale.
  */
 export class FakeRomanization implements RomanizationPort {
   readonly calls: RomanizeCall[] = [];
@@ -62,16 +62,22 @@ export class FakeRomanization implements RomanizationPort {
 export class FakeClock implements PlaybackClockPort {
   constructor(public positionMs = 0) {}
 
+  private source: (() => number) | null = null;
+
+  /** Reads from a live source instead of the mutable `positionMs` field. */
+  readFrom(source: () => number): this {
+    this.source = source;
+    return this;
+  }
+
   readPositionMs(): number {
-    return this.positionMs;
+    return this.source ? this.source() : this.positionMs;
   }
 }
 
 export interface TestLyricsSessionOptions {
   backend?: Backend;
-  romanization?: RomanizationPort;
   songLanguage?: SongLanguagePort;
-  clock?: PlaybackClockPort;
   reportError?: (error: unknown) => void;
 }
 
@@ -97,9 +103,9 @@ export function createTestLyricsSession(
 
   const session = createLyricsSession({
     lyrics: backend.lyrics,
-    romanization: options.romanization ?? romanization,
+    romanization,
     songLanguage: options.songLanguage ?? { read: () => null },
-    clock: options.clock ?? clock,
+    clock,
     reportError: options.reportError ?? ((error) => errors.push(error)),
   });
 
