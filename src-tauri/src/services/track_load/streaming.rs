@@ -26,7 +26,7 @@ use crate::{
     remote::cache_catalog::CachePinGuard,
     services::playback::PlaybackErrorEvent,
 };
-use std::{sync::mpsc, sync::Arc, time::Duration};
+use std::{ops::ControlFlow, sync::mpsc, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Runtime};
 
 pub(super) const INITIAL_FETCH: &str = "remote fetch";
@@ -35,6 +35,12 @@ const RECONNECTED_FETCH: &str = "remote fetch (reconnect)";
 /// Drains the fetch-event channel for the lifetime of one streaming source
 /// and owns its cache pin. `label` distinguishes the source installed by the
 /// initial load from one installed by a reconnect in the logs.
+///
+/// The listener stops as soon as its source stops being the installed one —
+/// a successful reconnect hands the new receiver to a fresh listener, the
+/// full-file fallback replaces streaming entirely, and a superseded request
+/// never reinstalls this source. Exiting drops the cache pin and the
+/// receiver, so exactly one listener is live per installed source.
 pub(super) fn spawn_fetch_event_listener<R: Runtime>(
     ctx: LoadContext<R>,
     cache_pin_guard: Option<CachePinGuard>,
@@ -45,10 +51,10 @@ pub(super) fn spawn_fetch_event_listener<R: Runtime>(
         let _pin = cache_pin_guard;
         let song_id = ctx.song_id.clone();
         for event in fetch_event_rx {
-            match event {
+            let flow = match event {
                 FetchEvent::ConsecutiveFailures { count } => {
                     eprintln!("{label}: {count} consecutive failures for {song_id}");
-                    attempt_reconnect(&ctx, ReconnectError::Transient);
+                    attempt_reconnect(&ctx, ReconnectError::Transient)
                 }
                 FetchEvent::RangeNotSupported => {
                     eprintln!(
@@ -58,13 +64,17 @@ pub(super) fn spawn_fetch_event_listener<R: Runtime>(
                         eprintln!("{label} fallback failed for {song_id}: {error:#}");
                         ctx.fail(error);
                     }
+                    ControlFlow::Break(())
                 }
                 FetchEvent::UrlExpired => {
                     eprintln!(
                         "{label}: download URL expired for {song_id}, attempting reconnect with credential refresh"
                     );
-                    attempt_reconnect(&ctx, ReconnectError::CredentialExpired);
+                    attempt_reconnect(&ctx, ReconnectError::CredentialExpired)
                 }
+            };
+            if flow.is_break() {
+                break;
             }
         }
     });
@@ -83,22 +93,32 @@ fn fallback_to_full_file<R: Runtime>(ctx: &LoadContext<R>) -> Result<(), Playbac
 /// Mid-song reconnect after a transient or URL-expired fetch failure.
 /// Re-resolve plus an atomic source swap; `refresh_credentials` is a no-op
 /// (ProviderFetcher single-flights 401 refresh; re-resolve refreshes provider).
-fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) {
+///
+/// Returns `Break` when the calling listener's source is out of service — the
+/// swap installed a new source (whose listener was spawned here) or the
+/// request is stale — and `Continue` when the old source stays installed.
+fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) -> ControlFlow<()> {
     let song_id = ctx.song_id.clone();
     eprintln!("remote playback reconnect triggered for {song_id} (cause: {failure:?})");
 
     let position_ms = {
         let Ok(playback) = ctx.state.playback.playback.lock() else {
-            return;
+            return ControlFlow::Continue(());
         };
         playback_position_for_reconnect(&playback, &song_id)
     };
     let Some(position_ms) = position_ms else {
-        return;
+        // No matching active track. A current request may still be installing
+        // this source; a superseded one never will, so its listener stops.
+        return if ctx.guard().is_current() {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        };
     };
 
     let Ok(cache_catalog) = ctx.state.remote.remote_chunk_cache() else {
-        return;
+        return ControlFlow::Continue(());
     };
     let cache = Arc::clone(cache_catalog);
 
@@ -178,8 +198,9 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
                 position_ms,
                 new_source: Box::new(success.source),
             });
+            ControlFlow::Break(())
         }
-        Err(ReconnectError::Stale) => {}
+        Err(ReconnectError::Stale) => ControlFlow::Break(()),
         Err(error) => {
             eprintln!("remote playback reconnect failed for {song_id}: {error:?}");
             let _ = ctx.app_handle.emit(
@@ -194,6 +215,7 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
                     ),
                 },
             );
+            ControlFlow::Continue(())
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     audio::{
         coordinator::{spawn_coordinator, CoordinatorRuntime},
         decode::DecodedAudio,
+        remote_source::FetchEvent,
     },
     cache::stems::StemCacheEntry,
     state::AppState,
@@ -471,6 +472,40 @@ fn stem_attachment_for_the_current_request_attaches() {
         .expect("attach_stems thread should not panic")
         .expect("attach_stems should return a snapshot");
     assert!(snapshot.has_stems);
+}
+
+#[test]
+fn a_fetch_event_listener_for_a_superseded_request_stops_draining() {
+    let fixture = Fixture::new();
+    let request = PlaybackRequest::begin(&fixture.state.playback).expect("request");
+    let ctx = LoadContext {
+        state: fixture.state.clone(),
+        app_handle: fixture.app.handle().clone(),
+        app_data_dir: fixture.state.shell.app_data_dir.clone(),
+        library_root: fixture.library.clone(),
+        song_id: "song-superseded".to_owned(),
+        request,
+    };
+    let _current = PlaybackRequest::begin(&fixture.state.playback).expect("newer request");
+
+    let (fetch_event_tx, fetch_event_rx) = mpsc::channel();
+    streaming::spawn_fetch_event_listener(ctx, None, fetch_event_rx, "test fetch");
+
+    fetch_event_tx
+        .send(FetchEvent::ConsecutiveFailures { count: 5 })
+        .expect("the listener should be draining before it sees the event");
+
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    while fetch_event_tx
+        .send(FetchEvent::ConsecutiveFailures { count: 5 })
+        .is_ok()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the listener must drop its receiver once its request is superseded"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
