@@ -716,6 +716,13 @@ impl PlaybackController {
         prepared: PreparedTrack,
         current_output_format: OutputFormatSnapshot,
     ) -> Result<(), PlaybackError> {
+        if prepared.audio.sample_rate_hz == 0 || prepared.audio.channels == 0 {
+            return Err(PlaybackError::AudioDecodeFailed(format!(
+                "prepared track {} has unusable audio metadata (sample_rate={}, channels={})",
+                prepared.song_id, prepared.audio.sample_rate_hz, prepared.audio.channels,
+            )));
+        }
+
         if prepared.preload_request_generation != self.expected_preload_request_generation {
             return Err(PlaybackError::Internal(format!(
                 "prepared track from stale preload request (prepared gen={}, expected gen={})",
@@ -1395,6 +1402,32 @@ mod tests {
         let fresh = make_prepared("song-new", 1, fmt);
         assert!(controller.install_prepared_track(fresh, fmt).is_ok());
         assert!(controller.prepared_track.is_some());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_zero_sample_rate_audio() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let mut prepared = make_prepared("song-b", 0, fmt);
+        prepared.audio.sample_rate_hz = 0;
+        assert!(
+            controller.install_prepared_track(prepared, fmt).is_err(),
+            "zero-rate audio must not be installed for playback"
+        );
+        assert!(controller.prepared_track.is_none());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_zero_channel_audio() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let mut prepared = make_prepared("song-b", 0, fmt);
+        prepared.audio.channels = 0;
+        assert!(
+            controller.install_prepared_track(prepared, fmt).is_err(),
+            "zero-channel audio must not be installed for playback"
+        );
+        assert!(controller.prepared_track.is_none());
     }
 
     #[test]

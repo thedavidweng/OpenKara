@@ -44,11 +44,11 @@ pub enum DecodeError {
     #[error("decoded audio contained no PCM samples")]
     NoSamples,
 
-    #[error("audio track is missing sample rate metadata")]
-    MissingSampleRate,
+    #[error("audio track has no usable sample rate: {0}")]
+    MissingSampleRate(String),
 
-    #[error("audio track is missing channel metadata")]
-    MissingChannels,
+    #[error("audio track has no usable channel count: {0}")]
+    MissingChannels(String),
 
     #[error("decoder reset is not supported")]
     ResetNotSupported,
@@ -213,8 +213,14 @@ where
         return Err(DecodeError::NoSamples);
     }
 
-    let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
-    let channels = channels.ok_or(DecodeError::MissingChannels)?;
+    // A zero rate or channel count is as unusable as a missing one; rejecting
+    // it here keeps `sample_rate_hz > 0` a precondition on the audio thread.
+    let sample_rate = sample_rate
+        .filter(|rate| *rate > 0)
+        .ok_or_else(|| DecodeError::MissingSampleRate(source_label.to_owned()))?;
+    let channels = channels
+        .filter(|count| *count > 0)
+        .ok_or_else(|| DecodeError::MissingChannels(source_label.to_owned()))?;
     let frame_count = samples.len() / channels;
     let duration_ms = ((frame_count as f64 / sample_rate as f64) * 1000.0).round() as u64;
 
@@ -288,5 +294,48 @@ mod tests {
         let path = fixture_dir().join("fixture.wav");
         let result = probe_file(&path);
         assert!(result.is_ok(), "valid WAV should probe: {:?}", result.err());
+    }
+
+    fn pcm16_wav_bytes(sample_rate: u32) -> Vec<u8> {
+        let channels: u16 = 2;
+        let bits: u16 = 16;
+        let block_align = channels * bits / 8;
+        let pcm = [0u8; 64]; // 16 silent frames
+        let data_len = pcm.len() as u32;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&channels.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * block_align as u32).to_le_bytes());
+        bytes.extend_from_slice(&block_align.to_le_bytes());
+        bytes.extend_from_slice(&bits.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        bytes.extend_from_slice(&pcm);
+        bytes
+    }
+
+    #[test]
+    fn decode_bytes_accepts_crafted_wav_with_valid_rate() {
+        let result = decode_bytes(pcm16_wav_bytes(44_100), "wav");
+        let audio = result.expect("crafted WAV with a valid rate should decode");
+        assert_eq!(audio.sample_rate_hz, 44_100);
+        assert_eq!(audio.channels, 2);
+    }
+
+    /// #378: a zero sample rate must never reach playback; the realtime
+    /// resampler treats `sample_rate_hz > 0` as a precondition.
+    #[test]
+    fn decode_bytes_rejects_zero_sample_rate() {
+        let result = decode_bytes(pcm16_wav_bytes(0), "wav");
+        assert!(
+            result.is_err(),
+            "zero-rate audio must be rejected at the decode boundary, got {result:?}"
+        );
     }
 }
