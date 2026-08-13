@@ -129,6 +129,18 @@ pub fn maybe_run_from_cli() -> Result<bool> {
 }
 
 fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
+    run_worker_with(request_path, progress_path, |library_path| {
+        crate::separator::model::ensure_runtime_loaded_from_path(library_path).map(|_| ())
+    })
+}
+
+/// Seam at the probe: production loads the runtime into this worker process;
+/// tests substitute a probe that succeeds or fails on demand.
+fn run_worker_with(
+    request_path: &Path,
+    progress_path: &Path,
+    probe: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
     let request: RuntimeWorkerRequest =
         serde_json::from_slice(&fs::read(request_path).with_context(|| {
             format!("failed to read worker request {}", request_path.display())
@@ -154,10 +166,6 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
         },
     )?;
 
-    // Keep the verified install reachable after a worker kill. Startup can
-    // promote this candidate without downloading the archive again.
-    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
-
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_INSTALLING").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
@@ -182,14 +190,21 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
         thread::sleep(Duration::from_secs(10 * 60));
     }
 
-    crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
-        .with_context(|| {
-            format!(
-                "failed to load ONNX Runtime from {}",
-                installed.library_path.display()
-            )
-        })?;
+    probe(&installed.library_path).with_context(|| {
+        format!(
+            "failed to load ONNX Runtime from {}",
+            installed.library_path.display()
+        )
+    })?;
     eprintln!("probe succeeded for {}", installed.library_path.display());
+
+    // Stage only after the probe proved the library loads: startup
+    // acknowledges a promoted candidate on the worker probe's authority
+    // (ADR-0023), so an unproven install must never become the candidate
+    // (#395). A worker killed before this point loses nothing durable — the
+    // verified archive cache and the install directory make the retry a
+    // re-verification, not a re-download.
+    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
 
     write_progress(
         progress_path,
@@ -620,6 +635,158 @@ pub fn install_runtime_with_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::separator::verified_manifest::sha256_hex;
+
+    fn write_tgz(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = fs::File::create(path).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, bytes) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, name, *bytes)
+                .expect("append entry");
+        }
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip");
+    }
+
+    /// A catalog whose only runtime for this target installs offline: its
+    /// archive is pre-seeded into the verified download cache, so the worker
+    /// never touches the (unreachable) download URL.
+    fn offline_install_fixture(
+        app_data: &Path,
+        artifact_id: &str,
+        library_bytes: &[u8],
+    ) -> (VerifiedCatalog, CatalogRuntime) {
+        let staging = app_data.join("fixture-archives");
+        fs::create_dir_all(&staging).expect("fixture staging dir");
+        let archive_path = staging.join(format!("{artifact_id}.tar.gz"));
+        write_tgz(
+            &archive_path,
+            &[(runtime_bootstrap::ORT_RUNTIME_FILENAME, library_bytes)],
+        );
+        let archive_bytes = fs::read(&archive_path).expect("read archive");
+
+        let runtime = CatalogRuntime {
+            artifact_id: artifact_id.to_owned(),
+            target_triple: Some(catalog::current_target_triple().to_owned()),
+            filename: format!("{artifact_id}.tar.gz"),
+            byte_size: archive_bytes.len() as u64,
+            archive_digest: sha256_hex(&archive_bytes),
+            download_url: "http://127.0.0.1:9/never-fetched.tar.gz".to_owned(),
+            extracted_file_digests: [(
+                runtime_bootstrap::ORT_RUNTIME_FILENAME.to_owned(),
+                catalog::CatalogFileDigest {
+                    sha256: sha256_hex(library_bytes),
+                    size: library_bytes.len() as u64,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            runtime: catalog::CatalogRuntimeMetadata {
+                version: "v1-test".to_owned(),
+                ort_c_api_level: "27".to_owned(),
+                execution_providers: vec!["cpu".to_owned()],
+                supported_model_artifact_ids: vec![],
+                companion_files: vec![],
+            },
+            deprecation: catalog::CatalogDeprecation::default(),
+        };
+
+        let cache_path = runtime_cache_path(app_data, &runtime);
+        fs::create_dir_all(cache_path.parent().expect("cache parent")).expect("cache dir");
+        fs::rename(&archive_path, &cache_path).expect("seed verified archive cache");
+
+        let mut verified = catalog::embedded_catalog().clone();
+        verified.manifest.artifacts.runtimes = vec![runtime.clone()];
+        (verified, runtime)
+    }
+
+    fn write_worker_request(
+        app_data: &Path,
+        catalog: &VerifiedCatalog,
+        runtime: &CatalogRuntime,
+    ) -> (PathBuf, PathBuf) {
+        let request = RuntimeWorkerRequest {
+            app_data_dir: app_data.to_path_buf(),
+            catalog: catalog.clone(),
+            runtime: runtime.clone(),
+        };
+        let request_path = app_data.join("worker-test.request.json");
+        fs::write(
+            &request_path,
+            serde_json::to_vec(&request).expect("serialize request"),
+        )
+        .expect("write request");
+        (request_path, app_data.join("worker-test.progress.json"))
+    }
+
+    #[test]
+    fn a_failed_probe_does_not_stage_the_install_as_candidate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) =
+            offline_install_fixture(dir.path(), "rt-probe-fails", b"not-a-real-dylib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        let error = run_worker_with(&request_path, &progress_path, |_| {
+            anyhow::bail!("scripted probe failure")
+        })
+        .expect_err("a failing probe must fail the worker");
+        assert!(
+            format!("{error:#}").contains("scripted probe failure"),
+            "unexpected error: {error:#}"
+        );
+
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(
+            slots.candidate, None,
+            "an unproven install must never be staged as the next-launch candidate"
+        );
+        // The verified install itself survives so a retry re-verifies
+        // instead of re-downloading.
+        let installed = runtime_bootstrap::installed_runtime(dir.path(), "rt-probe-fails")
+            .expect("the verified install must survive the failed probe");
+        assert!(runtime_bootstrap::verify_runtime_files(&installed).expect("verify"));
+    }
+
+    #[test]
+    fn a_successful_probe_stages_the_candidate_only_after_probing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) =
+            offline_install_fixture(dir.path(), "rt-probe-passes", b"probed-dylib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        let mut candidate_at_probe_time = None;
+        run_worker_with(&request_path, &progress_path, |library_path| {
+            assert!(
+                library_path.is_file(),
+                "probe must see the installed library"
+            );
+            candidate_at_probe_time = Some(runtime_bootstrap::read_slots(dir.path()).candidate);
+            Ok(())
+        })
+        .expect("the worker must succeed when the probe passes");
+
+        assert_eq!(
+            candidate_at_probe_time,
+            Some(None),
+            "the candidate slot must still be empty while the probe runs"
+        );
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some("rt-probe-passes"),
+            "a proven install must be staged as the next-launch candidate"
+        );
+    }
 
     #[test]
     fn progress_round_trips_with_an_explicit_phase() {

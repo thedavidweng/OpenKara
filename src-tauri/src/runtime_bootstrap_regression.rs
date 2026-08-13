@@ -349,12 +349,14 @@ fn run_fault_retry(
         "verified_install_survived_process_exit".to_owned(),
         verified_orphan,
     );
+    // The worker was killed during the probe, so the install was never
+    // proven and must not be staged: startup acknowledges a candidate on
+    // the worker probe's authority without loading it (#395).
     assertions.insert(
-        "verified_candidate_survived_process_exit".to_owned(),
+        "unproven_install_was_not_staged_as_candidate".to_owned(),
         runtime_bootstrap::runtime_inventory(&config.app_data_dir)
             .candidate
-            .as_ref()
-            .is_some_and(|candidate| candidate.record.artifact_id == runtime.artifact_id),
+            .is_none(),
     );
     assertions.insert(
         "runtime_is_not_active_before_restart".to_owned(),
@@ -382,12 +384,9 @@ fn run_restart(
     let orphan = runtime_bootstrap::installed_runtime(&config.app_data_dir, artifact_id)
         .context("restart phase did not find the verified orphan install")?;
     anyhow::ensure!(
-        before_inventory.active.is_none()
-            && before_inventory
-                .candidate
-                .as_ref()
-                .is_some_and(|candidate| candidate.record.artifact_id == artifact_id),
-        "restart phase must begin with the verified runtime candidate"
+        before_inventory.active.is_none() && before_inventory.candidate.is_none(),
+        "restart phase must begin from an unstaged orphan install: the probe never \
+         passed, so the previous process must not have staged a candidate (#395)"
     );
     anyhow::ensure!(
         runtime_bootstrap::verify_runtime_files(&orphan)?,
