@@ -348,6 +348,7 @@
       "removeLibrary": "Disconnetti repository",
       "deleteLibrary": "Elimina repository",
       "typeToConfirmDelete": "Digita \"{{displayName}}\" per confermare l'eliminazione permanente.",
+      "confirmNameMismatch": "Il nome digitato non corrisponde a \"{{displayName}}\".",
       "confirmDisconnectRemote": "Disconnettere \"{{displayName}}\" da {{appName}}? Il contenuto del repository remoto resterà in {{provider}}.",
       "confirmDisconnectLocal": "Disconnettere questa libreria da {{appName}}? I dati della libreria resteranno sul disco.",
       "confirmDeleteRemote": "Eliminare \"{{displayName}}\"? Verranno eliminati il contenuto del repository remoto in {{provider}} al percorso {{path}} e la copia di lavoro locale.",

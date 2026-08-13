@@ -347,6 +347,7 @@
       "removeLibrary": "Opslag loskoppelen",
       "deleteLibrary": "Opslag verwijderen",
       "typeToConfirmDelete": "Typ \"{{displayName}}\" om definitieve verwijdering te bevestigen.",
+      "confirmNameMismatch": "De getypte naam komt niet overeen met \"{{displayName}}\".",
       "confirmDisconnectRemote": "\"{{displayName}}\" loskoppelen van {{appName}}? De inhoud van de externe opslag blijft in {{provider}}.",
       "confirmDisconnectLocal": "Deze bibliotheek loskoppelen van {{appName}}? De bibliotheekgegevens blijven op schijf staan.",
       "confirmDeleteRemote": "\"{{displayName}}\" verwijderen? De inhoud van de externe opslag in {{provider}} op {{path}} en de lokale werkkopie worden verwijderd.",

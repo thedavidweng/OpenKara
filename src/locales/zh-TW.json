@@ -346,6 +346,7 @@
       "removeLibrary": "中斷儲存庫連線",
       "deleteLibrary": "刪除儲存庫",
       "typeToConfirmDelete": "請輸入「{{displayName}}」以確認永久刪除。",
+      "confirmNameMismatch": "輸入的名稱與「{{displayName}}」不相符。",
       "confirmDisconnectRemote": "中斷「{{displayName}}」與 {{appName}} 的連線？遠端資料庫內容會保留在 {{provider}} 中。",
       "confirmDisconnectLocal": "中斷此曲庫與 {{appName}} 的連線？曲庫資料會保留在磁碟上。",
       "confirmDeleteRemote": "刪除「{{displayName}}」？這會從 {{provider}} 的 {{path}} 刪除遠端資料庫內容，並移除本機工作副本。",

@@ -352,6 +352,32 @@ describe("library commands", () => {
     expect(switchLibrary).not.toHaveBeenCalled();
   });
 
+  test("a successful activation reports ok to its caller", async () => {
+    const harness = createSettingsHarness();
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(harness.view().library.error).toBeNull();
+  });
+
+  test("a failed activation reports its error to the caller", async () => {
+    const harness = createSettingsHarness();
+    harness.librarySession.failOn(
+      "switchLibrary",
+      new Error("endpoint unreachable"),
+    );
+
+    const result = await harness.controller.library.activate(
+      driveRepository.id,
+    );
+
+    expect(result).toEqual({ ok: false, error: "endpoint unreachable" });
+    expect(harness.view().library.error).toBe("endpoint unreachable");
+  });
+
   test("refreshing an active Remote Repository refreshes in place", async () => {
     const harness = createSettingsHarness({
       overrides: {
@@ -518,7 +544,7 @@ describe("library commands", () => {
     expect(deleteLibrary).toHaveBeenCalledWith(driveRepository.id);
   });
 
-  test("Delete Repository stops when the typed name does not match", async () => {
+  test("a mismatched name stops the delete before the native prompt", async () => {
     const deleteLibrary = vi.fn(async () => registryOf(null, []));
     const harness = createSettingsHarness({
       overrides: {
@@ -530,10 +556,11 @@ describe("library commands", () => {
       },
     });
     await harness.controller.initialize();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     await harness.controller.library.delete(driveRepository.id, "Wrong");
 
+    expect(confirm).not.toHaveBeenCalled();
     expect(deleteLibrary).not.toHaveBeenCalled();
   });
 });
@@ -1458,6 +1485,28 @@ describe("library integrity", () => {
     await harness.controller.library.cleanUpIntegrity();
 
     expect(harness.view().integrity.skippedCount).toBe(2);
+  });
+
+  test("cleanup without a report still prunes the selection and records skips", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          removeMissingLibraryEntries: async () => ({
+            deleted_song_hashes: ["hash-a"],
+            skipped_song_hashes: ["hash-b"],
+          }),
+        },
+      },
+    });
+    harness.controller.library.toggleIntegrityEntry("hash-a");
+    harness.controller.library.toggleIntegrityEntry("hash-b");
+
+    await harness.controller.library.cleanUpIntegrity();
+
+    const integrity = harness.view().integrity;
+    expect(integrity.report).toBeNull();
+    expect([...integrity.selection]).toEqual(["hash-b"]);
+    expect(integrity.skippedCount).toBe(1);
   });
 
   test("cleanup with an empty selection just closes the dialog", async () => {

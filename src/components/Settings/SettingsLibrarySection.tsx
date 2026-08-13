@@ -342,6 +342,10 @@ export function SettingsLibrarySection() {
             displayName: deleteConfirmDialog.displayName,
           })}
           confirmLabel={t("common.confirm")}
+          expectedValue={deleteConfirmDialog.displayName}
+          mismatchHint={t("settings.library.confirmNameMismatch", {
+            displayName: deleteConfirmDialog.displayName,
+          })}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirmDialog(null)}
         />

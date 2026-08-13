@@ -11,6 +11,7 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 import type {
+  LibraryCommandResult,
   ModelStatusView,
   SettingsController,
   SettingsControllerDependencies,
@@ -282,13 +283,18 @@ export function createSettingsController({
     refreshModelStatuses,
   });
 
-  const runLibraryWork = async (work: () => Promise<void>) => {
+  const runLibraryWork = async (
+    work: () => Promise<void>,
+  ): Promise<LibraryCommandResult> => {
     patchLibrary({ error: null });
 
     try {
       await work();
+      return { ok: true };
     } catch (error: unknown) {
-      patchLibrary({ error: getErrorMessage(error) });
+      const message = getErrorMessage(error);
+      patchLibrary({ error: message });
+      return { ok: false, error: message };
     }
   };
 
@@ -542,6 +548,14 @@ export function createSettingsController({
       await stores.library.loadLibrary();
       await stores.player.loadState();
 
+      patchIntegrity({
+        selection: new Set(selectedHashes.filter((hash) => !deleted.has(hash))),
+        skippedCount:
+          result.skipped_song_hashes.length > 0
+            ? result.skipped_song_hashes.length
+            : null,
+      });
+
       if (report) {
         const keep = (issue: { song_hash: string }) =>
           !deleted.has(issue.song_hash);
@@ -555,13 +569,6 @@ export function createSettingsController({
               report.missing_optional_assets.filter(keep),
             empty_optional_assets: report.empty_optional_assets.filter(keep),
           },
-          selection: new Set(
-            selectedHashes.filter((hash) => !deleted.has(hash)),
-          ),
-          skippedCount:
-            result.skipped_song_hashes.length > 0
-              ? result.skipped_song_hashes.length
-              : null,
         });
       }
     } catch (error: unknown) {
@@ -661,18 +668,18 @@ export function createSettingsController({
     library: {
       create: async (dialogTitle) => {
         const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
+        if (!directory) return { ok: true };
 
-        await runLibraryWork(() =>
+        return runLibraryWork(() =>
           librarySession.createLocalLibrary(directory),
         );
       },
 
       open: async (dialogTitle) => {
         const directory = await selectDirectory(dialogTitle);
-        if (!directory) return;
+        if (!directory) return { ok: true };
 
-        await runLibraryWork(() => librarySession.openLocalLibrary(directory));
+        return runLibraryWork(() => librarySession.openLocalLibrary(directory));
       },
 
       activate: (libraryId) =>
@@ -747,7 +754,7 @@ export function createSettingsController({
                   appName: i18next.t("app.name"),
                 });
 
-          if (!window.confirm(message) || confirmationName !== displayName) {
+          if (confirmationName !== displayName || !window.confirm(message)) {
             return;
           }
 

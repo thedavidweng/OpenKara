@@ -347,6 +347,7 @@
       "removeLibrary": "Repository trennen",
       "deleteLibrary": "Repository löschen",
       "typeToConfirmDelete": "Geben Sie „{{displayName}}“ ein, um die dauerhafte Löschung zu bestätigen.",
+      "confirmNameMismatch": "Der eingegebene Name stimmt nicht mit „{{displayName}}“ überein.",
       "confirmDisconnectRemote": "„{{displayName}}“ von {{appName}} trennen? Der Inhalt des Remote-Repositorys bleibt in {{provider}}.",
       "confirmDisconnectLocal": "Diese Bibliothek von {{appName}} trennen? Die Bibliotheksdaten bleiben auf dem Datenträger.",
       "confirmDeleteRemote": "„{{displayName}}“ löschen? Dadurch werden der Inhalt des Remote-Repositorys aus {{provider}} unter {{path}} und die lokale Arbeitskopie gelöscht.",

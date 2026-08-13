@@ -349,6 +349,7 @@
       "removeLibrary": "Odłącz repozytorium",
       "deleteLibrary": "Usuń repozytorium",
       "typeToConfirmDelete": "Wpisz „{{displayName}}”, aby potwierdzić trwałe usunięcie.",
+      "confirmNameMismatch": "Wpisana nazwa nie zgadza się z „{{displayName}}”.",
       "confirmDisconnectRemote": "Odłączyć „{{displayName}}” od {{appName}}? Zawartość zdalnego repozytorium pozostanie w {{provider}}.",
       "confirmDisconnectLocal": "Odłączyć tę bibliotekę od {{appName}}? Dane biblioteki pozostaną na dysku.",
       "confirmDeleteRemote": "Usunąć „{{displayName}}”? Zawartość zdalnego repozytorium w {{provider}} pod adresem {{path}} oraz lokalna kopia robocza zostaną usunięte.",

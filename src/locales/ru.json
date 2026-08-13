@@ -349,6 +349,7 @@
       "removeLibrary": "Отключить репозиторий",
       "deleteLibrary": "Удалить репозиторий",
       "typeToConfirmDelete": "Введите «{{displayName}}», чтобы подтвердить безвозвратное удаление.",
+      "confirmNameMismatch": "Введённое имя не совпадает с «{{displayName}}».",
       "confirmDisconnectRemote": "Отключить «{{displayName}}» от {{appName}}? Содержимое удалённого репозитория останется в {{provider}}.",
       "confirmDisconnectLocal": "Отключить эту библиотеку от {{appName}}? Данные библиотеки останутся на диске.",
       "confirmDeleteRemote": "Удалить «{{displayName}}»? Содержимое удалённого репозитория в {{provider}} по адресу {{path}} и локальная рабочая копия будут удалены.",
