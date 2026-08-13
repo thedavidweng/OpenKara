@@ -8,110 +8,26 @@ import {
 import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { usePlayerStore } from "@/stores/player-store";
 import type { LyricLine as LyricLineType } from "@/types/ipc";
+import {
+  getLyricsRomanTextSizeClass,
+  getLyricsSecondaryTextSizeClass,
+  getLyricsTextSizeClass,
+  getSeekableHoverClass,
+  hasBackgroundWords,
+  isLastWord,
+  shouldEmphasizeWord,
+} from "./lyric-line-typography";
+import type { LyricLineState, LyricsPresentation } from "./lyrics-panel-model";
 
 interface LyricLineProps {
   lineIndex: number;
   line: LyricLineType;
-  state: "active" | "past" | "future" | "plain";
+  state: LyricLineState;
   activeWordIndex?: number;
-  presentation?: "standard" | "audience";
+  presentation?: LyricsPresentation;
   lyricsFontStep: number;
   romanizedText?: string;
   alignment?: "center" | "left";
-}
-
-const STANDARD_SEEKABLE_HOVER_CLASS =
-  "relative transition-[color,transform,text-shadow] duration-300 ease-out group-hover/line:text-[var(--color-lyrics-active)] group-hover/line:-translate-y-px group-hover/line:[text-shadow:var(--shadow-lyrics-hover)]";
-
-const AUDIENCE_SEEKABLE_HOVER_CLASS =
-  "relative transition-[transform,text-shadow] duration-300 ease-out group-hover/line:-translate-y-px";
-
-const STANDARD_TEXT_SIZE_CLASSES = {
-  [-2]: "text-lg font-bold tracking-tight md:text-xl",
-  [-1]: "text-xl font-bold tracking-tight md:text-2xl",
-  [0]: "text-2xl font-bold tracking-tight md:text-3xl",
-  [1]: "text-3xl font-bold tracking-tight md:text-4xl xl:text-5xl",
-  [2]: "text-4xl font-bold tracking-tight md:text-5xl xl:text-6xl",
-} as const;
-
-const AUDIENCE_TEXT_SIZE_CLASSES = {
-  [-2]: "text-2xl font-bold tracking-tight md:text-4xl xl:text-5xl",
-  [-1]: "text-3xl font-bold tracking-tight md:text-5xl xl:text-6xl",
-  [0]: "text-4xl font-bold tracking-tight md:text-6xl xl:text-7xl",
-  [1]: "text-5xl font-bold tracking-tight md:text-7xl xl:text-8xl",
-  [2]: "text-6xl font-bold tracking-tight md:text-8xl xl:text-8xl",
-} as const;
-
-const STANDARD_SECONDARY_TEXT_SIZE_CLASSES = {
-  [-2]: "text-xs",
-  [-1]: "text-xs md:text-sm",
-  [0]: "text-sm md:text-base",
-  [1]: "text-base md:text-lg xl:text-2xl",
-  [2]: "text-lg md:text-2xl xl:text-3xl",
-} as const;
-
-const LEFT_ROMAN_TEXT_SIZE_CLASSES = {
-  [-2]: "text-base font-medium tracking-tight md:text-lg",
-  [-1]: "text-lg font-medium tracking-tight md:text-xl",
-  [0]: "text-xl font-medium tracking-tight md:text-2xl",
-  [1]: "text-2xl font-medium tracking-tight md:text-3xl xl:text-4xl",
-  [2]: "text-3xl font-medium tracking-tight md:text-4xl xl:text-5xl",
-} as const;
-
-function getLyricsTextSizeClass(
-  presentation: "standard" | "audience",
-  lyricsFontStep: number,
-): string {
-  const clampedStep = Math.max(-2, Math.min(2, lyricsFontStep)) as
-    | -2
-    | -1
-    | 0
-    | 1
-    | 2;
-
-  return presentation === "audience"
-    ? AUDIENCE_TEXT_SIZE_CLASSES[clampedStep]
-    : STANDARD_TEXT_SIZE_CLASSES[clampedStep];
-}
-
-function getLyricsSecondaryTextSizeClass(lyricsFontStep: number): string {
-  const clampedStep = Math.max(-2, Math.min(2, lyricsFontStep)) as
-    | -2
-    | -1
-    | 0
-    | 1
-    | 2;
-  return STANDARD_SECONDARY_TEXT_SIZE_CLASSES[clampedStep];
-}
-
-function getLyricsRomanTextSizeClass(lyricsFontStep: number): string {
-  const clampedStep = Math.max(-2, Math.min(2, lyricsFontStep)) as
-    | -2
-    | -1
-    | 0
-    | 1
-    | 2;
-  return LEFT_ROMAN_TEXT_SIZE_CLASSES[clampedStep];
-}
-
-function shouldEmphasize(word: {
-  text: string;
-  time_ms: number;
-  end_ms: number;
-}): boolean {
-  const duration = word.end_ms - word.time_ms;
-  if (duration < 1000) return false;
-  const trimmed = word.text.trim();
-  if (/[一-鿿぀-ゟ゠-ヿ]/.test(trimmed)) return true;
-  return trimmed.length >= 2 && trimmed.length <= 7;
-}
-
-function isLastWord(index: number, total: number): boolean {
-  return index === total - 1;
-}
-
-function hasBackgroundWords(line: LyricLineType): boolean {
-  return line.bg_words !== null && line.bg_words.length > 0;
 }
 
 function areLyricLinePropsEqual(
@@ -168,11 +84,7 @@ export const LyricLine = memo(function LyricLine({
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const shouldUseKaraokeFill =
     state === "active" && hasWords && presentation !== "audience";
-  const hoverClass = isSeekable
-    ? presentation === "audience"
-      ? AUDIENCE_SEEKABLE_HOVER_CLASS
-      : STANDARD_SEEKABLE_HOVER_CLASS
-    : "";
+  const hoverClass = getSeekableHoverClass(presentation, isSeekable);
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
   const wordElsRef = useRef<HTMLElement[]>([]);
@@ -275,7 +187,7 @@ export const LyricLine = memo(function LyricLine({
         const isActiveWord = wordState === "active";
 
         if (
-          shouldEmphasize(word) &&
+          shouldEmphasizeWord(word) &&
           isActiveWord &&
           presentation !== "audience"
         ) {

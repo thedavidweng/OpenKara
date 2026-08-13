@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { Cloud, X } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import {
   REMOTE_AUTH_CANCELLED,
   runRemoteLibraryRegistrationFlow,
@@ -42,8 +42,9 @@ export function RemoteLibraryWizard({
   initialRemotePathDisplay,
   purpose = "add",
 }: RemoteLibraryWizardProps) {
+  const { remoteRepository } = useBackend();
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, library } = useSettings();
   const [mode, setMode] = useState<RemoteSetupMode>("open_remote");
   const [provider, setProvider] =
     useState<RemoteLibraryProvider>(initialProvider);
@@ -67,8 +68,8 @@ export function RemoteLibraryWizard({
   const usernameInputId = "remote-library-webdav-username";
   const passwordInputId = "remote-library-webdav-password";
 
-  const activeLibrary = state.libraries.find(
-    (library) => library.id === state.activeLibraryId,
+  const activeLibrary = view.library.libraries.find(
+    (candidate) => candidate.id === view.library.activeLibraryId,
   );
   const activeLocalLibrary =
     activeLibrary?.kind === "local" ? activeLibrary : null;
@@ -84,10 +85,10 @@ export function RemoteLibraryWizard({
       cancelledRef.current = true;
       mountedRef.current = false;
       if (authSessionIdRef.current) {
-        void api.cancelRemoteAuth(authSessionIdRef.current);
+        void remoteRepository.cancelRemoteAuth(authSessionIdRef.current);
       }
     };
-  }, []);
+  }, [remoteRepository]);
 
   const resetProviderState = (nextProvider: RemoteLibraryProvider) => {
     setProvider(nextProvider);
@@ -101,7 +102,7 @@ export function RemoteLibraryWizard({
   const requestClose = () => {
     cancelledRef.current = true;
     if (authSessionIdRef.current) {
-      void api.cancelRemoteAuth(authSessionIdRef.current);
+      void remoteRepository.cancelRemoteAuth(authSessionIdRef.current);
     }
     if (mountedRef.current) {
       setLoading(false);
@@ -137,6 +138,7 @@ export function RemoteLibraryWizard({
           provider,
           displayName,
           t,
+          remoteApi: remoteRepository,
           libraryId: isReauthorizeFlow ? libraryId : undefined,
           existingRemoteRootLocator: isReauthorizeFlow
             ? initialRemoteRootLocator
@@ -204,18 +206,18 @@ export function RemoteLibraryWizard({
         mode === "mirror_active_local" &&
         activeLocalLibrary
       ) {
-        await api.mirrorLocalLibraryToRemote(
+        await remoteRepository.mirrorLocalLibraryToRemote(
           activeLocalLibrary.id,
           remoteLibraryId,
         );
-        await actions.switchLibrary(remoteLibraryId);
+        await library.activate(remoteLibraryId);
         setMessage(
           t("settings.library.remoteLibraryCreatedAndMirroring", {
             displayName: activeLocalLibrary.display_name,
           }),
         );
       } else {
-        await actions.switchLibrary(remoteLibraryId);
+        await library.activate(remoteLibraryId);
         setMessage(t("settings.library.remoteLibraryConnected"));
       }
 
@@ -231,9 +233,9 @@ export function RemoteLibraryWizard({
     }
   };
 
-  const remoteLibraries = state.libraries.filter(
-    (library): library is Extract<RegisteredLibrary, { kind: "remote" }> =>
-      library.kind === "remote",
+  const remoteLibraries = view.library.libraries.filter(
+    (candidate): candidate is Extract<RegisteredLibrary, { kind: "remote" }> =>
+      candidate.kind === "remote",
   );
 
   const titleKey = isReauthorizeFlow
@@ -454,7 +456,7 @@ export function RemoteLibraryWizard({
           <button
             type="button"
             onClick={() => void connect()}
-            disabled={loading || meta.isInitializing}
+            disabled={loading || view.isInitializing}
             className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading
@@ -500,21 +502,22 @@ export function RemoteLibraryWizard({
               {t("settings.library.existingRemoteLibraries")}
             </p>
             <div className="space-y-2">
-              {remoteLibraries.map((library) => (
+              {remoteLibraries.map((candidate) => (
                 <button
-                  key={library.id}
+                  key={candidate.id}
                   type="button"
                   onClick={() =>
-                    void actions.switchLibrary(library.id).then(() => onClose())
+                    void library.activate(candidate.id).then(() => onClose())
                   }
                   disabled={loading}
                   className="rounded-md border border-[var(--color-border-light)] px-3 py-2"
                 >
                   <p className="text-sm text-[var(--color-text)]">
-                    {library.display_name}
+                    {candidate.display_name}
                   </p>
                   <p className="text-xs text-[var(--color-text-dim)]">
-                    {library.remote_path_display || library.remote_root_locator}
+                    {candidate.remote_path_display ||
+                      candidate.remote_root_locator}
                   </p>
                 </button>
               ))}

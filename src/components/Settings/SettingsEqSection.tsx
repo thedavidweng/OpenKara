@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 
 const EQ_BAND_KEYS = [
   "settings.eq.band60",
@@ -54,12 +54,14 @@ function matchEqPreset(gains: EqGains): string | null {
 
 export function SettingsEqSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences } = useSettings();
+  const { isInitializing } = view;
+  const { eqEnabled, eqGainsDb } = view.preferences;
 
-  const [draft, setDraft] = useState<EqGains>(state.eqGainsDb);
+  const [draft, setDraft] = useState<EqGains>(eqGainsDb);
   useEffect(() => {
-    setDraft(state.eqGainsDb);
-  }, [state.eqGainsDb]);
+    setDraft(eqGainsDb);
+  }, [eqGainsDb]);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<EqGains | null>(null);
@@ -73,7 +75,7 @@ export function SettingsEqSection() {
     const pending = pendingRef.current;
     pendingRef.current = null;
     if (pending !== null) {
-      void actions.setEqGains(pending);
+      void preferences.set({ eqGainsDb: pending });
     }
   };
 
@@ -104,7 +106,7 @@ export function SettingsEqSection() {
         const pending = pendingRef.current;
         pendingRef.current = null;
         if (pending !== null) {
-          void actions.setEqGains(pending);
+          void preferences.set({ eqGainsDb: pending });
         }
       }, EQ_DEBOUNCE_MS);
       return next;
@@ -122,7 +124,7 @@ export function SettingsEqSection() {
     }
     pendingRef.current = null;
     setDraft([...gains] as EqGains);
-    void actions.setEqGains([...gains] as EqGains);
+    void preferences.set({ eqGainsDb: [...gains] as EqGains });
   };
 
   return (
@@ -132,11 +134,11 @@ export function SettingsEqSection() {
           <label className="flex items-center gap-3">
             <input
               type="checkbox"
-              checked={state.eqEnabled}
+              checked={eqEnabled}
               onChange={(event) =>
-                void actions.setEqEnabled(event.target.checked)
+                void preferences.set({ eqEnabled: event.target.checked })
               }
-              disabled={meta.isInitializing}
+              disabled={isInitializing}
               className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
             />
             <span className="text-[13px] text-[var(--color-text)]">
@@ -150,7 +152,7 @@ export function SettingsEqSection() {
 
         <div
           className={`space-y-3 border-t border-[var(--color-border)] pt-4 ${
-            state.eqEnabled ? "" : "opacity-50"
+            eqEnabled ? "" : "opacity-50"
           }`}
         >
           <div className="space-y-1.5">
@@ -170,7 +172,7 @@ export function SettingsEqSection() {
                   key={preset.key}
                   type="button"
                   onClick={() => applyPreset(preset.gains)}
-                  disabled={meta.isInitializing || !state.eqEnabled}
+                  disabled={isInitializing || !eqEnabled}
                   aria-pressed={activePresetKey === preset.key}
                   className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
                     activePresetKey === preset.key
@@ -220,7 +222,7 @@ export function SettingsEqSection() {
                   }
                   onPointerUp={() => flushRef.current()}
                   onKeyUp={() => flushRef.current()}
-                  disabled={meta.isInitializing || !state.eqEnabled}
+                  disabled={isInitializing || !eqEnabled}
                   className="w-full accent-[var(--color-accent)]"
                 />
               </div>
@@ -244,9 +246,9 @@ export function SettingsEqSection() {
                 timerRef.current = null;
               }
               pendingRef.current = null;
-              void actions.resetEqGains();
+              void preferences.set({ eqGainsDb: [0, 0, 0, 0, 0] });
             }}
-            disabled={meta.isInitializing || !state.eqEnabled}
+            disabled={isInitializing || !eqEnabled}
             className="text-[11px] text-[var(--color-text-dim)] underline hover:text-[var(--color-text)] disabled:opacity-50"
           >
             {t("settings.eq.reset")}

@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 
-import { act, type ReactElement } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { SettingsLibrarySection } from "./SettingsLibrarySection";
+import type { SettingsController } from "@/lib/settings-controller";
 import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-  type SettingsOverlayContextValue,
-} from "./SettingsOverlay.context";
+  createInitializedSettingsHarness,
+  type SettingsHarnessOptions,
+} from "@/test-utils/settings-controller";
+import type { IntegrityReport, RegisteredLibrary } from "@/types/ipc";
+import { SettingsControllerContext } from "./SettingsController.context";
+import { SettingsLibrarySection } from "./SettingsLibrarySection";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -29,19 +31,29 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
-function renderWithContext(
-  node: ReactElement,
-  value: SettingsOverlayContextValue,
-) {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => {
-    root.render(
-      <SettingsOverlayContext value={value}>{node}</SettingsOverlayContext>,
-    );
+const localLibrary: RegisteredLibrary = {
+  id: "local:/karaoke",
+  kind: "local",
+  display_name: "Main Library",
+  root_path: "/karaoke",
+};
+
+const cleanReport: IntegrityReport = {
+  checked_local_songs: 0,
+  skipped_remote_songs: 0,
+  missing_primary_media: [],
+  empty_primary_media: [],
+  missing_optional_assets: [],
+  empty_optional_assets: [],
+  orphaned_managed_files: [],
+};
+
+function activeLocalLibraryHarness(overrides?: SettingsHarnessOptions) {
+  return createInitializedSettingsHarness({
+    libraries: [localLibrary],
+    activeLibraryId: localLibrary.id,
+    ...overrides,
   });
-  return { container, root };
 }
 
 describe("SettingsLibrarySection interactions", () => {
@@ -61,133 +73,91 @@ describe("SettingsLibrarySection interactions", () => {
     container.remove();
   });
 
-  test("clicking integrity check button calls checkLibraryIntegrity", () => {
-    const checkLibraryIntegrity = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: {
-          libraries: [
-            {
-              id: "local:/karaoke",
-              kind: "local",
-              display_name: "Main Library",
-              root_path: "/karaoke",
-            },
-          ],
-          activeLibraryId: "local:/karaoke",
-        },
-        meta: { isInitializing: false },
-      },
-      { checkLibraryIntegrity },
-    );
-
-    const rendered = renderWithContext(<SettingsLibrarySection />, value);
-    container = rendered.container;
-    root = rendered.root;
-
-    const integrityButton = container.querySelector(
+  function renderSection(controller: SettingsController) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={controller}>
+          <SettingsLibrarySection />
+        </SettingsControllerContext>,
+      );
+    });
+    return container.querySelector(
       'button[title*="integrity.checkButton"]',
     ) as HTMLButtonElement;
+  }
+
+  test("clicking the integrity check button runs a check", async () => {
+    const checkLibraryIntegrity = vi.fn(async () => cleanReport);
+    const harness = await activeLocalLibraryHarness({
+      overrides: { library: { checkLibraryIntegrity } },
+    });
+
+    const integrityButton = renderSection(harness.controller);
     expect(integrityButton).not.toBeNull();
     expect(integrityButton.disabled).toBe(false);
 
-    act(() => {
+    await act(async () => {
       integrityButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(checkLibraryIntegrity).toHaveBeenCalledOnce();
   });
 
-  test("shows spinning refresh icon while integrity check is in progress", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        libraries: [
-          {
-            id: "local:/karaoke",
-            kind: "local",
-            display_name: "Main Library",
-            root_path: "/karaoke",
-          },
-        ],
-        activeLibraryId: "local:/karaoke",
-      },
-      meta: {
-        isInitializing: false,
-        integrityCheckInProgress: true,
+  test("shows a spinning refresh icon while the check is in progress", async () => {
+    const harness = await activeLocalLibraryHarness({
+      overrides: {
+        library: { checkLibraryIntegrity: () => new Promise(() => {}) },
       },
     });
+    void harness.controller.library.checkIntegrity();
 
-    const rendered = renderWithContext(<SettingsLibrarySection />, value);
-    container = rendered.container;
-    root = rendered.root;
+    const integrityButton = renderSection(harness.controller);
 
-    const integrityButton = container.querySelector(
-      'button[title*="integrity.checkButton"]',
-    ) as HTMLButtonElement;
-    expect(integrityButton).not.toBeNull();
     expect(integrityButton.disabled).toBe(true);
     expect(integrityButton.querySelector(".animate-spin")).not.toBeNull();
   });
 
-  test("renders integrity report modal when report is present", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        libraries: [
-          {
-            id: "local:/karaoke",
-            kind: "local",
-            display_name: "Main Library",
-            root_path: "/karaoke",
-          },
-        ],
-        activeLibraryId: "local:/karaoke",
-        integrityReport: {
-          checked_local_songs: 0,
-          skipped_remote_songs: 0,
-          missing_primary_media: [],
-          empty_primary_media: [],
-          missing_optional_assets: [],
-          empty_optional_assets: [],
-          orphaned_managed_files: [],
-        },
+  test("renders the integrity report modal when a report is present", async () => {
+    const harness = await activeLocalLibraryHarness({
+      overrides: {
+        library: { checkLibraryIntegrity: async () => cleanReport },
       },
-      meta: { isInitializing: false },
     });
+    await harness.controller.library.checkIntegrity();
 
-    const rendered = renderWithContext(<SettingsLibrarySection />, value);
-    container = rendered.container;
-    root = rendered.root;
+    renderSection(harness.controller);
 
     expect(container.textContent).toContain("settings.integrity.reportTitle");
   });
 
-  test("disables integrity check while cleanup is in progress", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: {
-        libraries: [
-          {
-            id: "local:/karaoke",
-            kind: "local",
-            display_name: "Main Library",
-            root_path: "/karaoke",
-          },
-        ],
-        activeLibraryId: "local:/karaoke",
-      },
-      meta: {
-        isInitializing: false,
-        integrityCleanupInProgress: true,
+  test("disables the integrity check while a cleanup is in progress", async () => {
+    const harness = await activeLocalLibraryHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => ({
+            ...cleanReport,
+            missing_primary_media: [
+              {
+                song_hash: "hash-a",
+                asset_type: "primary_media",
+                path: "media/a.mp3",
+              },
+            ],
+          }),
+          removeMissingLibraryEntries: () => new Promise(() => {}),
+        },
       },
     });
+    await harness.controller.library.checkIntegrity();
+    harness.controller.library.dismissIntegrityReport();
+    harness.controller.library.toggleIntegrityEntry("hash-a");
+    void harness.controller.library.cleanUpIntegrity();
 
-    const rendered = renderWithContext(<SettingsLibrarySection />, value);
-    container = rendered.container;
-    root = rendered.root;
+    const integrityButton = renderSection(harness.controller);
 
-    const integrityButton = container.querySelector(
-      'button[title*="integrity.checkButton"]',
-    ) as HTMLButtonElement;
-    expect(integrityButton).not.toBeNull();
     expect(integrityButton.disabled).toBe(true);
     expect(integrityButton.querySelector(".animate-spin")).toBeNull();
   });

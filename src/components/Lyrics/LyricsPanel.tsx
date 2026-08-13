@@ -1,214 +1,62 @@
-import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  AlignLeft,
-  ChevronDown,
-  ChevronUp,
-  Edit2,
-  Languages,
-  LoaderCircle,
-  LocateFixed,
-} from "lucide-react";
+import { LocateFixed } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
-import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
-import { useAudiencePlainTextPaging } from "@/hooks/use-audience-plain-text-paging";
-
-import {
-  stepPlainTextRemotePage,
-  resolvePlainTextRemoteTarget,
-  type PlainTextPageDirection,
-} from "@/lib/plain-text-page-controls";
-import { requestLyricsAutoScrollResume } from "@/lib/lyrics-engine";
-import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
-import { useSettingsStore } from "@/stores/settings-store";
 import { LyricLine } from "./LyricLine";
+import { LyricsEmptyState } from "./LyricsEmptyState";
 import { LyricsFontSizeControl } from "./LyricsFontSizeControl";
 import { LyricsOffsetControl } from "./LyricsOffsetControl";
-import { LyricsEmptyState } from "./LyricsEmptyState";
-import { LyricsEditDialog } from "./LyricsEditDialog";
+import { LyricsPanelToolbar } from "./LyricsPanelToolbar";
+import { LyricsStatusMessage } from "./LyricsStatusMessage";
+import { PlainTextPageMeasurementLayer } from "./PlainTextPageMeasurementLayer";
+import { RemotePlainTextPageControls } from "./RemotePlainTextPageControls";
 import {
-  buildAudiencePresentationSpec,
-  colorToCss,
-} from "@/lib/audience-presentation";
-import { useLyricsStore } from "@/stores/lyrics-store";
-import { usePlayerStore } from "@/stores/player-store";
+  useLyricsPanelModel,
+  type LyricsPresentation,
+} from "./lyrics-panel-model";
 
 interface LyricsPanelProps {
-  presentation?: "standard" | "audience";
+  presentation?: LyricsPresentation;
 }
 
-export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
+export function LyricsPanel({
+  presentation = "standard",
+}: LyricsPanelProps = {}) {
   const { t } = useTranslation();
-  const lines = useLyricsStore((s) => s.lines);
-  const activeLineIndex = useLyricsStore((s) => s.activeLineIndex);
-  const activeWordIndex = useLyricsStore((s) => s.activeWordIndex);
-  const offsetMs = useLyricsStore((s) => s.offsetMs);
-  const isLoading = useLyricsStore((s) => s.isLoading);
-  const rawLrc = useLyricsStore((s) => s.rawLrc);
-  const romanizedLines = useLyricsStore((s) => s.romanizedLines);
-  const isRomanizing = useLyricsStore((s) => s.isRomanizing);
-  const showRomanized = useLyricsStore((s) => s.showRomanized);
-  const toggleRomanized = useLyricsStore((s) => s.toggleRomanized);
-  const songId = usePlayerStore((s) => s.snapshot?.song_id);
-  const airPlayOutput = usePlayerStore((s) => s.airPlayOutput);
-  const localAudienceOutputActive = usePlayerStore(
-    (s) => s.localAudienceOutputActive,
-  );
-  const airPlayPlainTextPagePending = usePlayerStore(
-    (s) => s.airPlayPlainTextPagePending,
-  );
-  const airPlayPlainTextPagePendingDirection = usePlayerStore(
-    (s) => s.airPlayPlainTextPagePendingDirection,
-  );
-  const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
-  const [editOpen, setEditOpen] = useState(false);
-  const [userScrollUnlocked, setUserScrollUnlocked] = useState(false);
-  const lyricsAlignment = useLyricsStore((s) => s.lyricsAlignment);
-  const toggleLyricsAlignment = useLyricsStore((s) => s.toggleLyricsAlignment);
-  const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
-  const isAudience = presentation === "audience";
-  const spaciousStageLayout = !isAudience;
-  const audiencePresentationSpec =
-    buildAudiencePresentationSpec(lyricsFontStep);
-
-  const isPlainText =
-    lines.length > 0 && lines.every((line) => line.time_ms === 0);
-  const remotePlainTextTarget = resolvePlainTextRemoteTarget(
-    airPlayOutput,
-    localAudienceOutputActive,
-  );
-  const shouldShowRemotePageControls =
-    !isAudience && isPlainText && remotePlainTextTarget !== null;
-  const isAirPlayRemotePagingTarget = remotePlainTextTarget === "airplay";
-  const shouldLockRemotePageControls =
-    isAirPlayRemotePagingTarget && airPlayPlainTextPagePending;
-  const shouldRenderAudiencePlainTextPages = isAudience && isPlainText;
-  const pageIdentity = shouldRenderAudiencePlainTextPages
-    ? `${songId ?? ""}:${rawLrc}:${lyricsFontStep}`
-    : "local";
-  const lyricsLayoutVersion = `${showRomanized}:${romanizedLines.join("\u0000")}`;
-
-  const { containerRef, measurementRef, currentPageStart, visibleLines } =
-    useAudiencePlainTextPaging({
-      lines,
-      shouldRender: shouldRenderAudiencePlainTextPages,
-      pageIdentity,
-      audiencePresentationSpec,
-      layoutVersion: lyricsLayoutVersion,
-    });
-
-  useLyricsEngine({
-    containerRef,
-    isPlainText,
-    lyricsFontStep,
-    presentation,
-    songId,
-    viewportActive: Boolean(songId) && !isLoading && lines.length > 0,
-    layoutVersion: lyricsLayoutVersion,
-    lineRuntime: lyricsLineRuntime,
-    onUserScrollActiveChange: setUserScrollUnlocked,
-  });
-
-  const lastPendingSongIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!airPlayPlainTextPagePending) {
-      lastPendingSongIdRef.current = songId ?? null;
-      return;
-    }
-
-    const songChanged =
-      lastPendingSongIdRef.current !== null &&
-      lastPendingSongIdRef.current !== (songId ?? null);
-    if (
-      isAudience ||
-      songChanged ||
-      !isPlainText ||
-      !isAirPlayRemotePagingTarget
-    ) {
-      usePlayerStore.getState().clearAirPlayPlainTextPagePending();
-      return;
-    }
-
-    lastPendingSongIdRef.current = songId ?? null;
-  }, [
-    airPlayPlainTextPagePending,
-    isAirPlayRemotePagingTarget,
+  const model = useLyricsPanelModel(presentation);
+  const {
     isAudience,
-    isPlainText,
+    spaciousStageLayout,
+    audienceSpec,
     songId,
-  ]);
-
-  const lineRefCallbacksRef = useRef(
-    new Map<number, (node: HTMLDivElement | null) => (() => void) | void>(),
-  );
-  const prevSongIdForRefsRef = useRef(songId);
-  if (prevSongIdForRefsRef.current !== songId) {
-    lineRefCallbacksRef.current.clear();
-    prevSongIdForRefsRef.current = songId;
-  }
-  const registerLineWrapper = useCallback((lineIndex: number) => {
-    const cached = lineRefCallbacksRef.current.get(lineIndex);
-    if (cached) {
-      return cached;
-    }
-    const callback = (node: HTMLDivElement | null) => {
-      if (!node) {
-        return;
-      }
-      lyricsLineRuntime.registerWrapper(lineIndex, node);
-      return () => {
-        lyricsLineRuntime.unregisterWrapper(lineIndex);
-      };
-    };
-    lineRefCallbacksRef.current.set(lineIndex, callback);
-    return callback;
-  }, []);
-
-  const handleRemotePageStep = (direction: PlainTextPageDirection) => {
-    void stepPlainTextRemotePage(
-      airPlayOutput,
-      localAudienceOutputActive,
-      direction,
-    ).catch(() => {});
-  };
+    lines,
+    lyricsAlignment,
+    lyricsFontStep,
+    utilityControlsPinned,
+    isPlainText,
+    paged,
+  } = model;
 
   if (!songId) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p
-          className="text-[var(--color-text-dimmer)]"
-          style={
-            isAudience
-              ? {
-                  fontSize: audiencePresentationSpec.statusFontSizePx,
-                  color: colorToCss(audiencePresentationSpec.statusTextColor),
-                }
-              : { fontSize: 14 }
-          }
-        >
-          {t("lyrics.selectSong")}
-        </p>
-      </div>
+      <LyricsStatusMessage
+        isAudience={isAudience}
+        audienceSpec={audienceSpec}
+        className="text-[var(--color-text-dimmer)]"
+      >
+        {t("lyrics.selectSong")}
+      </LyricsStatusMessage>
     );
   }
 
-  if (isLoading) {
+  if (model.isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p
-          className="text-[var(--color-text-dim)]"
-          style={
-            isAudience
-              ? {
-                  fontSize: audiencePresentationSpec.statusFontSizePx,
-                  color: colorToCss(audiencePresentationSpec.statusTextColor),
-                }
-              : { fontSize: 14 }
-          }
-        >
-          {t("lyrics.loadingLyrics")}
-        </p>
-      </div>
+      <LyricsStatusMessage
+        isAudience={isAudience}
+        audienceSpec={audienceSpec}
+        className="text-[var(--color-text-dim)]"
+      >
+        {t("lyrics.loadingLyrics")}
+      </LyricsStatusMessage>
     );
   }
 
@@ -224,128 +72,25 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       }
       data-native-lyrics-layout={spaciousStageLayout ? "true" : "false"}
     >
-      {songId && !isAudience ? (
+      {isAudience ? null : (
         <>
-          <div
-            className="contextual-reveal absolute right-4 top-4 z-10 flex gap-2"
-            data-visible={utilityControlsPinned}
-          >
-            <Tooltip label={t("lyrics.romanizeTooltip")}>
-              <button
-                type="button"
-                onClick={toggleRomanized}
-                aria-label={t("lyrics.romanizeTooltip")}
-                disabled={isRomanizing}
-                className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
-                  showRomanized
-                    ? "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]"
-                    : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)]"
-                }`}
-              >
-                {isRomanizing ? (
-                  <LoaderCircle size={14} className="animate-spin" />
-                ) : (
-                  <Languages size={14} />
-                )}
-              </button>
-            </Tooltip>
-            <Tooltip label={t("lyrics.editTooltip")}>
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                aria-label={t("lyrics.editTooltip")}
-                className="motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
-              >
-                <Edit2 size={14} />
-              </button>
-            </Tooltip>
-            <Tooltip
-              label={
-                lyricsAlignment === "left"
-                  ? t("lyrics.switchToCentered")
-                  : t("lyrics.switchToLeftAligned")
-              }
-            >
-              <button
-                type="button"
-                onClick={toggleLyricsAlignment}
-                aria-label={
-                  lyricsAlignment === "left"
-                    ? t("lyrics.switchToCentered")
-                    : t("lyrics.switchToLeftAligned")
-                }
-                className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
-                  lyricsAlignment === "left"
-                    ? "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]"
-                    : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)]"
-                }`}
-              >
-                <AlignLeft size={14} />
-              </button>
-            </Tooltip>
-          </div>
-          <LyricsEditDialog
-            open={editOpen}
-            onClose={() => setEditOpen(false)}
+          <LyricsPanelToolbar
             songId={songId}
-            existingLyrics={rawLrc || undefined}
+            rawLrc={model.rawLrc}
+            pinned={utilityControlsPinned}
+            showRomanized={model.showRomanized}
+            isRomanizing={model.isRomanizing}
+            onToggleRomanized={model.toggleRomanized}
+            alignment={lyricsAlignment}
+            onToggleAlignment={model.toggleLyricsAlignment}
           />
-          {shouldShowRemotePageControls ? (
-            <div className="pointer-events-none absolute inset-y-0 right-4 z-10 flex items-center">
-              <div className="pointer-events-auto flex flex-col gap-3">
-                <Tooltip label={t("lyrics.previousPage")}>
-                  <button
-                    type="button"
-                    data-testid="plain-text-page-prev"
-                    data-airplay-page-pending={
-                      shouldLockRemotePageControls &&
-                      airPlayPlainTextPagePendingDirection === "prev"
-                        ? "true"
-                        : "false"
-                    }
-                    onClick={() => handleRemotePageStep("prev")}
-                    aria-label={t("lyrics.previousPage")}
-                    disabled={shouldLockRemotePageControls}
-                    className="motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
-                  >
-                    {shouldLockRemotePageControls &&
-                    airPlayPlainTextPagePendingDirection === "prev" ? (
-                      <LoaderCircle size={16} className="animate-spin" />
-                    ) : (
-                      <ChevronUp size={16} />
-                    )}
-                  </button>
-                </Tooltip>
-                <Tooltip label={t("lyrics.nextPage")}>
-                  <button
-                    type="button"
-                    data-testid="plain-text-page-next"
-                    data-airplay-page-pending={
-                      shouldLockRemotePageControls &&
-                      airPlayPlainTextPagePendingDirection === "next"
-                        ? "true"
-                        : "false"
-                    }
-                    onClick={() => handleRemotePageStep("next")}
-                    aria-label={t("lyrics.nextPage")}
-                    disabled={shouldLockRemotePageControls}
-                    className="motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
-                  >
-                    {shouldLockRemotePageControls &&
-                    airPlayPlainTextPagePendingDirection === "next" ? (
-                      <LoaderCircle size={16} className="animate-spin" />
-                    ) : (
-                      <ChevronDown size={16} />
-                    )}
-                  </button>
-                </Tooltip>
-              </div>
-            </div>
+          {model.remotePage.visible ? (
+            <RemotePlainTextPageControls remotePage={model.remotePage} />
           ) : null}
         </>
-      ) : null}
+      )}
       <div
-        ref={containerRef}
+        ref={model.containerRef}
         key={songId}
         data-testid="lyrics-scroll-viewport"
         data-preview-lyrics-interactive="true"
@@ -356,7 +101,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           overflowAnchor: "none",
           ...(isAudience
             ? {
-                padding: `${audiencePresentationSpec.verticalPaddingPx}px ${audiencePresentationSpec.horizontalPaddingPx}px`,
+                padding: `${audienceSpec.verticalPaddingPx}px ${audienceSpec.horizontalPaddingPx}px`,
               }
             : undefined),
         }}
@@ -375,103 +120,57 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                   maxWidth:
                     lyricsAlignment === "left"
                       ? "100%"
-                      : `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
-                  gap: audiencePresentationSpec.lineGapPx,
+                      : `min(${audienceSpec.contentWidthRatio * 100}vw, ${audienceSpec.contentMaxWidthPx}px)`,
+                  gap: audienceSpec.lineGapPx,
                 }
               : undefined
           }
         >
-          {isAudience && !shouldRenderAudiencePlainTextPages ? (
+          {isAudience && !paged ? (
             <div className="h-[50vh] w-full shrink-0" />
           ) : null}
-          {visibleLines.map((line, idx) => {
-            const absoluteIndex = shouldRenderAudiencePlainTextPages
-              ? currentPageStart + idx
-              : idx;
+          {model.visibleLines.map((line, index) => {
+            const absoluteIndex = paged
+              ? model.currentPageStart + index
+              : index;
 
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
-                ref={registerLineWrapper(absoluteIndex)}
+                ref={model.registerLineWrapper(absoluteIndex)}
                 data-lyrics-line-index={absoluteIndex}
                 className="w-full"
               >
                 <LyricLine
                   lineIndex={absoluteIndex}
                   line={line}
-                  state={
-                    isPlainText
-                      ? "plain"
-                      : absoluteIndex === activeLineIndex
-                        ? "active"
-                        : absoluteIndex < activeLineIndex
-                          ? "past"
-                          : "future"
-                  }
+                  state={model.lineState(absoluteIndex)}
                   presentation={presentation}
                   lyricsFontStep={lyricsFontStep}
-                  romanizedText={
-                    showRomanized ? romanizedLines[absoluteIndex] : undefined
-                  }
-                  activeWordIndex={
-                    absoluteIndex === activeLineIndex ? activeWordIndex : -1
-                  }
+                  romanizedText={model.romanizedTextAt(absoluteIndex)}
+                  activeWordIndex={model.activeWordIndexAt(absoluteIndex)}
                   alignment={lyricsAlignment}
                 />
               </div>
             );
           })}
-          {shouldRenderAudiencePlainTextPages ? null : (
+          {paged ? null : (
             <div
               className={`w-full shrink-0 ${isAudience ? "h-[50vh]" : "h-[30vh]"}`}
             />
           )}
         </div>
       </div>
-      {shouldRenderAudiencePlainTextPages ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-0"
-        >
-          <div
-            className="flex h-full w-full"
-            style={{
-              padding: `${audiencePresentationSpec.verticalPaddingPx}px ${audiencePresentationSpec.horizontalPaddingPx}px`,
-            }}
-          >
-            <div
-              ref={measurementRef}
-              className="mx-auto flex w-full flex-col items-center"
-              style={{
-                maxWidth:
-                  lyricsAlignment === "left"
-                    ? "100%"
-                    : `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
-                gap: audiencePresentationSpec.lineGapPx,
-              }}
-            >
-              {lines.map((line, idx) => (
-                <div
-                  key={`measure-${idx}-${line.time_ms}-${line.text}`}
-                  data-plain-text-page-measure-line
-                  className="w-full"
-                >
-                  <LyricLine
-                    lineIndex={idx}
-                    line={line}
-                    state="plain"
-                    presentation={presentation}
-                    lyricsFontStep={lyricsFontStep}
-                    romanizedText={
-                      showRomanized ? romanizedLines[idx] : undefined
-                    }
-                    alignment={lyricsAlignment}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {paged ? (
+        <PlainTextPageMeasurementLayer
+          measurementRef={model.measurementRef}
+          lines={lines}
+          presentation={presentation}
+          lyricsFontStep={lyricsFontStep}
+          alignment={lyricsAlignment}
+          audienceSpec={audienceSpec}
+          romanizedTextAt={model.romanizedTextAt}
+        />
       ) : null}
       {!isAudience && !isPlainText ? (
         <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center px-6">
@@ -479,11 +178,11 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             <button
               type="button"
               data-testid="lyrics-follow-playing"
-              data-visible={userScrollUnlocked}
+              data-visible={model.userScrollUnlocked}
               data-preview-lyrics-interactive="true"
-              onClick={(e) => {
-                requestLyricsAutoScrollResume();
-                e.currentTarget.blur();
+              onClick={(event) => {
+                model.requestFollow();
+                event.currentTarget.blur();
               }}
               aria-label={t("lyrics.followPlaying")}
               className="contextual-reveal pointer-events-auto motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
@@ -493,7 +192,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           </Tooltip>
         </div>
       ) : null}
-      {!isAudience ? (
+      {isAudience ? null : (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-6 pb-5"
           data-visible={utilityControlsPinned}
@@ -511,7 +210,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             />
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

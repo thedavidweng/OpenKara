@@ -4,11 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
+import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsGeneralSection } from "./SettingsGeneralSection";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-} from "./SettingsOverlay.context";
 
 describe("SettingsGeneralSection", () => {
   let container: HTMLDivElement;
@@ -30,18 +28,19 @@ describe("SettingsGeneralSection", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
-  test("renders the appearance radio group with the current theme preference checked", () => {
-    const value = createSettingsOverlayTestContextValue({
-      state: { themePreference: "system" },
+  test("renders the appearance radio group with the current theme preference checked", async () => {
+    const harness = await createInitializedSettingsHarness({
+      settings: { theme_preference: "system" },
     });
 
     act(() => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <SettingsGeneralSection />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -49,22 +48,25 @@ describe("SettingsGeneralSection", () => {
       'input[name="theme-preference"]',
     );
     expect(radios).toHaveLength(3);
-    const systemRadio = [...radios].find((r) => r.value === "system");
-    expect(systemRadio?.checked).toBe(true);
+    expect([...radios].find((radio) => radio.value === "system")?.checked).toBe(
+      true,
+    );
   });
 
-  test("calls setThemePreference when a radio is clicked", async () => {
-    const setThemePreference = vi.fn(async () => {});
-    const value = createSettingsOverlayTestContextValue(
-      { state: { themePreference: "dark" }, meta: { isInitializing: false } },
-      { setThemePreference },
+  test("clicking a theme radio writes the preference", async () => {
+    const harness = await createInitializedSettingsHarness({
+      settings: { theme_preference: "dark" },
+    });
+    const setThemePreference = vi.spyOn(
+      harness.backend.settings,
+      "setThemePreference",
     );
 
     act(() => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <SettingsGeneralSection />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 

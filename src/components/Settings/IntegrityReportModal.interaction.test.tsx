@@ -1,15 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, type ReactElement } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { IntegrityReportModal } from "./IntegrityReportModal";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-  type SettingsOverlayContextValue,
-} from "./SettingsOverlay.context";
+import { createSettingsHarness } from "@/test-utils/settings-controller";
 import type { IntegrityReport } from "@/types/ipc";
+import { IntegrityReportModal } from "./IntegrityReportModal";
+import { SettingsControllerContext } from "./SettingsController.context";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -38,21 +35,6 @@ const reportWithSelectableIssues: IntegrityReport = {
   orphaned_managed_files: [],
 };
 
-function renderWithContext(
-  node: ReactElement,
-  value: SettingsOverlayContextValue,
-) {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => {
-    root.render(
-      <SettingsOverlayContext value={value}>{node}</SettingsOverlayContext>,
-    );
-  });
-  return { container, root };
-}
-
 describe("IntegrityReportModal interactions", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -70,19 +52,29 @@ describe("IntegrityReportModal interactions", () => {
     container.remove();
   });
 
-  test("checkbox toggle calls toggleIntegritySelection with song hash", () => {
-    const toggleIntegritySelection = vi.fn();
-    const value = createSettingsOverlayTestContextValue(
-      {},
-      { toggleIntegritySelection },
+  test("the checkbox takes a song out of the cleanup selection", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => reportWithSelectableIssues,
+        },
+      },
+    });
+    await harness.controller.library.checkIntegrity();
+    expect(harness.view().integrity.selection.has("hash-toggle-test")).toBe(
+      true,
     );
 
-    const rendered = renderWithContext(
-      <IntegrityReportModal report={reportWithSelectableIssues} />,
-      value,
-    );
-    container = rendered.container;
-    root = rendered.root;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <IntegrityReportModal report={reportWithSelectableIssues} />
+        </SettingsControllerContext>,
+      );
+    });
 
     const checkbox = container.querySelector(
       'input[type="checkbox"]',
@@ -93,6 +85,8 @@ describe("IntegrityReportModal interactions", () => {
       checkbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(toggleIntegritySelection).toHaveBeenCalledWith("hash-toggle-test");
+    expect(harness.view().integrity.selection.has("hash-toggle-test")).toBe(
+      false,
+    );
   });
 });

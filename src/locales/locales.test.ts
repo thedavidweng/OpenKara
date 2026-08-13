@@ -219,12 +219,13 @@ const REMOTE_FLOW_SOURCES = import.meta.glob(
     "../components/Library/SongListItem.tsx",
     "../components/Layout/GlobalProgressBar.tsx",
     "../components/Player/RemoteReconnectIndicator.tsx",
+    "../lib/task-progress.ts",
   ],
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 
 describe("remote-library flow i18n completeness", () => {
-  const EXPECTED_FILE_COUNT = 10;
+  const EXPECTED_FILE_COUNT = 11;
 
   const T_CALL = /\bt\(\s*["']([^"']+)["']/g;
 

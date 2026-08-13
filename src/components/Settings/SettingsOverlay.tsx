@@ -11,7 +11,7 @@ import { SettingsGeneralSection } from "./SettingsGeneralSection";
 import { SettingsLibrarySection } from "./SettingsLibrarySection";
 import { SettingsModelVariantSection } from "./SettingsModelVariantSection";
 import { SettingsRuntimeSection } from "./SettingsRuntimeSection";
-import { SettingsOverlayProvider } from "./SettingsOverlay.controller";
+import { SettingsControllerProvider } from "./SettingsController.provider";
 import { SettingsRemoteCacheSection } from "./SettingsRemoteCacheSection";
 import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
 import { SettingsStemModeSection } from "./SettingsStemModeSection";
@@ -61,7 +61,7 @@ export function SettingsOverlay() {
             <X size={16} />
           </button>
         </div>
-        <SettingsOverlayProvider>
+        <SettingsControllerProvider>
           <SettingsLibrarySection />
           <SettingsStemModeSection />
           <SettingsModelVariantSection />
@@ -75,7 +75,7 @@ export function SettingsOverlay() {
           <SettingsAboutSection />
           <SettingsDangerZoneSection />
           <SettingsDialogHost />
-        </SettingsOverlayProvider>
+        </SettingsControllerProvider>
       </div>
     </div>
   );

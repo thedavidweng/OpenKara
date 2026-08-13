@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import { formatBytes } from "@/lib/format";
 import type { ModelVariant } from "@/types/ipc";
 
@@ -44,8 +44,8 @@ function DangerActionRow({
 
 function DeleteModelAction({ variant }: { variant: ModelVariant }) {
   const { t } = useTranslation();
-  const { state, actions } = useSettingsOverlay();
-  const status = state.modelStatuses[variant];
+  const { view, maintenance } = useSettings();
+  const status = view.models.statuses[variant];
 
   const hasRemovableFile =
     status?.downloaded === true || status?.legacy_install_present === true;
@@ -66,16 +66,16 @@ function DeleteModelAction({ variant }: { variant: ModelVariant }) {
           : ""
       }`}
       actionLabel={t("settings.dangerZone.deleteModelButton")}
-      onClick={() => void actions.deleteModel(variant)}
+      onClick={() => void maintenance.deleteModel(variant)}
     />
   );
 }
 
 function DeleteRuntimeAction() {
   const { t } = useTranslation();
-  const { state, actions } = useSettingsOverlay();
+  const { view, maintenance } = useSettings();
 
-  if (state.runtimeStatus?.state !== "ready") {
+  if (view.runtime.status?.state !== "ready") {
     return null;
   }
 
@@ -84,14 +84,15 @@ function DeleteRuntimeAction() {
       title={t("settings.dangerZone.deleteRuntime")}
       description={t("settings.dangerZone.deleteRuntimeDescription")}
       actionLabel={t("settings.dangerZone.deleteRuntimeButton")}
-      onClick={() => void actions.openDeleteRuntimeDialog()}
+      onClick={() => void maintenance.openDialog("delete_runtime")}
     />
   );
 }
 
 export function SettingsDangerZoneSection() {
   const { t } = useTranslation();
-  const { meta, actions } = useSettingsOverlay();
+  const { view, maintenance } = useSettings();
+  const progress = view.maintenance;
 
   return (
     <SettingsSectionCard title={t("settings.dangerZone.label")} tone="danger">
@@ -100,24 +101,24 @@ export function SettingsDangerZoneSection() {
           title={t("settings.dangerZone.deleteStems")}
           description={t("settings.dangerZone.deleteStemsDescription")}
           actionLabel={
-            meta.deletingStemsInProgress
+            progress.deletingStems
               ? t("common.deleting")
               : t("settings.dangerZone.deleteStemsButton")
           }
-          actionState={meta.deletingStemsInProgress ? "busy" : "idle"}
-          onClick={() => void actions.openDeleteStemsDialog()}
+          actionState={progress.deletingStems ? "busy" : "idle"}
+          onClick={() => void maintenance.openDialog("delete_stems")}
         />
 
         <DangerActionRow
           title={t("settings.dangerZone.downgradeStems")}
           description={t("settings.dangerZone.downgradeStemsDescription")}
           actionLabel={
-            meta.downgradingInProgress
+            progress.downgrading
               ? t("common.deleting")
               : t("settings.dangerZone.downgradeStemsButton")
           }
-          actionState={meta.downgradingInProgress ? "busy" : "idle"}
-          onClick={() => void actions.openDowngradeDialog()}
+          actionState={progress.downgrading ? "busy" : "idle"}
+          onClick={() => void maintenance.openDialog("downgrade_stems")}
         />
 
         <DeleteRuntimeAction />
@@ -129,12 +130,12 @@ export function SettingsDangerZoneSection() {
           title={t("settings.dangerZone.deleteLyrics")}
           description={t("settings.dangerZone.deleteLyricsDescription")}
           actionLabel={
-            meta.deletingLyricsInProgress
+            progress.deletingLyrics
               ? t("common.deleting")
               : t("settings.dangerZone.deleteLyricsButton")
           }
-          actionState={meta.deletingLyricsInProgress ? "busy" : "idle"}
-          onClick={() => actions.openDeleteLyricsDialog()}
+          actionState={progress.deletingLyrics ? "busy" : "idle"}
+          onClick={() => void maintenance.openDialog("delete_lyrics")}
         />
       </div>
     </SettingsSectionCard>

@@ -4,11 +4,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
 import { RemoteLibraryWizard } from "./RemoteLibraryWizard";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-} from "./SettingsOverlay.context";
+import { SettingsControllerContext } from "./SettingsController.context";
 
 const {
   mockBeginRemoteAuth,
@@ -48,17 +47,26 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  beginRemoteAuth: mockBeginRemoteAuth,
-  cancelRemoteAuth: mockCancelRemoteAuth,
-  pollRemoteAuth: mockPollRemoteAuth,
-  createRemoteLibrary: mockCreateRemoteLibrary,
-  resolveRemoteLibraryCandidate: mockResolveRemoteLibraryCandidate,
-  openExternalUrl: mockOpenExternalUrl,
-  registerRemoteLibrary: mockRegisterRemoteLibrary,
-  reauthorizeRemoteRepository: mockReauthorizeRemoteRepository,
-  relocateRemoteRepository: mockRelocateRemoteRepository,
+vi.mock("@/lib/backend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backend")>()),
+  useBackend: () => backend,
 }));
+
+const backend = createMockBackend({
+  overrides: {
+    remoteRepository: {
+      beginRemoteAuth: mockBeginRemoteAuth,
+      cancelRemoteAuth: mockCancelRemoteAuth,
+      pollRemoteAuth: mockPollRemoteAuth,
+      createRemoteLibrary: mockCreateRemoteLibrary,
+      resolveRemoteLibraryCandidate: mockResolveRemoteLibraryCandidate,
+      openExternalUrl: mockOpenExternalUrl,
+      registerRemoteLibrary: mockRegisterRemoteLibrary,
+      reauthorizeRemoteRepository: mockReauthorizeRemoteRepository,
+      relocateRemoteRepository: mockRelocateRemoteRepository,
+    },
+  },
+});
 
 async function flushEffects() {
   await act(async () => {
@@ -95,13 +103,13 @@ describe("RemoteLibraryWizard", () => {
     ).IS_REACT_ACT_ENVIRONMENT = true;
   });
 
-  test("uses translation keys instead of hardcoded remote-library English copy", () => {
-    const value = createSettingsOverlayTestContextValue();
+  test("uses translation keys instead of hardcoded remote-library English copy", async () => {
+    const harness = await createInitializedSettingsHarness();
 
     const markup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <RemoteLibraryWizard onClose={() => {}} />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
 
     expect(markup).toContain("settings.library.openRemoteLibrary");
@@ -116,35 +124,35 @@ describe("RemoteLibraryWizard", () => {
     expect(markup).toContain('id="remote-library-display-name"');
   });
 
-  test("labels the primary action per provider instead of a generic open label", () => {
-    const value = createSettingsOverlayTestContextValue();
+  test("labels the primary action per provider instead of a generic open label", async () => {
+    const harness = await createInitializedSettingsHarness();
 
     const dropboxMarkup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <RemoteLibraryWizard onClose={() => {}} initialProvider="dropbox" />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
     expect(dropboxMarkup).toContain("settings.library.connectRemoteDropbox");
 
     const webdavMarkup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <RemoteLibraryWizard onClose={() => {}} initialProvider="webdav" />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
     expect(webdavMarkup).toContain("settings.library.connectRemoteWebdav");
   });
 
-  test("renders reauthorization copy and preselects the requested provider", () => {
-    const value = createSettingsOverlayTestContextValue();
+  test("renders reauthorization copy and preselects the requested provider", async () => {
+    const harness = await createInitializedSettingsHarness();
 
     const markup = renderToStaticMarkup(
-      <SettingsOverlayContext value={value}>
+      <SettingsControllerContext value={harness.controller}>
         <RemoteLibraryWizard
           onClose={() => {}}
           initialProvider="webdav"
           purpose="reauthorize"
         />
-      </SettingsOverlayContext>,
+      </SettingsControllerContext>,
     );
 
     expect(markup).toContain("settings.library.reauthorizeRemoteRepository");
@@ -172,41 +180,34 @@ describe("RemoteLibraryWizard", () => {
       active_library_id: "remote:existing",
       libraries: [],
     });
-    const switchLibrary = vi.fn();
     const onClose = vi.fn();
-    const value = createSettingsOverlayTestContextValue(
-      {
-        meta: { isInitializing: false },
-        state: {
-          libraries: [
-            {
-              id: "remote:existing",
-              kind: "remote",
-              display_name: "Drive",
-              provider: "webdav",
-              remote_root_locator: "https://dav.example.com/OpenKara/",
-              remote_path_display: "dav.example.com/OpenKara",
-              account_id: "user@dav.example.com",
-              connection_config: {
-                type: "webdav",
-                server_url: "https://dav.example.com/",
-              },
-              cached_db_path: "/tmp/openkara.db",
-              remote_revision: "rev-1",
-            },
-          ],
-          activeLibraryId: "remote:existing",
+    const harness = await createInitializedSettingsHarness({
+      activeLibraryId: "remote:existing",
+      libraries: [
+        {
+          id: "remote:existing",
+          kind: "remote",
+          display_name: "Drive",
+          provider: "webdav",
+          remote_root_locator: "https://dav.example.com/OpenKara/",
+          remote_path_display: "dav.example.com/OpenKara",
+          account_id: "user@dav.example.com",
+          connection_config: {
+            type: "webdav",
+            server_url: "https://dav.example.com/",
+          },
+          cached_db_path: "/tmp/openkara.db",
+          remote_revision: "rev-1",
         },
-      },
-      { switchLibrary },
-    );
+      ],
+    });
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard
             onClose={onClose}
             libraryId="remote:existing"
@@ -218,7 +219,7 @@ describe("RemoteLibraryWizard", () => {
             initialRootPath="/OpenKara"
             purpose="reauthorize"
           />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -248,7 +249,9 @@ describe("RemoteLibraryWizard", () => {
       "Drive",
     );
     expect(mockRegisterRemoteLibrary).not.toHaveBeenCalled();
-    expect(switchLibrary).toHaveBeenCalledWith("remote:existing");
+    expect(harness.librarySession.calls).toEqual([
+      { entry: "switchLibrary", libraryId: "remote:existing" },
+    ]);
     expect(onClose).toHaveBeenCalled();
 
     await act(async () => {
@@ -280,16 +283,14 @@ describe("RemoteLibraryWizard", () => {
       libraries: [],
     });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard
             onClose={() => {}}
             libraryId="remote:existing"
@@ -301,7 +302,7 @@ describe("RemoteLibraryWizard", () => {
             initialRootPath="/OpenKara"
             purpose="reauthorize"
           />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -360,18 +361,16 @@ describe("RemoteLibraryWizard", () => {
       retryable: false,
     });
 
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={() => {}} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -409,18 +408,16 @@ describe("RemoteLibraryWizard", () => {
         }),
     );
 
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={() => {}} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -467,18 +464,16 @@ describe("RemoteLibraryWizard", () => {
     mockOpenExternalUrl.mockResolvedValue(undefined);
 
     const onClose = vi.fn();
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={onClose} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -518,18 +513,16 @@ describe("RemoteLibraryWizard", () => {
     });
     mockOpenExternalUrl.mockResolvedValue(undefined);
 
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={() => {}} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -573,18 +566,16 @@ describe("RemoteLibraryWizard", () => {
       error: { code: "internal", message: "stop", retryable: false },
     });
 
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={() => {}} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 
@@ -620,18 +611,16 @@ describe("RemoteLibraryWizard", () => {
     });
     mockOpenExternalUrl.mockRejectedValue(new Error("browser open failed"));
 
-    const value = createSettingsOverlayTestContextValue({
-      meta: { isInitializing: false },
-    });
+    const harness = await createInitializedSettingsHarness();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
-        <SettingsOverlayContext value={value}>
+        <SettingsControllerContext value={harness.controller}>
           <RemoteLibraryWizard onClose={() => {}} />
-        </SettingsOverlayContext>,
+        </SettingsControllerContext>,
       );
     });
 

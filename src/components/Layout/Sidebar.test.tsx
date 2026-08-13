@@ -1,7 +1,21 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
+import { BackendProvider } from "@/lib/backend";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import { Sidebar } from "./Sidebar";
 import type { Song } from "@/types/ipc";
+
+const backend = createMockBackend({
+  overrides: { maintenance: { batchSeparate: vi.fn() } },
+});
+
+function renderSidebar(previewMode = false) {
+  return renderToStaticMarkup(
+    <BackendProvider backend={backend}>
+      <Sidebar previewMode={previewMode} />
+    </BackendProvider>,
+  );
+}
 
 const { mockLibraryState, mockSettingsState, mockPlaylistState } = vi.hoisted(
   () => ({
@@ -88,10 +102,6 @@ vi.mock("@/components/Settings/ConfirmationDialog", () => ({
   ConfirmationDialog: () => <div>confirm</div>,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  batchSeparate: vi.fn(),
-}));
-
 vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
 }));
@@ -107,13 +117,13 @@ vi.mock("@/lib/app-shortcuts", () => ({
 
 describe("Sidebar", () => {
   test("does not render a duplicate import icon beside the local music heading", () => {
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).not.toContain("lucide-cloud-upload");
   });
 
   test("hides separate-all controls when the library has only media-g songs", () => {
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).not.toContain("sidebar.separateAll");
     expect(markup).not.toContain("sidebar.upgradeAll");
@@ -140,14 +150,14 @@ describe("Sidebar", () => {
       },
     ] as Song[];
 
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).not.toContain("sidebar.separateAll");
     expect(markup).not.toContain("sidebar.upgradeAll");
   });
 
   test("uses the unified sidebar surface and composition markers", () => {
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).toContain('data-sidebar-visual-variant="unified"');
     expect(markup).toContain('data-search-visual-variant="mock"');
@@ -157,7 +167,7 @@ describe("Sidebar", () => {
   test("hides the library section while a playlist is active", () => {
     mockPlaylistState.activePlaylistId = "playlist-1";
 
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).not.toContain("sidebar.library");
     expect(markup).not.toContain("sidebar.allTracks");
@@ -169,13 +179,13 @@ describe("Sidebar", () => {
   });
 
   test("renders playlist counts from store state", () => {
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).toContain(">5<");
   });
 
   test("keeps the full app rail visible while marking playlist switches for preview", () => {
-    const markup = renderToStaticMarkup(<Sidebar previewMode />);
+    const markup = renderSidebar(true);
 
     expect(markup).toContain('data-preview-playlist-switch="true"');
     expect(markup).toContain('data-search-visual-variant="mock"');
@@ -205,7 +215,7 @@ describe("Sidebar", () => {
       },
     ] as Song[];
 
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).toContain("bg-[var(--sidebar-control-bg)]");
     expect(markup).toContain("border-[var(--sidebar-control-border)]");
@@ -272,7 +282,7 @@ describe("Sidebar", () => {
       },
     };
 
-    const markup = renderToStaticMarkup(<Sidebar />);
+    const markup = renderSidebar();
 
     expect(markup).not.toContain("sidebar.separateAll");
 

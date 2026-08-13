@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import type { ExecutionProvider } from "@/types/ipc";
 
 interface ExecutionProviderOptionProps {
@@ -82,14 +82,15 @@ function useEpLabels() {
 
 export function SettingsExecutionProviderSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences } = useSettings();
+  const settings = view.preferences;
   const labels = useEpLabels();
 
   const selectProvider = (provider: ExecutionProvider) => {
-    void actions.setExecutionProvider(provider);
+    void preferences.set({ executionProvider: provider });
   };
   const selectedProviderIsCompatible =
-    state.compatibleExecutionProviders.includes(state.executionProvider);
+    settings.compatibleExecutionProviders.includes(settings.executionProvider);
 
   return (
     <SettingsSectionCard
@@ -110,12 +111,14 @@ export function SettingsExecutionProviderSection() {
         </div>
       )}
       <div className="flex gap-2">
-        {state.availableExecutionProviders.map((provider) => (
+        {settings.availableExecutionProviders.map((provider) => (
           <ExecutionProviderOption
             key={provider}
-            selected={state.executionProvider === provider}
-            compatible={state.compatibleExecutionProviders.includes(provider)}
-            disabled={meta.isInitializing}
+            selected={settings.executionProvider === provider}
+            compatible={settings.compatibleExecutionProviders.includes(
+              provider,
+            )}
+            disabled={view.isInitializing}
             title={labels[provider].title}
             description={labels[provider].description}
             incompatibleLabel={t("settings.executionProvider.incompatible")}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -15,7 +15,8 @@ import {
   Search,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
-import * as api from "@/lib/tauri";
+import { useBackend } from "@/lib/backend";
+import { createLibrarySession } from "@/lib/library-session";
 import i18next, { SUPPORTED_LANGUAGES, resolveAppLanguage } from "@/lib/i18n";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { RemoteLibraryProvider } from "@/types/ipc";
@@ -144,6 +145,12 @@ function languageBadge(code: string): string {
 }
 
 export function LibrarySetup({ onComplete }: LibrarySetupProps) {
+  const backend = useBackend();
+  const { remoteRepository, settings } = backend;
+  const librarySession = useMemo(
+    () => createLibrarySession({ backend }),
+    [backend],
+  );
   const { t } = useTranslation();
   const settingsLanguage = useSettingsStore((s) => s.language);
   const settingsStemMode = useSettingsStore((s) => s.stemMode);
@@ -195,16 +202,16 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   useEffect(() => {
     return () => {
       if (remoteAuthSessionIdRef.current) {
-        void api.cancelRemoteAuth(remoteAuthSessionIdRef.current);
+        void remoteRepository.cancelRemoteAuth(remoteAuthSessionIdRef.current);
       }
     };
-  }, []);
+  }, [remoteRepository]);
 
   const handleLanguageSelect = (code: string) => {
     setSelectedLanguageDraft(code);
     patchAppSettings({ language: code });
     void i18next.changeLanguage(code);
-    api
+    settings
       .setLanguage(code)
       .then(hydrateAppSettings)
       .catch(() => {});
@@ -221,11 +228,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
     const selectedDirectory = resolveSingleDirectory(selected);
     if (!selectedDirectory) return;
 
-    const libraryDir = `${selectedDirectory}/OpenKara`;
     setLoading(true);
     setError(null);
     try {
-      await api.createLocalLibrary(libraryDir);
+      await librarySession.createLocalLibrary(selectedDirectory);
       setStep("stemMode");
     } catch (err: unknown) {
       setError(getErrorMessage(err));
@@ -247,7 +253,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
     setLoading(true);
     setError(null);
     try {
-      await api.registerLocalLibrary(selectedDirectory);
+      await librarySession.openLocalLibrary(selectedDirectory);
       setStep("stemMode");
     } catch (err: unknown) {
       setError(getErrorMessage(err));
@@ -273,6 +279,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
         provider,
         displayName: remoteDisplayName,
         t,
+        remoteApi: remoteRepository,
         webdav: {
           serverUrl: remoteServerUrl,
           username: remoteUsername,
@@ -310,7 +317,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
     setError(null);
     setLoading(true);
     try {
-      const languageSettings = await api.setLanguage(selectedLanguage);
+      const languageSettings = await settings.setLanguage(selectedLanguage);
       hydrateAppSettings(languageSettings);
     } catch (err: unknown) {
       setError(getErrorMessage(err));
@@ -318,8 +325,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
       return;
     }
     try {
-      const settings = await api.setStemMode(selectedStemMode);
-      hydrateAppSettings(settings);
+      const stemSettings = await settings.setStemMode(selectedStemMode);
+      hydrateAppSettings(stemSettings);
     } catch (err: unknown) {
       setError(getErrorMessage(err));
       setLoading(false);
@@ -758,7 +765,9 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             <button
               onClick={() => {
                 if (remoteAuthSessionIdRef.current) {
-                  void api.cancelRemoteAuth(remoteAuthSessionIdRef.current);
+                  void remoteRepository.cancelRemoteAuth(
+                    remoteAuthSessionIdRef.current,
+                  );
                 }
                 resetRemoteWizard();
                 setStep("library");

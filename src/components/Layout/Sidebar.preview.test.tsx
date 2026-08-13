@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { fireEvent, cleanup } from "@testing-library/react";
+import type { ReactElement } from "react";
 import type { Song } from "@/types/ipc";
 
 const { mockLibraryState, mockSettingsState, mockPlaylistState } = vi.hoisted(
@@ -104,10 +105,6 @@ vi.mock("@/components/Settings/InputDialog", () => ({
   InputDialog: () => <div data-testid="input-dialog" />,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  batchSeparate: vi.fn(),
-}));
-
 vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
 }));
@@ -125,8 +122,18 @@ vi.mock("@/lib/song-media", () => ({
   songCanBeSeparated: () => true,
 }));
 
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import { renderWithBackend } from "@/test-utils/backend";
 import { Sidebar } from "./Sidebar";
-import * as api from "@/lib/tauri";
+
+const mockBatchSeparate = vi.fn();
+const backend = createMockBackend({
+  overrides: { maintenance: { batchSeparate: mockBatchSeparate } },
+});
+
+function render(ui: ReactElement) {
+  return renderWithBackend(ui, backend);
+}
 
 describe("Sidebar preview mode", () => {
   beforeEach(() => {
@@ -154,7 +161,7 @@ describe("Sidebar preview mode", () => {
     const separateBtn = container.querySelector("[data-separate-all-trigger]");
     if (separateBtn) {
       fireEvent.click(separateBtn);
-      expect(api.batchSeparate).not.toHaveBeenCalled();
+      expect(mockBatchSeparate).not.toHaveBeenCalled();
     }
   });
 
@@ -169,7 +176,7 @@ describe("Sidebar preview mode", () => {
     const confirmBtn = container.querySelector('[data-testid="confirm-btn"]');
     if (confirmBtn) {
       fireEvent.click(confirmBtn);
-      expect(api.batchSeparate).not.toHaveBeenCalled();
+      expect(mockBatchSeparate).not.toHaveBeenCalled();
     }
 
     mockSettingsState.stemMode = "two_stem";

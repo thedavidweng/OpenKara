@@ -63,6 +63,23 @@ const {
   ),
 }));
 
+const { mockLyricsSession } = vi.hoisted(() => ({
+  mockLyricsSession: {
+    scroll: {
+      requestResume: vi.fn(),
+      peekResumeGeneration: () => 0,
+      isUnlockSuppressed: () => false,
+      endUnlockSuppress: () => {},
+    },
+    getState: () => mockLyricsState,
+    readPositionMs: () => mockPlayerState.positionMs,
+    toAdjustedMs: (positionMs: number) => positionMs - mockLyricsState.offsetMs,
+    syncActiveLine: vi.fn(),
+    syncActiveWord: vi.fn(),
+    resetActiveIndexLatches: vi.fn(),
+  },
+}));
+
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,
 }));
@@ -93,6 +110,7 @@ vi.mock("@/stores/lyrics-store", () => ({
       getState: () => mockLyricsState,
     },
   ),
+  lyricsSession: mockLyricsSession,
 }));
 
 vi.mock("@/stores/settings-store", () => ({

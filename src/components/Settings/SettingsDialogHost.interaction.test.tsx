@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, type ReactElement } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createSettingsHarness } from "@/test-utils/settings-controller";
+import type { IntegrityReport } from "@/types/ipc";
+import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsDialogHost } from "./SettingsDialogHost";
-import {
-  SettingsOverlayContext,
-  createSettingsOverlayTestContextValue,
-  type SettingsOverlayContextValue,
-} from "./SettingsOverlay.context";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -21,20 +19,17 @@ vi.mock("react-i18next", async (importOriginal) => {
   };
 });
 
-function renderWithContext(
-  node: ReactElement,
-  value: SettingsOverlayContextValue,
-) {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => {
-    root.render(
-      <SettingsOverlayContext value={value}>{node}</SettingsOverlayContext>,
-    );
-  });
-  return { container, root };
-}
+const reportWithOneIssue: IntegrityReport = {
+  checked_local_songs: 1,
+  skipped_remote_songs: 0,
+  missing_primary_media: [
+    { song_hash: "hash-a", asset_type: "primary_media", path: "media/a.mp3" },
+  ],
+  empty_primary_media: [],
+  missing_optional_assets: [],
+  empty_optional_assets: [],
+  orphaned_managed_files: [],
+};
 
 describe("SettingsDialogHost interactions", () => {
   let container: HTMLDivElement;
@@ -54,31 +49,42 @@ describe("SettingsDialogHost interactions", () => {
     document.body.innerHTML = "";
   });
 
-  test("confirm button in integrity cleanup dialog calls confirmIntegrityCleanup", () => {
-    const confirmIntegrityCleanup = vi.fn().mockResolvedValue(undefined);
-    const value = createSettingsOverlayTestContextValue(
-      {
-        state: { integritySelection: new Set(["hash-a"]) },
-        meta: { dangerDialog: "integrity_cleanup_confirm" },
+  test("the integrity cleanup dialog's confirm button removes the selection", async () => {
+    const removeMissingLibraryEntries = vi.fn(async () => ({
+      deleted_song_hashes: ["hash-a"],
+      skipped_song_hashes: [],
+    }));
+    const harness = createSettingsHarness({
+      overrides: {
+        library: {
+          checkLibraryIntegrity: async () => reportWithOneIssue,
+          removeMissingLibraryEntries,
+        },
       },
-      { confirmIntegrityCleanup, closeDialog: vi.fn() },
+    });
+    await harness.controller.library.checkIntegrity();
+    await harness.controller.maintenance.openDialog(
+      "integrity_cleanup_confirm",
     );
 
-    const rendered = renderWithContext(<SettingsDialogHost />, value);
-    container = rendered.container;
-    root = rendered.root;
-
-    const confirmButton = document.body.querySelector(
-      "button:not(:first-of-type)",
-    ) as HTMLButtonElement;
-    expect(confirmButton).not.toBeNull();
-    const buttons = document.body.querySelectorAll("button");
-    const confirmBtn = buttons[buttons.length - 1] as HTMLButtonElement;
-
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
     act(() => {
-      confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsDialogHost />
+        </SettingsControllerContext>,
+      );
     });
 
-    expect(confirmIntegrityCleanup).toHaveBeenCalledOnce();
+    const buttons = document.body.querySelectorAll("button");
+    const confirmButton = buttons[buttons.length - 1] as HTMLButtonElement;
+
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(removeMissingLibraryEntries).toHaveBeenCalledWith(["hash-a"]);
   });
 });

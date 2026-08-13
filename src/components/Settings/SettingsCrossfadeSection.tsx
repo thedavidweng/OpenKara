@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 
 const CROSSFADE_DEBOUNCE_MS = 75;
 
@@ -10,12 +10,14 @@ const CROSSFADE_MAX_MS = 10_000;
 
 export function SettingsCrossfadeSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences } = useSettings();
+  const { isInitializing } = view;
+  const { crossfadeEnabled, crossfadeDurationMs } = view.preferences;
 
-  const [draft, setDraft] = useState(state.crossfadeDurationMs);
+  const [draft, setDraft] = useState(crossfadeDurationMs);
   useEffect(() => {
-    setDraft(state.crossfadeDurationMs);
-  }, [state.crossfadeDurationMs]);
+    setDraft(crossfadeDurationMs);
+  }, [crossfadeDurationMs]);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<number | null>(null);
@@ -29,7 +31,7 @@ export function SettingsCrossfadeSection() {
     const pending = pendingRef.current;
     pendingRef.current = null;
     if (pending !== null) {
-      void actions.setCrossfadeDurationMs(pending);
+      void preferences.set({ crossfadeDurationMs: pending });
     }
   };
 
@@ -61,7 +63,7 @@ export function SettingsCrossfadeSection() {
         const pending = pendingRef.current;
         pendingRef.current = null;
         if (pending !== null) {
-          void actions.setCrossfadeDurationMs(pending);
+          void preferences.set({ crossfadeDurationMs: pending });
         }
       }, CROSSFADE_DEBOUNCE_MS);
       return clamped;
@@ -75,11 +77,11 @@ export function SettingsCrossfadeSection() {
           <label className="flex items-center gap-3">
             <input
               type="checkbox"
-              checked={state.crossfadeEnabled}
+              checked={crossfadeEnabled}
               onChange={(event) =>
-                void actions.setCrossfadeEnabled(event.target.checked)
+                void preferences.set({ crossfadeEnabled: event.target.checked })
               }
-              disabled={meta.isInitializing}
+              disabled={isInitializing}
               className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
             />
             <span className="text-[13px] text-[var(--color-text)]">
@@ -93,7 +95,7 @@ export function SettingsCrossfadeSection() {
 
         <div
           className={`space-y-2 border-t border-[var(--color-border)] pt-4 ${
-            state.crossfadeEnabled ? "" : "opacity-50"
+            crossfadeEnabled ? "" : "opacity-50"
           }`}
         >
           <div className="flex items-center justify-between">
@@ -120,7 +122,7 @@ export function SettingsCrossfadeSection() {
             }
             onPointerUp={() => flushRef.current()}
             onKeyUp={() => flushRef.current()}
-            disabled={meta.isInitializing || !state.crossfadeEnabled}
+            disabled={isInitializing || !crossfadeEnabled}
             className="w-full accent-[var(--color-accent)]"
           />
         </div>

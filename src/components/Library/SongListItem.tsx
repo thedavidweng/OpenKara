@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, X } from "lucide-react";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
@@ -8,21 +8,21 @@ import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
-import { usePlaylistStore } from "@/stores/playlist-store";
 import { formatDuration } from "@/lib/format";
 import { TaskProgressBar } from "@/components/Layout/GlobalProgressBar";
 import { songCanBeSeparated } from "@/lib/song-media";
-import * as api from "@/lib/tauri";
-import { notifyError, notifySuccess } from "@/lib/errors";
+import { batchSeparationInProgress } from "@/lib/task-progress";
+import { useBackend } from "@/lib/backend";
+import { notifyError } from "@/lib/errors";
 import { showNativeContextMenu } from "@/lib/native-context-menu";
+import {
+  createSongCommands,
+  type SongCommandContext,
+} from "@/lib/song-commands";
 import { ConfirmationDialog } from "../Settings/ConfirmationDialog";
 import { InputDialog } from "../Settings/InputDialog";
 import { SongEditDialog } from "./SongEditDialog";
 import { SongPropertiesDialog } from "./SongPropertiesDialog";
-import {
-  buildSongListContextMenuForSong,
-  getSongListContextSongIds,
-} from "./song-list-item-context-menu-build";
 import { songDisplayTitle } from "@/lib/song-display";
 import type { Song } from "@/types/ipc";
 
@@ -32,6 +32,7 @@ interface SongListItemProps {
 }
 
 export function SongListItem({ song, orderedHashes }: SongListItemProps) {
+  const backend = useBackend();
   const { t } = useTranslation();
   const isSelected = useLibraryStore((s) => s.selectedSongIds.has(song.hash));
   const selectSong = useLibraryStore((s) => s.selectSong);
@@ -39,13 +40,9 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     (s) => s.separationStatuses[song.hash],
   );
   const uploadStatus = useLibraryStore((s) => s.uploadStatuses[song.hash]);
-  const batchActive = useLibraryStore((s) => {
-    const batch = s.batchSeparation;
-    if (batch == null) return false;
-    return batch.completed + batch.failed < batch.total;
-  });
-  const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
-  const addSongsToPlaylist = usePlaylistStore((s) => s.addSongsToPlaylist);
+  const batchActive = useLibraryStore((s) =>
+    batchSeparationInProgress(s.batchSeparation),
+  );
   const playSong = usePlayerStore((s) => s.playSong);
   const closeSettings = useSettingsStore((s) => s.close);
 
@@ -54,6 +51,24 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   const [deleteSongIds, setDeleteSongIds] = useState<string[] | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
+
+  const songCommands = useMemo(
+    () =>
+      createSongCommands({
+        backend,
+        dialogs: {
+          editInfo: () => setEditDialogOpen(true),
+          properties: () => setPropertiesDialogOpen(true),
+          confirmDelete: setDeleteSongIds,
+          createPlaylist: () => setPlaylistDialogOpen(true),
+        },
+      }),
+    [backend],
+  );
+  const commandContext: SongCommandContext = {
+    song,
+    t: (key, options) => String(t(key as never, options as never)),
+  };
 
   const isCurrentPlaying = usePlayerStore(
     (s) => s.snapshot?.song_id === song.hash && !!s.snapshot?.is_playing,
@@ -100,18 +115,20 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
 
   const handleSeparate = (e: React.MouseEvent) => {
     e.stopPropagation();
-    api.separate(song.hash).catch((err) => notifyError(err));
+    backend.separation.separate(song.hash).catch((err) => notifyError(err));
   };
 
   const handleCancelSeparation = (e: React.MouseEvent) => {
     e.stopPropagation();
-    api.cancelSeparation(song.hash).catch((err) => notifyError(err));
+    backend.separation
+      .cancelSeparation(song.hash)
+      .catch((err) => notifyError(err));
   };
 
   const handleDeleteSongs = async (songIds: string[]) => {
     setIsDeleting(true);
     try {
-      const result = await api.deleteSongs(songIds);
+      const result = await backend.library.deleteSongs(songIds);
       for (const failure of result.failed) {
         notifyError(failure.error);
       }
@@ -166,17 +183,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         orderedHashes,
       );
     }
-    const items = buildSongListContextMenuForSong(
-      song,
-      (key, options) => String(t(key as never, options as never)),
-      {
-        setEditDialogOpen,
-        setPropertiesDialogOpen,
-        setDeleteSongIds,
-        setPlaylistDialogOpen,
-      },
+    void showNativeContextMenu(
+      songCommands.buildMenu(commandContext),
+      clientX,
+      clientY,
     );
-    void showNativeContextMenu(items, clientX, clientY);
   };
 
   const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -380,20 +391,12 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
           title={t("playlist.create")}
           placeholder={t("playlist.name")}
           confirmLabel={t("common.save")}
-          onConfirm={async (name) => {
+          onConfirm={(name) => {
             setPlaylistDialogOpen(false);
-            const contextSongIds = getSongListContextSongIds(song);
-            try {
-              const playlist = await createPlaylist(name.trim());
-              await addSongsToPlaylist(playlist.id, contextSongIds);
-              notifySuccess(
-                t("playlist.createdAndAddedToast", {
-                  count: contextSongIds.length,
-                }),
-              );
-            } catch (error) {
-              notifyError(error);
-            }
+            void songCommands.execute(
+              { id: "createPlaylistAndAdd", name },
+              commandContext,
+            );
           }}
           onCancel={() => setPlaylistDialogOpen(false)}
         />

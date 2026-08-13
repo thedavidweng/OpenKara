@@ -3,30 +3,17 @@
 import { act, useLayoutEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useLyricsEngine } from "./use-lyrics-engine";
+import { createMockBackend } from "@/lib/backend/mock-backend";
 import * as lyricsEngine from "@/lib/lyrics-engine";
-import {
-  peekLyricsAutoScrollResumeGeneration,
-  resetLyricsEngineScrollControlForTests,
-} from "@/lib/lyrics-engine";
-import { resetLyricsPlaybackTimeForTests } from "@/lib/lyrics-playback-time";
 import type { LyricsLineRuntime } from "@/lib/lyrics-line-runtime";
+import { resetLyricsPlaybackTimeForTests } from "@/lib/lyrics-playback-time";
+import type { LyricsSession } from "@/lib/lyrics-session";
+import { createTestLyricsSession } from "@/test-utils/lyrics-session";
+import type { LyricsPayload } from "@/types/ipc";
+import { useLyricsEngine } from "./use-lyrics-engine";
 
-const {
-  mockPlayerState,
-  mockLyricsState,
-  mockSelectCurrentPositionMs,
-  mockLineRuntime,
-} = vi.hoisted(() => {
-  const mockSelectCurrentPositionMs = vi.fn(
-    (state: { positionMs: number }, nowMs?: () => number) => {
-      if (typeof nowMs === "function") {
-        nowMs();
-      }
-      return state.positionMs;
-    },
-  );
-  return {
+const { mockPlayerState, mockSelectCurrentPositionMs, mockLineRuntime } =
+  vi.hoisted(() => ({
     mockPlayerState: {
       snapshot: {
         song_id: "song-1",
@@ -41,18 +28,9 @@ const {
         displayedPositionMs: null as number | null,
       },
     },
-    mockLyricsState: {
-      lines: [
-        { time_ms: 0, text: "a", words: null },
-        { time_ms: 5_000, text: "b", words: null },
-      ],
-      activeLineIndex: 0,
-      activeWordIndex: -1,
-      offsetMs: 0,
-      setActiveLineIndex: vi.fn(),
-      setActiveWordIndex: vi.fn(),
-    },
-    mockSelectCurrentPositionMs,
+    mockSelectCurrentPositionMs: vi.fn(
+      (state: { positionMs: number }) => state.positionMs,
+    ),
     mockLineRuntime: {
       clear: vi.fn(),
       tick: vi.fn(),
@@ -64,8 +42,7 @@ const {
       clear: ReturnType<typeof vi.fn>;
       tick: ReturnType<typeof vi.fn>;
     },
-  };
-});
+  }));
 
 vi.mock("@/stores/player-store", () => ({
   usePlayerStore: Object.assign(
@@ -78,15 +55,31 @@ vi.mock("@/stores/player-store", () => ({
   selectCurrentPositionMs: mockSelectCurrentPositionMs,
 }));
 
-vi.mock("@/stores/lyrics-store", () => ({
-  useLyricsStore: Object.assign(
-    (selector: (state: typeof mockLyricsState) => unknown) =>
-      selector(mockLyricsState),
-    {
-      getState: () => mockLyricsState,
-    },
-  ),
-}));
+const LYRICS: LyricsPayload = {
+  song_id: "song-1",
+  lines: [
+    { time_ms: 0, text: "a", words: null, bg_words: null, section: null },
+    { time_ms: 5_000, text: "b", words: null, bg_words: null, section: null },
+  ],
+  source: "manual",
+  offset_ms: 0,
+  raw_lrc: "raw",
+};
+
+let session: LyricsSession;
+let readPositionMs = vi.fn(() => mockPlayerState.positionMs);
+
+async function createSession(): Promise<LyricsSession> {
+  readPositionMs = vi.fn(() => mockPlayerState.positionMs);
+  const backend = createMockBackend({
+    overrides: { lyrics: { fetchLyrics: async () => LYRICS } },
+  });
+  const harness = createTestLyricsSession({ backend });
+  harness.clock.readFrom(() => readPositionMs());
+  const created = harness.session;
+  await created.load("song-1");
+  return created;
+}
 
 function Harness(props: {
   viewportActive?: boolean;
@@ -112,6 +105,7 @@ function Harness(props: {
     songId: props.songId === undefined ? "song-1" : props.songId,
     viewportActive: (props.viewportActive ?? true) && domReady,
     lineRuntime: mockLineRuntime,
+    session,
     onUserScrollActiveChange: props.onUserScrollActiveChange,
   });
 
@@ -149,6 +143,7 @@ function ScrollHarness(props: { lyricsFontStep: number; songId?: string }) {
     songId: props.songId ?? "song-1",
     viewportActive: domReady,
     lineRuntime: mockLineRuntime,
+    session,
   });
 
   return (
@@ -173,13 +168,12 @@ describe("useLyricsEngine", () => {
   let rafCb: FrameRequestCallback | null = null;
   let rafId = 1;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     (
       globalThis as typeof globalThis & {
         IS_REACT_ACT_ENVIRONMENT?: boolean;
       }
     ).IS_REACT_ACT_ENVIRONMENT = true;
-    resetLyricsEngineScrollControlForTests();
     resetLyricsPlaybackTimeForTests();
     rafCb = null;
     vi.stubGlobal(
@@ -216,21 +210,10 @@ describe("useLyricsEngine", () => {
       active: false,
       displayedPositionMs: null,
     };
-    mockSelectCurrentPositionMs.mockImplementation(
-      (state: { positionMs: number }, nowMs?: () => number) => {
-        if (typeof nowMs === "function") {
-          nowMs();
-        }
-        return state.positionMs;
-      },
-    );
-    mockLyricsState.activeLineIndex = 0;
-    mockLyricsState.activeWordIndex = -1;
-    mockLyricsState.offsetMs = 0;
-    mockLyricsState.setActiveLineIndex.mockReset();
-    mockLyricsState.setActiveWordIndex.mockReset();
     mockLineRuntime.clear.mockReset();
     mockLineRuntime.tick.mockReset();
+
+    session = await createSession();
 
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -257,7 +240,7 @@ describe("useLyricsEngine", () => {
     });
 
     expect(mockLineRuntime.tick).toHaveBeenCalled();
-    expect(mockSelectCurrentPositionMs).toHaveBeenCalled();
+    expect(readPositionMs).toHaveBeenCalled();
   });
 
   test("consumes seekRevision as isSeek and bumps auto-scroll resume", () => {
@@ -265,7 +248,7 @@ describe("useLyricsEngine", () => {
       root.render(<Harness />);
     });
 
-    const before = peekLyricsAutoScrollResumeGeneration();
+    const before = session.scroll.peekResumeGeneration();
     mockPlayerState.seekRevision = 3;
     mockPlayerState.positionMs = 12_000;
 
@@ -273,13 +256,13 @@ describe("useLyricsEngine", () => {
       rafCb?.(1100);
     });
 
-    expect(peekLyricsAutoScrollResumeGeneration()).toBe(before + 1);
+    expect(session.scroll.peekResumeGeneration()).toBe(before + 1);
 
     // Second frame with the same revision is not another seek.
     act(() => {
       rafCb?.(1120);
     });
-    expect(peekLyricsAutoScrollResumeGeneration()).toBe(before + 1);
+    expect(session.scroll.peekResumeGeneration()).toBe(before + 1);
   });
 
   test("attaches the user-scroll guard when the viewport mounts", () => {
@@ -317,6 +300,7 @@ describe("useLyricsEngine", () => {
         songId: "song-1",
         viewportActive: true,
         lineRuntime: mockLineRuntime,
+        session,
       });
       return null;
     }
@@ -374,7 +358,7 @@ describe("useLyricsEngine", () => {
     vi.mocked(lyricsEngine.createUserScrollGuard).mockRestore();
   });
 
-  test("focus resync updates active line without consuming a seek latch", () => {
+  test("focus resync updates the active line without consuming a seek latch", () => {
     act(() => {
       root.render(<Harness />);
     });
@@ -384,7 +368,7 @@ describe("useLyricsEngine", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
-    expect(mockLyricsState.setActiveLineIndex).toHaveBeenCalled();
+    expect(session.getState().activeLineIndex).toBe(1);
   });
 
   test("changing the font size re-anchors in place instead of resetting scrollTop to 0 (#201)", () => {
@@ -442,7 +426,6 @@ describe("useLyricsEngine", () => {
     }
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
-    mockLyricsState.activeLineIndex = 1;
     mockPlayerState.positionMs = 6000;
 
     act(() => {
@@ -466,6 +449,7 @@ describe("useLyricsEngine", () => {
       rafCb?.(1000);
     });
     expect(viewport.scrollTop).toBe(170);
+    expect(session.getState().activeLineIndex).toBe(1);
 
     defineNumber(viewport, "clientHeight", 200);
     act(() => {
@@ -491,7 +475,6 @@ describe("useLyricsEngine", () => {
     }
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
-    mockLyricsState.activeLineIndex = 1;
     mockPlayerState.positionMs = 6000;
 
     act(() => {

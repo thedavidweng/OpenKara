@@ -17,7 +17,7 @@ import { SettingsSectionCard } from "./SettingsSectionCard";
 import { InputDialog } from "./InputDialog";
 import { IntegrityReportModal } from "./IntegrityReportModal";
 import { RemoteLibraryWizard } from "./RemoteLibraryWizard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
 
 type RemoteWizardOptions = {
@@ -80,8 +80,11 @@ function describeLibrarySubtitle(t: TFunction, library: RegisteredLibrary) {
 
 export function SettingsLibrarySection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
-  const hasLibraries = state.libraries.length > 0;
+  const { view, library: libraryActions } = useSettings();
+  const { isInitializing } = view;
+  const { libraries, activeLibraryId, error } = view.library;
+  const integrity = view.integrity;
+  const hasLibraries = libraries.length > 0;
   const [remoteWizard, setRemoteWizard] = useState<RemoteWizardOptions | null>(
     null,
   );
@@ -98,7 +101,7 @@ export function SettingsLibrarySection() {
 
     const { libraryId } = renameDialog;
     setRenameDialog(null);
-    void actions.renameLibrary(libraryId, displayName);
+    void libraryActions.rename(libraryId, displayName);
   };
 
   const handleDeleteConfirm = (confirmationName: string) => {
@@ -108,7 +111,7 @@ export function SettingsLibrarySection() {
 
     const { libraryId } = deleteConfirmDialog;
     setDeleteConfirmDialog(null);
-    void actions.deleteLibrary(libraryId, confirmationName);
+    void libraryActions.delete(libraryId, confirmationName);
   };
 
   return (
@@ -119,8 +122,8 @@ export function SettingsLibrarySection() {
         </p>
       ) : (
         <div className="space-y-2">
-          {state.libraries.map((library) => {
-            const isActive = library.id === state.activeLibraryId;
+          {libraries.map((library) => {
+            const isActive = library.id === activeLibraryId;
             const isRemote = library.kind === "remote";
             return (
               <div
@@ -132,8 +135,8 @@ export function SettingsLibrarySection() {
                 }`}
               >
                 <button
-                  onClick={() => void actions.switchLibrary(library.id)}
-                  disabled={meta.isInitializing || isActive}
+                  onClick={() => void libraryActions.activate(library.id)}
+                  disabled={isInitializing || isActive}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
                   {isRemote ? (
@@ -167,10 +170,8 @@ export function SettingsLibrarySection() {
                     <>
                       <button
                         type="button"
-                        onClick={() =>
-                          void actions.refreshRemoteRepository(library.id)
-                        }
-                        disabled={meta.isInitializing}
+                        onClick={() => void libraryActions.refresh(library.id)}
+                        disabled={isInitializing}
                         title={t("settings.library.refreshRemoteRepository")}
                         className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                       >
@@ -202,7 +203,7 @@ export function SettingsLibrarySection() {
                             purpose: "reauthorize",
                           })
                         }
-                        disabled={meta.isInitializing}
+                        disabled={isInitializing}
                         title={t(
                           "settings.library.reauthorizeRemoteRepository",
                         )}
@@ -215,16 +216,16 @@ export function SettingsLibrarySection() {
                     isActive && (
                       <button
                         type="button"
-                        onClick={() => void actions.checkLibraryIntegrity()}
+                        onClick={() => void libraryActions.checkIntegrity()}
                         disabled={
-                          meta.isInitializing ||
-                          meta.integrityCheckInProgress ||
-                          meta.integrityCleanupInProgress
+                          isInitializing ||
+                          integrity.checking ||
+                          integrity.cleaningUp
                         }
                         title={t("settings.integrity.checkButton")}
                         className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
                       >
-                        {meta.integrityCheckInProgress ? (
+                        {integrity.checking ? (
                           <RefreshCw size={12} className="animate-spin" />
                         ) : (
                           <ShieldCheck size={12} />
@@ -241,7 +242,7 @@ export function SettingsLibrarySection() {
                         kind: library.kind,
                       })
                     }
-                    disabled={meta.isInitializing}
+                    disabled={isInitializing}
                     title={t("settings.library.renameLibrary")}
                     className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
@@ -249,8 +250,8 @@ export function SettingsLibrarySection() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void actions.removeLibrary(library.id)}
-                    disabled={meta.isInitializing}
+                    onClick={() => void libraryActions.disconnect(library.id)}
+                    disabled={isInitializing}
                     title={t("settings.library.removeLibrary")}
                     className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
@@ -264,7 +265,7 @@ export function SettingsLibrarySection() {
                         displayName: library.display_name,
                       })
                     }
-                    disabled={meta.isInitializing}
+                    disabled={isInitializing}
                     title={t("settings.library.deleteLibrary")}
                     className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] hover:border-[var(--color-destructive)] disabled:opacity-50"
                   >
@@ -280,33 +281,31 @@ export function SettingsLibrarySection() {
       <div className="flex gap-2">
         <button
           onClick={() =>
-            void actions.createLibrary(t("setup.dialogTitleCreate"))
+            void libraryActions.create(t("setup.dialogTitleCreate"))
           }
-          disabled={meta.isInitializing}
+          disabled={isInitializing}
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Plus size={12} /> {t("settings.library.newLibrary")}
         </button>
         <button
-          onClick={() => void actions.openLibrary(t("setup.dialogTitleOpen"))}
-          disabled={meta.isInitializing}
+          onClick={() => void libraryActions.open(t("setup.dialogTitleOpen"))}
+          disabled={isInitializing}
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <FolderOpen size={12} /> {t("settings.library.openLibrary")}
         </button>
         <button
           onClick={() => setRemoteWizard({ purpose: "add" })}
-          disabled={meta.isInitializing}
+          disabled={isInitializing}
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Globe size={12} /> {t("settings.library.addRemoteLibrary")}
         </button>
       </div>
 
-      {state.libraryError && (
-        <p className="text-[12px] text-[var(--color-destructive)]">
-          {state.libraryError}
-        </p>
+      {error && (
+        <p className="text-[12px] text-[var(--color-destructive)]">{error}</p>
       )}
 
       {remoteWizard && (
@@ -348,9 +347,7 @@ export function SettingsLibrarySection() {
         />
       )}
 
-      {state.integrityReport && (
-        <IntegrityReportModal report={state.integrityReport} />
-      )}
+      {integrity.report && <IntegrityReportModal report={integrity.report} />}
     </SettingsSectionCard>
   );
 }

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { useSettingsOverlay } from "./SettingsOverlay.context";
+import { useSettings } from "./SettingsController.context";
 import { formatBytes } from "@/lib/format";
 import { runtimeFailureStatusKey } from "@/lib/runtime-failure-copy";
 import type { ModelVariant } from "@/types/ipc";
@@ -42,9 +42,10 @@ function ModelVariantOption({
 
 export function SettingsModelVariantSection() {
   const { t } = useTranslation();
-  const { state, meta, actions } = useSettingsOverlay();
+  const { view, preferences, maintenance } = useSettings();
+  const models = view.models;
 
-  const runtimeState = state.runtimeStatus?.state;
+  const runtimeState = view.runtime.status?.state;
   const runtimeReady =
     runtimeState === "ready" ||
     runtimeState === "update_available" ||
@@ -57,11 +58,11 @@ export function SettingsModelVariantSection() {
       return t("settings.modelVariant.runtimeRequired");
     }
 
-    if (state.downloadingModel === variant) {
+    if (models.downloading === variant) {
       return t("settings.modelVariant.downloading");
     }
 
-    const status = state.modelStatuses[variant];
+    const status = models.statuses[variant];
 
     if (status?.legacy_install_present && !status.downloaded) {
       return `${t("settings.modelVariant.legacyOnDisk")}${
@@ -85,7 +86,7 @@ export function SettingsModelVariantSection() {
   };
 
   const controlsDisabled =
-    meta.isInitializing || state.downloadingModel !== null || !runtimeReady;
+    view.isInitializing || models.downloading !== null || !runtimeReady;
 
   const runtimeNotice = runtimeReady
     ? null
@@ -100,10 +101,10 @@ export function SettingsModelVariantSection() {
             : runtimeState === "corrupt"
               ? t("settings.runtime.corrupt")
               : runtimeState === "failed"
-                ? t(runtimeFailureStatusKey(state.runtimeStatus?.failure_phase))
+                ? t(runtimeFailureStatusKey(view.runtime.status?.failure_phase))
                 : t("settings.modelVariant.runtimeRequired");
 
-  const update = state.modelUpdate;
+  const update = models.update;
   const updatableModels =
     update?.status === "checked"
       ? update.models.filter((model) => model.state === "update_available")
@@ -122,30 +123,30 @@ export function SettingsModelVariantSection() {
 
       <div className="flex gap-2">
         <ModelVariantOption
-          selected={state.modelVariant === "htdemucs"}
+          selected={view.preferences.modelVariant === "htdemucs"}
           disabled={controlsDisabled}
           title={t("settings.modelVariant.htdemucs")}
           description={t("settings.modelVariant.htdemucsDescription")}
           status={modelStatusLabel("htdemucs")}
-          onClick={() => void actions.selectModelVariant("htdemucs")}
+          onClick={() => void preferences.selectModelVariant("htdemucs")}
         />
         <ModelVariantOption
-          selected={state.modelVariant === "htdemucs_ft"}
+          selected={view.preferences.modelVariant === "htdemucs_ft"}
           disabled={controlsDisabled}
           title={t("settings.modelVariant.htdemucsFt")}
           description={t("settings.modelVariant.htdemucsFtDescription")}
           status={modelStatusLabel("htdemucs_ft")}
-          onClick={() => void actions.selectModelVariant("htdemucs_ft")}
+          onClick={() => void preferences.selectModelVariant("htdemucs_ft")}
         />
       </div>
 
       <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border-light)] pt-3">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void actions.checkModelUpdates()}
+            onClick={() => void maintenance.checkModelUpdates()}
             disabled={
-              meta.isInitializing ||
-              state.downloadingModel !== null ||
+              view.isInitializing ||
+              models.downloading !== null ||
               update?.status === "checking"
             }
             className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
@@ -192,12 +193,12 @@ export function SettingsModelVariantSection() {
             </div>
             <button
               onClick={() =>
-                void actions.updateModel(model.variant as ModelVariant)
+                void maintenance.downloadModel(model.variant as ModelVariant)
               }
-              disabled={state.downloadingModel !== null}
+              disabled={models.downloading !== null}
               className="rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
             >
-              {state.downloadingModel === model.variant
+              {models.downloading === model.variant
                 ? t("settings.modelVariant.downloading")
                 : t("settings.modelUpdate.updateButton")}
             </button>
