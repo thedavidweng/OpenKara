@@ -347,6 +347,7 @@
       "removeLibrary": "Disconnect repository",
       "deleteLibrary": "Delete repository",
       "typeToConfirmDelete": "Type \"{{displayName}}\" to confirm permanent deletion.",
+      "confirmNameMismatch": "The name does not match \"{{displayName}}\".",
       "confirmDisconnectRemote": "Disconnect \"{{displayName}}\" from {{appName}}? The remote repository contents will stay in {{provider}}.",
       "confirmDisconnectLocal": "Disconnect this library from {{appName}}? The library data will stay on disk.",
       "confirmDeleteRemote": "Delete \"{{displayName}}\"? This will delete the remote repository contents from {{provider}} at {{path}} and remove the local working copy.",

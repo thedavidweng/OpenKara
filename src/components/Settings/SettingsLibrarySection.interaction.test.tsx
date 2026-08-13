@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { fireEvent } from "@testing-library/react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -71,6 +72,7 @@ describe("SettingsLibrarySection interactions", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   function renderSection(controller: SettingsController) {
@@ -131,6 +133,72 @@ describe("SettingsLibrarySection interactions", () => {
     renderSection(harness.controller);
 
     expect(container.textContent).toContain("settings.integrity.reportTitle");
+  });
+
+  async function openDeleteConfirmDialog(): Promise<HTMLInputElement> {
+    const deleteButton = container.querySelector(
+      'button[title="settings.library.deleteLibrary"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    return document.body.querySelector(
+      'input[aria-label^="settings.library.typeToConfirmDelete"]',
+    ) as HTMLInputElement;
+  }
+
+  function dialogConfirmButton(): HTMLButtonElement {
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "common.confirm",
+    );
+    if (!confirm) {
+      throw new Error("delete confirmation button not found");
+    }
+    return confirm;
+  }
+
+  test("a mismatched delete confirmation name disables confirm and hints inline", async () => {
+    const harness = await activeLocalLibraryHarness();
+    renderSection(harness.controller);
+
+    const input = await openDeleteConfirmDialog();
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Wrong Library" } });
+    });
+
+    expect(dialogConfirmButton().disabled).toBe(true);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      document.getElementById("input-dialog-mismatch-hint")?.textContent,
+    ).toBe("settings.library.confirmNameMismatch{displayName=Main Library}");
+  });
+
+  test("the exact delete confirmation name enables confirm and deletes", async () => {
+    const deleteLibrary = vi.fn(async () => ({
+      active_library_id: null,
+      libraries: [],
+    }));
+    const harness = await activeLocalLibraryHarness({
+      overrides: { librarySetup: { deleteLibrary } },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderSection(harness.controller);
+
+    const input = await openDeleteConfirmDialog();
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Main Library" } });
+    });
+
+    expect(document.getElementById("input-dialog-mismatch-hint")).toBeNull();
+    const confirmButton = dialogConfirmButton();
+    expect(confirmButton.disabled).toBe(false);
+
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(deleteLibrary).toHaveBeenCalledWith(localLibrary.id);
   });
 
   test("disables the integrity check while a cleanup is in progress", async () => {

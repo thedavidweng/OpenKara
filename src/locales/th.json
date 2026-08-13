@@ -346,6 +346,7 @@
       "removeLibrary": "ตัดการเชื่อมต่อที่เก็บ",
       "deleteLibrary": "ลบที่เก็บ",
       "typeToConfirmDelete": "พิมพ์ \"{{displayName}}\" เพื่อยืนยันการลบถาวร",
+      "confirmNameMismatch": "ชื่อที่พิมพ์ไม่ตรงกับ \"{{displayName}}\"",
       "confirmDisconnectRemote": "ตัดการเชื่อมต่อ \"{{displayName}}\" จาก {{appName}} หรือไม่ เนื้อหาในที่เก็บระยะไกลจะยังคงอยู่ใน {{provider}}",
       "confirmDisconnectLocal": "ตัดการเชื่อมต่อคลังเพลงนี้จาก {{appName}} หรือไม่ ข้อมูลคลังเพลงจะยังคงอยู่ในดิสก์",
       "confirmDeleteRemote": "ลบ \"{{displayName}}\" หรือไม่ เนื้อหาในที่เก็บระยะไกลของ {{provider}} ที่ {{path}} และสำเนาการทำงานในเครื่องจะถูกลบ",

@@ -346,6 +346,7 @@
       "removeLibrary": "Ngắt kết nối kho lưu trữ",
       "deleteLibrary": "Xóa kho lưu trữ",
       "typeToConfirmDelete": "Nhập \"{{displayName}}\" để xác nhận xóa vĩnh viễn.",
+      "confirmNameMismatch": "Tên đã nhập không khớp với \"{{displayName}}\".",
       "confirmDisconnectRemote": "Ngắt kết nối \"{{displayName}}\" khỏi {{appName}}? Nội dung kho lưu trữ từ xa sẽ vẫn ở {{provider}}.",
       "confirmDisconnectLocal": "Ngắt kết nối thư viện này khỏi {{appName}}? Dữ liệu thư viện sẽ vẫn trên đĩa.",
       "confirmDeleteRemote": "Xóa \"{{displayName}}\"? Nội dung kho lưu trữ từ xa tại {{provider}} ở {{path}} và bản sao làm việc cục bộ sẽ bị xóa.",

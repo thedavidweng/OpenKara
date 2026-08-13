@@ -347,6 +347,7 @@
       "removeLibrary": "Depo bağlantısını kes",
       "deleteLibrary": "Depoyu sil",
       "typeToConfirmDelete": "Kalıcı silmeyi onaylamak için \"{{displayName}}\" yazın.",
+      "confirmNameMismatch": "Yazılan ad \"{{displayName}}\" ile eşleşmiyor.",
       "confirmDisconnectRemote": "\"{{displayName}}\" bağlantısı {{appName}} üzerinden kesilsin mi? Uzak depo içeriği {{provider}} içinde kalır.",
       "confirmDisconnectLocal": "Bu kitaplığın {{appName}} ile bağlantısı kesilsin mi? Kitaplık verileri diskte kalır.",
       "confirmDeleteRemote": "\"{{displayName}}\" silinsin mi? {{provider}} konumundaki {{path}} uzak depo içeriği ve yerel çalışma kopyası silinir.",

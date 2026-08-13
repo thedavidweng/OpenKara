@@ -346,6 +346,7 @@
       "removeLibrary": "Putuskan repositori",
       "deleteLibrary": "Hapus repositori",
       "typeToConfirmDelete": "Ketik \"{{displayName}}\" untuk mengonfirmasi penghapusan permanen.",
+      "confirmNameMismatch": "Nama yang diketik tidak cocok dengan \"{{displayName}}\".",
       "confirmDisconnectRemote": "Putuskan \"{{displayName}}\" dari {{appName}}? Isi repositori jarak jauh akan tetap di {{provider}}.",
       "confirmDisconnectLocal": "Putuskan pustaka ini dari {{appName}}? Data pustaka akan tetap di disk.",
       "confirmDeleteRemote": "Hapus \"{{displayName}}\"? Isi repositori jarak jauh di {{provider}} pada {{path}} dan salinan kerja lokal akan dihapus.",

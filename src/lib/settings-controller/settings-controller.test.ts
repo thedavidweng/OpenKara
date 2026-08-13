@@ -544,7 +544,7 @@ describe("library commands", () => {
     expect(deleteLibrary).toHaveBeenCalledWith(driveRepository.id);
   });
 
-  test("Delete Repository stops when the typed name does not match", async () => {
+  test("a mismatched name stops the delete before the native prompt", async () => {
     const deleteLibrary = vi.fn(async () => registryOf(null, []));
     const harness = createSettingsHarness({
       overrides: {
@@ -556,10 +556,11 @@ describe("library commands", () => {
       },
     });
     await harness.controller.initialize();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     await harness.controller.library.delete(driveRepository.id, "Wrong");
 
+    expect(confirm).not.toHaveBeenCalled();
     expect(deleteLibrary).not.toHaveBeenCalled();
   });
 });

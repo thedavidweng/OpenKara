@@ -753,7 +753,7 @@ export function createSettingsController({
                   appName: i18next.t("app.name"),
                 });
 
-          if (!window.confirm(message) || confirmationName !== displayName) {
+          if (confirmationName !== displayName || !window.confirm(message)) {
             return;
           }
 

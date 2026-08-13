@@ -346,6 +346,7 @@
       "removeLibrary": "저장소 연결 해제",
       "deleteLibrary": "저장소 삭제",
       "typeToConfirmDelete": "영구 삭제를 확인하려면 \"{{displayName}}\"을(를) 입력하세요.",
+      "confirmNameMismatch": "입력한 이름이 \"{{displayName}}\"과(와) 일치하지 않습니다.",
       "confirmDisconnectRemote": "{{appName}}에서 \"{{displayName}}\"의 연결을 끊을까요? 원격 저장소의 내용은 {{provider}}에 남아요.",
       "confirmDisconnectLocal": "{{appName}}에서 이 라이브러리의 연결을 끊을까요? 라이브러리 데이터는 디스크에 남아요.",
       "confirmDeleteRemote": "\"{{displayName}}\"을(를) 삭제할까요? {{provider}}의 {{path}}에 있는 원격 저장소 내용과 로컬 작업 복사본을 삭제해요.",
