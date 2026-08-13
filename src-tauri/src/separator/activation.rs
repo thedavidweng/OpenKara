@@ -179,8 +179,8 @@ fn describe_win32_load_error(code: u32) -> String {
         ERROR_MOD_NOT_FOUND => {
             "a DLL that onnxruntime.dll depends on is missing. The runtime \
              links the MSVC CRT statically and depends only on Windows inbox \
-             components, so this usually means an incomplete runtime download \
-             (e.g. DirectML.dll missing from the runtime directory)"
+             components plus the DirectML.dll bundled in the runtime \
+             directory, so this usually means an incomplete runtime download"
         }
         ERROR_FILE_NOT_FOUND => "the runtime file was not found at the given path",
         ERROR_BAD_EXE_FORMAT => {
