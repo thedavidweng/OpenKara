@@ -32,16 +32,29 @@ impl ResamplerCache {
     /// One rubato resampler per (rate pair, channel, output_chunk); shared
     /// filter state across channels phase-blurs. Chunk size is keyed because
     /// `FixedAsync::Output` fixes the output frame count at creation.
+    ///
+    /// Returns `None` for configurations no resampler can serve (zero rate,
+    /// zero chunk — rubato accepts an infinite ratio and would consume zero
+    /// input forever) and when rubato rejects construction. This runs on the
+    /// realtime audio callback, so an invalid track must degrade to silence
+    /// rather than unwind the stream; the decode/install boundaries reject
+    /// such tracks before playback.
     pub(super) fn get_or_create_mut(
         &mut self,
         src_rate: u32,
         dst_rate: u32,
         channel: usize,
         output_chunk: usize,
-    ) -> &mut ResamplerEntry {
-        self.cache
+    ) -> Option<&mut ResamplerEntry> {
+        if src_rate == 0 || dst_rate == 0 || output_chunk == 0 {
+            return None;
+        }
+        match self
+            .cache
             .entry((src_rate, dst_rate, channel, output_chunk))
-            .or_insert_with(|| {
+        {
+            std::collections::hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
+            std::collections::hash_map::Entry::Vacant(vacant) => {
                 let params = SincInterpolationParameters {
                     sinc_len: 128,
                     f_cutoff: Some(rubato::calculate_cutoff(
@@ -63,19 +76,20 @@ impl ResamplerCache {
                     1,            // channels (mono; we de-interleave per channel)
                     FixedAsync::Output,
                 )
-                .expect("failed to create rubato resampler");
-                ResamplerEntry {
+                .ok()?;
+                Some(vacant.insert(ResamplerEntry {
                     resampler,
                     channel_input: Vec::new(),
                     input_vecs: vec![Vec::new()],
-                }
-            })
+                }))
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::resample_ratio;
+    use super::{resample_ratio, ResamplerCache};
 
     #[test]
     fn resample_ratio_is_output_rate_over_input_rate() {
@@ -85,5 +99,29 @@ mod tests {
         assert!((downsample - 44_100.0 / 48_000.0).abs() < f64::EPSILON);
         assert!(upsample > 1.0);
         assert!(downsample < 1.0);
+    }
+
+    #[test]
+    fn valid_rates_create_a_cached_entry() {
+        let mut cache = ResamplerCache::new();
+        assert!(cache.get_or_create_mut(44_100, 48_000, 0, 512).is_some());
+        assert_eq!(cache.cache.len(), 1);
+    }
+
+    #[test]
+    fn zero_source_rate_returns_none_instead_of_panicking() {
+        let mut cache = ResamplerCache::new();
+        assert!(cache.get_or_create_mut(0, 48_000, 0, 512).is_none());
+        assert!(
+            cache.cache.is_empty(),
+            "a failed construction must not leave a broken entry behind"
+        );
+    }
+
+    #[test]
+    fn zero_output_chunk_returns_none_instead_of_panicking() {
+        let mut cache = ResamplerCache::new();
+        assert!(cache.get_or_create_mut(44_100, 48_000, 0, 0).is_none());
+        assert!(cache.cache.is_empty());
     }
 }

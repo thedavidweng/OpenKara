@@ -156,12 +156,20 @@ fn mix_stem_rubato(
     }
 
     let output_frames = output.len() / device_channels;
+    if output_frames == 0 {
+        return (0, 0);
+    }
 
     // Feed exactly input_frames_next(); zero-pad only at end-of-track.
-    let input_needed = resampler_cache
-        .get_or_create_mut(audio.sample_rate_hz, device_sample_rate, 0, output_frames)
-        .resampler
-        .input_frames_next();
+    let Some(entry) = resampler_cache.get_or_create_mut(
+        audio.sample_rate_hz,
+        device_sample_rate,
+        0,
+        output_frames,
+    ) else {
+        return (0, 0);
+    };
+    let input_needed = entry.resampler.input_frames_next();
     let real_available = total_src_frames - src_start_frame;
     let frames_from_source = real_available.min(input_needed);
     let feed_frames = input_needed;
@@ -170,12 +178,14 @@ fn mix_stem_rubato(
 
     // One mono resampler per source channel; planar in, interleaved out.
     for src_ch in 0..src_channels {
-        let entry = resampler_cache.get_or_create_mut(
+        let Some(entry) = resampler_cache.get_or_create_mut(
             audio.sample_rate_hz,
             device_sample_rate,
             src_ch,
             output_frames,
-        );
+        ) else {
+            continue;
+        };
 
         // Explicitly zero the tail: resize leaves stale samples past real frames.
         entry.channel_input.resize(feed_frames, 0.0);
@@ -270,8 +280,11 @@ fn resample_mix_to_output(
     let mut max_out_frames = 0usize;
 
     for src_ch in 0..src_channels {
-        let entry =
-            resampler_cache.get_or_create_mut(src_rate, device_sample_rate, src_ch, output_frames);
+        let Some(entry) =
+            resampler_cache.get_or_create_mut(src_rate, device_sample_rate, src_ch, output_frames)
+        else {
+            continue;
+        };
 
         entry.channel_input.resize(feed_frames, 0.0);
         entry.channel_input[real_frames..].fill(0.0);
@@ -347,10 +360,12 @@ pub(super) fn render_streaming_mix_bus(
     let input_needed = if src_rate == device_sample_rate {
         output_frames
     } else {
-        resampler_cache
-            .get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
-            .resampler
-            .input_frames_next()
+        let Some(entry) =
+            resampler_cache.get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
+        else {
+            return (0, 0);
+        };
+        entry.resampler.input_frames_next()
     };
 
     let mut budget = input_needed;
@@ -422,10 +437,12 @@ pub(super) fn render_decoded_mix_bus(
     let input_needed = if src_rate == device_sample_rate {
         output_frames
     } else {
-        resampler_cache
-            .get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
-            .resampler
-            .input_frames_next()
+        let Some(entry) =
+            resampler_cache.get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
+        else {
+            return (0, 0);
+        };
+        entry.resampler.input_frames_next()
     };
 
     let src_start = start_frame as usize;

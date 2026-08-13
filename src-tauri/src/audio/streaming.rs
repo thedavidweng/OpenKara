@@ -511,8 +511,12 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
         }
     }
 
-    let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
-    let channels = channels.ok_or(DecodeError::MissingChannels)?;
+    let sample_rate = sample_rate
+        .filter(|rate| *rate > 0)
+        .ok_or_else(|| DecodeError::MissingSampleRate(label.clone()))?;
+    let channels = channels
+        .filter(|count| *count > 0)
+        .ok_or_else(|| DecodeError::MissingChannels(label.clone()))?;
 
     let duration_ms = if let (Some(n_frames), Some(tb)) = (n_frames, time_base) {
         let time = tb.calc_time(Timestamp::new(n_frames as i64));

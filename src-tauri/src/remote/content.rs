@@ -685,8 +685,12 @@ fn probe_remote_source(
             }
         }
     }
-    let sample_rate = sample_rate.ok_or(decode::DecodeError::MissingSampleRate)?;
-    let channels = channels.ok_or(decode::DecodeError::MissingChannels)?;
+    let sample_rate = sample_rate
+        .filter(|rate| *rate > 0)
+        .ok_or_else(|| decode::DecodeError::MissingSampleRate("remote source".to_owned()))?;
+    let channels = channels
+        .filter(|count| *count > 0)
+        .ok_or_else(|| decode::DecodeError::MissingChannels("remote source".to_owned()))?;
     let duration_ms = n_frames
         .zip(time_base)
         .and_then(|(frames, time_base)| time_base.calc_time(Timestamp::new(frames as i64)))

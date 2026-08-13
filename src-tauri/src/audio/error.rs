@@ -36,8 +36,8 @@ impl From<DecodeError> for PlaybackError {
             | DecodeError::DecodeFailed(msg) => PlaybackError::AudioDecodeFailed(msg),
             DecodeError::NoDefaultTrack
             | DecodeError::NoSamples
-            | DecodeError::MissingSampleRate
-            | DecodeError::MissingChannels
+            | DecodeError::MissingSampleRate(_)
+            | DecodeError::MissingChannels(_)
             | DecodeError::ResetNotSupported => PlaybackError::AudioDecodeFailed(err.to_string()),
             DecodeError::Internal(msg) => PlaybackError::Internal(msg),
         }

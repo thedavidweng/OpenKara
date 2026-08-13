@@ -522,6 +522,59 @@ mod tests {
         );
     }
 
+    /// #378: a track that slips through with a zero sample rate must degrade
+    /// to silence on the realtime callback instead of panicking inside the
+    /// rubato resampler construction.
+    #[test]
+    fn zero_sample_rate_track_renders_silence_without_panicking() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{FadeState, PlaybackController};
+
+        let device_rate: u32 = 48_000;
+        let device_channels: usize = 2;
+
+        let mut controller = PlaybackController::default();
+        controller.start_track(
+            "corrupt-song".to_owned(),
+            DecodedAudio {
+                sample_rate_hz: 0,
+                channels: device_channels,
+                duration_ms: 1_000,
+                samples: vec![0.5; 4_410 * device_channels],
+            },
+            0,
+        );
+        controller.play(0).unwrap();
+        controller.fade = FadeState::None;
+
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = ResamplerCache::new();
+        let mut crossfade_incoming_rc = ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_rate,
+            device_channels,
+            &mut rc,
+            &mut crossfade_incoming_rc,
+            &mut EqProcessor::new(device_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert_eq!(rendered, 0, "corrupt track must render nothing");
+        assert!(
+            output.iter().all(|sample| *sample == 0.0),
+            "corrupt track must leave the buffer silent"
+        );
+    }
+
     #[test]
     fn streaming_buffering_recovers_after_underrun() {
         use crate::audio::playback::PlaybackController;
