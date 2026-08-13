@@ -47,7 +47,7 @@ function failedWith(message: string): CommandError {
 }
 
 async function render(options: {
-  status: RuntimeBootstrapStatusSnapshot;
+  status?: RuntimeBootstrapStatusSnapshot;
   update?: RuntimeUpdateReport;
   updateError?: string;
   statusReadError?: string;
@@ -68,6 +68,9 @@ async function render(options: {
         getRuntimeBootstrapStatus: async () => {
           if (options.statusReadError) {
             throw new Error(options.statusReadError);
+          }
+          if (!options.status) {
+            throw new Error("no runtime status");
           }
           return options.status;
         },
@@ -298,5 +301,30 @@ describe("SettingsRuntimeSection", () => {
     expect(html).toContain("settings.runtime.statusReadFailed");
     expect(html).toContain("ipc channel closed");
     expect(html).not.toContain("settings.runtime.statusReady");
+    expect(html).not.toContain("settings.runtime.version:");
+  });
+
+  test("hides status-derived actions while the runtime status is unreadable", async () => {
+    const html = await render({
+      status: runtimeStatus({
+        state: "candidate_ready_restart_required",
+        candidate_version: "v1.28.0",
+        restart_required: true,
+      }),
+      statusReadError: "ipc channel closed",
+    });
+
+    expect(html).toContain("settings.runtime.statusReadFailed");
+    expect(html).not.toContain("settings.runtime.restartButton");
+    expect(html).not.toContain("settings.runtime.version:");
+  });
+
+  test("does not claim the runtime is missing when the first status read fails", async () => {
+    const html = await render({ statusReadError: "ipc channel closed" });
+
+    expect(html).toContain("settings.runtime.statusReadFailed");
+    expect(html).not.toContain('data-testid="runtime-install-button"');
+    expect(html).not.toContain("settings.runtime.installRequired");
+    expect(html).not.toContain("settings.runtime.statusMissing");
   });
 });

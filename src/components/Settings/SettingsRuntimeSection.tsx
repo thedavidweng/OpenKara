@@ -35,12 +35,18 @@ export function SettingsRuntimeSection() {
   const update = view.runtime.update;
   const runtimeState = runtime?.state;
 
-  const isMissing = !runtime || runtimeState === "missing";
-  const restartRequired =
-    runtime?.restart_required === true ||
-    runtimeState === "candidate_ready_restart_required";
-
+  // A failed status read leaves `runtime` null or stale, so the actual state
+  // is unknown — not `missing`. Treat status-derived data and actions as
+  // unavailable instead of offering install/restart against a guess.
   const statusReadError = view.runtime.statusError;
+  const statusUnavailable = statusReadError != null;
+
+  const isMissing =
+    !statusUnavailable && (!runtime || runtimeState === "missing");
+  const restartRequired =
+    !statusUnavailable &&
+    (runtime?.restart_required === true ||
+      runtimeState === "candidate_ready_restart_required");
 
   const statusLine = (() => {
     if (statusReadError != null) {
@@ -75,7 +81,7 @@ export function SettingsRuntimeSection() {
   })();
 
   const versionLine =
-    runtime && !isMissing
+    !statusUnavailable && runtime && !isMissing
       ? `${t("settings.runtime.version", {
           version: runtime.version,
         })} · ${runtime.target_triple}`
@@ -86,11 +92,13 @@ export function SettingsRuntimeSection() {
     (report?.state === "update_available" ||
       report?.state === "installed_without_identity") &&
     !restartRequired;
-  const downloadingCandidate = runtimeState === "downloading_candidate";
-  const isDownloading = runtimeState === "downloading";
+  const downloadingCandidate =
+    !statusUnavailable && runtimeState === "downloading_candidate";
+  const isDownloading = !statusUnavailable && runtimeState === "downloading";
 
   const needsInstall =
-    isMissing || runtimeState === "corrupt" || runtimeState === "failed";
+    !statusUnavailable &&
+    (isMissing || runtimeState === "corrupt" || runtimeState === "failed");
   const installLabel =
     runtimeState === "corrupt" || runtimeState === "failed"
       ? t("settings.runtime.retryButton")
