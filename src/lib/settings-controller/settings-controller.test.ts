@@ -376,6 +376,19 @@ describe("library commands", () => {
     expect(harness.view().library.error).toBe("disk full");
   });
 
+  test("a rejecting directory picker reports the error instead of rejecting", async () => {
+    const harness = createSettingsHarness();
+    harness.selectDirectory.mockRejectedValue(new Error("picker crashed"));
+
+    const created = await harness.controller.library.create("Create library");
+    const opened = await harness.controller.library.open("Open library");
+
+    expect(created).toEqual({ ok: false, error: "picker crashed" });
+    expect(opened).toEqual({ ok: false, error: "picker crashed" });
+    expect(harness.view().library.error).toBe("picker crashed");
+    expect(harness.librarySession.calls).toEqual([]);
+  });
+
   test("the session's registry view refreshes the library slice", async () => {
     const harness = createSettingsHarness({
       overrides: {

@@ -678,21 +678,21 @@ export function createSettingsController({
     },
 
     library: {
-      create: async (dialogTitle) => {
-        const directory = await selectDirectory(dialogTitle);
-        if (!directory) return { ok: true };
+      create: (dialogTitle) =>
+        runLibraryWork(async () => {
+          const directory = await selectDirectory(dialogTitle);
+          if (directory) {
+            await librarySession.createLocalLibrary(directory);
+          }
+        }),
 
-        return runLibraryWork(() =>
-          librarySession.createLocalLibrary(directory),
-        );
-      },
-
-      open: async (dialogTitle) => {
-        const directory = await selectDirectory(dialogTitle);
-        if (!directory) return { ok: true };
-
-        return runLibraryWork(() => librarySession.openLocalLibrary(directory));
-      },
+      open: (dialogTitle) =>
+        runLibraryWork(async () => {
+          const directory = await selectDirectory(dialogTitle);
+          if (directory) {
+            await librarySession.openLocalLibrary(directory);
+          }
+        }),
 
       activate: (libraryId) =>
         runLibraryWork(() => librarySession.switchLibrary(libraryId)),
