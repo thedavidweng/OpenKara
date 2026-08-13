@@ -35,9 +35,6 @@ export function SettingsRuntimeSection() {
   const update = view.runtime.update;
   const runtimeState = runtime?.state;
 
-  // A failed status read leaves `runtime` null or stale, so the actual state
-  // is unknown — not `missing`. Treat status-derived data and actions as
-  // unavailable instead of offering install/restart against a guess.
   const statusReadError = view.runtime.statusError;
   const statusUnavailable = statusReadError != null;
 
