@@ -10,8 +10,8 @@ use crate::{
     library_root::LibraryRoot,
     remote,
     separator::{
-        self, error::SeparationError, job::SeparationArtifacts, model::LoadedModel,
-        model_cache::ModelCache,
+        self, catalog::VerifiedCatalog, error::SeparationError, job::SeparationArtifacts,
+        model::LoadedModel, model_cache::ModelCache,
     },
     AppState,
 };
@@ -199,6 +199,7 @@ pub struct SeparationExecutionContext {
     pub app_data_dir: PathBuf,
     pub model_bootstrap_status: Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     pub runtime_bootstrap_status: Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    pub catalog_cache: Arc<Mutex<Option<VerifiedCatalog>>>,
     pub statuses: Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
     pub model_cache: Arc<Mutex<ModelCache<LoadedModel>>>,
     pub cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -235,6 +236,7 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
         app_data_dir: state.shell.app_data_dir.clone(),
         model_bootstrap_status: Arc::clone(&state.shell.model_bootstrap_status),
         runtime_bootstrap_status: Arc::clone(&state.shell.runtime_bootstrap_status),
+        catalog_cache: Arc::clone(&state.shell.catalog_cache),
         statuses: Arc::clone(&state.separation.separation_statuses),
         model_cache: Arc::clone(&state.separation.separator_model_cache),
         cancels: Arc::clone(&state.separation.separation_cancels),
@@ -295,6 +297,7 @@ pub fn emit_separation_cancelled<R: Runtime>(
 pub fn ensure_runtime_and_model_blocking<ER, EM>(
     app_data_dir: &Path,
     runtime_status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
     model_status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     emit_runtime: &mut ER,
     emit_model: &mut EM,
@@ -306,6 +309,7 @@ where
     runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
         app_data_dir,
         runtime_status,
+        catalog_cache,
         emit_runtime,
     )?;
     bootstrap::ensure_active_model_ready_or_install_blocking(app_data_dir, model_status, emit_model)
@@ -318,6 +322,7 @@ where
 pub fn ensure_runtime_and_managed_model_blocking<ER, EM>(
     app_data_dir: &Path,
     runtime_status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
     model_status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     emit_runtime: &mut ER,
     emit_model: &mut EM,
@@ -329,6 +334,7 @@ where
     runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
         app_data_dir,
         runtime_status,
+        catalog_cache,
         emit_runtime,
     )?;
     bootstrap::ensure_active_managed_model_ready_or_install_blocking(
@@ -541,6 +547,7 @@ pub fn start_job<R: Runtime>(
         app_data_dir,
         model_bootstrap_status,
         runtime_bootstrap_status,
+        catalog_cache,
         statuses,
         model_cache,
         cancels,
@@ -561,6 +568,7 @@ pub fn start_job<R: Runtime>(
         let prerequisite_app_data_dir = app_data_dir.clone();
         let prerequisite_model_status = Arc::clone(&model_bootstrap_status);
         let prerequisite_runtime_status = Arc::clone(&runtime_bootstrap_status);
+        let prerequisite_catalog_cache = Arc::clone(&catalog_cache);
 
         let result = tauri::async_runtime::spawn_blocking(move || -> CommandResult<_> {
             let mut emit_runtime = |event, snapshot| {
@@ -572,6 +580,7 @@ pub fn start_job<R: Runtime>(
             let worker_model_path = ensure_runtime_and_model_blocking(
                 &prerequisite_app_data_dir,
                 &prerequisite_runtime_status,
+                &prerequisite_catalog_cache,
                 &prerequisite_model_status,
                 &mut emit_runtime,
                 &mut emit_model,
@@ -698,6 +707,7 @@ pub fn start_batch_job<R: Runtime>(
         app_data_dir,
         model_bootstrap_status,
         runtime_bootstrap_status,
+        catalog_cache,
         statuses: separation_statuses,
         model_cache,
         cancels,
@@ -731,6 +741,7 @@ pub fn start_batch_job<R: Runtime>(
             let app_data_dir = app_data_dir.clone();
             let app_handle = app_handle.clone();
             let runtime_status = Arc::clone(&runtime_bootstrap_status);
+            let catalog_cache = Arc::clone(&catalog_cache);
             let model_status = Arc::clone(&model_bootstrap_status);
             tauri::async_runtime::spawn_blocking(move || {
                 let mut emit_runtime = |event, snapshot| {
@@ -742,6 +753,7 @@ pub fn start_batch_job<R: Runtime>(
                 ensure_runtime_and_model_blocking(
                     &app_data_dir,
                     &runtime_status,
+                    &catalog_cache,
                     &model_status,
                     &mut emit_runtime,
                     &mut emit_model,

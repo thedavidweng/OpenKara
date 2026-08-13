@@ -163,6 +163,7 @@ pub fn run_phase(config: &AutomationSmokeConfig) -> Result<InstalledAppSmokeRepo
     let model_path = separation::ensure_runtime_and_managed_model_blocking(
         &config.app_data_dir,
         &runtime_status,
+        &Arc::new(Mutex::new(None)),
         &model_status,
         &mut |event, snapshot| {
             runtime_events.push(BootstrapEvent {

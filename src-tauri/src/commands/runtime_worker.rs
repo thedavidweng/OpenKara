@@ -129,6 +129,18 @@ pub fn maybe_run_from_cli() -> Result<bool> {
 }
 
 fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
+    run_worker_with(request_path, progress_path, |library_path| {
+        crate::separator::model::ensure_runtime_loaded_from_path(library_path).map(|_| ())
+    })
+}
+
+/// Seam at the probe: production loads the runtime into this worker process;
+/// tests substitute a probe that succeeds or fails on demand.
+fn run_worker_with(
+    request_path: &Path,
+    progress_path: &Path,
+    probe: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
     let request: RuntimeWorkerRequest =
         serde_json::from_slice(&fs::read(request_path).with_context(|| {
             format!("failed to read worker request {}", request_path.display())
@@ -154,10 +166,6 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
         },
     )?;
 
-    // Keep the verified install reachable after a worker kill. Startup can
-    // promote this candidate without downloading the archive again.
-    runtime_bootstrap::stage_candidate(&request.app_data_dir, &installed.record.artifact_id)?;
-
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_INSTALLING").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
@@ -182,14 +190,33 @@ fn run_worker(request_path: &Path, progress_path: &Path) -> Result<()> {
         thread::sleep(Duration::from_secs(10 * 60));
     }
 
-    crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
-        .with_context(|| {
-            format!(
-                "failed to load ONNX Runtime from {}",
-                installed.library_path.display()
-            )
-        })?;
+    probe(&installed.library_path).with_context(|| {
+        format!(
+            "failed to load ONNX Runtime from {}",
+            installed.library_path.display()
+        )
+    })?;
     eprintln!("probe succeeded for {}", installed.library_path.display());
+
+    // Stage only after the probe proved the library loads: startup
+    // acknowledges a promoted candidate on the worker probe's authority
+    // (ADR-0023), so an unproven install must never become the candidate
+    // (#395). A worker killed before this point loses nothing durable — the
+    // verified archive cache and the install directory make the retry a
+    // re-verification, not a re-download.
+    //
+    // Reusing the install the active slot already names needs no staging:
+    // promoting a key onto itself would leave `active` and `previous` naming
+    // the same directory, and a failed activation rollback would delete the
+    // only install.
+    let install_key = installed.install_key();
+    if runtime_bootstrap::read_slots(&request.app_data_dir)
+        .active
+        .as_deref()
+        != Some(install_key.as_str())
+    {
+        runtime_bootstrap::stage_candidate(&request.app_data_dir, &install_key)?;
+    }
 
     write_progress(
         progress_path,
@@ -302,8 +329,14 @@ fn install_runtime_with_verified_archive_cache(
     catalog: &VerifiedCatalog,
     mut progress: impl FnMut(RuntimeWorkerProgress),
 ) -> Result<runtime_bootstrap::InstalledRuntime> {
-    if let Some(existing) = runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
-    {
+    // Reuse requires the installed archive digest to match the target's: a
+    // catalog generation can republish the same artifact id with different
+    // bytes, and matching on id alone turned that update into a no-op (#394).
+    if let Some(existing) = runtime_bootstrap::find_installed_runtime(
+        app_data_dir,
+        &runtime.artifact_id,
+        &runtime.archive_digest,
+    ) {
         if runtime_bootstrap::verify_runtime_files(&existing)? {
             progress(RuntimeWorkerProgress::phase(RuntimeWorkerPhase::Installing));
             return Ok(existing);
@@ -344,7 +377,25 @@ fn install_runtime_with_verified_archive_cache(
             &staging.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
             &record,
         )?;
-        let final_dir = runtime_bootstrap::runtime_artifact_dir(app_data_dir, &runtime.artifact_id);
+        // The plain artifact-id directory is unavailable when a
+        // different-digest install of the same artifact id occupies it, or
+        // when the active slot names it even though its record is unreadable
+        // — either way it may be the currently loaded runtime, whose files
+        // cannot be deleted or replaced while mapped (Windows locks them).
+        // Install side by side under a digest-qualified directory instead of
+        // clearing it.
+        let plain_dir_unavailable = runtime_bootstrap::read_slots(app_data_dir)
+            .active
+            .as_deref()
+            == Some(runtime.artifact_id.as_str())
+            || runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+                .is_some_and(|other| other.record.archive_sha256 != runtime.archive_digest);
+        let install_key = if plain_dir_unavailable {
+            runtime_bootstrap::runtime_install_key(&runtime.artifact_id, &runtime.archive_digest)
+        } else {
+            runtime.artifact_id.clone()
+        };
+        let final_dir = runtime_bootstrap::runtime_artifact_dir(app_data_dir, &install_key);
         if final_dir.exists() {
             fs::remove_dir_all(&final_dir).with_context(|| {
                 format!("failed to clear stale install {}", final_dir.display())
@@ -356,7 +407,7 @@ fn install_runtime_with_verified_archive_cache(
                 final_dir.display()
             )
         })?;
-        runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
+        runtime_bootstrap::installed_runtime(app_data_dir, &install_key)
             .context("freshly installed runtime failed to resolve")
     })();
 
@@ -607,19 +658,348 @@ pub fn install_runtime_with_worker(
         return Err(tag_with_last_phase(error, last_phase));
     }
 
-    runtime_bootstrap::installed_runtime(app_data_dir, &runtime.artifact_id)
-        .context("runtime worker exited successfully without an installed runtime")
-        .map_err(|error| {
-            crate::commands::runtime_bootstrap::with_failure_phase(
-                error,
-                crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install,
-            )
-        })
+    runtime_bootstrap::find_installed_runtime(
+        app_data_dir,
+        &runtime.artifact_id,
+        &runtime.archive_digest,
+    )
+    .context("runtime worker exited successfully without an installed runtime")
+    .map_err(|error| {
+        crate::commands::runtime_bootstrap::with_failure_phase(
+            error,
+            crate::commands::runtime_bootstrap::RuntimeBootstrapFailurePhase::Install,
+        )
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::separator::verified_manifest::sha256_hex;
+
+    fn write_tgz(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = fs::File::create(path).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, bytes) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, name, *bytes)
+                .expect("append entry");
+        }
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip");
+    }
+
+    /// A catalog whose only runtime for this target installs offline: its
+    /// archive is pre-seeded into the verified download cache, so the worker
+    /// never touches the (unreachable) download URL.
+    fn offline_install_fixture(
+        app_data: &Path,
+        artifact_id: &str,
+        library_bytes: &[u8],
+    ) -> (VerifiedCatalog, CatalogRuntime) {
+        let staging = app_data.join("fixture-archives");
+        fs::create_dir_all(&staging).expect("fixture staging dir");
+        let archive_path = staging.join(format!("{artifact_id}.tar.gz"));
+        write_tgz(
+            &archive_path,
+            &[(runtime_bootstrap::ORT_RUNTIME_FILENAME, library_bytes)],
+        );
+        let archive_bytes = fs::read(&archive_path).expect("read archive");
+
+        let runtime = CatalogRuntime {
+            artifact_id: artifact_id.to_owned(),
+            target_triple: Some(catalog::current_target_triple().to_owned()),
+            filename: format!("{artifact_id}.tar.gz"),
+            byte_size: archive_bytes.len() as u64,
+            archive_digest: sha256_hex(&archive_bytes),
+            download_url: "http://127.0.0.1:9/never-fetched.tar.gz".to_owned(),
+            extracted_file_digests: [(
+                runtime_bootstrap::ORT_RUNTIME_FILENAME.to_owned(),
+                catalog::CatalogFileDigest {
+                    sha256: sha256_hex(library_bytes),
+                    size: library_bytes.len() as u64,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            runtime: catalog::CatalogRuntimeMetadata {
+                version: "v1-test".to_owned(),
+                ort_c_api_level: "27".to_owned(),
+                execution_providers: vec!["cpu".to_owned()],
+                supported_model_artifact_ids: vec![],
+                companion_files: vec![],
+            },
+            deprecation: catalog::CatalogDeprecation::default(),
+        };
+
+        let cache_path = runtime_cache_path(app_data, &runtime);
+        fs::create_dir_all(cache_path.parent().expect("cache parent")).expect("cache dir");
+        fs::rename(&archive_path, &cache_path).expect("seed verified archive cache");
+
+        let mut verified = catalog::embedded_catalog().clone();
+        verified.manifest.artifacts.runtimes = vec![runtime.clone()];
+        (verified, runtime)
+    }
+
+    fn write_worker_request(
+        app_data: &Path,
+        catalog: &VerifiedCatalog,
+        runtime: &CatalogRuntime,
+    ) -> (PathBuf, PathBuf) {
+        let request = RuntimeWorkerRequest {
+            app_data_dir: app_data.to_path_buf(),
+            catalog: catalog.clone(),
+            runtime: runtime.clone(),
+        };
+        let request_path = app_data.join("worker-test.request.json");
+        fs::write(
+            &request_path,
+            serde_json::to_vec(&request).expect("serialize request"),
+        )
+        .expect("write request");
+        (request_path, app_data.join("worker-test.progress.json"))
+    }
+
+    /// Write a fake installed runtime for the fixture's artifact id whose
+    /// record digests match its files but whose archive digest differs from
+    /// the fixture's target archive.
+    fn write_same_id_install_with_digest(
+        app_data: &Path,
+        catalog: &VerifiedCatalog,
+        runtime: &CatalogRuntime,
+        archive_sha256: &str,
+        library_bytes: &[u8],
+    ) {
+        let dir = runtime_bootstrap::runtime_artifact_dir(app_data, &runtime.artifact_id);
+        fs::create_dir_all(&dir).expect("create install dir");
+        fs::write(
+            dir.join(runtime_bootstrap::ORT_RUNTIME_FILENAME),
+            library_bytes,
+        )
+        .expect("write library");
+        let mut record = record_from_catalog_runtime(runtime, catalog);
+        record.archive_sha256 = archive_sha256.to_owned();
+        record.files = vec![catalog::InstalledFileRecord {
+            path: runtime_bootstrap::ORT_RUNTIME_FILENAME.to_owned(),
+            size: library_bytes.len() as u64,
+            sha256: sha256_hex(library_bytes),
+        }];
+        write_artifact_record(
+            &dir.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
+            &record,
+        )
+        .expect("write record");
+    }
+
+    #[test]
+    fn a_same_id_digest_swap_installs_side_by_side_and_stages_the_new_digest() {
+        // #394: catalog generation 13 republished `...-cpu-reduced` with new
+        // bytes. Reuse keyed on the artifact id alone returned the stale
+        // gen-12 install, so the update never installed. The active install
+        // may be loaded by the running app (Windows locks mapped files), so
+        // the new digest must land side by side, not replace it.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-swap", b"gen-13-library");
+        let old_digest = sha256_hex(b"gen-12-archive");
+        write_same_id_install_with_digest(
+            dir.path(),
+            &catalog,
+            &runtime,
+            &old_digest,
+            b"gen-12-library",
+        );
+        runtime_bootstrap::write_slots(
+            dir.path(),
+            &runtime_bootstrap::RuntimeSlots {
+                active: Some("rt-swap".to_owned()),
+                ..runtime_bootstrap::RuntimeSlots::default()
+            },
+        )
+        .expect("write slots");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("the worker must install the republished digest");
+
+        let new_key = runtime_bootstrap::runtime_install_key("rt-swap", &runtime.archive_digest);
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(
+            slots.candidate.as_deref(),
+            Some(new_key.as_str()),
+            "the new digest must be staged as the candidate, not the stale same-id install"
+        );
+        assert_eq!(
+            slots.active.as_deref(),
+            Some("rt-swap"),
+            "the active slot must stay on the running install"
+        );
+
+        let stale = runtime_bootstrap::installed_runtime(dir.path(), "rt-swap")
+            .expect("the possibly-loaded active install must not be touched");
+        assert_eq!(stale.record.archive_sha256, old_digest);
+
+        let staged = runtime_bootstrap::installed_runtime(dir.path(), &new_key)
+            .expect("the new digest must be installed side by side");
+        assert_eq!(staged.record.archive_sha256, runtime.archive_digest);
+        assert!(runtime_bootstrap::verify_runtime_files(&staged).expect("verify"));
+    }
+
+    #[test]
+    fn reusing_the_active_install_does_not_stage_it_as_candidate() {
+        // Staging the key the active slot already names would make startup
+        // promote it onto itself: `active` and `previous` end up naming the
+        // same directory, and a failed activation rollback deletes the only
+        // install.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-active", b"active-lib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("first install must succeed");
+        runtime_bootstrap::activate_first_install(dir.path(), "rt-active").expect("activate");
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("reusing the active install must succeed");
+
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-active"));
+        assert_eq!(
+            slots.candidate, None,
+            "the active install must not be staged onto itself"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_install_named_by_the_active_slot_is_not_replaced() {
+        // The active slot may name a directory whose record no longer reads
+        // (corruption), while its library is still loaded by the running
+        // app. The worker must not clear that directory; the new install
+        // goes side by side.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-broken", b"fresh-lib");
+        let plain_dir = runtime_bootstrap::runtime_artifact_dir(dir.path(), "rt-broken");
+        fs::create_dir_all(&plain_dir).expect("create broken install");
+        let loaded_library = plain_dir.join(runtime_bootstrap::ORT_RUNTIME_FILENAME);
+        fs::write(&loaded_library, b"mapped-into-the-running-process").expect("write library");
+        runtime_bootstrap::write_slots(
+            dir.path(),
+            &runtime_bootstrap::RuntimeSlots {
+                active: Some("rt-broken".to_owned()),
+                ..runtime_bootstrap::RuntimeSlots::default()
+            },
+        )
+        .expect("write slots");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("the worker must install despite the unreadable active install");
+
+        assert_eq!(
+            fs::read(&loaded_library).expect("read library"),
+            b"mapped-into-the-running-process",
+            "the directory named by the active slot must not be touched"
+        );
+        let new_key = runtime_bootstrap::runtime_install_key("rt-broken", &runtime.archive_digest);
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some(new_key.as_str())
+        );
+        let staged = runtime_bootstrap::installed_runtime(dir.path(), &new_key)
+            .expect("the new install must land side by side");
+        assert!(runtime_bootstrap::verify_runtime_files(&staged).expect("verify"));
+    }
+
+    #[test]
+    fn an_install_matching_the_target_digest_is_reused_without_redownloading() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) = offline_install_fixture(dir.path(), "rt-reuse", b"same-bytes");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("first install must succeed");
+
+        // Remove the verified archive cache: a second run can only succeed
+        // by reusing the existing digest-equal install, because the download
+        // URL is unreachable.
+        fs::remove_file(runtime_cache_path(dir.path(), &runtime)).expect("drop archive cache");
+
+        run_worker_with(&request_path, &progress_path, |_| Ok(()))
+            .expect("a digest-equal install must be reused without redownloading");
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some("rt-reuse")
+        );
+    }
+
+    #[test]
+    fn a_failed_probe_does_not_stage_the_install_as_candidate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) =
+            offline_install_fixture(dir.path(), "rt-probe-fails", b"not-a-real-dylib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        let error = run_worker_with(&request_path, &progress_path, |_| {
+            anyhow::bail!("scripted probe failure")
+        })
+        .expect_err("a failing probe must fail the worker");
+        assert!(
+            format!("{error:#}").contains("scripted probe failure"),
+            "unexpected error: {error:#}"
+        );
+
+        let slots = runtime_bootstrap::read_slots(dir.path());
+        assert_eq!(
+            slots.candidate, None,
+            "an unproven install must never be staged as the next-launch candidate"
+        );
+        // The verified install itself survives so a retry re-verifies
+        // instead of re-downloading.
+        let installed = runtime_bootstrap::installed_runtime(dir.path(), "rt-probe-fails")
+            .expect("the verified install must survive the failed probe");
+        assert!(runtime_bootstrap::verify_runtime_files(&installed).expect("verify"));
+    }
+
+    #[test]
+    fn a_successful_probe_stages_the_candidate_only_after_probing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (catalog, runtime) =
+            offline_install_fixture(dir.path(), "rt-probe-passes", b"probed-dylib");
+        let (request_path, progress_path) = write_worker_request(dir.path(), &catalog, &runtime);
+
+        let mut candidate_at_probe_time = None;
+        run_worker_with(&request_path, &progress_path, |library_path| {
+            assert!(
+                library_path.is_file(),
+                "probe must see the installed library"
+            );
+            candidate_at_probe_time = Some(runtime_bootstrap::read_slots(dir.path()).candidate);
+            Ok(())
+        })
+        .expect("the worker must succeed when the probe passes");
+
+        assert_eq!(
+            candidate_at_probe_time,
+            Some(None),
+            "the candidate slot must still be empty while the probe runs"
+        );
+        assert_eq!(
+            runtime_bootstrap::read_slots(dir.path())
+                .candidate
+                .as_deref(),
+            Some("rt-probe-passes"),
+            "a proven install must be staged as the next-launch candidate"
+        );
+    }
 
     #[test]
     fn progress_round_trips_with_an_explicit_phase() {

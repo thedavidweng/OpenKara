@@ -347,7 +347,11 @@ pub(crate) fn ensure_runtime_loaded_with_watchdog(path: &Path) -> anyhow::Result
     activation::commit_with_watchdog(path)
 }
 
-fn download_runtime_source(
+/// The catalog an install should use right now: the cached verified catalog
+/// when its generation is newer than the embedded snapshot, the embedded
+/// snapshot otherwise. Every install path resolves through this so a
+/// refreshed catalog is never silently ignored (#393).
+pub(crate) fn refreshed_or_embedded_catalog(
     catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
 ) -> CommandResult<VerifiedCatalog> {
     let embedded = catalog::embedded_catalog();
@@ -396,9 +400,7 @@ pub fn install_and_load_runtime_blocking(
         crate::config::effective_execution_provider_from_dir(app_data_dir),
     )?;
 
-    if let Some(path) =
-        try_activate_staged_runtime(app_data_dir, &runtime.artifact_id, status, emit)?
-    {
+    if let Some(path) = try_activate_staged_runtime(app_data_dir, runtime, status, emit)? {
         return Ok(path);
     }
 
@@ -419,15 +421,16 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
+    let install_key = installed.install_key();
     activation::load_with_watchdog(
         app_data_dir,
         &installed.library_path,
         ActivationTarget {
-            artifact_id: Some(&installed.record.artifact_id),
+            install_key: Some(&install_key),
             execution_providers: Some(&runtime.runtime.execution_providers),
         },
     )?;
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
+    runtime_bootstrap::activate_first_install(app_data_dir, &install_key)
         .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
@@ -438,7 +441,7 @@ pub fn install_and_load_runtime_blocking(
 
 fn try_activate_staged_runtime(
     app_data_dir: &Path,
-    artifact_id: &str,
+    runtime: &catalog::CatalogRuntime,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> anyhow::Result<Option<PathBuf>> {
@@ -448,8 +451,17 @@ fn try_activate_staged_runtime(
     }
 
     let installed = match inventory.candidate {
-        Some(candidate) if candidate.record.artifact_id == artifact_id => candidate,
-        _ => match runtime_bootstrap::installed_runtime(app_data_dir, artifact_id) {
+        Some(candidate)
+            if candidate.record.artifact_id == runtime.artifact_id
+                && candidate.record.archive_sha256 == runtime.archive_digest =>
+        {
+            candidate
+        }
+        _ => match runtime_bootstrap::find_installed_runtime(
+            app_data_dir,
+            &runtime.artifact_id,
+            &runtime.archive_digest,
+        ) {
             Some(existing) if runtime_bootstrap::verify_runtime_files(&existing)? => existing,
             _ => return Ok(None),
         },
@@ -461,16 +473,17 @@ fn try_activate_staged_runtime(
 
     let base = snapshot_from_disk(app_data_dir);
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Probing);
+    let install_key = installed.install_key();
     activation::load_with_watchdog(
         app_data_dir,
         &installed.library_path,
         ActivationTarget {
-            artifact_id: Some(&installed.record.artifact_id),
+            install_key: Some(&install_key),
             execution_providers: None,
         },
     )?;
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)
+    runtime_bootstrap::activate_first_install(app_data_dir, &install_key)
         .map_err(|error| with_failure_phase(error, RuntimeBootstrapFailurePhase::Activate))?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
@@ -536,6 +549,7 @@ pub fn download_and_stage_candidate_blocking(
 pub fn ensure_runtime_ready_or_install_blocking(
     app_data_dir: &Path,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
     // Process-committed runtime wins over slot inventory (mapped until restart).
@@ -577,8 +591,9 @@ pub fn ensure_runtime_ready_or_install_blocking(
     }
 
     if let Some(active) = inventory.active {
+        let install_key = active.install_key();
         let target = ActivationTarget {
-            artifact_id: Some(&active.record.artifact_id),
+            install_key: Some(&install_key),
             execution_providers: None,
         };
         return match activation::load_with_watchdog(app_data_dir, &active.library_path, target) {
@@ -607,8 +622,8 @@ pub fn ensure_runtime_ready_or_install_blocking(
         };
     }
 
-    let catalog = catalog::embedded_catalog();
-    ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, catalog, emit)
+    let catalog = refreshed_or_embedded_catalog(catalog_cache)?;
+    ensure_runtime_ready_or_install_with_catalog(app_data_dir, status, &catalog, emit)
 }
 
 fn publish_ready(
@@ -716,7 +731,7 @@ pub fn download_runtime(
 ) -> CommandResult<RuntimeBootstrapStatusSnapshot> {
     let app_data_dir = state.shell.app_data_dir.clone();
     let status = Arc::clone(&state.shell.runtime_bootstrap_status);
-    let catalog = download_runtime_source(&state.shell.catalog_cache)?;
+    let catalog = refreshed_or_embedded_catalog(&state.shell.catalog_cache)?;
 
     if RUNTIME_DOWNLOAD_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
         // Already running — report current state; do not race a second install.
@@ -890,6 +905,57 @@ mod tests {
             legacy_path: None,
             last_failure: None,
         }
+    }
+
+    #[test]
+    fn a_stale_same_id_install_is_not_activated_for_a_new_digest() {
+        // #394: with no active runtime, the pre-worker activation shortcut
+        // used to accept any verified install matching the artifact id. A
+        // same-id install left by an older catalog generation must not
+        // satisfy a request for the republished digest — the worker install
+        // must proceed instead.
+        use crate::separator::verified_manifest::sha256_hex;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let embedded = catalog::embedded_catalog();
+        let mut runtime = catalog::resolve_runtime(
+            &embedded.manifest,
+            catalog::current_target_triple(),
+            crate::config::ExecutionProviderPreference::default_for_current_platform(),
+        )
+        .expect("embedded runtime")
+        .clone();
+        runtime.archive_digest = sha256_hex(b"republished-generation-archive");
+
+        let stale_dir = runtime_bootstrap::runtime_artifact_dir(tmp.path(), &runtime.artifact_id);
+        std::fs::create_dir_all(&stale_dir).expect("create stale install");
+        let library_bytes = b"stale-generation-library";
+        std::fs::write(
+            stale_dir.join(runtime_bootstrap::ORT_RUNTIME_FILENAME),
+            library_bytes,
+        )
+        .expect("write library");
+        let mut record = catalog::record_from_catalog_runtime(&runtime, embedded);
+        record.archive_sha256 = sha256_hex(b"stale-generation-archive");
+        record.files = vec![catalog::InstalledFileRecord {
+            path: runtime_bootstrap::ORT_RUNTIME_FILENAME.to_owned(),
+            size: library_bytes.len() as u64,
+            sha256: sha256_hex(library_bytes),
+        }];
+        catalog::write_artifact_record(
+            &stale_dir.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
+            &record,
+        )
+        .expect("write record");
+
+        let status = Arc::new(Mutex::new(snapshot_from_inventory(&empty_inventory())));
+        let mut emit = |_event: &'static str, _snapshot: RuntimeBootstrapStatusSnapshot| {};
+        let activated = try_activate_staged_runtime(tmp.path(), &runtime, &status, &mut emit)
+            .expect("the digest mismatch must be a clean miss, not an error");
+        assert_eq!(
+            activated, None,
+            "a stale same-id install must not satisfy the republished digest"
+        );
     }
 
     #[test]
@@ -1075,16 +1141,48 @@ mod tests {
     }
 
     #[test]
-    fn download_runtime_source_keeps_a_newer_verified_catalog() {
+    fn refreshed_or_embedded_catalog_keeps_a_newer_verified_catalog() {
         let mut refreshed = catalog::embedded_catalog().clone();
         refreshed.generation += 1;
         refreshed.release_id = "refreshed-release".to_owned();
         let cache = Arc::new(Mutex::new(Some(refreshed.clone())));
 
-        let selected = download_runtime_source(&cache).expect("catalog cache should resolve");
+        let selected = refreshed_or_embedded_catalog(&cache).expect("catalog cache should resolve");
 
         assert_eq!(selected.generation, refreshed.generation);
         assert_eq!(selected.release_id, refreshed.release_id);
+    }
+
+    #[test]
+    fn separation_triggered_install_resolves_from_the_refreshed_catalog() {
+        // A refreshed catalog whose generation supersedes the embedded one
+        // but lists no runtime for this target: an install that consults the
+        // refreshed catalog fails at runtime resolution, while one that
+        // silently falls back to the embedded snapshot (#393) proceeds into
+        // the download/worker path and fails much later with a worker error.
+        let mut refreshed = catalog::embedded_catalog().clone();
+        refreshed.generation += 1;
+        refreshed.release_id = "refreshed-without-runtimes".to_owned();
+        refreshed.manifest.artifacts.runtimes.clear();
+        let cache = Arc::new(Mutex::new(Some(refreshed)));
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let status = Arc::new(Mutex::new(snapshot_from_disk(tmp.path())));
+        let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();
+
+        let error = ensure_runtime_ready_or_install_blocking(
+            tmp.path(),
+            &status,
+            &cache,
+            &mut |event, snapshot| events.push((event, snapshot)),
+        )
+        .expect_err("a refreshed catalog without runtimes must fail resolution");
+
+        assert!(
+            error.message.contains("no active runtime"),
+            "the install must resolve against the refreshed catalog, not the embedded snapshot: {}",
+            error.message
+        );
     }
 
     #[test]
