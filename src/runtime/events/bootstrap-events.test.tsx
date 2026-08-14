@@ -53,18 +53,55 @@ async function renderHook(fn: () => void) {
   return { root, container };
 }
 
+function noticeStorage(): Storage {
+  const existing = globalThis.localStorage;
+  if (existing) {
+    return existing;
+  }
+  const memory = new Map<string, string>();
+  const storage = {
+    get length() {
+      return memory.size;
+    },
+    clear() {
+      memory.clear();
+    },
+    getItem(key: string) {
+      return memory.get(key) ?? null;
+    },
+    key(index: number) {
+      return [...memory.keys()][index] ?? null;
+    },
+    removeItem(key: string) {
+      memory.delete(key);
+    },
+    setItem(key: string, value: string) {
+      memory.set(key, value);
+    },
+  } satisfies Storage;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
+  return storage;
+}
+
+function clearNoticeStorage() {
+  noticeStorage().removeItem(NOTICE_STORAGE_KEY);
+}
+
 describe("useBootstrapEvents cpu fallback notice", () => {
   let source: ReturnType<typeof createRecordingRuntimeEventSource>;
 
   beforeEach(() => {
-    localStorage.removeItem(NOTICE_STORAGE_KEY);
+    clearNoticeStorage();
     useNotificationStore.setState({ notifications: [] });
     useRuntimeBootstrapStore.setState({ status: null });
     source = createRecordingRuntimeEventSource();
   });
 
   afterEach(() => {
-    localStorage.removeItem(NOTICE_STORAGE_KEY);
+    clearNoticeStorage();
   });
 
   test("fires a notification once when cpu_fallback_notice is present", async () => {
