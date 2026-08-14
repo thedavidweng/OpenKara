@@ -125,7 +125,7 @@ export function createTauriMock(data: any): TauriMockResult {
   let mockSongs = data.songs;
   let mockLyrics = data.lyrics;
   const mockLyricsBySongId = { ...(data.lyricsBySongId || {}) };
-  let lyricsOverride = null;
+  let lyricsOverride: typeof mockLyrics | null = null;
   const invokeCalls: Array<{ cmd: string; args: any }> = [];
   const commandDelayMs = new Map<string, number>();
   const playlists: any[] = (data.playlists || []).map((p: any) => ({ ...p }));

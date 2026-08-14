@@ -195,7 +195,7 @@ impl TransliterationSidecar {
                         if word
                             .roman
                             .as_deref()
-                            .map_or(true, |roman| roman.trim().is_empty())
+                            .is_none_or(|roman| roman.trim().is_empty())
                         {
                             word.roman = Some(part.clone());
                         }

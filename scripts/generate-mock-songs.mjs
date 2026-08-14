@@ -191,6 +191,7 @@ function generatePseudoLrc(lyrics, durationMs) {
     words: null,
     bg_words: null,
     section: null,
+    roman: null,
   }));
   const raw_lrc = lrcLines
     .map((l) => {
@@ -256,6 +257,7 @@ function parseWordTokens(text) {
           time_ms: ts,
           end_ms: nextTs ?? ts + 500,
           text: wordText,
+          roman: null,
         });
         plain += wordText;
         remaining = after.slice(wordEnd);
@@ -310,6 +312,7 @@ function parseLrc(lrc) {
         words,
         bg_words: null,
         section: null,
+        roman: null,
       });
     }
   }
@@ -519,6 +522,7 @@ for (const { hash, slug, lyrics: lyricsPref } of PLAYLIST) {
     has_cover_art: true,
     imported_at: (PLAYLIST.length - songs.length) * 100000,
     original_ext: "m4a",
+    artwork_thumb_path: null,
     mbid,
   });
 
