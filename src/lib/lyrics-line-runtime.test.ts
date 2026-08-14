@@ -85,6 +85,11 @@ describe("LyricsLineRuntime", () => {
       Number.parseFloat(first.style.top),
     );
     expect(stage.style.height).not.toBe("");
+
+    runtime.clear();
+    expect(stage.style.height).toBe("");
+    expect(first.style.position).toBe("");
+    expect(second.style.top).toBe("");
   });
 
   test("focus stage scales from the center of the line", () => {

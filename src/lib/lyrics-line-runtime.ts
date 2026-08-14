@@ -48,13 +48,24 @@ export class LyricsLineRuntime {
   private wrappers = new Map<number, RegisteredLineWrapper>();
   private karaokeByLine = new Map<number, KaraokeFillController>();
   private lastStageEl: HTMLElement | null = null;
+  private focusLayoutDirty = true;
+  private focusLayoutValid = false;
+  private lastFocusWrapperKey = "";
+  private lastViewportHeight = -1;
+  private cachedFocusTops: number[] = [];
+  private cachedFocusStageHeight = 0;
+  private stageResizeObserver: ResizeObserver | null = null;
 
   registerWrapper(lineIndex: number, el: HTMLElement): void {
     const existing = this.wrappers.get(lineIndex);
     if (existing) {
+      if (existing.wrapperEl !== el) {
+        this.focusLayoutDirty = true;
+      }
       existing.wrapperEl = el;
       return;
     }
+    this.focusLayoutDirty = true;
 
     this.wrappers.set(lineIndex, {
       wrapperEl: el,
@@ -70,6 +81,7 @@ export class LyricsLineRuntime {
     const existing = this.wrappers.get(lineIndex);
     if (existing) {
       existing.wrapperEl = null;
+      this.focusLayoutDirty = true;
     }
   }
 
@@ -82,6 +94,7 @@ export class LyricsLineRuntime {
   }
 
   clear(): void {
+    this.clearFocusSlots();
     this.wrappers.clear();
     this.karaokeByLine.clear();
   }
@@ -151,30 +164,54 @@ export class LyricsLineRuntime {
       return false;
     }
 
+    this.observeFocusStage(stageEl);
     const ordered = [...this.wrappers.entries()].sort(([a], [b]) => a - b);
-    const heights = ordered.map(
-      ([, entry]) => entry.wrapperEl?.offsetHeight ?? 0,
-    );
-    if (!canUseMeasuredFocusLayout(heights)) {
-      this.clearFocusSlots();
-      return false;
+    const wrapperKey = ordered
+      .map(([index, entry]) => `${index}:${entry.wrapperEl ? "1" : "0"}`)
+      .join(",");
+    const viewportHeight = viewportEl?.clientHeight ?? 0;
+    if (
+      this.focusLayoutDirty ||
+      wrapperKey !== this.lastFocusWrapperKey ||
+      viewportHeight !== this.lastViewportHeight ||
+      !this.focusLayoutValid
+    ) {
+      const heights = ordered.map(
+        ([, entry]) => entry.wrapperEl?.offsetHeight ?? 0,
+      );
+      this.focusLayoutDirty = false;
+      this.lastFocusWrapperKey = wrapperKey;
+      this.lastViewportHeight = viewportHeight;
+      if (!canUseMeasuredFocusLayout(heights)) {
+        this.focusLayoutValid = false;
+        this.clearFocusSlots();
+        return false;
+      }
+      const { tops, stageHeight } = layoutFocusLineTops(
+        heights,
+        FOCUS_LINE_GAP_PX,
+        focusHeadPadPx(viewportHeight),
+      );
+      this.cachedFocusTops = tops;
+      this.cachedFocusStageHeight = stageHeight;
+      this.focusLayoutValid = true;
     }
 
-    const { tops, stageHeight } = layoutFocusLineTops(
-      heights,
-      FOCUS_LINE_GAP_PX,
-      focusHeadPadPx(viewportEl?.clientHeight ?? 0),
-    );
     this.lastStageEl = stageEl;
-    stageEl.style.position = "relative";
-    stageEl.style.height = `${stageHeight}px`;
+    if (stageEl.style.position !== "relative") {
+      stageEl.style.position = "relative";
+    }
+    const nextStageHeight = `${this.cachedFocusStageHeight}px`;
+    if (stageEl.style.height !== nextStageHeight) {
+      stageEl.style.height = nextStageHeight;
+    }
 
     ordered.forEach(([, entry], index) => {
       const wrapperEl = entry.wrapperEl;
       if (!wrapperEl) {
         return;
       }
-      const targetTop = tops[index] ?? 0;
+      const targetTop = this.cachedFocusTops[index] ?? 0;
       if (!entry.hasFocusOrigin) {
         entry.top.jumpTo(targetTop);
         entry.hasFocusOrigin = true;
@@ -182,16 +219,44 @@ export class LyricsLineRuntime {
         entry.top.setTarget(targetTop);
         entry.top.update(dt);
       }
-      wrapperEl.style.position = "absolute";
-      wrapperEl.style.left = "0";
-      wrapperEl.style.width = "100%";
+      if (wrapperEl.style.position !== "absolute") {
+        wrapperEl.style.position = "absolute";
+      }
+      if (wrapperEl.style.left !== "0px" && wrapperEl.style.left !== "0") {
+        wrapperEl.style.left = "0";
+      }
+      if (wrapperEl.style.width !== "100%") {
+        wrapperEl.style.width = "100%";
+      }
       wrapperEl.style.top = `${entry.top.getPosition().toFixed(1)}px`;
     });
 
     return true;
   }
 
+  private observeFocusStage(stageEl: HTMLElement): void {
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    if (this.lastStageEl === stageEl && this.stageResizeObserver) {
+      return;
+    }
+    this.stageResizeObserver?.disconnect();
+    this.stageResizeObserver = new ResizeObserver(() => {
+      this.focusLayoutDirty = true;
+    });
+    this.stageResizeObserver.observe(stageEl);
+  }
+
   private clearFocusSlots(): void {
+    this.stageResizeObserver?.disconnect();
+    this.stageResizeObserver = null;
+    this.focusLayoutDirty = true;
+    this.focusLayoutValid = false;
+    this.lastFocusWrapperKey = "";
+    this.lastViewportHeight = -1;
+    this.cachedFocusTops = [];
+    this.cachedFocusStageHeight = 0;
     if (this.lastStageEl) {
       this.lastStageEl.style.height = "";
       this.lastStageEl.style.position = "";

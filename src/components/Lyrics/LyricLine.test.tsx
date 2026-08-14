@@ -796,8 +796,8 @@ describe("LyricLine", () => {
     );
 
     expect(markup).toContain('data-word-roman="true"');
-    expect(markup).toContain("kimi");
-    expect(markup).toContain("no");
+    expect(markup).toMatch(/data-word-roman="true"[^>]*>kimi</);
+    expect(markup).toMatch(/data-word-roman="true"[^>]*>no</);
     expect(markup).not.toContain('data-lyrics-roman="true"');
     expect(markup.indexOf("kimi")).toBeLessThan(markup.indexOf("(harmony)"));
   });

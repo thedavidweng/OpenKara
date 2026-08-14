@@ -339,18 +339,22 @@ async function fetchAmllTtml(meta) {
     if (!searchRes.ok) throw new Error(`AMLL search HTTP ${searchRes.status}`);
     const searchBody = await searchRes.json();
     const items = searchBody?.data?.items ?? [];
+    const title = (meta.title ?? "").trim().toLowerCase();
+    if (!title) return null;
     const item = items.find((candidate) =>
       (candidate.musicNames ?? []).some(
         (name) =>
-          typeof name === "string" &&
-          name.toLowerCase().includes((meta.title ?? "").toLowerCase()),
+          typeof name === "string" && name.toLowerCase().includes(title),
       ),
     );
     if (!item?.id) return null;
-    const getRes = await fetch(`${AMLL_BASE}/v1/lyrics/get?id=${item.id}`, {
-      headers: { "User-Agent": AMLL_USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const getRes = await fetch(
+      `${AMLL_BASE}/v1/lyrics/get?id=${encodeURIComponent(item.id)}`,
+      {
+        headers: { "User-Agent": AMLL_USER_AGENT },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
     if (!getRes.ok) throw new Error(`AMLL get HTTP ${getRes.status}`);
     const getBody = await getRes.json();
     const raw = getBody?.data?.lyrics;

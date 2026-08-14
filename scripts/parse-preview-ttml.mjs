@@ -143,9 +143,11 @@ export function parseTtml(ttml) {
 
     if (token.startsWith("<")) {
       if (token.startsWith("<!")) continue;
+      const selfClosing = /\/>$/.test(token);
       const name = localName(token);
       const attrs = parseAttrs(token);
       if (name === "p") {
+        if (selfClosing) continue;
         inP = true;
         pBegin = parseTtmlTimestamp(attrs.begin);
         pEnd = parseTtmlTimestamp(attrs.end);
@@ -159,6 +161,7 @@ export function parseTtml(ttml) {
         continue;
       }
       if (name === "span") {
+        if (selfClosing) continue;
         const role = attrs.role ?? "";
         const isRubyText =
           attrs.ruby === "text" || attrs.ruby === "textContainer";

@@ -119,6 +119,7 @@ export class KaraokeFillController {
   private activeLineEl: HTMLElement | null = null;
   private activeWordEls: HTMLElement[] = [];
   private activeWordTimings: Array<{ time_ms: number; end_ms: number }> = [];
+  private wordResizeObserver: ResizeObserver | null = null;
 
   activateLine(
     lineEl: HTMLElement,
@@ -146,16 +147,14 @@ export class KaraokeFillController {
     }
     this.activeWordEls = wordEls.slice(0, this.wordFills.length);
     this.activeWordTimings = words.slice(0, this.wordFills.length);
+    this.observeWordSizes();
   }
 
   update(currentMs: number, _isPlaying: boolean) {
+    if (!this.wordResizeObserver) {
+      this.refreshMeasuredWords();
+    }
     for (const word of this.wordFills) {
-      const measured = measureWord(word.element);
-      if (measured.width !== word.width || measured.fade !== word.fade) {
-        applyWordMask(word.element);
-        word.width = measured.width;
-        word.fade = measured.fade;
-      }
       setWordMaskProgress(
         word.element,
         karaokeFillProgress(currentMs, word.startTime, word.endTime),
@@ -166,10 +165,40 @@ export class KaraokeFillController {
   }
 
   deactivateLine() {
+    this.disconnectWordObserver();
     this.wordFills = [];
     this.activeLineEl = null;
     this.activeWordEls = [];
     this.activeWordTimings = [];
+  }
+
+  private observeWordSizes() {
+    this.disconnectWordObserver();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    this.wordResizeObserver = new ResizeObserver(() => {
+      this.refreshMeasuredWords();
+    });
+    for (const word of this.wordFills) {
+      this.wordResizeObserver.observe(word.element);
+    }
+  }
+
+  private disconnectWordObserver() {
+    this.wordResizeObserver?.disconnect();
+    this.wordResizeObserver = null;
+  }
+
+  private refreshMeasuredWords() {
+    for (const word of this.wordFills) {
+      const measured = measureWord(word.element);
+      if (measured.width !== word.width || measured.fade !== word.fade) {
+        applyWordMask(word.element);
+        word.width = measured.width;
+        word.fade = measured.fade;
+      }
+    }
   }
 
   destroy() {

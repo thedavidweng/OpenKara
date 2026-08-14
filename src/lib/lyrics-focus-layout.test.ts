@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   canUseMeasuredFocusLayout,
   FOCUS_LINE_GAP_PX,
+  focusHeadPadPx,
   layoutFocusLineTops,
 } from "./lyrics-focus-layout";
 
@@ -22,6 +23,13 @@ describe("layoutFocusLineTops", () => {
 
     expect(tops).toEqual([80]);
     expect(stageHeight).toBe(208);
+  });
+});
+
+describe("focusHeadPadPx", () => {
+  test("holds a minimum pad on short viewports", () => {
+    expect(focusHeadPadPx(0)).toBe(48);
+    expect(focusHeadPadPx(1000)).toBe(380);
   });
 });
 

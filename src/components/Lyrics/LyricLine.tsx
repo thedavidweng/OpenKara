@@ -66,7 +66,10 @@ function areLyricLinePropsEqual(
     previous.presentation !== "audience" &&
     previous.line.words !== null &&
     previous.line.words.length > 0;
-  if (usesOverlayFill) {
+  const hasEmphasis = previous.line.words?.some((word) =>
+    shouldEmphasizeWord(word),
+  );
+  if (usesOverlayFill && !hasEmphasis) {
     return true;
   }
 

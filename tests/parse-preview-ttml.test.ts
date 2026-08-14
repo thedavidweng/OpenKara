@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
 import {
   parseTtml,
   parseTtmlTimestamp,
 } from "../scripts/parse-preview-ttml.mjs";
+import { PREVIEW_LYRICS } from "../src/mock/preview-songs";
 
 describe("parseTtmlTimestamp", () => {
   test("reads minute-second-fraction tags", () => {
@@ -60,16 +60,23 @@ describe("parseTtml", () => {
     expect(lines[0].words?.[1]?.roman).toBe("no");
     expect(lines[0].roman).toBe("kimi no");
   });
+
+  test("ignores self-closing spans so later words keep their timing", () => {
+    const lines = parseTtml(`<p begin="00:10.000" end="00:12.000">
+      <span begin="00:10.000" end="00:11.000"/>
+      <span begin="00:11.000" end="00:12.000">の</span>
+      <span ttm:role="x-roman"/>
+    </p>`);
+    expect(lines[0].text).toBe("の");
+    expect(lines[0].words).toEqual([
+      { time_ms: 11_000, end_ms: 12_000, text: "の", roman: null },
+    ]);
+  });
 });
 
 describe("One Last Kiss catalog TTML", () => {
-  test("parses the cached AMLL document when present", () => {
-    let raw;
-    try {
-      raw = readFileSync("/tmp/one-last-kiss.ttml", "utf8");
-    } catch {
-      return;
-    }
+  test("parses the committed AMLL catalog document", () => {
+    const raw = PREVIEW_LYRICS["one-last-kiss"].raw_lrc;
     const lines = parseTtml(raw);
     expect(lines.length).toBeGreaterThan(20);
     const first = lines[0];

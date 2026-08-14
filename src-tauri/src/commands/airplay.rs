@@ -126,6 +126,7 @@ pub enum AirPlayPlainTextPageDirection {
 struct AirPlayBridgeWordToken {
     time_ms: u64,
     text: String,
+    roman: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -344,6 +345,7 @@ fn bridge_lines(lines: &[LyricLine]) -> Vec<AirPlayBridgeLyricLine> {
                     .map(|word| AirPlayBridgeWordToken {
                         time_ms: word.time_ms,
                         text: word.text.clone(),
+                        roman: word.roman.clone(),
                     })
                     .collect()
             }),
@@ -968,9 +970,11 @@ mod tests {
             lines: vec![LyricLine {
                 time_ms: 1_000,
                 text: "line 1".to_owned(),
-                words: Some(vec![crate::lyrics::parser::WordToken::new(
-                    1_050, 1_550, "line",
-                )]),
+                words: Some(vec![{
+                    let mut word = crate::lyrics::parser::WordToken::new(1_050, 1_550, "line");
+                    word.roman = Some("rain".to_owned());
+                    word
+                }]),
                 bg_words: None,
                 section: None,
                 roman: None,
@@ -992,6 +996,7 @@ mod tests {
             json["lines"][0]["words"][0]["time_ms"],
             serde_json::Value::Null
         );
+        assert_eq!(json["lines"][0]["words"][0]["roman"], "rain");
     }
 
     #[test]

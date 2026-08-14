@@ -86,7 +86,7 @@ export interface TauriMockHelpers {
   emitEvent: (eventName: string, payload: unknown) => void;
   setCommandDelayMs: (cmd: string, delayMs: number) => void;
   setMockSongs: (songs: MockSong[]) => void;
-  setMockLyrics: (lyrics: MockLyrics) => void;
+  setMockLyrics: (lyrics: MockLyrics | null) => void;
   setLargeLibrary: (count: number) => void;
   getInvokeCalls: () => Array<{ cmd: string; args: unknown }>;
   getLastNativeMenu: () => unknown;
@@ -486,7 +486,7 @@ export function createTauriMock(data: any): TauriMockResult {
     fetch_lyrics_online: (args: any) => {
       const songId = args && args.songId;
       const payload =
-        lyricsOverride || (songId && mockLyricsBySongId[songId]) || data.lyrics;
+        lyricsOverride || (songId && mockLyricsBySongId[songId]) || mockLyrics;
       return { ...payload, song_id: songId };
     },
     save_manual_lyrics: (args: any) => ({
@@ -832,6 +832,10 @@ export function createTauriMock(data: any): TauriMockResult {
         mockSongs = songs;
       },
       setMockLyrics: (lyrics: any) => {
+        if (lyrics == null) {
+          lyricsOverride = null;
+          return;
+        }
         mockLyrics = lyrics;
         lyricsOverride = lyrics;
       },
