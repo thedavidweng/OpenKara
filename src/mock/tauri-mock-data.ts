@@ -30,7 +30,6 @@ export const MOCK_PLAYLISTS = [
 ];
 
 export const PREVIEW_EARFQUAKE_START_MS = 23_000;
-export const PREVIEW_FROZEN_POSITION_MS = PREVIEW_EARFQUAKE_START_MS;
 export const PREVIEW_OTHER_SONG_START_MS = 59_560;
 
 const PRIMARY_PREVIEW_DURATION_MS =
@@ -107,7 +106,7 @@ export const MOCK_DATA: MockData = {
     song_id: PRIMARY_PREVIEW_SONG_HASH,
     state: "playing",
     is_playing: true,
-    position_ms: PREVIEW_FROZEN_POSITION_MS,
+    position_ms: PREVIEW_EARFQUAKE_START_MS,
     duration_ms: PRIMARY_PREVIEW_DURATION_MS,
     buffered_ms: PRIMARY_PREVIEW_DURATION_MS,
     volume: 0.8,

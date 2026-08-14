@@ -21,9 +21,9 @@ pnpm tauri build    # release bundle
 
 ## Checks
 
-Git hooks run most of these for you. `pre-commit` formats the staged files.
-`pre-push` runs the format check, the lint, and patch coverage. Run the rest
-before you open a pull request.
+Git hooks run most of these for you. `pre-commit` formats the staged files
+and runs knip. `pre-push` runs the format check, the lint, knip, and patch
+coverage. Run the rest before you open a pull request.
 
 ```bash
 node --run lint                                  # frontend lint
