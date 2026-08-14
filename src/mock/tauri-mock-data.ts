@@ -42,6 +42,7 @@ export const MOCK_DATA: MockData = {
   })),
 
   lyrics: PREVIEW_LYRICS[PRIMARY_PREVIEW_SONG_HASH],
+  lyricsBySongId: PREVIEW_LYRICS,
 
   primarySongHash: PRIMARY_PREVIEW_SONG_HASH,
 

@@ -107,15 +107,26 @@ export function LyricsPanel({
         }}
       >
         <div
-          className={`mx-auto flex w-full flex-col items-center ${
-            isAudience
-              ? "min-h-full justify-start"
-              : spaciousStageLayout
-                ? "max-w-4xl gap-9"
-                : "max-w-2xl gap-7"
+          data-lyrics-stage={
+            lyricsAlignment === "center" && !isPlainText ? "focus" : "list"
+          }
+          className={`mx-auto w-full ${
+            lyricsAlignment === "center" && !isPlainText
+              ? isAudience
+                ? "relative"
+                : "relative max-w-4xl"
+              : `flex flex-col items-center ${
+                  isAudience
+                    ? "min-h-full justify-start"
+                    : spaciousStageLayout
+                      ? lyricsAlignment === "center"
+                        ? "max-w-4xl gap-12"
+                        : "max-w-4xl gap-9"
+                      : "max-w-2xl gap-7"
+                }`
           }`}
           style={
-            isAudience
+            isAudience && (lyricsAlignment === "left" || isPlainText)
               ? {
                   maxWidth:
                     lyricsAlignment === "left"
@@ -123,10 +134,16 @@ export function LyricsPanel({
                       : `min(${audienceSpec.contentWidthRatio * 100}vw, ${audienceSpec.contentMaxWidthPx}px)`,
                   gap: audienceSpec.lineGapPx,
                 }
-              : undefined
+              : isAudience
+                ? {
+                    maxWidth: `min(${audienceSpec.contentWidthRatio * 100}vw, ${audienceSpec.contentMaxWidthPx}px)`,
+                  }
+                : undefined
           }
         >
-          {isAudience && !paged ? (
+          {isAudience &&
+          !paged &&
+          (lyricsAlignment === "left" || isPlainText) ? (
             <div className="h-[50vh] w-full shrink-0" />
           ) : null}
           {model.visibleLines.map((line, index) => {
@@ -154,7 +171,7 @@ export function LyricsPanel({
               </div>
             );
           })}
-          {paged ? null : (
+          {paged || (lyricsAlignment === "center" && !isPlainText) ? null : (
             <div
               className={`w-full shrink-0 ${isAudience ? "h-[50vh]" : "h-[30vh]"}`}
             />
@@ -173,7 +190,7 @@ export function LyricsPanel({
         />
       ) : null}
       {!isAudience && !isPlainText ? (
-        <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center px-6">
+        <div className="pointer-events-none absolute left-4 top-4 z-10 flex px-0">
           <Tooltip label={t("lyrics.followPlaying")}>
             <button
               type="button"

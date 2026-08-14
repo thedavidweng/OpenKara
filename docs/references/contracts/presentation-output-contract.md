@@ -59,7 +59,23 @@ null
   "payload": {
     "mode": "lyrics",
     "songId": "song-1",
-    "lines": [{ "time_ms": 3000, "text": "Line", "words": null }],
+    "lines": [
+      {
+        "time_ms": 3000,
+        "text": "Line",
+        "words": [
+          {
+            "time_ms": 3000,
+            "end_ms": 3400,
+            "text": "Line",
+            "roman": null
+          }
+        ],
+        "bg_words": null,
+        "section": null,
+        "roman": null
+      }
+    ],
     "offsetMs": 100,
     "isLoading": false,
     "lyricsFontStep": 1,
@@ -126,7 +142,7 @@ null
 
 1. `mode` 固定为 `idle | lyrics | cdg`
 2. 该命令是配置同步，不是运行时节拍同步；前端只提供 `songId / lines / offsetMs / isLoading / lyricsFontStep / messages / viewport / presentationSpec`
-3. backend 保存最新配置，并由自己的 coordinator 读取真实播放状态，计算当前歌词行/单词高亮和 CDG 帧，再同步到原生 AirPlay bridge
+3. backend 保存最新配置，并由自己的 coordinator 读取真实播放状态，计算当前歌词行/单词高亮和 CDG 帧，再同步到原生 AirPlay bridge。Bridge word token 保留 `timeMs`、`text` 和可空 `roman`。
 4. `messages` 提供无歌、加载中、无歌词等 audience 空状态所需的本地化文案；AirPlay 电视端只显示弱化文本提示，不再渲染按钮式空状态卡片
 5. `presentationSpec` 固定了 audience 内容区宽度、字号、行距、颜色和 glow；本地 `fullscreen-player` audience 输出与 AirPlay 必须共用这套显式 spec，不能各自维护一套样式
 6. `viewport` 当前固定为 `1280x720`，对应 backend HLS 视频编码参考尺寸

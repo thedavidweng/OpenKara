@@ -286,20 +286,39 @@ test.describe("Virtualized large library (5,000 songs)", () => {
 
     const renderedRows = songList.locator("[data-song-hash]");
 
-    // Let each navigation settle before issuing the next.
+    // Let each navigation settle before issuing the next. WebKit can move
+    // focus into the virtualized list after Enter, so restore rail focus
+    // before Home and poll the visible window instead of the first row.
     const firstButton = rail.locator("button").first();
     await firstButton.focus();
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
-    await expect(renderedRows.first()).not.toContainText(/^A Song/, {
-      timeout: 10000,
-    });
+    await expect
+      .poll(
+        async () => {
+          const text = await renderedRows.first().textContent();
+          return Boolean(text && !/^A Song/.test(text));
+        },
+        { timeout: 10000 },
+      )
+      .toBe(true);
 
+    await firstButton.focus();
     await page.keyboard.press("Home");
     await page.keyboard.press("Enter");
-    await expect(renderedRows.first()).toContainText(/^A Song/, {
-      timeout: 10000,
-    });
+    await expect
+      .poll(
+        async () => {
+          const count = await renderedRows.count();
+          for (let i = 0; i < Math.min(count, 10); i++) {
+            const text = await renderedRows.nth(i).textContent();
+            if (text && /^A Song/.test(text)) return true;
+          }
+          return false;
+        },
+        { timeout: 10000 },
+      )
+      .toBe(true);
   });
 
   test("keyboard Space activates the focused bucket", async ({ page }) => {

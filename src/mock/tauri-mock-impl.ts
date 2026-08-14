@@ -3,6 +3,7 @@ import type { InvokeCommand } from "@/lib/tauri/invoke";
 export interface MockData {
   songs: MockSong[];
   lyrics: MockLyrics;
+  lyricsBySongId?: Record<string, MockLyrics>;
   primarySongHash: string;
   sidebarWidth: number;
   libraryRegistry: {
@@ -85,7 +86,7 @@ export interface TauriMockHelpers {
   emitEvent: (eventName: string, payload: unknown) => void;
   setCommandDelayMs: (cmd: string, delayMs: number) => void;
   setMockSongs: (songs: MockSong[]) => void;
-  setMockLyrics: (lyrics: MockLyrics) => void;
+  setMockLyrics: (lyrics: MockLyrics | null) => void;
   setLargeLibrary: (count: number) => void;
   getInvokeCalls: () => Array<{ cmd: string; args: unknown }>;
   getLastNativeMenu: () => unknown;
@@ -123,6 +124,8 @@ export function createTauriMock(data: any): TauriMockResult {
   // Mutable so tests can override the library, lyrics, playback, etc.
   let mockSongs = data.songs;
   let mockLyrics = data.lyrics;
+  const mockLyricsBySongId = { ...(data.lyricsBySongId || {}) };
+  let lyricsOverride: typeof mockLyrics | null = null;
   const invokeCalls: Array<{ cmd: string; args: any }> = [];
   const commandDelayMs = new Map<string, number>();
   const playlists: any[] = (data.playlists || []).map((p: any) => ({ ...p }));
@@ -474,11 +477,18 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     load_stems: () => clone(currentPlaybackSnapshot),
 
-    fetch_lyrics: (args: any) => ({ ...mockLyrics, song_id: args?.songId }),
-    fetch_lyrics_online: (args: any) => ({
-      ...data.lyrics,
-      song_id: args?.songId,
-    }),
+    fetch_lyrics: (args: any) => {
+      const songId = args && args.songId;
+      const payload =
+        lyricsOverride || (songId && mockLyricsBySongId[songId]) || mockLyrics;
+      return { ...payload, song_id: songId };
+    },
+    fetch_lyrics_online: (args: any) => {
+      const songId = args && args.songId;
+      const payload =
+        lyricsOverride || (songId && mockLyricsBySongId[songId]) || mockLyrics;
+      return { ...payload, song_id: songId };
+    },
     save_manual_lyrics: (args: any) => ({
       raw_lrc: (args && args.text) || "",
       lines: [],
@@ -822,7 +832,12 @@ export function createTauriMock(data: any): TauriMockResult {
         mockSongs = songs;
       },
       setMockLyrics: (lyrics: any) => {
+        if (lyrics == null) {
+          lyricsOverride = null;
+          return;
+        }
         mockLyrics = lyrics;
+        lyricsOverride = lyrics;
       },
       setLargeLibrary: (count: number) => {
         mockSongs = generateLargeLibrary(count);

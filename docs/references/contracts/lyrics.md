@@ -40,7 +40,8 @@
         {
           "time_ms": 35660,
           "end_ms": 36020,
-          "text": "Look"
+          "text": "Look",
+          "roman": null
         }
       ],
       "bg_words": null,
@@ -258,11 +259,12 @@ Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command s
 
 ### Shared type: `WordToken`
 
-| Field     | Type     | Notes                    |
-| --------- | -------- | ------------------------ |
-| `time_ms` | `u64`    | 单词开始时间，单位毫秒   |
-| `end_ms`  | `u64`    | 单词结束时间，单位毫秒   |
-| `text`    | `String` | 单词或 syllable 显示文本 |
+| Field     | Type             | Notes                                                          |
+| --------- | ---------------- | -------------------------------------------------------------- |
+| `time_ms` | `u64`            | 单词开始时间，单位毫秒                                         |
+| `end_ms`  | `u64`            | 单词结束时间，单位毫秒                                         |
+| `text`    | `String`         | 单词或 syllable 显示文本                                       |
+| `roman`   | `Option<String>` | 与该词对齐的罗马音。无对齐发音时为 `null`。缺省字段视为 `null` |
 
 ### Shared error type: `CommandError`
 

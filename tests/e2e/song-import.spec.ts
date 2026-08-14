@@ -17,8 +17,9 @@ test.describe("Song import workflow", () => {
   test("sidebar shows the song library with imported songs", async ({
     page,
   }) => {
-    // The mock returns 6 songs — all should be visible in the sidebar song list
+    // The mock catalog songs should be visible in the sidebar song list
     await expect(page.getByText("Earfquake")).toBeVisible();
+    await expect(page.getByText("One Last Kiss")).toBeVisible();
     await expect(page.getByText("See You Again")).toBeVisible();
     await expect(page.getByText("Counting Stars")).toBeVisible();
 

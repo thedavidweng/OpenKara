@@ -6,12 +6,9 @@
 // cover art + timed lyrics inlined) so it works in both the Vite-bundled
 // website preview and the Playwright E2E mock script without runtime file I/O.
 //
-// Lyrics are fetched from lrclib.net (https://lrclib.net/api/get) using the
-// embedded title/artist/album/duration tags.  When lrclib returns synced
-// lyrics (LRC with `[mm:ss.xx]` timestamps), those are used directly.  When
-// lrclib returns only plain lyrics or no match, the embedded m4a `lyrics` tag
-// is used with pseudo-LRC timestamps distributed evenly across the song
-// duration so the lyrics panel still scrolls during playback.
+// Lyrics: playlist entries marked `lyrics: "amll"` embed Word-timed TTML
+// from the AMLL API. Other songs use lrclib.net synced LRC when available;
+// otherwise the embedded m4a lyrics tag is used with pseudo-LRC timestamps.
 //
 // Usage:
 //   node scripts/generate-mock-songs.mjs [--media-dir <path>] [--cover-size 300]
@@ -35,6 +32,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { parseTtml } from "./parse-preview-ttml.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -57,6 +55,11 @@ const PLAYLIST = [
   {
     hash: "905fd10b4162e0359de6a9921326ce87b65644883c7a7595226144df47c0b374",
     slug: "earfquake",
+  },
+  {
+    hash: "624fba475c9e0dae7b5c9aa589f620ef722cae6d1527ab83f1f1acea65a0acc5",
+    slug: "one-last-kiss",
+    lyrics: "amll",
   },
   {
     hash: "589f36455e597669a513a3d9aede378798d2b3237d422513336de7d2531c493d",
@@ -188,6 +191,7 @@ function generatePseudoLrc(lyrics, durationMs) {
     words: null,
     bg_words: null,
     section: null,
+    roman: null,
   }));
   const raw_lrc = lrcLines
     .map((l) => {
@@ -253,6 +257,7 @@ function parseWordTokens(text) {
           time_ms: ts,
           end_ms: nextTs ?? ts + 500,
           text: wordText,
+          roman: null,
         });
         plain += wordText;
         remaining = after.slice(wordEnd);
@@ -307,11 +312,87 @@ function parseLrc(lrc) {
         words,
         bg_words: null,
         section: null,
+        roman: null,
       });
     }
   }
   parsed.sort((a, b) => a.time_ms - b.time_ms);
   return { lines: parsed, offset_ms: offsetMs };
+}
+
+const AMLL_BASE = "https://api.amll.dev";
+const AMLL_USER_AGENT = "OpenKara/mock-songs-generator";
+
+async function fetchAmllTtml(meta) {
+  const search = new URLSearchParams({
+    musicName: meta.title ?? "",
+    artistName: meta.artist ?? "",
+    page: "1",
+    pageSize: "5",
+  });
+  if (meta.album) search.set("albumName", meta.album);
+  try {
+    const searchRes = await fetch(`${AMLL_BASE}/v1/lyrics/search?${search}`, {
+      headers: { "User-Agent": AMLL_USER_AGENT },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!searchRes.ok) throw new Error(`AMLL search HTTP ${searchRes.status}`);
+    const searchBody = await searchRes.json();
+    const items = searchBody?.data?.items ?? [];
+    const title = (meta.title ?? "").trim().toLowerCase();
+    if (!title) return null;
+    const item = items.find((candidate) =>
+      (candidate.musicNames ?? []).some(
+        (name) =>
+          typeof name === "string" && name.toLowerCase().includes(title),
+      ),
+    );
+    if (!item?.id) return null;
+    const getRes = await fetch(
+      `${AMLL_BASE}/v1/lyrics/get?id=${encodeURIComponent(item.id)}`,
+      {
+        headers: { "User-Agent": AMLL_USER_AGENT },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!getRes.ok) throw new Error(`AMLL get HTTP ${getRes.status}`);
+    const getBody = await getRes.json();
+    const raw = getBody?.data?.lyrics;
+    if (typeof raw === "string" && raw.includes("<")) return raw;
+    return null;
+  } catch (err) {
+    console.error(`  ⚠ AMLL fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+function readCachedTtml(hash) {
+  const dbPath = join(homedir(), "Music", "OpenKara", "openkara.db");
+  try {
+    const raw = sh("sqlite3", [
+      dbPath,
+      `SELECT lrc FROM lyrics WHERE song_hash='${hash}' AND source='amll';`,
+    ]);
+    return raw.includes("<") ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function amllLyricsPayload(rawTtml) {
+  const lines = parseTtml(rawTtml);
+  if (
+    lines.length === 0 ||
+    !lines.some((line) => (line.words?.length ?? 0) > 0)
+  ) {
+    return null;
+  }
+  return {
+    raw_lrc: rawTtml,
+    lines,
+    offset_ms: 0,
+    source: "amll",
+  };
 }
 
 // ── lrclib fetch ──
@@ -376,7 +457,7 @@ for (const f of readdirSync(coversDir)) {
 const songs = [];
 const lyricsMap = {};
 
-for (const { hash, slug } of PLAYLIST) {
+for (const { hash, slug, lyrics: lyricsPref } of PLAYLIST) {
   const m4aPath = join(mediaDir, `${hash}.m4a`);
   const meta = probeMetadata(m4aPath);
   const mbid = probeMbid(m4aPath);
@@ -385,31 +466,48 @@ for (const { hash, slug } of PLAYLIST) {
   const coverBase64 = fileToBase64(coverPath);
   const language = inferLanguage(meta);
 
-  // Try lrclib for synced (timed) lyrics first; fall back to the embedded
-  // plain-text lyrics with pseudo-LRC timestamps if lrclib has no match.
-  const lrclibResult = await fetchLrclibLyrics(meta);
   let lyricsPayload;
   let lyricsSource;
-  if (lrclibResult && !lrclibResult.instrumental) {
-    lyricsPayload = {
-      raw_lrc: lrclibResult.raw_lrc,
-      lines: lrclibResult.lines,
-      offset_ms: lrclibResult.offset_ms,
-      source: "lrc_lib",
-    };
-    lyricsSource = "lrc_lib";
-  } else if (lrclibResult && lrclibResult.instrumental) {
-    lyricsPayload = { raw_lrc: "", lines: [], offset_ms: 0, source: "lrc_lib" };
-    lyricsSource = "lrc_lib(instrumental)";
+  if (lyricsPref === "amll") {
+    const rawTtml = (await fetchAmllTtml(meta)) ?? readCachedTtml(hash);
+    const amllPayload = rawTtml ? amllLyricsPayload(rawTtml) : null;
+    if (!amllPayload) {
+      throw new Error(
+        `AMLL word-timed lyrics are required for ${slug} (${meta.title})`,
+      );
+    }
+    lyricsPayload = amllPayload;
+    lyricsSource = "amll";
   } else {
-    const pseudo = generatePseudoLrc(meta.lyrics, meta.duration_ms);
-    lyricsPayload = {
-      raw_lrc: pseudo.raw_lrc,
-      lines: pseudo.lines,
-      offset_ms: 0,
-      source: "embedded",
-    };
-    lyricsSource = "embedded(pseudo-lrc)";
+    // Try lrclib for synced (timed) lyrics first; fall back to the embedded
+    // plain-text lyrics with pseudo-LRC timestamps if lrclib has no match.
+    const lrclibResult = await fetchLrclibLyrics(meta);
+    if (lrclibResult && !lrclibResult.instrumental) {
+      lyricsPayload = {
+        raw_lrc: lrclibResult.raw_lrc,
+        lines: lrclibResult.lines,
+        offset_ms: lrclibResult.offset_ms,
+        source: "lrc_lib",
+      };
+      lyricsSource = "lrc_lib";
+    } else if (lrclibResult && lrclibResult.instrumental) {
+      lyricsPayload = {
+        raw_lrc: "",
+        lines: [],
+        offset_ms: 0,
+        source: "lrc_lib",
+      };
+      lyricsSource = "lrc_lib(instrumental)";
+    } else {
+      const pseudo = generatePseudoLrc(meta.lyrics, meta.duration_ms);
+      lyricsPayload = {
+        raw_lrc: pseudo.raw_lrc,
+        lines: pseudo.lines,
+        offset_ms: 0,
+        source: "embedded",
+      };
+      lyricsSource = "embedded(pseudo-lrc)";
+    }
   }
 
   songs.push({
@@ -428,6 +526,7 @@ for (const { hash, slug } of PLAYLIST) {
     has_cover_art: true,
     imported_at: (PLAYLIST.length - songs.length) * 100000,
     original_ext: "m4a",
+    artwork_thumb_path: null,
     mbid,
   });
 

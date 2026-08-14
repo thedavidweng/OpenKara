@@ -518,6 +518,7 @@ export interface WordToken {
   time_ms: number;
   end_ms: number;
   text: string;
+  roman?: string | null;
 }
 
 export interface LyricLine {

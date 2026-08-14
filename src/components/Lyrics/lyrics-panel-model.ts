@@ -139,6 +139,7 @@ export function useLyricsPanelModel(
     isPlainText,
     lyricsFontStep,
     presentation,
+    focusStage: lyricsAlignment === "center" && !isPlainText,
     songId,
     viewportActive: Boolean(songId) && !isLoading && lines.length > 0,
     layoutVersion,
