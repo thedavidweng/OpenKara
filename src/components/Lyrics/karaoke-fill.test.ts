@@ -103,6 +103,19 @@ describe("KaraokeFillController", () => {
     expect(wordEl.style.maskPosition).toBe("-12px 0px");
   });
 
+  test("deactivateLine keeps the mask so inactive dual-alpha can stay applied", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl();
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
+    );
+    expect(wordEl.style.maskSize || wordEl.style.webkitMaskSize).toContain("%");
+    controller.deactivateLine();
+    expect(wordEl.style.maskSize || wordEl.style.webkitMaskSize).toContain("%");
+  });
+
   test("update remasures when the word box changes size", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl(10, 10);
