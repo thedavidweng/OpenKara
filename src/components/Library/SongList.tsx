@@ -36,7 +36,11 @@ function useAtLeast600Px(): boolean {
   return matches;
 }
 
-export function SongList() {
+interface SongListProps {
+  previewMode?: boolean;
+}
+
+export function SongList({ previewMode = false }: SongListProps = {}) {
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
@@ -177,7 +181,11 @@ export function SongList() {
                 className="absolute left-0 top-0 w-full"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                <SongListItem song={song} orderedHashes={orderedHashes} />
+                <SongListItem
+                  song={song}
+                  orderedHashes={orderedHashes}
+                  previewMode={previewMode}
+                />
               </div>
             );
           })}

@@ -29,7 +29,9 @@ export const MOCK_PLAYLISTS = [
   },
 ];
 
-export const PREVIEW_FROZEN_POSITION_MS = 59560;
+export const PREVIEW_EARFQUAKE_START_MS = 23_000;
+export const PREVIEW_FROZEN_POSITION_MS = PREVIEW_EARFQUAKE_START_MS;
+export const PREVIEW_OTHER_SONG_START_MS = 59_560;
 
 const PRIMARY_PREVIEW_DURATION_MS =
   PREVIEW_SONGS.find((song) => song.hash === PRIMARY_PREVIEW_SONG_HASH)
@@ -133,7 +135,11 @@ export const MOCK_DATA: MockData = {
   },
 
   loopPlayback: true,
-  loopStartPositionMs: 0,
+  loopStartPositionMs: PREVIEW_EARFQUAKE_START_MS,
+  playStartPositionMs: PREVIEW_OTHER_SONG_START_MS,
+  playStartPositionBySongId: {
+    earfquake: PREVIEW_EARFQUAKE_START_MS,
+  },
 };
 
 export const E2E_MOCK_DATA: MockData = {
@@ -141,6 +147,9 @@ export const E2E_MOCK_DATA: MockData = {
   playlists: [],
   playlistSongs: {},
   loopPlayback: false,
+  playStartPositionMs: 0,
+  playStartPositionBySongId: {},
+  loopStartPositionMs: 0,
   playbackSnapshot: {
     transport_generation: 0,
     song_id: null,

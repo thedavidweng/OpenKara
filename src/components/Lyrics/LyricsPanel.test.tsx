@@ -674,6 +674,7 @@ describe("LyricsPanel contextual reveal", () => {
       "[aria-label='lyrics.switchToCentered']",
     ) as HTMLButtonElement;
     expect(button).toBeTruthy();
+    expect(button.getAttribute("data-preview-lyrics-interactive")).toBe("true");
     act(() => {
       button.click();
     });

@@ -372,6 +372,36 @@ describe("useLyricsEngine", () => {
     vi.mocked(lyricsEngine.createUserScrollGuard).mockRestore();
   });
 
+  test("song change jumps to the active lyric line", () => {
+    mockPlayerState.positionMs = 6_000;
+
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={0} />);
+    });
+
+    const viewport = host.querySelector(
+      "[data-testid='scroll-viewport']",
+    ) as HTMLDivElement;
+    defineNumber(viewport, "clientHeight", 100);
+    defineNumber(viewport, "scrollHeight", 500);
+    const line0 = viewport.querySelector("[data-lyrics-line-index='0']")!;
+    const line1 = viewport.querySelector("[data-lyrics-line-index='1']")!;
+    defineNumber(line0, "offsetTop", 0);
+    defineNumber(line0, "clientHeight", 40);
+    defineNumber(line1, "offsetTop", 200);
+    defineNumber(line1, "clientHeight", 40);
+
+    act(() => {
+      rafCb?.(1000);
+    });
+    expect(viewport.scrollTop).toBe(170);
+
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={0} songId="song-2" />);
+    });
+    expect(viewport.scrollTop).toBe(170);
+  });
+
   test("focus resync updates the active line without consuming a seek latch", () => {
     act(() => {
       root.render(<Harness />);
