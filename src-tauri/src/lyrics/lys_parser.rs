@@ -65,11 +65,7 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                     if t.ends_with(')') {
                         t.pop();
                     }
-                    WordToken {
-                        time_ms: *start_ms,
-                        end_ms: start_ms + duration_ms,
-                        text: t.trim().to_string(),
-                    }
+                    WordToken::new(*start_ms, start_ms + duration_ms, t.trim())
                 })
                 .collect();
             let bg_text = display_text_for_tokens(&cleaned);
@@ -77,10 +73,8 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
         } else {
             let tokens: Vec<WordToken> = raw_tokens
                 .iter()
-                .map(|(txt, start_ms, duration_ms)| WordToken {
-                    time_ms: *start_ms,
-                    end_ms: start_ms + duration_ms,
-                    text: txt.trim().to_string(),
+                .map(|(txt, start_ms, duration_ms)| {
+                    WordToken::new(*start_ms, start_ms + duration_ms, txt.trim())
                 })
                 .collect();
             let display = display_text_for_tokens(&tokens);

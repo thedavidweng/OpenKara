@@ -231,6 +231,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockLyricsState.romanizedLines = [];
     mockLyricsState.isRomanizing = false;
     mockLyricsState.showRomanized = false;
+    mockLyricsState.lyricsAlignment = "left";
     mockLyricsState.toggleRomanized.mockReset();
     mockLyricsState.toggleLyricsAlignment.mockReset();
     mockLyricsState.songId = "song-1";
@@ -301,6 +302,18 @@ describe("LyricsPanel contextual reveal", () => {
 
     expect(markup).toContain('data-lyrics-visual-variant="stage-layout"');
     expect(markup).toContain('data-native-lyrics-layout="true"');
+    expect(markup).toContain('data-lyrics-stage="list"');
+  });
+
+  test("marks centered timed lyrics as a focus stage", () => {
+    mockLyricsState.lyricsAlignment = "center";
+    mockLyricsState.lines = [
+      line({ time_ms: 1000, text: "line one", words: null }),
+    ];
+
+    const markup = renderToStaticMarkup(<LyricsPanel />);
+
+    expect(markup).toContain('data-lyrics-stage="focus"');
   });
 
   test("keeps lyric utility chrome visible when offset is non-zero", () => {
@@ -551,9 +564,9 @@ describe("LyricsPanel contextual reveal", () => {
     });
 
     const markup = container.innerHTML;
-    expect(markup).toContain("text-[var(--color-lyrics-past)]");
     expect(markup).toContain("text-[var(--color-lyrics-active)]");
-    expect(markup).toContain("text-[var(--color-lyrics-future)]");
+    expect(markup).toContain('data-karaoke-fill="true"');
+    expect(markup).toContain("--bright-mask-alpha");
 
     await act(async () => {
       root.unmount();

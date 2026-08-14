@@ -968,11 +968,9 @@ mod tests {
             lines: vec![LyricLine {
                 time_ms: 1_000,
                 text: "line 1".to_owned(),
-                words: Some(vec![crate::lyrics::parser::WordToken {
-                    time_ms: 1_050,
-                    end_ms: 1_550,
-                    text: "line".to_owned(),
-                }]),
+                words: Some(vec![crate::lyrics::parser::WordToken::new(
+                    1_050, 1_550, "line",
+                )]),
                 bg_words: None,
                 section: None,
                 roman: None,
@@ -1005,11 +1003,9 @@ mod tests {
                 lines: vec![LyricLine {
                     time_ms: 1_000,
                     text: "line 1".to_owned(),
-                    words: Some(vec![crate::lyrics::parser::WordToken {
-                        time_ms: 1_050,
-                        end_ms: 1_550,
-                        text: "line".to_owned(),
-                    }]),
+                    words: Some(vec![crate::lyrics::parser::WordToken::new(
+                        1_050, 1_550, "line",
+                    )]),
                     bg_words: None,
                     section: None,
                     roman: None,

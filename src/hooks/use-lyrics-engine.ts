@@ -30,6 +30,7 @@ export function useLyricsEngine(input: {
   isPlainText: boolean;
   lyricsFontStep: number;
   presentation: "standard" | "audience";
+  focusStage?: boolean;
   songId: string | null | undefined;
   viewportActive: boolean;
   layoutVersion?: string;
@@ -42,6 +43,7 @@ export function useLyricsEngine(input: {
     isPlainText,
     lyricsFontStep,
     presentation,
+    focusStage = false,
     songId,
     viewportActive,
     layoutVersion = "",
@@ -180,6 +182,7 @@ export function useLyricsEngine(input: {
         hasSong: Boolean(playerState.snapshot?.song_id),
         isPlaying: playerState.snapshot?.is_playing ?? false,
         audienceMode: presentation === "audience",
+        focusStage,
       });
 
       rafId = requestAnimationFrame(tick);
@@ -195,6 +198,7 @@ export function useLyricsEngine(input: {
     isPlainText,
     lyricsFontStep,
     presentation,
+    focusStage,
     session,
     songId,
     viewportActive,

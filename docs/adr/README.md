@@ -72,3 +72,5 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0026 — Put AMLL first among online lyrics sources](./0026-put-amll-first-among-online-lyrics-sources.md)
 - [0027 — Upgrade online Line-timed Lyrics only on a confident AMLL match](./0027-upgrade-online-line-timed-lyrics-only-on-a-confident-amll-match.md)
 - [0028 — Do not depend on AGPL AMLL player packages](./0028-do-not-depend-on-agpl-amll-player-packages.md)
+- [0029 — Centered lyrics use an in-house focus stage](./0029-centered-lyrics-use-in-house-focus-stage.md)
+- [0030 — Focus stage owns line slots, word roman, and emphasis](./0030-focus-stage-owns-slots-word-roman-and-emphasis.md)

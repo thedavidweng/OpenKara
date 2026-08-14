@@ -68,10 +68,12 @@ m4a files.
 - **Output:** `src/mock/preview-songs.ts` (self-contained: base64 cover art +
   synced lyrics + MBIDs) and `src/mock/covers/*.jpg` (300×300 downscaled
   JPEGs for human/git inspection)
-- **Lyrics source:** fetched from lrclib.net (`/api/get`) using the embedded
-  title/artist/album/duration tags. Synced lyrics (LRC with real
-  `[mm:ss.xx]` timestamps) are used when available; otherwise the embedded
-  m4a `lyrics` tag is used with pseudo-LRC timestamps as a fallback
+- **Lyrics source:** playlist entries marked `lyrics: "amll"` embed
+  Word-timed TTML from the AMLL API (`/v1/lyrics/search` then
+  `/v1/lyrics/get`), falling back to a local `amll` cache row when the
+  API is unavailable. Other songs use lrclib.net (`/api/get`) synced LRC
+  when available; otherwise the embedded m4a `lyrics` tag is used with
+  pseudo-LRC timestamps as a fallback
 - **Run:** `node scripts/generate-mock-songs.mjs [--media-dir <path>] [--cover-size 300]`
 - **When to run:** after changing the preview playlist
 - **Idempotent:** two consecutive runs produce zero diff in the output files

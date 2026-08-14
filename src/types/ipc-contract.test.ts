@@ -819,6 +819,30 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
     expect(line.roman).toBeNull();
   });
 
+  test("WordToken carries aligned romanization beside text", () => {
+    const withWordRoman: LyricsPayload = {
+      song_id: "abc123",
+      lines: [
+        {
+          time_ms: 1000,
+          text: "君の",
+          words: [
+            { time_ms: 1000, end_ms: 1500, text: "君", roman: "kimi" },
+            { time_ms: 1500, end_ms: 2000, text: "の", roman: "no" },
+          ],
+          bg_words: null,
+          section: null,
+          roman: "kimi no",
+        },
+      ],
+      source: "amll",
+      offset_ms: 0,
+      raw_lrc: "",
+    };
+    expect(withWordRoman.lines[0].words?.[0]?.roman).toBe("kimi");
+    expect(withWordRoman.lines[0].words?.[1]?.roman).toBe("no");
+  });
+
   test("LyricLine carries supplied romanization beside section", () => {
     const withRoman: LyricsPayload = {
       song_id: "abc123",

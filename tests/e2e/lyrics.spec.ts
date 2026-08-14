@@ -57,3 +57,18 @@ test.describe("Lyrics display", () => {
     await expect(viewport).toBeVisible();
   });
 });
+
+test.describe("AMLL preview song", () => {
+  test("One Last Kiss plays Word-timed Japanese lyrics from the shared catalog", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByText("One Last Kiss")).toBeVisible();
+    await page.getByRole("button", { name: "One Last Kiss" }).dblclick();
+    await expect(page.getByText("初めてのルーブルは")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText("忘れられない人").first()).toBeVisible();
+    await expect(page.locator("[data-karaoke-fill]").first()).toBeVisible();
+  });
+});

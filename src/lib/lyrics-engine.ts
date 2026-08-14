@@ -327,6 +327,7 @@ export interface LyricsEngineFrameInput {
   hasSong: boolean;
   isPlaying: boolean;
   audienceMode?: boolean;
+  focusStage?: boolean;
 }
 
 export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
@@ -344,6 +345,7 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     hasSong,
     isPlaying,
     audienceMode = false,
+    focusStage = false,
   } = input;
 
   const adjustedMs = session.toAdjustedMs(positionMs);
@@ -361,6 +363,8 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     isPlaying,
     dt,
     isPlainText,
+    stage: focusStage ? "focus" : "list",
+    viewportEl: container,
   });
 
   if (isPlainText || !container || lines.length === 0) {

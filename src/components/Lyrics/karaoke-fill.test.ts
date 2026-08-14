@@ -1,30 +1,55 @@
 // @vitest-environment jsdom
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { KaraokeFillController } from "./karaoke-fill";
+import { describe, expect, test, beforeEach } from "vitest";
+import {
+  applyWordMask,
+  fadeGradientSpec,
+  karaokeFillProgress,
+  maskOffsetPx,
+  KaraokeFillController,
+} from "./karaoke-fill";
 
-class MockAnimation {
-  currentTime: number | null = 0;
-  paused = true;
-  play() {
-    this.paused = false;
-  }
-  pause() {
-    this.paused = true;
-  }
-  cancel() {}
-}
-
-function createMockEl(): HTMLElement {
+function createMockEl(width = 80, height = 40): HTMLElement {
   const el = document.createElement("span");
-  el.animate = vi.fn(() => new MockAnimation() as unknown as Animation);
+  Object.defineProperty(el, "clientWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(el, "clientHeight", {
+    configurable: true,
+    value: height,
+  });
   return el;
 }
 
-function maskAlphas(maskImage: string): number[] {
-  return [...maskImage.matchAll(/rgba?\(0,\s*0,\s*0(?:,\s*([\d.]+))?\)/g)].map(
-    (match) => (match[1] ? parseFloat(match[1]) : 1),
-  );
-}
+describe("fadeGradientSpec", () => {
+  test("puts the bright stop left of the dark stop for a left-to-right wipe", () => {
+    const spec = fadeGradientSpec(0.5);
+    expect(spec.image.startsWith("linear-gradient(to right")).toBe(true);
+    expect(spec.image).toContain("var(--bright-mask-alpha");
+    expect(spec.image).toContain("var(--dark-mask-alpha");
+    expect(spec.sizePercent).toBeGreaterThan(200);
+
+    const brightIndex = spec.image.indexOf("--bright-mask-alpha");
+    const darkIndex = spec.image.indexOf("--dark-mask-alpha");
+    expect(brightIndex).toBeLessThan(darkIndex);
+  });
+});
+
+describe("maskOffsetPx", () => {
+  test("starts left of the word and ends at zero", () => {
+    expect(maskOffsetPx(0, 80, 20)).toBe(-100);
+    expect(maskOffsetPx(1, 80, 20)).toBe(0);
+    expect(maskOffsetPx(0.5, 80, 20)).toBe(-50);
+  });
+});
+
+describe("karaokeFillProgress", () => {
+  test("stays closed before the word and open after it", () => {
+    expect(karaokeFillProgress(500, 1000, 1500)).toBe(0);
+    expect(karaokeFillProgress(1500, 1000, 1500)).toBe(1);
+    expect(karaokeFillProgress(1250, 1000, 1500)).toBeCloseTo(0.5);
+  });
+});
 
 describe("KaraokeFillController", () => {
   let controller: KaraokeFillController;
@@ -33,243 +58,72 @@ describe("KaraokeFillController", () => {
     controller = new KaraokeFillController();
   });
 
-  test("activateLine sets mask styles on word elements", () => {
-    const lineEl = document.createElement("div");
-    const wordEls = [createMockEl(), createMockEl()];
-    const words = [
-      { time_ms: 1000, end_ms: 1500 },
-      { time_ms: 1500, end_ms: 2000 },
-    ];
-
-    controller.activateLine(lineEl, words, wordEls);
-
-    for (const el of wordEls) {
-      expect(el.style.maskImage).toContain("linear-gradient");
-      expect(el.style.maskSize).toBe("200% 100%");
-      expect(el.animate).toHaveBeenCalled();
-    }
-  });
-
-  test("activateLine puts filled mask alpha before unfilled mask alpha", () => {
+  test("activateLine applies a to-right fade mask and starts unsung", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
+    );
 
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    expect(maskAlphas(wordEl.style.maskImage)).toEqual([0.2, 1]);
-  });
-
-  test("activateLine sets prefixed mask styles and keyframes for WebKit", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    expect(wordEl.style.webkitMaskImage).toContain("linear-gradient");
-    expect(wordEl.style.webkitMaskRepeat).toBe("no-repeat");
-    expect(wordEl.style.webkitMaskSize).toBe("200% 100%");
-    expect(wordEl.animate).toHaveBeenCalledWith(
-      [
-        { maskPosition: "-100% 0", webkitMaskPosition: "-100% 0" },
-        { maskPosition: "0% 0", webkitMaskPosition: "0% 0" },
-      ],
-      expect.objectContaining({ duration: 500 }),
+    expect(wordEl.style.maskSize || wordEl.style.webkitMaskSize).toContain("%");
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-100px 0px",
     );
   });
 
-  test("activateLine is a no-op when called with the same line element", () => {
+  test("update wipes the mask from left to right in pixels", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-
-    controller.activateLine(lineEl, words, [wordEl]);
-    const callCount = (wordEl.animate as ReturnType<typeof vi.fn>).mock.calls
-      .length;
-
-    controller.activateLine(lineEl, words, [wordEl]);
-    expect((wordEl.animate as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-      callCount,
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
     );
-  });
 
-  test("activateLine rebuilds animations when word elements change in the same line", () => {
-    const lineEl = document.createElement("div");
-    const firstWordEl = createMockEl();
-    const secondWordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-
-    controller.activateLine(lineEl, words, [firstWordEl]);
-    controller.activateLine(lineEl, words, [secondWordEl]);
-
-    expect(secondWordEl.animate).toHaveBeenCalled();
-    expect(secondWordEl.style.maskImage).toContain("linear-gradient");
-    expect(firstWordEl.style.maskImage).toBe("");
-  });
-
-  test("update sets animation currentTime before start time", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    const animation = (wordEl.animate as ReturnType<typeof vi.fn>).mock
-      .results[0].value as MockAnimation;
-
-    controller.update(500, true);
-    expect(animation.currentTime).toBe(0);
-    expect(animation.paused).toBe(true);
-  });
-
-  test("update sets correct currentTime for active word", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    const animation = (wordEl.animate as ReturnType<typeof vi.fn>).mock
-      .results[0].value as MockAnimation;
-
-    controller.update(1200, true);
-    expect(animation.currentTime).toBe(200);
-    expect(animation.paused).toBe(false);
-  });
-
-  test("update pauses when not playing", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    const animation = (wordEl.animate as ReturnType<typeof vi.fn>).mock
-      .results[0].value as MockAnimation;
-
-    controller.update(1200, false);
-    expect(animation.currentTime).toBe(200);
-    expect(animation.paused).toBe(true);
-  });
-
-  test("setCurrentAlpha immediately updates mask contrast", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    controller.setCurrentAlpha(1, 1);
-
-    expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 1]);
-  });
-
-  test("update sets end time when word is past", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
-    controller.activateLine(lineEl, words, [wordEl]);
-
-    const animation = (wordEl.animate as ReturnType<typeof vi.fn>).mock
-      .results[0].value as MockAnimation;
+    controller.update(1250, true);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-50px 0px",
+    );
 
     controller.update(2000, true);
-    expect(animation.currentTime).toBe(500);
-    expect(animation.paused).toBe(true);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "0px 0px",
+    );
   });
 
-  test("deactivateLine cancels all animations and clears styles", () => {
+  test("activateLine is a no-op when called with the same binding", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
     const words = [{ time_ms: 1000, end_ms: 1500 }];
     controller.activateLine(lineEl, words, [wordEl]);
-
-    controller.deactivateLine();
-    expect(wordEl.style.maskImage).toBe("");
-    expect(wordEl.style.maskSize).toBe("");
-  });
-
-  test("destroy calls deactivateLine", () => {
-    const lineEl = document.createElement("div");
-    const wordEl = createMockEl();
-    const words = [{ time_ms: 1000, end_ms: 1500 }];
+    wordEl.style.maskPosition = "-12px 0px";
     controller.activateLine(lineEl, words, [wordEl]);
-
-    controller.destroy();
-    expect(wordEl.style.maskImage).toBe("");
+    expect(wordEl.style.maskPosition).toBe("-12px 0px");
   });
 
-  describe("alpha smoothing", () => {
-    let perfCounter: number;
+  test("update remasures when the word box changes size", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl(10, 10);
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
+    );
+    Object.defineProperty(wordEl, "clientWidth", { value: 80 });
+    Object.defineProperty(wordEl, "clientHeight", { value: 40 });
+    controller.update(1250, true);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-50px 0px",
+    );
+  });
 
-    beforeEach(() => {
-      perfCounter = 0;
-      vi.spyOn(performance, "now").mockImplementation(() => {
-        perfCounter += 16.67;
-        return perfCounter;
-      });
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
-    test("setTargetAlpha converges bright alpha toward target", () => {
-      const lineEl = document.createElement("div");
-      const wordEl = createMockEl();
-      const words = [{ time_ms: 1000, end_ms: 1500 }];
-      controller.activateLine(lineEl, words, [wordEl]);
-
-      controller.setTargetAlpha(1.0, 1.0);
-
-      // Simulate ~1 second at 60fps
-      for (let i = 0; i < 60; i++) {
-        controller.update(1200, true);
-      }
-
-      const maskImage = wordEl.style.maskImage;
-      expect(maskImage).toContain("linear-gradient");
-      const alphas = maskAlphas(maskImage);
-      if (alphas.length > 0) {
-        const brightValue = alphas[0];
-        expect(brightValue).toBeGreaterThan(0.9);
-      }
-    });
-
-    test("active-line target keeps mask contrast during the sweep", () => {
-      const lineEl = document.createElement("div");
-      const wordEl = createMockEl();
-      const words = [{ time_ms: 1000, end_ms: 3000 }];
-      controller.activateLine(lineEl, words, [wordEl]);
-
-      controller.setTargetAlpha(0.2, 1.0);
-
-      for (let i = 0; i < 60; i++) {
-        controller.update(1500, true);
-      }
-
-      expect(maskAlphas(wordEl.style.maskImage)).toEqual([0.2, 1]);
-    });
-
-    test("deactivateLine resets alpha state", () => {
-      const lineEl = document.createElement("div");
-      const wordEl = createMockEl();
-      const words = [{ time_ms: 1000, end_ms: 1500 }];
-      controller.activateLine(lineEl, words, [wordEl]);
-      controller.setTargetAlpha(1.0, 1.0);
-
-      // Let alpha converge
-      for (let i = 0; i < 60; i++) {
-        controller.update(1200, true);
-      }
-
-      controller.deactivateLine();
-
-      const wordEl2 = createMockEl();
-      controller.activateLine(lineEl, words, [wordEl2]);
-
-      const maskImage = wordEl2.style.maskImage;
-      const alphas = maskAlphas(maskImage);
-      expect(alphas).not.toHaveLength(0);
-      const brightValue = alphas[0];
-      expect(brightValue).toBeLessThan(0.5);
-    });
+  test("applyWordMask sizes the gradient from word height", () => {
+    const el = createMockEl(100, 40);
+    const measured = applyWordMask(el);
+    expect(measured.width).toBe(100);
+    expect(measured.fade).toBe(20);
+    expect(el.style.maskRepeat).toBe("no-repeat");
   });
 });

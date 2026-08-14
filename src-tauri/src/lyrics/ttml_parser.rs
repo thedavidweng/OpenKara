@@ -28,6 +28,38 @@ fn nonempty_trimmed(text: &str) -> Option<String> {
     }
 }
 
+fn append_word_roman(word: Option<&mut WordToken>, text: &str) {
+    let Some(word) = word else {
+        return;
+    };
+    let piece = text.trim();
+    if piece.is_empty() {
+        return;
+    }
+    match &mut word.roman {
+        Some(existing) => {
+            existing.push(' ');
+            existing.push_str(piece);
+        }
+        None => word.roman = Some(piece.to_owned()),
+    }
+}
+
+fn joined_word_romans(words: &[WordToken]) -> Option<String> {
+    if words.is_empty() {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(words.len());
+    for word in words {
+        let roman = word.roman.as_deref()?.trim();
+        if roman.is_empty() {
+            return None;
+        }
+        parts.push(roman);
+    }
+    Some(parts.join(" "))
+}
+
 fn attr_key_matches(key: &str, local: &str) -> bool {
     key == local
         || key
@@ -44,7 +76,14 @@ struct TransliterationSidecar {
     in_text: bool,
     text_for: String,
     text_buf: String,
-    chosen: HashMap<String, (bool, String)>,
+    text_parts: Vec<String>,
+    chosen: HashMap<String, SidecarRoman>,
+}
+
+struct SidecarRoman {
+    is_latn: bool,
+    line: String,
+    parts: Vec<String>,
 }
 
 impl TransliterationSidecar {
@@ -77,6 +116,7 @@ impl TransliterationSidecar {
                 self.in_text = true;
                 self.text_for.clear();
                 self.text_buf.clear();
+                self.text_parts.clear();
                 for attr in start.attributes().flatten() {
                     let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                     if attr_key_matches(key, "for") {
@@ -113,6 +153,10 @@ impl TransliterationSidecar {
             return;
         }
         self.text_buf.push_str(text);
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            self.text_parts.push(trimmed.to_owned());
+        }
     }
 
     fn commit_text(&mut self) {
@@ -122,17 +166,42 @@ impl TransliterationSidecar {
             return;
         }
         match self.chosen.get(key) {
-            Some((true, _)) => {}
-            Some((false, _)) if !self.track_is_latn => {}
+            Some(existing) if existing.is_latn => {}
+            Some(existing) if !existing.is_latn && !self.track_is_latn => {}
             _ => {
-                self.chosen
-                    .insert(key.to_owned(), (self.track_is_latn, text.to_owned()));
+                self.chosen.insert(
+                    key.to_owned(),
+                    SidecarRoman {
+                        is_latn: self.track_is_latn,
+                        line: text.to_owned(),
+                        parts: self.text_parts.clone(),
+                    },
+                );
             }
         }
     }
 
     fn apply(self, lines: &mut [LyricLine], keys: &[Option<String>]) {
         for (line, key) in lines.iter_mut().zip(keys) {
+            let Some(key) = key.as_deref() else {
+                continue;
+            };
+            let Some(sidecar) = self.chosen.get(key) else {
+                continue;
+            };
+            if let Some(words) = line.words.as_mut() {
+                if sidecar.parts.len() == words.len() {
+                    for (word, part) in words.iter_mut().zip(sidecar.parts.iter()) {
+                        if word
+                            .roman
+                            .as_deref()
+                            .map_or(true, |roman| roman.trim().is_empty())
+                        {
+                            word.roman = Some(part.clone());
+                        }
+                    }
+                }
+            }
             if line
                 .roman
                 .as_deref()
@@ -140,12 +209,7 @@ impl TransliterationSidecar {
             {
                 continue;
             }
-            let Some(key) = key.as_deref() else {
-                continue;
-            };
-            if let Some((_, roman)) = self.chosen.get(key) {
-                line.roman = Some(roman.clone());
-            }
+            line.roman = Some(sidecar.line.clone());
         }
     }
 }
@@ -318,7 +382,17 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                 }
 
                 if in_roman_span {
-                    if !in_bg_span && !is_pretty_print_space(&text) {
+                    if is_pretty_print_space(&text) {
+                        continue;
+                    }
+                    let word_level = current_span_begin.is_some();
+                    if in_bg_span {
+                        append_word_roman(bg_words.last_mut(), &text);
+                        continue;
+                    }
+                    if word_level {
+                        append_word_roman(words.last_mut(), &text);
+                    } else {
                         roman_buf.push_str(&text);
                     }
                     continue;
@@ -332,20 +406,20 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
 
                 if in_bg_span {
                     if let Some(begin) = current_span_begin {
-                        bg_words.push(WordToken {
-                            time_ms: begin,
-                            end_ms: current_span_end.unwrap_or(begin + 500),
-                            text: text.trim().to_string(),
-                        });
+                        bg_words.push(WordToken::new(
+                            begin,
+                            current_span_end.unwrap_or(begin + 500),
+                            text.trim(),
+                        ));
                     }
                 } else if !line_timing_mode {
                     text_buf.push_str(&text);
                     if let Some(begin) = current_span_begin {
-                        words.push(WordToken {
-                            time_ms: begin,
-                            end_ms: current_span_end.unwrap_or(begin + 500),
-                            text: text.trim().to_string(),
-                        });
+                        words.push(WordToken::new(
+                            begin,
+                            current_span_end.unwrap_or(begin + 500),
+                            text.trim(),
+                        ));
                         word_has_explicit_end.push(current_span_end.is_some());
                     }
                 } else {
@@ -385,7 +459,8 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                             Some(bg_words.clone())
                                         },
                                         section: current_section.clone(),
-                                        roman: nonempty_trimmed(&roman_buf),
+                                        roman: nonempty_trimmed(&roman_buf)
+                                            .or_else(|| joined_word_romans(&words)),
                                     });
                                     line_keys.push(p_key.take());
                                 }
@@ -836,16 +911,8 @@ mod tests {
         assert_eq!(
             words,
             &vec![
-                WordToken {
-                    time_ms: 10_000,
-                    end_ms: 11_000,
-                    text: "Hello".to_owned(),
-                },
-                WordToken {
-                    time_ms: 10_000,
-                    end_ms: 11_000,
-                    text: "world".to_owned(),
-                }
+                WordToken::new(10_000, 11_000, "Hello"),
+                WordToken::new(10_000, 11_000, "world"),
             ]
         );
     }
@@ -987,7 +1054,68 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].text, "漢字");
         assert_eq!(lines[0].roman.as_deref(), Some("kanji"));
-        assert!(lines[0].bg_words.is_some());
+        let bg = lines[0].bg_words.as_ref().expect("should keep bg words");
+        assert_eq!(bg[0].text, "和");
+        assert_eq!(bg[0].roman.as_deref(), Some("wa"));
+        assert!(lines[0]
+            .words
+            .as_ref()
+            .is_some_and(|words| { words.iter().all(|word| word.roman.is_none()) }));
+    }
+
+    #[test]
+    fn parse_ttml_attaches_inline_x_roman_to_the_timed_word() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:11.000">君<span ttm:role="x-roman">kimi</span></span>
+        <span begin="00:11.000" end="00:12.000">の<span ttm:role="x-roman">no</span></span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines[0].text, "君の");
+        assert_eq!(lines[0].roman.as_deref(), Some("kimi no"));
+        let words = lines[0].words.as_ref().expect("should keep word timing");
+        assert_eq!(words[0].roman.as_deref(), Some("kimi"));
+        assert_eq!(words[1].roman.as_deref(), Some("no"));
+    }
+
+    #[test]
+    fn parse_ttml_sidecar_spans_fill_word_romans() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <head>
+    <metadata>
+      <iTunesMetadata>
+        <transliterations>
+          <transliteration xml:lang="ja-Latn">
+            <text for="L1"><span>kimi</span><span>no</span></text>
+          </transliteration>
+        </transliterations>
+      </iTunesMetadata>
+    </metadata>
+  </head>
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000" itunes:key="L1">
+        <span begin="00:10.000" end="00:11.000">君</span>
+        <span begin="00:11.000" end="00:12.000">の</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        let words = lines[0].words.as_ref().expect("should keep word timing");
+        assert_eq!(words[0].roman.as_deref(), Some("kimi"));
+        assert_eq!(words[1].roman.as_deref(), Some("no"));
+        assert_eq!(lines[0].roman.as_deref(), Some("kimino"));
     }
 
     #[test]

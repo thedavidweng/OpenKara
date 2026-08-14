@@ -42,7 +42,7 @@ test.describe("Library sort modes", () => {
       "ALL THE LOVE",
     );
 
-    // All 6 songs fit in the 800px viewport, so verify full order via hash.
+    // All catalog songs fit in the 800px viewport, so verify full order via hash.
     const hashes = await songList
       .locator("[data-song-hash]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-song-hash")));
@@ -51,6 +51,7 @@ test.describe("Library sort modes", () => {
       "counting-stars", // Counting Stars
       "earfquake", // Earfquake
       "feel-good-inc", // Feel Good Inc.
+      "one-last-kiss", // One Last Kiss
       "see-you-again", // See You Again (feat. Kali Uchis)
       "three-empty-words", // Three Empty Words
     ]);
@@ -71,6 +72,7 @@ test.describe("Library sort modes", () => {
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-song-hash")));
     expect(hashes).toEqual([
       "feel-good-inc", // Feel Good Inc. / Gorillaz
+      "one-last-kiss", // One Last Kiss / Hikaru Utada
       "counting-stars", // Counting Stars / OneRepublic
       "three-empty-words", // Three Empty Words / Shawn Mendes
       "earfquake", // Earfquake / Tyler, The Creator

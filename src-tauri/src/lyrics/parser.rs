@@ -6,6 +6,19 @@ pub struct WordToken {
     pub time_ms: u64,
     pub end_ms: u64,
     pub text: String,
+    #[serde(default)]
+    pub roman: Option<String>,
+}
+
+impl WordToken {
+    pub fn new(time_ms: u64, end_ms: u64, text: impl Into<String>) -> Self {
+        Self {
+            time_ms,
+            end_ms,
+            text: text.into(),
+            roman: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,11 +137,11 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
                         let word_end = rest.find('<').unwrap_or(rest.len());
                         let word_text = &rest[..word_end];
                         plain.push_str(word_text);
-                        tokens.push(WordToken {
+                        tokens.push(WordToken::new(
                             time_ms,
-                            end_ms: time_ms, // will be fixed by fixup loop
-                            text: word_text.to_owned(),
-                        });
+                            time_ms, // will be fixed by fixup loop
+                            word_text.to_owned(),
+                        ));
                         remaining = &rest[word_end..];
                         continue;
                     }
@@ -254,21 +267,9 @@ mod tests {
         assert_eq!(
             line.words,
             Some(vec![
-                WordToken {
-                    time_ms: 12_000,
-                    end_ms: 12_300,
-                    text: "I ".to_owned(),
-                },
-                WordToken {
-                    time_ms: 12_300,
-                    end_ms: 12_600,
-                    text: "see ".to_owned(),
-                },
-                WordToken {
-                    time_ms: 12_600,
-                    end_ms: 13_100,
-                    text: "trees".to_owned(),
-                },
+                WordToken::new(12_000, 12_300, "I "),
+                WordToken::new(12_300, 12_600, "see "),
+                WordToken::new(12_600, 13_100, "trees"),
             ])
         );
     }
@@ -316,6 +317,14 @@ mod tests {
         assert_eq!(meta.title.as_deref(), Some("Let It Be"));
         assert_eq!(meta.album.as_deref(), Some("Let It Be"));
         assert_eq!(meta.offset_ms, Some(-500));
+    }
+
+    #[test]
+    fn word_token_serializes_absent_roman_as_null() {
+        let json = serde_json::to_value(WordToken::new(0, 100, "Look"))
+            .expect("word token should serialize");
+        assert_eq!(json["roman"], serde_json::Value::Null);
+        assert_eq!(json["text"], "Look");
     }
 
     #[test]

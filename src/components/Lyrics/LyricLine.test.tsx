@@ -18,8 +18,6 @@ const { mockPlayerState, mockSeek } = vi.hoisted(() => ({
 const { mockControllerInstances } = vi.hoisted(() => ({
   mockControllerInstances: [] as Array<{
     activateLine: ReturnType<typeof vi.fn>;
-    setTargetAlpha: ReturnType<typeof vi.fn>;
-    setCurrentAlpha: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     deactivateLine: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
@@ -36,11 +34,13 @@ vi.mock("@/stores/player-store", () => ({
 }));
 
 vi.mock("./karaoke-fill", () => ({
+  INACTIVE_MASK_ALPHA: 0.2,
+  ACTIVE_BRIGHT_ALPHA: 1,
+  ACTIVE_DARK_ALPHA: 0.4,
+  applyWordMask: vi.fn(() => ({ width: 80, fade: 20 })),
   KaraokeFillController: vi.fn().mockImplementation(function () {
     const controller = {
       activateLine: vi.fn(),
-      setTargetAlpha: vi.fn(),
-      setCurrentAlpha: vi.fn(),
       update: vi.fn(),
       deactivateLine: vi.fn(),
       destroy: vi.fn(),
@@ -171,9 +171,10 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-lyrics-past)]");
     expect(markup).toContain("text-[var(--color-lyrics-active)]");
-    expect(markup).toContain("text-[var(--color-lyrics-future)]");
+    expect(markup).toContain('data-karaoke-fill="true"');
+    expect(markup).toContain("--bright-mask-alpha");
+    expect(markup).toContain("--dark-mask-alpha");
   });
 
   test("uses the configured font scale without changing the lyric state logic", () => {
@@ -247,7 +248,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("translateY(8px)");
+    expect(markup).toContain("height:0");
+    expect(markup).toContain("visibility:hidden");
   });
 
   test("does not render duplicate main text for bg-only lines", () => {
@@ -274,7 +276,7 @@ describe("LyricLine", () => {
     expect(markup.match(/Up/g)).toHaveLength(1);
   });
 
-  test("keeps active karaoke fill alpha contrast instead of collapsing the mask", async () => {
+  test("keeps dim word text visible under the highlight overlay on the active line", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -301,14 +303,8 @@ describe("LyricLine", () => {
     });
 
     expect(mockControllerInstances).toHaveLength(1);
-    expect(mockControllerInstances[0].setTargetAlpha).toHaveBeenCalledWith(
-      0.2,
-      1.0,
-    );
-    expect(mockControllerInstances[0].setTargetAlpha).not.toHaveBeenCalledWith(
-      1.0,
-      1.0,
-    );
+    expect(mockControllerInstances[0].activateLine).toHaveBeenCalled();
+    expect(container.querySelectorAll("[data-karaoke-fill]")).toHaveLength(2);
 
     await act(async () => {
       root.unmount();
@@ -316,7 +312,7 @@ describe("LyricLine", () => {
     container.remove();
   });
 
-  test("keeps the karaoke controller when an active line becomes past", async () => {
+  test("deactivates karaoke fill when an active line becomes past", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -351,8 +347,10 @@ describe("LyricLine", () => {
     });
 
     expect(mockControllerInstances).toHaveLength(1);
+    expect(controller.deactivateLine).toHaveBeenCalled();
     expect(controller.destroy).not.toHaveBeenCalled();
-    expect(controller.setCurrentAlpha).toHaveBeenLastCalledWith(1.0, 1.0);
+    expect(container.querySelectorAll("[data-karaoke-fill]")).toHaveLength(2);
+    expect(container.innerHTML).toContain("--bright-mask-alpha: 0.2");
 
     await act(async () => {
       root.unmount();
@@ -409,7 +407,7 @@ describe("LyricLine", () => {
     container.remove();
   });
 
-  test("rebinds karaoke fill when emphasis rendering swaps word elements", async () => {
+  test("does not rebuild karaoke fill when only the active word index changes", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -437,6 +435,7 @@ describe("LyricLine", () => {
       );
     });
     const controller = mockControllerInstances[0];
+    const activateCount = controller.activateLine.mock.calls.length;
 
     await act(async () => {
       root.render(
@@ -450,7 +449,7 @@ describe("LyricLine", () => {
       );
     });
 
-    expect(controller.activateLine).toHaveBeenCalledTimes(2);
+    expect(controller.activateLine.mock.calls.length).toBe(activateCount);
 
     await act(async () => {
       root.unmount();
@@ -506,7 +505,7 @@ describe("LyricLine", () => {
     container.remove();
   });
 
-  test("renders emphasis words with whole-word glow animation", () => {
+  test("renders emphasis words with a highlight overlay instead of hiding the base text", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         lineIndex={0}
@@ -527,14 +526,12 @@ describe("LyricLine", () => {
       />,
     );
 
-    // "你好" is active with duration 1500ms (>=1000) and CJK → emphasis
-    expect(markup).toContain("lyric-char-glow");
-    expect(markup).toContain("inline-block");
-    // Must stay one box — per-character splits reflow mid-line and yank scroll.
-    expect(markup).not.toMatch(/animation-delay/);
+    expect(markup).toContain('data-karaoke-fill="true"');
+    expect(markup).toContain("lyric-word-emphasize");
+    expect(markup).not.toContain("lyric-char-glow");
   });
 
-  test("renders last word with amplified glow animation", () => {
+  test("renders last word with amplified glow on the highlight overlay", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         lineIndex={0}
@@ -555,8 +552,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    // "世界" is active, last word, duration 1500ms, CJK → lyric-char-glow-last
-    expect(markup).toContain("lyric-char-glow-last");
+    expect(markup).toContain('data-karaoke-fill="true"');
+    expect(markup).toContain("lyric-word-emphasize-last");
   });
 
   test("renders past line words with dimmer text color", () => {
@@ -579,7 +576,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-lyrics-past)]");
+    expect(markup).toContain("--bright-mask-alpha:0.2");
+    expect(markup).toContain("--dark-mask-alpha:0.2");
   });
 
   test("renders future line words with active text color", () => {
@@ -602,7 +600,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-lyrics-future)]");
+    expect(markup).toContain("--bright-mask-alpha:0.2");
+    expect(markup).toContain("--dark-mask-alpha:0.2");
   });
 
   test("renders audience presentation with bg_words", () => {
@@ -648,12 +647,11 @@ describe("LyricLine", () => {
       />,
     );
 
-    // "friend" is active, last word → the semantic amplified glow token.
     expect(markup).toContain("text-[var(--color-lyrics-active)]");
-    expect(markup).toContain("var(--shadow-lyrics-glow-strong)");
+    expect(markup).toContain('data-karaoke-fill="true"');
   });
 
-  test("scales romanized pronunciation line with lyricsFontStep in standard mode", () => {
+  test("scales centered roman with the line viewport size, not a rem step on the button", () => {
     const line = {
       time_ms: 1000,
       text: "你好世界",
@@ -673,6 +671,7 @@ describe("LyricLine", () => {
         state="active"
         lyricsFontStep={-2}
         romanizedText="ni hao shi jie"
+        alignment="center"
       />,
     );
     const largeStep = renderToStaticMarkup(
@@ -682,17 +681,150 @@ describe("LyricLine", () => {
         state="active"
         lyricsFontStep={2}
         romanizedText="ni hao shi jie"
+        alignment="center"
       />,
     );
 
-    expect(smallStep).toContain("text-xs");
-    expect(smallStep).not.toContain("md:text-base");
-    // Largest step grows the secondary track past the old fixed text-sm/md:text-base.
-    expect(largeStep).toContain("text-lg");
-    expect(largeStep).toContain("xl:text-3xl");
+    expect(smallStep).toContain("max(max(5vh, 2.5vw), 12px) * 0.76");
+    expect(largeStep).toContain("max(max(5vh, 2.5vw), 12px) * 1.28");
+    expect(smallStep).toContain("max(0.5em, 10px)");
+    expect(smallStep).toContain('data-lyrics-roman="true"');
+    expect(smallStep).not.toContain("text-[0.5em]");
   });
 
-  test("scales bg_words line with lyricsFontStep in standard mode", () => {
+  test("scales left-aligned roman with lyricsFontStep in standard mode", () => {
+    const line = {
+      time_ms: 1000,
+      text: "你好世界",
+      words: [
+        { text: "你好", time_ms: 1000, end_ms: 1500 },
+        { text: "世界", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+      roman: null,
+    };
+
+    const smallStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={-2}
+        romanizedText="ni hao shi jie"
+        alignment="left"
+      />,
+    );
+    const largeStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={2}
+        romanizedText="ni hao shi jie"
+        alignment="left"
+      />,
+    );
+
+    expect(smallStep).toContain("text-base");
+    expect(largeStep).toContain("text-3xl");
+    expect(largeStep).toContain("xl:text-5xl");
+  });
+
+  test("keeps centered roman under the main line and above background words", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "忘れられない人",
+          words: [{ text: "忘れられない人", time_ms: 1000, end_ms: 2000 }],
+          bg_words: [
+            {
+              text: "(I love you more than you'll ever know)",
+              time_ms: 1000,
+              end_ms: 2000,
+            },
+          ],
+          section: null,
+          roman: "wasurerarenai hito",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="wasurerarenai hito"
+        alignment="center"
+      />,
+    );
+
+    const romanAt = markup.indexOf("data-lyrics-roman");
+    const bgAt = markup.indexOf("I love you more");
+    const mainAt = markup.indexOf("忘れられない人");
+    expect(romanAt).toBeGreaterThan(mainAt);
+    expect(bgAt).toBeGreaterThan(romanAt);
+    expect(markup).toContain("max(0.5em, 10px)");
+    expect(markup).toContain("max(0.7em, 10px)");
+    expect(markup).toContain('data-lyrics-bg="true"');
+    expect(markup).not.toContain("text-[0.5em]");
+  });
+
+  test("puts aligned roman under each word and hides the line sub-row", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "君の",
+          words: [
+            { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+            { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+          ],
+          bg_words: [
+            {
+              text: "(harmony)",
+              time_ms: 1000,
+              end_ms: 2000,
+            },
+          ],
+          section: null,
+          roman: "kimi no",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="center"
+      />,
+    );
+
+    expect(markup).toContain('data-word-roman="true"');
+    expect(markup).toContain("kimi");
+    expect(markup).toContain("no");
+    expect(markup).not.toContain('data-lyrics-roman="true"');
+    expect(markup.indexOf("kimi")).toBeLessThan(markup.indexOf("(harmony)"));
+  });
+
+  test("does not render supplied word roman until romanized text is enabled", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "君",
+          words: [{ text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" }],
+          bg_words: null,
+          section: null,
+          roman: "kimi",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        alignment="center"
+      />,
+    );
+
+    expect(markup).not.toContain('data-word-roman="true"');
+    expect(markup).not.toContain('data-lyrics-roman="true"');
+  });
+
+  test("scales left-aligned bg_words with lyricsFontStep in standard mode", () => {
     const line = {
       time_ms: 1000,
       text: "main line",
@@ -712,6 +844,7 @@ describe("LyricLine", () => {
         state="active"
         activeWordIndex={1}
         lyricsFontStep={-2}
+        alignment="left"
       />,
     );
     const largeStep = renderToStaticMarkup(
@@ -721,6 +854,7 @@ describe("LyricLine", () => {
         state="active"
         activeWordIndex={1}
         lyricsFontStep={2}
+        alignment="left"
       />,
     );
 

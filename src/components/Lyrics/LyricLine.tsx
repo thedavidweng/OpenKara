@@ -1,6 +1,12 @@
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { KaraokeFillController } from "./karaoke-fill";
+import {
+  ACTIVE_BRIGHT_ALPHA,
+  ACTIVE_DARK_ALPHA,
+  INACTIVE_MASK_ALPHA,
+  KaraokeFillController,
+  applyWordMask,
+} from "./karaoke-fill";
 import {
   buildAudiencePresentationSpec,
   colorToCss,
@@ -9,6 +15,10 @@ import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { usePlayerStore } from "@/stores/player-store";
 import type { LyricLine as LyricLineType } from "@/types/ipc";
 import {
+  CENTERED_BG_FONT_SIZE,
+  CENTERED_ROMAN_FONT_SIZE,
+  displayWordText,
+  getCenteredLineFontSize,
   getLyricsRomanTextSizeClass,
   getLyricsSecondaryTextSizeClass,
   getLyricsTextSizeClass,
@@ -16,7 +26,9 @@ import {
   hasBackgroundWords,
   isLastWord,
   shouldEmphasizeWord,
+  wordTokenGap,
 } from "./lyric-line-typography";
+import { resolveWordRomans } from "./lyric-word-romans";
 import type { LyricLineState, LyricsPresentation } from "./lyrics-panel-model";
 
 interface LyricLineProps {
@@ -47,6 +59,14 @@ function areLyricLinePropsEqual(
   }
 
   if (previous.state !== "active" && next.state !== "active") {
+    return true;
+  }
+
+  const usesOverlayFill =
+    previous.presentation !== "audience" &&
+    previous.line.words !== null &&
+    previous.line.words.length > 0;
+  if (usesOverlayFill) {
     return true;
   }
 
@@ -81,9 +101,13 @@ export const LyricLine = memo(function LyricLine({
 
   const words = line.words;
   const hasWords = words !== null && words.length > 0;
+  const wordRomans = romanizedText
+    ? resolveWordRomans(words, romanizedText)
+    : null;
+  const hideLineRoman = wordRomans !== null;
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
-  const shouldUseKaraokeFill =
-    state === "active" && hasWords && presentation !== "audience";
+  const hasWordMask = hasWords && presentation !== "audience";
+  const shouldUseKaraokeFill = state === "active" && hasWordMask;
   const hoverClass = getSeekableHoverClass(presentation, isSeekable);
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
@@ -92,34 +116,34 @@ export const LyricLine = memo(function LyricLine({
   wordsRef.current = words;
 
   useEffect(() => {
+    if (hasWordMask) {
+      for (const el of wordElsRef.current) {
+        if (el) {
+          applyWordMask(el);
+        }
+      }
+    }
+
     if (shouldUseKaraokeFill) {
       if (!karaokeRef.current) {
         karaokeRef.current = new KaraokeFillController();
       }
-      const container = wordElsRef.current[0]?.parentElement;
+      const container = wordElsRef.current[0]?.closest("[data-karaoke-line]");
       const currentWords = wordsRef.current;
-      if (container) {
+      if (container instanceof HTMLElement && currentWords) {
         karaokeRef.current.activateLine(
           container,
-          currentWords!,
+          currentWords,
           wordElsRef.current,
         );
-        karaokeRef.current.setTargetAlpha(0.2, 1.0);
       }
       lyricsLineRuntime.registerKaraoke(lineIndex, karaokeRef.current);
       return;
     }
 
     lyricsLineRuntime.unregisterKaraoke(lineIndex);
-
-    if (state === "past") {
-      karaokeRef.current?.setCurrentAlpha(1.0, 1.0);
-      return;
-    }
-
-    karaokeRef.current?.setTargetAlpha(0.2, 1.0);
     karaokeRef.current?.deactivateLine();
-  }, [lineIndex, shouldUseKaraokeFill, state, activeWordIndex]);
+  }, [hasWordMask, lineIndex, shouldUseKaraokeFill]);
 
   useEffect(
     () => () => {
@@ -130,20 +154,40 @@ export const LyricLine = memo(function LyricLine({
     [lineIndex],
   );
 
+  const usesCenteredLineType = !isLeftAligned && presentation !== "audience";
+  const showLineRoman = Boolean(romanizedText && !hideLineRoman);
   const lineClassName = isLeftAligned
     ? `grid w-full ${
-        presentation === "audience"
-          ? "grid-cols-[minmax(0,1fr)_auto]"
-          : "grid-cols-[minmax(0,1fr)_220px]"
+        showLineRoman
+          ? presentation === "audience"
+            ? "grid-cols-[minmax(0,1fr)_auto]"
+            : "grid-cols-[minmax(0,1fr)_220px]"
+          : "grid-cols-1"
       } items-baseline gap-x-8 gap-y-1.5 text-left ${
         isSeekable ? "cursor-pointer group/line" : ""
       }`
-    : `flex flex-col items-center gap-1.5 text-center ${
+    : `flex flex-col items-center gap-[0.3em] text-center ${
         isSeekable ? "cursor-pointer group/line" : ""
       }`;
   const lineStyle = {
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+    ...(usesCenteredLineType
+      ? {
+          fontSize: getCenteredLineFontSize(lyricsFontStep),
+          lineHeight: 1.2,
+        }
+      : undefined),
+    ...(hasWordMask
+      ? ({
+          "--bright-mask-alpha": shouldUseKaraokeFill
+            ? String(ACTIVE_BRIGHT_ALPHA)
+            : String(INACTIVE_MASK_ALPHA),
+          "--dark-mask-alpha": shouldUseKaraokeFill
+            ? String(ACTIVE_DARK_ALPHA)
+            : String(INACTIVE_MASK_ALPHA),
+        } as CSSProperties)
+      : undefined),
     ...(presentation === "audience" && !isLeftAligned
       ? {
           transform:
@@ -156,9 +200,12 @@ export const LyricLine = memo(function LyricLine({
 
   const mainText = hasWords ? (
     <span
+      data-karaoke-line={shouldUseKaraokeFill ? "true" : undefined}
       className={(presentation === "audience"
         ? `tracking-tight min-w-0 break-words ${hoverClass}`
-        : `${textSizeClass} min-w-0 break-words ${hoverClass}`
+        : usesCenteredLineType
+          ? `font-semibold tracking-tight min-w-0 break-words ${hoverClass}`
+          : `${textSizeClass} min-w-0 break-words ${hoverClass}`
       ).trim()}
       style={{
         fontWeight: state === "active" ? 500 : 400,
@@ -184,80 +231,101 @@ export const LyricLine = memo(function LyricLine({
                 ? "past"
                 : "future";
 
-        const isActiveWord = wordState === "active";
-
-        if (
+        const gap = wordTokenGap(word.text, line.words![idx + 1]?.text);
+        const wordRoman = wordRomans?.[idx] ?? null;
+        const emphasize =
+          state === "active" &&
           shouldEmphasizeWord(word) &&
-          isActiveWord &&
-          presentation !== "audience"
-        ) {
-          const wordDuration = word.end_ms - word.time_ms;
-          const last = isLastWord(idx, line.words!.length);
+          (idx <= activeWordIndex || activeWordIndex < 0);
+        const emphasizeClass = emphasize
+          ? isLastWord(idx, line.words!.length)
+            ? "lyric-word-emphasize lyric-word-emphasize-last"
+            : "lyric-word-emphasize"
+          : "";
+        const emphasizeStyle = emphasize
+          ? ({
+              "--lyric-emp-ms": `${Math.max(1000, word.end_ms - word.time_ms)}ms`,
+            } as CSSProperties)
+          : undefined;
+        const glyph = displayWordText(word.text);
+        const romanNode = wordRoman ? (
+          <span
+            data-word-roman="true"
+            className="font-medium tracking-wide text-[var(--color-lyrics-active)]"
+            style={{
+              fontSize: "max(0.5em, 10px)",
+              lineHeight: 1.1,
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              opacity: state === "plain" || state === "active" ? 0.5 : 0.3,
+            }}
+          >
+            {wordRoman}
+          </span>
+        ) : null;
+
+        if (hasWordMask) {
           return (
-            <span
-              key={idx}
-              ref={(el) => {
-                if (el) wordElsRef.current[idx] = el;
-              }}
-              className="motion-surface relative inline-block text-[var(--color-lyrics-active)]"
-              style={{
-                textShadow: "var(--shadow-lyrics-glow)",
-                animation: last
-                  ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
-                  : `lyric-char-glow ${wordDuration}ms ease-in-out`,
-              }}
-            >
-              {word.text}
-              {idx < line.words!.length - 1 ? " " : ""}
+            <span key={idx}>
+              <span className="inline-flex flex-col items-center align-bottom">
+                <span
+                  ref={(el) => {
+                    if (el) wordElsRef.current[idx] = el;
+                  }}
+                  data-karaoke-fill="true"
+                  className="motion-surface relative inline-block text-[var(--color-lyrics-active)]"
+                >
+                  <span className={emphasizeClass} style={emphasizeStyle}>
+                    {glyph}
+                  </span>
+                </span>
+                {romanNode}
+              </span>
+              {gap}
             </span>
           );
         }
 
         return (
-          <span
-            key={idx}
-            ref={(el) => {
-              if (el) wordElsRef.current[idx] = el;
-            }}
-            className={
-              presentation === "audience"
-                ? "motion-surface"
-                : `motion-surface relative inline-block ${
-                    wordState === "active"
-                      ? "text-[var(--color-lyrics-active)]"
-                      : wordState === "past"
-                        ? "text-[var(--color-lyrics-past)]"
-                        : "text-[var(--color-lyrics-future)]"
-                  }`
-            }
-            style={{
-              ...(presentation === "audience"
-                ? {
-                    color: colorToCss(
+          <span key={idx}>
+            <span
+              className={
+                presentation === "audience"
+                  ? "motion-surface inline-flex flex-col items-center align-bottom"
+                  : `motion-surface relative inline-flex flex-col items-center align-bottom ${
                       wordState === "active"
-                        ? audiencePresentationSpec.activeTextColor
+                        ? "text-[var(--color-lyrics-active)]"
                         : wordState === "past"
-                          ? audiencePresentationSpec.pastTextColor
-                          : audiencePresentationSpec.futureTextColor,
-                    ),
-                    textShadow:
-                      wordState === "active"
-                        ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
-                            audiencePresentationSpec.activeGlowColor,
-                          )}`
-                        : undefined,
-                  }
-                : isActiveWord
+                          ? "text-[var(--color-lyrics-past)]"
+                          : "text-[var(--color-lyrics-future)]"
+                    }`
+              }
+              style={{
+                ...(presentation === "audience"
                   ? {
-                      textShadow: isLastWord(idx, line.words!.length)
-                        ? "var(--shadow-lyrics-glow-strong)"
-                        : "var(--shadow-lyrics-glow)",
+                      color: colorToCss(
+                        wordState === "active"
+                          ? audiencePresentationSpec.activeTextColor
+                          : wordState === "past"
+                            ? audiencePresentationSpec.pastTextColor
+                            : audiencePresentationSpec.futureTextColor,
+                      ),
+                      textShadow:
+                        wordState === "active"
+                          ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
+                              audiencePresentationSpec.activeGlowColor,
+                            )}`
+                          : undefined,
                     }
                   : undefined),
-            }}
-          >
-            {word.text}
-            {idx < line.words!.length - 1 ? " " : ""}
+              }}
+            >
+              <span className={emphasizeClass} style={emphasizeStyle}>
+                {glyph}
+              </span>
+              {romanNode}
+            </span>
+            {gap}
           </span>
         );
       })}
@@ -266,7 +334,11 @@ export const LyricLine = memo(function LyricLine({
     <span
       className={(presentation === "audience"
         ? `motion-surface font-bold tracking-tight min-w-0 break-words ${hoverClass}`
-        : `motion-surface ${textSizeClass} min-w-0 break-words ${
+        : `motion-surface ${
+            usesCenteredLineType
+              ? "font-semibold tracking-tight"
+              : textSizeClass
+          } min-w-0 break-words ${
             state === "plain" || state === "active"
               ? "text-[var(--color-lyrics-active)]"
               : state === "past"
@@ -303,16 +375,19 @@ export const LyricLine = memo(function LyricLine({
   const bgWords =
     line.bg_words && line.bg_words.length > 0 ? (
       <span
+        data-lyrics-bg="true"
         className={
           presentation === "audience"
             ? "motion-surface font-medium tracking-tight min-w-0 break-words"
-            : `motion-surface ${secondaryTextSizeClass} font-medium min-w-0 break-words ${
-                state === "plain" || state === "active"
-                  ? "text-[var(--color-text-dim)]"
-                  : state === "past"
-                    ? "text-[var(--color-text-dimmer)]"
-                    : "text-[var(--color-text-dim)]"
-              }`
+            : usesCenteredLineType
+              ? "motion-surface font-medium min-w-0 break-words text-[var(--color-lyrics-active)]"
+              : `motion-surface ${secondaryTextSizeClass} font-medium min-w-0 break-words ${
+                  state === "plain" || state === "active"
+                    ? "text-[var(--color-text-dim)]"
+                    : state === "past"
+                      ? "text-[var(--color-text-dimmer)]"
+                      : "text-[var(--color-text-dim)]"
+                }`
         }
         style={{
           ...(presentation === "audience"
@@ -327,10 +402,18 @@ export const LyricLine = memo(function LyricLine({
                       : audiencePresentationSpec.futureTextColor,
                 ),
               }
-            : undefined),
+            : usesCenteredLineType
+              ? {
+                  fontSize: CENTERED_BG_FONT_SIZE,
+                }
+              : undefined),
           transition: "opacity 0.3s ease, transform 0.3s ease",
           opacity: state === "active" ? 0.4 : 0,
-          transform: state === "active" ? "translateY(0)" : "translateY(8px)",
+          transform: state === "active" ? "translateY(0)" : "translateY(0.4em)",
+          visibility: state === "active" ? "visible" : "hidden",
+          height: state === "active" ? "auto" : 0,
+          overflow: "hidden",
+          pointerEvents: state === "active" ? "auto" : "none",
         }}
       >
         {line.bg_words.map((word, idx) => (
@@ -349,75 +432,77 @@ export const LyricLine = memo(function LyricLine({
         ? audiencePresentationSpec.pastTextColor
         : audiencePresentationSpec.futureTextColor;
 
-  const romanText = romanizedText ? (
-    <span
-      className={
-        isLeftAligned
-          ? `motion-surface font-medium tracking-tight min-w-0 break-words ${hoverClass} ${
-              presentation === "standard"
-                ? `${romanTextSizeClass} ${
-                    state === "plain" || state === "active"
-                      ? "text-[var(--color-lyrics-active)]"
-                      : state === "past"
-                        ? "text-[var(--color-lyrics-past)]"
-                        : "text-[var(--color-lyrics-future)]"
-                  }`
-                : ""
-            }`
-          : presentation === "audience"
-            ? "motion-surface font-medium tracking-tight opacity-50"
-            : `motion-surface ${secondaryTextSizeClass} font-medium ${
-                state === "plain" || state === "active"
-                  ? "text-[var(--color-text-dim)]"
-                  : state === "past"
-                    ? "text-[var(--color-text-dimmer)]"
-                    : "text-[var(--color-text-dim)]"
-              }`
-      }
-      style={
-        isLeftAligned
-          ? {
-              ...(presentation === "audience"
-                ? {
-                    fontSize: audiencePresentationSpec.fontSizePx * 0.7,
-                    lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                    color: colorToCss(romanStateColor),
-                    textShadow:
-                      state === "active"
-                        ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
-                            audiencePresentationSpec.activeGlowColor,
-                          )}`
-                        : undefined,
-                    opacity: 0.85,
-                  }
-                : undefined),
-            }
-          : presentation === "audience"
-            ? {
-                fontSize: audiencePresentationSpec.fontSizePx * 0.55,
-                lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                color: colorToCss(romanStateColor),
-                opacity: 0.45,
-              }
-            : undefined
-      }
-    >
-      {romanizedText}
-    </span>
-  ) : null;
-
-  const lineContent = (
-    <>
+  const romanText =
+    romanizedText && !hideLineRoman ? (
       <span
-        className={`flex flex-col ${
-          isLeftAligned ? "min-w-0 break-words" : "items-center"
-        }`}
+        data-lyrics-roman="true"
+        className={
+          isLeftAligned
+            ? `motion-surface font-medium tracking-tight min-w-0 break-words ${hoverClass} ${
+                presentation === "standard"
+                  ? `${romanTextSizeClass} ${
+                      state === "plain" || state === "active"
+                        ? "text-[var(--color-lyrics-active)]"
+                        : state === "past"
+                          ? "text-[var(--color-lyrics-past)]"
+                          : "text-[var(--color-lyrics-future)]"
+                    }`
+                  : ""
+              }`
+            : presentation === "audience"
+              ? "motion-surface font-medium tracking-tight opacity-50"
+              : "motion-surface font-medium tracking-wide text-[var(--color-lyrics-active)]"
+        }
+        style={
+          isLeftAligned
+            ? {
+                ...(presentation === "audience"
+                  ? {
+                      fontSize: audiencePresentationSpec.fontSizePx * 0.7,
+                      lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                      color: colorToCss(romanStateColor),
+                      textShadow:
+                        state === "active"
+                          ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
+                              audiencePresentationSpec.activeGlowColor,
+                            )}`
+                          : undefined,
+                      opacity: 0.85,
+                    }
+                  : undefined),
+              }
+            : presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx * 0.55,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(romanStateColor),
+                  opacity: 0.45,
+                }
+              : {
+                  fontSize: CENTERED_ROMAN_FONT_SIZE,
+                  lineHeight: 1.5,
+                  opacity: state === "plain" || state === "active" ? 0.5 : 0.3,
+                }
+        }
       >
+        {romanizedText}
+      </span>
+    ) : null;
+
+  const lineContent = isLeftAligned ? (
+    <>
+      <span className="flex min-w-0 flex-col break-words">
         {mainText}
         {bgWords}
       </span>
       {romanText}
     </>
+  ) : (
+    <span className="flex flex-col items-center gap-1">
+      {mainText}
+      {romanText}
+      {bgWords}
+    </span>
   );
 
   if (isSeekable) {
