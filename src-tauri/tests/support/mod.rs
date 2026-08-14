@@ -7,6 +7,7 @@ use openkara_lib::{
     library_root::LibraryRoot,
     lyrics::{
         acquisition::{LyricsAcquisition, LyricsPersistenceResult},
+        amll::AmllClient,
         lrcapi::LrcApiClient,
         lrclib::LrcLibClient,
     },
@@ -49,11 +50,12 @@ pub fn unique_temp_path(prefix: &str) -> PathBuf {
 pub fn acquire_and_persist_lyrics(
     connection: &Connection,
     library_root: &LibraryRoot,
+    amll_client: &AmllClient,
     lrclib_client: &LrcLibClient,
     lrcapi_client: &LrcApiClient,
     song_id: &str,
 ) -> Result<LyricsPersistenceResult> {
-    let acquisition = LyricsAcquisition::new(lrclib_client, lrcapi_client);
+    let acquisition = LyricsAcquisition::new(amll_client, lrclib_client, lrcapi_client);
     let result = acquisition.acquire(connection, library_root, song_id)?;
     Ok(LyricsAcquisition::persist_acquisition(
         connection, song_id, &result,

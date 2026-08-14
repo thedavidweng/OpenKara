@@ -353,6 +353,7 @@ pub(super) fn try_extract_embedded_lyrics(
         source: LyricsSource::Embedded,
         offset_ms: 0,
         fetched_at,
+        word_timed_checked_at: None,
     };
 
     let _ = cache::lyrics::upsert_lyrics_cache_entry(connection, &entry);

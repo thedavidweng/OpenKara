@@ -15,6 +15,7 @@ pub use shell::AppShell;
 
 use crate::commands::error::CommandError;
 use crate::library_root::LibraryRoot;
+use crate::lyrics::amll::AmllClient;
 use crate::lyrics::lrcapi::LrcApiClient;
 use crate::lyrics::lrclib::LrcLibClient;
 use std::path::PathBuf;
@@ -30,6 +31,7 @@ pub struct AppState {
     /// shares its internal connection pool, so cloning AppState per command
     /// call reuses TLS connections across song switches instead of paying a
     /// fresh handshake on every fetch.
+    pub amll_client: AmllClient,
     pub lrclib_client: LrcLibClient,
     pub lrcapi_client: LrcApiClient,
 }
@@ -42,6 +44,7 @@ impl AppState {
             separation: SeparationState::test_fixture(),
             remote: RemoteState::test_fixture(),
             shell: AppShell::test_fixture(),
+            amll_client: AmllClient::new_default(),
             lrclib_client: LrcLibClient::new_default(),
             lrcapi_client: LrcApiClient::new_default(),
         }

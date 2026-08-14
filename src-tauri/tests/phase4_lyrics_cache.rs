@@ -40,6 +40,7 @@ fn upserts_lyrics_cache_and_persists_offset_updates() {
             source: LyricsSource::LrcLib,
             offset_ms: 0,
             fetched_at: 10,
+            word_timed_checked_at: None,
         },
     )
     .expect("lyrics cache insert should succeed");
@@ -72,6 +73,7 @@ fn serializes_and_deserializes_lrcapi_source_values() {
             source: LyricsSource::LrcApi,
             offset_ms: 0,
             fetched_at: 10,
+            word_timed_checked_at: None,
         },
     )
     .expect("lyrics cache insert should succeed");

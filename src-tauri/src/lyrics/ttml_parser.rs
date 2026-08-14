@@ -1,8 +1,154 @@
+use std::collections::HashMap;
+
 use anyhow::{bail, Result};
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use super::parser::{LyricLine, WordToken};
+
+fn local_tag_name(tag: &str) -> &str {
+    tag.rsplit_once(':').map(|(_, local)| local).unwrap_or(tag)
+}
+
+fn is_pretty_print_space(text: &str) -> bool {
+    text.trim().is_empty() && text.contains(['\n', '\r'])
+}
+
+fn lang_is_latn(lang: &str) -> bool {
+    lang.split(['-', '_'])
+        .any(|part| part.eq_ignore_ascii_case("Latn"))
+}
+
+fn nonempty_trimmed(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
+fn attr_key_matches(key: &str, local: &str) -> bool {
+    key == local
+        || key
+            .strip_suffix(local)
+            .is_some_and(|prefix| prefix.ends_with(':'))
+}
+
+#[derive(Default)]
+struct TransliterationSidecar {
+    in_translations: bool,
+    in_transliterations: bool,
+    in_track: bool,
+    track_is_latn: bool,
+    in_text: bool,
+    text_for: String,
+    text_buf: String,
+    chosen: HashMap<String, (bool, String)>,
+}
+
+impl TransliterationSidecar {
+    fn on_start(&mut self, local: &str, start: &BytesStart<'_>) {
+        match local {
+            "translations" => self.in_translations = true,
+            "transliterations" | "transcriptions" => {
+                if !self.in_translations {
+                    self.in_transliterations = true;
+                }
+            }
+            "transliteration" | "transcription" => {
+                if self.in_translations {
+                    return;
+                }
+                self.in_transliterations = true;
+                self.in_track = true;
+                self.track_is_latn = false;
+                for attr in start.attributes().flatten() {
+                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    if attr_key_matches(key, "lang") {
+                        self.track_is_latn = lang_is_latn(&String::from_utf8_lossy(&attr.value));
+                    }
+                }
+            }
+            "text" => {
+                if self.in_translations || !self.in_transliterations || !self.in_track {
+                    return;
+                }
+                self.in_text = true;
+                self.text_for.clear();
+                self.text_buf.clear();
+                for attr in start.attributes().flatten() {
+                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    if attr_key_matches(key, "for") {
+                        self.text_for = String::from_utf8_lossy(&attr.value).into_owned();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn on_end(&mut self, local: &str) {
+        match local {
+            "translations" => self.in_translations = false,
+            "transliterations" | "transcriptions" => {
+                self.in_transliterations = false;
+                self.in_track = false;
+                self.in_text = false;
+            }
+            "transliteration" | "transcription" => {
+                self.in_track = false;
+                self.in_text = false;
+            }
+            "text" if self.in_text => {
+                self.commit_text();
+                self.in_text = false;
+            }
+            _ => {}
+        }
+    }
+
+    fn push_text(&mut self, text: &str, in_bg: bool) {
+        if !self.in_text || in_bg || is_pretty_print_space(text) {
+            return;
+        }
+        self.text_buf.push_str(text);
+    }
+
+    fn commit_text(&mut self) {
+        let key = self.text_for.trim();
+        let text = self.text_buf.trim();
+        if key.is_empty() || text.is_empty() {
+            return;
+        }
+        match self.chosen.get(key) {
+            Some((true, _)) => {}
+            Some((false, _)) if !self.track_is_latn => {}
+            _ => {
+                self.chosen
+                    .insert(key.to_owned(), (self.track_is_latn, text.to_owned()));
+            }
+        }
+    }
+
+    fn apply(self, lines: &mut [LyricLine], keys: &[Option<String>]) {
+        for (line, key) in lines.iter_mut().zip(keys) {
+            if line
+                .roman
+                .as_deref()
+                .is_some_and(|roman| !roman.trim().is_empty())
+            {
+                continue;
+            }
+            let Some(key) = key.as_deref() else {
+                continue;
+            };
+            if let Some((_, roman)) = self.chosen.get(key) {
+                line.roman = Some(roman.clone());
+            }
+        }
+    }
+}
 
 pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let trimmed = ttml.trim();
@@ -13,6 +159,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut reader = Reader::from_str(ttml);
 
     let mut lines: Vec<LyricLine> = Vec::new();
+    let mut line_keys: Vec<Option<String>> = Vec::new();
     let mut current_section: Option<String> = None;
     let mut _in_body = false;
     let mut _in_div = false;
@@ -20,21 +167,26 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut in_bg_span = false;
     let mut in_translation_span = false;
     let mut in_roman_span = false;
+    let mut ruby_text_depth: usize = 0;
     let mut div_line_timing_mode = false;
     let mut line_timing_mode = false;
     let mut div_context_stack: Vec<(Option<String>, bool)> = Vec::new();
+    let mut sidecar = TransliterationSidecar::default();
 
     let mut p_begin: Option<u64> = None;
     let mut p_end: Option<u64> = None;
+    let mut p_key: Option<String> = None;
     let mut words: Vec<WordToken> = Vec::new();
     let mut word_has_explicit_end: Vec<bool> = Vec::new();
     let mut bg_words: Vec<WordToken> = Vec::new();
     let mut text_buf = String::new();
+    let mut roman_buf = String::new();
     let mut current_span_begin: Option<u64> = None;
     let mut current_span_end: Option<u64> = None;
 
     let mut span_role_stack: Vec<String> = Vec::new();
     let mut span_timing_stack: Vec<(Option<u64>, Option<u64>)> = Vec::new();
+    let mut span_ruby_text_stack: Vec<bool> = Vec::new();
 
     loop {
         match reader.read_event() {
@@ -57,10 +209,13 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                 next_section =
                                     Some(String::from_utf8_lossy(&attr.value).into_owned());
                             }
-                            if (key == "timing" || key.ends_with(":timing"))
-                                && String::from_utf8_lossy(&attr.value) == "Line"
-                            {
-                                next_div_line_timing_mode = true;
+                            if attr_key_matches(key, "timing") {
+                                let val = String::from_utf8_lossy(&attr.value);
+                                if val.as_ref() == "Line" {
+                                    next_div_line_timing_mode = true;
+                                } else if val.as_ref() == "Word" {
+                                    next_div_line_timing_mode = false;
+                                }
                             }
                         }
                         current_section = next_section;
@@ -71,10 +226,12 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         in_p = true;
                         p_begin = None;
                         p_end = None;
+                        p_key = None;
                         words.clear();
                         word_has_explicit_end.clear();
                         bg_words.clear();
                         text_buf.clear();
+                        roman_buf.clear();
                         line_timing_mode = div_line_timing_mode;
 
                         for attr in e.attributes().flatten() {
@@ -86,10 +243,15 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if key == "end" {
                                 p_end = parse_ttml_timestamp(&val);
                             }
-                            if (key == "timing" || key.ends_with(":timing"))
-                                && val.as_ref() == "Line"
-                            {
-                                line_timing_mode = true;
+                            if attr_key_matches(key, "key") {
+                                p_key = nonempty_trimmed(&val);
+                            }
+                            if attr_key_matches(key, "timing") {
+                                if val.as_ref() == "Line" {
+                                    line_timing_mode = true;
+                                } else if val.as_ref() == "Word" {
+                                    line_timing_mode = false;
+                                }
                             }
                         }
                     }
@@ -97,6 +259,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         let mut role = String::new();
                         let mut begin_ms: Option<u64> = None;
                         let mut end_ms: Option<u64> = None;
+                        let mut is_ruby_text = false;
                         for attr in e.attributes().flatten() {
                             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                             let val = String::from_utf8_lossy(&attr.value);
@@ -109,9 +272,18 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if key == "end" {
                                 end_ms = parse_ttml_timestamp(&val);
                             }
+                            if attr_key_matches(key, "ruby")
+                                && (val.as_ref() == "text" || val.as_ref() == "textContainer")
+                            {
+                                is_ruby_text = true;
+                            }
                         }
                         span_role_stack.push(role.clone());
                         span_timing_stack.push((current_span_begin, current_span_end));
+                        span_ruby_text_stack.push(is_ruby_text);
+                        if is_ruby_text {
+                            ruby_text_depth = ruby_text_depth.saturating_add(1);
+                        }
 
                         if role == "x-translation" {
                             in_translation_span = true;
@@ -124,22 +296,37 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             current_span_end = end_ms;
                         }
                     }
-                    _ => {}
+                    _ => {
+                        sidecar.on_start(local_tag_name(tag_str), &e);
+                    }
                 }
             }
             Ok(Event::Text(e)) => {
                 let text = e.decode().unwrap_or_default();
-                if text.is_empty() || !in_p {
+                if text.is_empty() {
                     continue;
                 }
 
-                if in_translation_span || in_roman_span {
+                sidecar.push_text(&text, in_bg_span);
+
+                if !in_p {
+                    continue;
+                }
+
+                if in_translation_span || ruby_text_depth > 0 {
+                    continue;
+                }
+
+                if in_roman_span {
+                    if !in_bg_span && !is_pretty_print_space(&text) {
+                        roman_buf.push_str(&text);
+                    }
                     continue;
                 }
 
                 // TTML word spans carry significant spaces in their text nodes. Drop only
                 // pretty-print indentation between tags; trimming all text corrupts line.text.
-                if text.trim().is_empty() && text.contains(['\n', '\r']) {
+                if is_pretty_print_space(&text) {
                     continue;
                 }
 
@@ -198,7 +385,9 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                             Some(bg_words.clone())
                                         },
                                         section: current_section.clone(),
+                                        roman: nonempty_trimmed(&roman_buf),
                                     });
+                                    line_keys.push(p_key.take());
                                 }
                             }
                             in_p = false;
@@ -238,8 +427,13 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             current_span_begin = None;
                             current_span_end = None;
                         }
+                        if span_ruby_text_stack.pop() == Some(true) {
+                            ruby_text_depth = ruby_text_depth.saturating_sub(1);
+                        }
                     }
-                    _ => {}
+                    _ => {
+                        sidecar.on_end(local_tag_name(tag_str));
+                    }
                 }
             }
             Ok(Event::Eof) => break,
@@ -248,8 +442,50 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
         }
     }
 
+    sidecar.apply(&mut lines, &line_keys);
     lines.sort_by_key(|line| line.time_ms);
     Ok(lines)
+}
+
+pub fn parse_ttml_declared_offset_ms(raw: &str) -> Option<i64> {
+    let mut reader = Reader::from_str(raw);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
+                let tag_name = e.name();
+                let tag_str = std::str::from_utf8(tag_name.as_ref()).unwrap_or("");
+                let mut meta_key = None;
+                let mut meta_value = None;
+                for attr in e.attributes().flatten() {
+                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    let val = String::from_utf8_lossy(&attr.value);
+                    if attr_key_matches(key, "timingOffset") {
+                        if let Ok(offset) = val.trim().parse::<i64>() {
+                            return Some(offset);
+                        }
+                    }
+                    if attr_key_matches(key, "key") {
+                        meta_key = Some(val.as_ref().to_owned());
+                    }
+                    if attr_key_matches(key, "value") {
+                        meta_value = Some(val.as_ref().to_owned());
+                    }
+                }
+                if local_tag_name(tag_str) == "meta" {
+                    if let (Some(key), Some(value)) = (meta_key, meta_value) {
+                        if key == "offset" || key == "offsetMs" {
+                            if let Ok(offset) = value.trim().parse::<i64>() {
+                                return Some(offset);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => return None,
+            Err(_) => return None,
+            _ => {}
+        }
+    }
 }
 
 fn parse_ttml_timestamp(ts: &str) -> Option<u64> {
@@ -322,6 +558,7 @@ mod tests {
         assert!(lines[0].words.is_none());
         assert!(lines[0].bg_words.is_none());
         assert!(lines[0].section.is_none());
+        assert!(lines[0].roman.is_none());
     }
 
     #[test]
@@ -369,6 +606,7 @@ mod tests {
         let lines = parse_ttml(ttml).expect("should parse");
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].section.as_deref(), Some("Chorus"));
+        assert!(lines[0].roman.is_none());
     }
 
     #[test]
@@ -616,5 +854,251 @@ mod tests {
     fn parse_seconds_and_ms_truncates_sub_millisecond_fraction() {
         assert_eq!(parse_seconds_and_ms("5.1234"), Some((5, 123)));
         assert_eq!(parse_seconds_and_ms("5.1239"), Some((5, 123)));
+    }
+
+    #[test]
+    fn parse_ttml_extracts_inline_x_roman() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:11.000">君の</span>
+        <span begin="00:11.000" end="00:12.000">物語</span>
+        <span ttm:role="x-roman" xml:lang="ja-Latn">kimi no monogatari</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "君の物語");
+        assert_eq!(lines[0].roman.as_deref(), Some("kimi no monogatari"));
+        let words = lines[0].words.as_ref().expect("should keep word timing");
+        assert_eq!(words.len(), 2);
+    }
+
+    #[test]
+    fn parse_ttml_sidecar_prefers_latn_and_loses_to_inline() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <head>
+    <metadata>
+      <iTunesMetadata>
+        <translations>
+          <translation xml:lang="en-Latn" type="subtitle">
+            <text for="L1">The story you don't know</text>
+            <text for="L2">A translated second line</text>
+          </translation>
+        </translations>
+        <transliterations>
+          <transliteration xml:lang="ja">
+            <text for="L1">キミノ</text>
+          </transliteration>
+          <transliteration xml:lang="ja-Latn">
+            <text for="L1">kimi no</text>
+            <text for="L2"><span>shira</span><span>nai</span></text>
+          </transliteration>
+        </transliterations>
+      </iTunesMetadata>
+    </metadata>
+  </head>
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000" itunes:key="L1">君の</p>
+      <p begin="00:13.000" end="00:15.000" itunes:key="L2">知らない</p>
+      <p begin="00:16.000" end="00:18.000" itunes:key="L3">
+        物語
+        <span ttm:role="x-roman">monogatari</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].roman.as_deref(), Some("kimi no"));
+        assert_eq!(lines[1].roman.as_deref(), Some("shiranai"));
+        assert_eq!(lines[2].roman.as_deref(), Some("monogatari"));
+        assert_eq!(lines[0].text, "君の");
+        assert_eq!(lines[1].text, "知らない");
+        assert_eq!(lines[2].text, "物語");
+    }
+
+    #[test]
+    fn parse_ttml_inline_roman_wins_over_sidecar() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <head>
+    <metadata>
+      <iTunesMetadata>
+        <transliterations>
+          <transliteration xml:lang="ja-Latn">
+            <text for="L1">sidecar reading</text>
+          </transliteration>
+        </transliterations>
+      </iTunesMetadata>
+    </metadata>
+  </head>
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000" itunes:key="L1">
+        歌詞
+        <span ttm:role="x-roman">inline reading</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines[0].roman.as_deref(), Some("inline reading"));
+    }
+
+    #[test]
+    fn parse_ttml_ignores_translation_ruby_and_background_roman() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    xmlns:tts="http://www.w3.org/ns/ttml#styling">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:11.000">
+          <span tts:ruby="container">
+            <span tts:ruby="base">漢</span>
+            <span tts:ruby="text">かん</span>
+          </span>
+        </span>
+        <span begin="00:11.000" end="00:12.000">字</span>
+        <span ttm:role="x-translation" xml:lang="zh-CN">汉字</span>
+        <span ttm:role="x-bg">
+          <span begin="00:10.500" end="00:11.500">和</span>
+          <span ttm:role="x-roman">wa</span>
+        </span>
+        <span ttm:role="x-roman">kanji</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "漢字");
+        assert_eq!(lines[0].roman.as_deref(), Some("kanji"));
+        assert!(lines[0].bg_words.is_some());
+    }
+
+    #[test]
+    fn parse_ttml_nested_div_word_timing_keeps_child_word_spans() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <body>
+    <div itunes:timing="Line">
+      <div itunes:timing="Word">
+        <p begin="00:10.000" end="00:12.000">
+          <span begin="00:10.000" end="00:11.000">Nested</span>
+          <span begin="00:11.000" end="00:12.000"> word</span>
+        </p>
+      </div>
+      <p begin="00:13.000" end="00:15.000">
+        <span begin="00:13.000" end="00:14.000">Outer</span>
+        <span begin="00:14.000" end="00:15.000"> line</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].text, "Nested word");
+        let words = lines[0]
+            .words
+            .as_ref()
+            .expect("Word child should keep spans");
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0].text, "Nested");
+        assert_eq!(words[1].text, "word");
+        assert_eq!(lines[1].text, "Outer line");
+        assert!(lines[1].words.is_none());
+    }
+
+    #[test]
+    fn parse_ttml_word_timing_on_p_clears_only_that_line() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <body>
+    <div itunes:timing="Line">
+      <p begin="00:10.000" end="00:12.000" itunes:timing="Word">
+        <span begin="00:10.000" end="00:11.000">Kept</span>
+        <span begin="00:11.000" end="00:12.000"> words</span>
+      </p>
+      <p begin="00:13.000" end="00:15.000">
+        <span begin="00:13.000" end="00:14.000">Still</span>
+        <span begin="00:14.000" end="00:15.000"> line</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0]
+            .words
+            .as_ref()
+            .is_some_and(|words| words.len() == 2));
+        assert!(lines[1].words.is_none());
+    }
+
+    #[test]
+    fn parse_ttml_sidecar_skips_background_descendants() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+  <head>
+    <metadata>
+      <iTunesMetadata>
+        <transliterations>
+          <transcription xml:lang="ko-Latn">
+            <text for="L1">
+              <span begin="10.0s" end="10.8s">duryeopjineun ana</span>
+              <span ttm:role="x-bg">
+                <span begin="11.0s" end="11.8s">heungmiroul ppun</span>
+              </span>
+            </text>
+          </transcription>
+        </transliterations>
+      </iTunesMetadata>
+    </metadata>
+  </head>
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000" itunes:key="L1">두렵지는 않아</p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines[0].roman.as_deref(), Some("duryeopjineun ana"));
+    }
+
+    #[test]
+    fn parse_ttml_declared_offset_ms_reads_timing_offset() {
+        let ttml =
+            r#"<tt itunes:timingOffset="150"><body><div><p begin="1s">Hi</p></div></body></tt>"#;
+        assert_eq!(parse_ttml_declared_offset_ms(ttml), Some(150));
+    }
+
+    #[test]
+    fn parse_ttml_declared_offset_ms_reads_amll_meta() {
+        let ttml = r#"<tt><head><metadata><amll:meta key="offsetMs" value="-80"/></metadata></head><body><div><p begin="1s">Hi</p></div></body></tt>"#;
+        assert_eq!(parse_ttml_declared_offset_ms(ttml), Some(-80));
+    }
+
+    #[test]
+    fn parse_ttml_declared_offset_ms_absent() {
+        let ttml = r#"<tt><body><div><p begin="1s">Hi</p></div></body></tt>"#;
+        assert_eq!(parse_ttml_declared_offset_ms(ttml), None);
     }
 }

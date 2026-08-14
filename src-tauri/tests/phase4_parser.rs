@@ -16,6 +16,7 @@ fn parses_lrc_lines_with_multiple_timestamps_and_ignores_metadata_tags() {
                 words: None,
                 bg_words: None,
                 section: None,
+                roman: None,
             },
             LyricLine {
                 time_ms: 40_000,
@@ -23,6 +24,7 @@ fn parses_lrc_lines_with_multiple_timestamps_and_ignores_metadata_tags() {
                 words: None,
                 bg_words: None,
                 section: None,
+                roman: None,
             },
             LyricLine {
                 time_ms: 41_500,
@@ -30,6 +32,7 @@ fn parses_lrc_lines_with_multiple_timestamps_and_ignores_metadata_tags() {
                 words: None,
                 bg_words: None,
                 section: None,
+                roman: None,
             },
         ]
     );

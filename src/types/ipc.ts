@@ -503,6 +503,7 @@ export type LyricsSource =
   | "lrc_lib"
   | "lrc_api"
   | "lrc_api_ttml"
+  | "amll"
   | "embedded"
   | "sidecar"
   | "sidecar_ttml"
@@ -525,6 +526,7 @@ export interface LyricLine {
   words: WordToken[] | null;
   bg_words: WordToken[] | null;
   section: string | null;
+  roman: string | null;
 }
 
 export interface LyricsPayload {

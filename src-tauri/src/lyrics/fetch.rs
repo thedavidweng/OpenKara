@@ -1,6 +1,7 @@
 use crate::{
     library::Song,
     lyrics::{
+        amll::AmllClient,
         lrcapi::LrcApiClient,
         lrclib::{LrcLibClient, LyricsLookupQuery},
         lys_parser, parser, ttml_parser,
@@ -21,6 +22,7 @@ pub enum LyricsSource {
     LrcLib,
     LrcApi,
     LrcApiTtml,
+    Amll,
     Embedded,
     Sidecar,
     SidecarTtml,
@@ -36,10 +38,15 @@ pub enum LyricsSource {
 pub struct LyricsFetchResult {
     pub source: LyricsSource,
     pub raw_lrc: String,
+    /// Set only when AMLL completed as Ok(None) on this chain and a later
+    /// provider won. persist_fetched copies this onto the cache row.
+    /// None on an AMLL win, on AMLL Err, and on local fetches.
+    pub word_timed_checked_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum TimedLyricsProvider<'a> {
+    Amll(&'a AmllClient),
     LrcLib(&'a LrcLibClient),
     LrcApi(&'a LrcApiClient),
 }
@@ -47,7 +54,13 @@ pub enum TimedLyricsProvider<'a> {
 #[derive(Debug)]
 pub enum OnlineLyricsResult {
     Found(LyricsFetchResult),
+    /// Every provider in the *full* online chain returned Ok(None).
+    /// persist_online_result may write absent (user_replace, or
+    /// automatic_upgrade of embedded / absent only).
     DefiniteMissing,
+    /// AMLL-only search completed as a miss (404, empty, ambiguous,
+    /// line-timed, no word tokens). Never means "wipe the row."
+    WordTimedProbeMiss,
     NotApplicable,
     Unavailable(anyhow::Error),
 }
@@ -55,13 +68,15 @@ pub enum OnlineLyricsResult {
 impl TimedLyricsProvider<'_> {
     fn source(self) -> LyricsSource {
         match self {
+            Self::Amll(_) => LyricsSource::Amll,
             Self::LrcLib(_) => LyricsSource::LrcLib,
             Self::LrcApi(_) => LyricsSource::LrcApi,
         }
     }
 
-    fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
+    pub(crate) fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
         match self {
+            Self::Amll(client) => client.fetch_by_track(query).map_err(Into::into),
             Self::LrcLib(client) => client
                 .fetch_by_track(query)
                 .map(|result| {
@@ -89,6 +104,52 @@ impl TimedLyricsProvider<'_> {
     }
 }
 
+pub fn has_word_tokens(lines: &[parser::LyricLine]) -> bool {
+    parser::has_word_tokens(lines)
+}
+
+pub fn offset_ms_for_raw(raw: &str) -> i64 {
+    let trimmed = raw.trim();
+    if looks_like_ttml(trimmed) {
+        ttml_parser::parse_ttml_declared_offset_ms(raw).unwrap_or(0)
+    } else {
+        parser::parse_lrc_metadata(raw).offset_ms.unwrap_or(0)
+    }
+}
+
+fn unix_timestamp_secs() -> Option<i64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs() as i64)
+}
+
+fn looks_like_ttml(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.starts_with("<?xml") || trimmed.starts_with("<tt")
+}
+
+fn classify_source(provider: TimedLyricsProvider<'_>, raw: &str) -> LyricsSource {
+    match provider.source() {
+        LyricsSource::LrcApi if looks_like_ttml(raw) => LyricsSource::LrcApiTtml,
+        other => other,
+    }
+}
+
+pub(crate) fn accepts_as_timed(source: &LyricsSource, raw: &str) -> bool {
+    match source {
+        LyricsSource::Amll => ttml_parser::parse_ttml(raw)
+            .map(|lines| has_word_tokens(&lines))
+            .unwrap_or(false),
+        LyricsSource::LrcApiTtml | LyricsSource::SidecarTtml | LyricsSource::ManualTtml => {
+            ttml_parser::parse_ttml(raw)
+                .map(|lines| !lines.is_empty())
+                .unwrap_or(false)
+        }
+        _ => has_timed_lines(raw),
+    }
+}
+
 pub fn fetch_lyrics_for_song_local(
     song: &Song,
     resolved_audio_path: &Path,
@@ -101,6 +162,7 @@ pub fn fetch_lyrics_for_song_local(
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Embedded,
             raw_lrc: embedded_lyrics,
+            word_timed_checked_at: None,
         }));
     }
 
@@ -108,6 +170,7 @@ pub fn fetch_lyrics_for_song_local(
         return Ok(Some(LyricsFetchResult {
             source: sidecar_source,
             raw_lrc: sidecar_lyrics,
+            word_timed_checked_at: None,
         }));
     }
 
@@ -133,37 +196,38 @@ pub fn fetch_online_timed_lyrics(
     query: &LyricsLookupQuery,
 ) -> OnlineLyricsResult {
     let mut last_error: Option<anyhow::Error> = None;
+    let mut amll_probe: Option<i64> = None;
 
     for provider in providers {
         match (*provider).fetch_timed_lrc(query) {
             Ok(Some(raw)) => {
-                let trimmed = raw.trim();
-                let source = if (*provider).source() == LyricsSource::LrcApi
-                    && (trimmed.starts_with("<?xml") || trimmed.starts_with("<tt"))
-                {
-                    LyricsSource::LrcApiTtml
+                let source = classify_source(*provider, &raw);
+                if !accepts_as_timed(&source, &raw) {
+                    if source == LyricsSource::Amll {
+                        amll_probe = unix_timestamp_secs();
+                    }
+                    continue;
+                }
+                let word_timed_checked_at = if source == LyricsSource::Amll {
+                    None
                 } else {
-                    (*provider).source()
+                    amll_probe
                 };
-
-                let has_timed = if source == LyricsSource::LrcApiTtml {
-                    ttml_parser::parse_ttml(&raw)
-                        .map(|lines| !lines.is_empty())
-                        .unwrap_or(false)
-                } else {
-                    has_timed_lines(&raw)
-                };
-
-                if has_timed {
-                    return OnlineLyricsResult::Found(LyricsFetchResult {
-                        source,
-                        raw_lrc: raw,
-                    });
+                return OnlineLyricsResult::Found(LyricsFetchResult {
+                    source,
+                    raw_lrc: raw,
+                    word_timed_checked_at,
+                });
+            }
+            Ok(None) => {
+                if matches!(*provider, TimedLyricsProvider::Amll(_)) {
+                    amll_probe = unix_timestamp_secs();
                 }
             }
-            Ok(None) => {}
             Err(error) => {
                 last_error = Some(error);
+                // AMLL Err: leave amll_probe as None so a later LRCLIB win
+                // does not stamp. Next play may retry AMLL.
             }
         }
     }
@@ -361,6 +425,27 @@ mod tests {
     #[test]
     fn has_timed_lines_returns_false_for_metadata_only() {
         assert!(!has_timed_lines("[ar:Artist]\n[ti:Title]\n"));
+    }
+
+    #[test]
+    fn amll_accepts_only_word_timed_ttml() {
+        let word_timed = r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span></p></div></body></tt>"#;
+        let line_timed = r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000">Hello</p></div></body></tt>"#;
+        assert!(accepts_as_timed(&LyricsSource::Amll, word_timed));
+        assert!(!accepts_as_timed(&LyricsSource::Amll, line_timed));
+        assert!(!accepts_as_timed(&LyricsSource::Amll, "[00:01.00]Hello\n"));
+    }
+
+    #[test]
+    fn offset_ms_for_raw_reads_lrc_and_ttml() {
+        assert_eq!(offset_ms_for_raw("[offset:-250]\n[00:01.00]Hi\n"), -250);
+        assert_eq!(
+            offset_ms_for_raw(
+                r#"<tt itunes:timingOffset="150"><body><div><p begin="1s">Hi</p></div></body></tt>"#
+            ),
+            150
+        );
+        assert_eq!(offset_ms_for_raw("[00:01.00]Hi\n"), 0);
     }
 
     fn test_song(title: &str, artist: &str, duration_ms: i64) -> Song {

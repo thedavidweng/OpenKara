@@ -771,6 +771,7 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         },
         {
           time_ms: 38000,
@@ -778,6 +779,7 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         },
       ],
       source: "lrc_lib",
@@ -802,6 +804,7 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         },
       ],
       source: "lrc_lib",
@@ -812,24 +815,60 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
     expect(line).toHaveProperty("time_ms");
     expect(line).toHaveProperty("text");
     expect(line).toHaveProperty("words");
+    expect(line).toHaveProperty("roman");
+    expect(line.roman).toBeNull();
+  });
+
+  test("LyricLine serializes supplied romanization the same way as section", () => {
+    const withRoman: LyricsPayload = {
+      song_id: "abc123",
+      lines: [
+        {
+          time_ms: 1000,
+          text: "こんにちは",
+          words: null,
+          bg_words: null,
+          section: "verse",
+          roman: "konnichiwa",
+        },
+      ],
+      source: "amll",
+      offset_ms: 0,
+      raw_lrc: "",
+    };
+    expect(withRoman.lines[0].section).toBe("verse");
+    expect(withRoman.lines[0].roman).toBe("konnichiwa");
+    expect(withRoman.source).toBe("amll");
   });
 
   test("source values match Rust LyricsSource enum", () => {
     const validSources: Array<LyricsPayload["source"]> = [
       "lrc_lib",
       "lrc_api",
+      "lrc_api_ttml",
+      "amll",
       "embedded",
       "sidecar",
+      "sidecar_ttml",
+      "sidecar_lys",
       "manual",
+      "manual_ttml",
+      "manual_lys",
       null,
     ];
     for (const source of validSources) {
       expect([
         "lrc_lib",
         "lrc_api",
+        "lrc_api_ttml",
+        "amll",
         "embedded",
         "sidecar",
+        "sidecar_ttml",
+        "sidecar_lys",
         "manual",
+        "manual_ttml",
+        "manual_lys",
         null,
       ]).toContain(source);
     }

@@ -11,7 +11,7 @@ use openkara_lib::{
     commands::{import::import_songs_from_paths, lyrics::set_lyrics_offset_in_connection},
     config::{ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
-    lyrics::{lrcapi::LrcApiClient, lrclib::LrcLibClient},
+    lyrics::{amll::AmllClient, lrcapi::LrcApiClient, lrclib::LrcLibClient},
     separator::{job, model, model_cache::ModelCache},
 };
 
@@ -114,6 +114,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
+        &AmllClient::new("http://127.0.0.1:9"),
         &LrcLibClient::new(server.url()),
         &LrcApiClient::new("http://127.0.0.1:9"),
         &song_id,
@@ -136,6 +137,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
+        &AmllClient::new("http://127.0.0.1:9"),
         &LrcLibClient::new("http://127.0.0.1:9"),
         &LrcApiClient::new("http://127.0.0.1:9"),
         &song_id,

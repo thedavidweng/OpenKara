@@ -15,6 +15,13 @@ pub struct LyricLine {
     pub words: Option<Vec<WordToken>>,
     pub bg_words: Option<Vec<WordToken>>,
     pub section: Option<String>,
+    pub roman: Option<String>,
+}
+
+pub fn has_word_tokens(lines: &[LyricLine]) -> bool {
+    lines
+        .iter()
+        .any(|line| line.words.as_ref().is_some_and(|words| !words.is_empty()))
 }
 
 #[derive(Debug, Clone, Default)]
@@ -89,6 +96,7 @@ pub fn parse_lrc(lrc: &str) -> Result<Vec<LyricLine>> {
                 words: words.clone(),
                 bg_words: None,
                 section: None,
+                roman: None,
             });
         }
     }
@@ -220,6 +228,7 @@ mod tests {
                     words: None,
                     bg_words: None,
                     section: None,
+                    roman: None,
                 },
                 LyricLine {
                     time_ms: 20_500,
@@ -227,6 +236,7 @@ mod tests {
                     words: None,
                     bg_words: None,
                     section: None,
+                    roman: None,
                 },
             ]
         );
@@ -240,6 +250,7 @@ mod tests {
         let line = &lines[0];
         assert_eq!(line.time_ms, 12_000);
         assert_eq!(line.text, "I see trees");
+        assert!(line.roman.is_none());
         assert_eq!(
             line.words,
             Some(vec![
@@ -305,6 +316,21 @@ mod tests {
         assert_eq!(meta.title.as_deref(), Some("Let It Be"));
         assert_eq!(meta.album.as_deref(), Some("Let It Be"));
         assert_eq!(meta.offset_ms, Some(-500));
+    }
+
+    #[test]
+    fn lyric_line_serializes_absent_roman_as_null() {
+        let json = serde_json::to_value(LyricLine {
+            time_ms: 1_000,
+            text: "Hello".to_owned(),
+            words: None,
+            bg_words: None,
+            section: None,
+            roman: None,
+        })
+        .expect("lyric line should serialize");
+        assert_eq!(json["section"], serde_json::Value::Null);
+        assert_eq!(json["roman"], serde_json::Value::Null);
     }
 
     #[test]

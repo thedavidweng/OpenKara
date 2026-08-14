@@ -1,5 +1,8 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
-import { splitCompanionRomanization } from "@/lib/lyrics-companion-romanization";
+import {
+  lineNeedsRomanization,
+  splitCompanionRomanization,
+} from "@/lib/lyrics-companion-romanization";
 import {
   buildLyricsIdentity,
   type LocalAudienceRomanizeState,
@@ -33,6 +36,12 @@ const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
     "sidecar_lys",
   ]);
 
+const ONLINE_LINE_TIMED_SOURCES: ReadonlySet<LyricsSource> = new Set([
+  "lrc_lib",
+  "lrc_api",
+  "lrc_api_ttml",
+]);
+
 const INITIAL_DATA: LyricsData = {
   songId: null,
   lines: [],
@@ -53,21 +62,38 @@ interface NormalizedLyrics {
   lines: LyricLine[];
   romanizedLines: string[];
   romanizedLinesIdentity: string | null;
+  complete: boolean;
+}
+
+function seedOverlayRomanization(
+  split: ReturnType<typeof splitCompanionRomanization>,
+): NormalizedLyrics {
+  const romanizedLines = split.lines.map(
+    (line, i) => line.roman?.trim() || split.romanizedLines[i] || "",
+  );
+  const complete =
+    split.lines.some(lineNeedsRomanization) &&
+    split.lines.every(
+      (line, i) => !lineNeedsRomanization(line) || romanizedLines[i] !== "",
+    );
+  return {
+    lines: split.lines,
+    romanizedLines,
+    romanizedLinesIdentity: complete ? buildLyricsIdentity(split.lines) : null,
+    complete,
+  };
 }
 
 function normalizeFetchedLyrics(lines: LyricLine[]): NormalizedLyrics {
-  const split = splitCompanionRomanization(lines);
-  return {
-    lines: split.lines,
-    romanizedLines: split.romanizedLines,
-    romanizedLinesIdentity: split.complete
-      ? buildLyricsIdentity(split.lines)
-      : null,
-  };
+  return seedOverlayRomanization(splitCompanionRomanization(lines));
 }
 
 function isUnsynced(lines: LyricLine[]): boolean {
   return lines.length > 0 && lines.every((line) => line.time_ms === 0);
+}
+
+function hasWordTokens(lines: LyricLine[]): boolean {
+  return lines.some((line) => (line.words?.length ?? 0) > 0);
 }
 
 export type LyricsStore = UseBoundStore<StoreApi<LyricsState>>;
@@ -80,9 +106,9 @@ export type LyricsStore = UseBoundStore<StoreApi<LyricsState>>;
  * - **One winner per load.** Every `load` supersedes the one before it. A
  *   response that arrives after a newer load started is dropped, including the
  *   automatic-upgrade follow-up it may have queued.
- * - **Deliberate lyrics survive.** Automatic upgrade only runs for unsynced
- *   lyrics whose source is neither LRCLIB nor one of the protected sources,
- *   and only replaces them with an online result that is actually timed.
+ * - **Deliberate lyrics survive.** Protected sources never auto-upgrade.
+ *   Online line-timed lyrics without word tokens get a Word-timed Upgrade
+ *   (AMLL only). Unsynced embedded / absent still use full-chain upgrade.
  * - **Lyrics Acquisition stays in the backend.** The session consumes the
  *   winning `LyricsPayload` and never re-runs the source chain itself.
  * - **One romanization at a time.** A romanization whose song changed under it
@@ -102,6 +128,8 @@ export class LyricsSession {
   readonly scroll = new LyricsScrollControl();
 
   private fetchGeneration = 0;
+  private suppliedRomanizationComplete = false;
+  private overlaySeed: string[] = [];
 
   constructor(private readonly deps: LyricsSessionDependencies) {
     this.store = create<LyricsState>(() => ({
@@ -128,6 +156,8 @@ export class LyricsSession {
 
   async load(songId: string): Promise<void> {
     const generation = ++this.fetchGeneration;
+    this.suppliedRomanizationComplete = false;
+    this.overlaySeed = [];
     this.set({
       isLoading: true,
       lines: [],
@@ -145,6 +175,7 @@ export class LyricsSession {
       if (generation !== this.fetchGeneration) return;
 
       const normalized = normalizeFetchedLyrics(payload.lines);
+      this.adoptOverlaySeed(normalized);
       this.set({
         songId: payload.song_id,
         lines: normalized.lines,
@@ -167,6 +198,8 @@ export class LyricsSession {
   }
 
   clear(): void {
+    this.suppliedRomanizationComplete = false;
+    this.overlaySeed = [];
     this.set({
       songId: null,
       lines: [],
@@ -209,6 +242,7 @@ export class LyricsSession {
     try {
       const payload = await this.deps.lyrics.saveManualLyrics(songId, text);
       const normalized = normalizeFetchedLyrics(payload.lines);
+      this.adoptOverlaySeed(normalized);
       this.set({
         songId: payload.song_id,
         lines: normalized.lines,
@@ -286,6 +320,7 @@ export class LyricsSession {
   async romanizeCurrentLyrics(): Promise<void> {
     const { lines, isRomanizing, songId } = this.getState();
     if (isRomanizing || lines.length === 0) return;
+    if (this.suppliedRomanizationComplete) return;
 
     this.set({ isRomanizing: true });
     try {
@@ -297,13 +332,17 @@ export class LyricsSession {
       if (!answeredWithoutYielding && this.getState().songId !== songId) {
         return;
       }
+      const currentLines = this.getState().lines;
+      const seed = this.overlaySeed;
       this.set({
-        romanizedLines: result,
-        romanizedLinesIdentity: buildLyricsIdentity(this.getState().lines),
+        romanizedLines: result.map(
+          (text, i) => currentLines[i]?.roman?.trim() || seed[i] || text,
+        ),
+        romanizedLinesIdentity: buildLyricsIdentity(currentLines),
       });
     } catch (error) {
       console.error("Romanization failed:", error);
-      this.set({ romanizedLines: [], romanizedLinesIdentity: null });
+      this.set({ romanizedLinesIdentity: null });
     } finally {
       this.set({ isRomanizing: false });
     }
@@ -313,6 +352,7 @@ export class LyricsSession {
   refreshRomanization(): void {
     const { showRomanized, lines } = this.getState();
     if (!showRomanized || lines.length === 0) return;
+    if (this.suppliedRomanizationComplete) return;
     void this.romanizeCurrentLyrics();
   }
 
@@ -324,6 +364,11 @@ export class LyricsSession {
     this.setLyricsAlignment(
       this.getState().lyricsAlignment === "left" ? "center" : "left",
     );
+  }
+
+  private adoptOverlaySeed(normalized: NormalizedLyrics): void {
+    this.suppliedRomanizationComplete = normalized.complete;
+    this.overlaySeed = [...normalized.romanizedLines];
   }
 
   private set(patch: Partial<LyricsData>): void {
@@ -344,19 +389,23 @@ export class LyricsSession {
     source: LyricsSource | null,
     lines: LyricLine[],
   ): boolean {
-    if (source === "lrc_lib") return false;
     if (source !== null && AUTO_UPGRADE_PROTECTED_SOURCES.has(source)) {
       return false;
+    }
+    if (source !== null && ONLINE_LINE_TIMED_SOURCES.has(source)) {
+      return !hasWordTokens(lines);
     }
     return isUnsynced(lines);
   }
 
   private async autoUpgrade(songId: string, generation: number): Promise<void> {
+    const preUpgradeSource = this.getState().source;
     try {
       const online = await this.deps.lyrics.fetchLyricsOnline(
         songId,
         "automatic_upgrade",
       );
+      const currentSource = this.getState().source;
       if (
         generation !== this.fetchGeneration ||
         this.getState().songId !== songId ||
@@ -365,8 +414,27 @@ export class LyricsSession {
       ) {
         return;
       }
+      // Re-read at apply time. Persist will not replace a mid-flight
+      // save, but the command may still return a stale AMLL payload.
+      if (
+        currentSource !== null &&
+        AUTO_UPGRADE_PROTECTED_SOURCES.has(currentSource)
+      ) {
+        return;
+      }
+      if (
+        preUpgradeSource !== null &&
+        ONLINE_LINE_TIMED_SOURCES.has(preUpgradeSource) &&
+        (currentSource === null ||
+          !ONLINE_LINE_TIMED_SOURCES.has(currentSource) ||
+          online.source !== "amll" ||
+          !hasWordTokens(online.lines))
+      ) {
+        return;
+      }
 
       const normalized = normalizeFetchedLyrics(online.lines);
+      this.adoptOverlaySeed(normalized);
       this.set({
         songId: online.song_id,
         lines: normalized.lines,

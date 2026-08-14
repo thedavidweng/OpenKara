@@ -30,6 +30,7 @@ const line = (time_ms: number, text: string) => ({
   words: null,
   bg_words: null,
   section: null,
+  roman: null,
 });
 
 function Harness({ enabled = true }: { enabled?: boolean }) {

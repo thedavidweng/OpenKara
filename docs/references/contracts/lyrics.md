@@ -1,6 +1,6 @@
 # 歌词契约
 
-覆盖歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset / import_lyrics_files` 命令。
+覆盖歌词 IPC：AMLL client、LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset / import_lyrics_files` 命令。
 
 ## 接口
 
@@ -8,7 +8,7 @@
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
 3. `set_lyrics_font_step(step: i8) -> AppSettings`
 4. `save_manual_lyrics(song_id: String, text: String) -> LyricsPayload`
-5. 抓取优先顺序固定为 `cache -> embedded -> sidecar TTML -> sidecar LYS -> sidecar LRC -> LRCLIB -> LrcApi`
+5. 抓取优先顺序固定为 `cache -> embedded -> sidecar TTML -> sidecar LYS -> sidecar LRC -> AMLL -> LRCLIB -> LrcApi`
 6. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
 7. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
 8. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
@@ -44,7 +44,8 @@
         }
       ],
       "bg_words": null,
-      "section": null
+      "section": null,
+      "roman": null
     }
   ],
   "source": "lrc_lib",
@@ -74,9 +75,10 @@
    - 同名 sidecar `.ttml`
    - 同名 sidecar `.lys`
    - 同名 sidecar `.lrc`
+   - AMLL `GET /v1/lyrics/search` then `GET /v1/lyrics/get`；仅在自信匹配且 TTML 含 word tokens 时命中
    - LRCLIB `GET /api/get`
    - LrcApi `GET /jsonapi`；优先用 `lrc`，没有 synced LRC 时可用 `lrc_ttml`
-4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始歌词文本、来源和 `offset_ms = 0` 写入 SQLite
+4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始歌词文本、来源和 `offset_ms = offset_ms_for_raw(raw)` 写入 SQLite（LRC `[offset:]`，可选 TTML 声明 offset，否则 0）。命令返回值从 cache 行重建，因此 payload 的 `offset_ms` 与磁盘一致。
 5. 在线 provider 的请求失败不会被当作确定缺失；后端会继续尝试后续 provider，并且不会写入 negative cache
 6. 如果所有来源都 miss，命令仍然成功返回；只是 `lines = []`、`source = null`
 7. 如果歌曲不存在、文件读取失败或歌词解析失败，命令返回 `CommandError`
@@ -94,13 +96,21 @@
 
 **Semantics**
 
-1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar
+1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar。Provider 集合取决于 `intent` 和当前 cache 行（见下表）
 2. `intent` 必须为 `automatic_upgrade` 或 `user_replace`
-3. 在线 provider 顺序固定为 `LRCLIB -> LrcApi`
-4. 只有两个 provider 都返回确定缺失时，命令才返回空 payload并写入 7 天 negative cache
-5. `automatic_upgrade` 只允许替换 `embedded` 或 `absent`；`user_replace` 可以替换现有歌词
+3. 完整在线链顺序固定为 `AMLL -> LRCLIB -> LrcApi`。Word-timed Upgrade 路径（`automatic_upgrade` 且当前行为 `lrc_lib` / `lrc_api` / `lrc_api_ttml`）只调用 AMLL
+4. `user_replace` 只有在完整链中全部 provider 都确定缺失时，才写入 7 天 `absent` 负缓存并返回空 payload。Word-timed Upgrade miss 返回当前缓存 payload，不得写入 `absent`，改为盖 `word_timed_checked_at` 戳
+5. `automatic_upgrade` 可以用任意 timed 在线结果替换 `embedded` 或 `absent`。它只能用 word-timed `amll` 替换 `lrc_lib` / `lrc_api` / `lrc_api_ttml`。`user_replace` 可以替换任何现有行
 6. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
-7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache
+7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache。429 / 5xx / timeout 不盖 probe 戳
+
+| Intent                                               | Online providers       | May replace             |
+| ---------------------------------------------------- | ---------------------- | ----------------------- |
+| `automatic_upgrade` + current online Line-timed      | AMLL only              | Only Word-timed `amll`  |
+| `automatic_upgrade` + `embedded` / `absent` / no row | AMLL → LRCLIB → LrcApi | Any timed online winner |
+| `user_replace`                                       | AMLL → LRCLIB → LrcApi | Any existing row        |
+
+Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command still returns the current cache row.
 
 ### Command: `import_lyrics_files`
 
@@ -219,19 +229,20 @@
 
 ### Shared type: `LyricsSource`
 
-| Serialized value | Meaning                                      |
-| ---------------- | -------------------------------------------- |
-| `lrc_lib`        | LRCLIB timed LRC                             |
-| `lrc_api`        | LrcApi timed LRC                             |
-| `lrc_api_ttml`   | LrcApi TTML payload                          |
-| `embedded`       | Audio tag embedded lyrics                    |
-| `sidecar`        | Same-name `.lrc` sidecar                     |
-| `sidecar_ttml`   | Same-name `.ttml` sidecar                    |
-| `sidecar_lys`    | Same-name `.lys` sidecar                     |
-| `manual`         | User-saved manual LRC/plain text             |
-| `manual_ttml`    | User-saved manual TTML                       |
-| `manual_lys`     | User-saved manual LYS                        |
-| `absent`         | Negative cache (all sources miss, 7-day TTL) |
+| Serialized value | Meaning                                           |
+| ---------------- | ------------------------------------------------- |
+| `lrc_lib`        | LRCLIB timed LRC                                  |
+| `lrc_api`        | LrcApi timed LRC                                  |
+| `lrc_api_ttml`   | LrcApi TTML payload                               |
+| `amll`           | AMLL native TTML that parsed as Word-timed Lyrics |
+| `embedded`       | Audio tag embedded lyrics                         |
+| `sidecar`        | Same-name `.lrc` sidecar                          |
+| `sidecar_ttml`   | Same-name `.ttml` sidecar                         |
+| `sidecar_lys`    | Same-name `.lys` sidecar                          |
+| `manual`         | User-saved manual LRC/plain text                  |
+| `manual_ttml`    | User-saved manual TTML                            |
+| `manual_lys`     | User-saved manual LYS                             |
+| `absent`         | Negative cache (all sources miss, 7-day TTL)      |
 
 ### Shared type: `LyricLine`
 
@@ -242,6 +253,7 @@
 | `words`    | `Option<Vec<WordToken>>` | 主唱逐词 timing；LRC/plain line 可为 `null` |
 | `bg_words` | `Option<Vec<WordToken>>` | 背景人声逐词 timing；无背景人声时为 `null`  |
 | `section`  | `Option<String>`         | TTML section/song-part，例如 verse/chorus   |
+| `roman`    | `Option<String>`         | Supplied Romanization; absent when `null`   |
 
 ### Shared type: `WordToken`
 
@@ -263,13 +275,15 @@
    - `source`
    - `offset_ms`
    - `fetched_at`
-2. 当 embedded、sidecar 和两个在线 provider 都确定缺失时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
-3. 负缓存行有 7 天 TTL（`NEGATIVE_CACHE_TTL_SECS`）。超过 TTL 后，`fetch_lyrics` / `fetch_lyrics_online` 会跳过缓存重新执行完整查找链，以便发现后续被添加到 LRCLIB/LrcAPI 的歌词
+   - `word_timed_checked_at`（nullable Unix seconds；Word-timed Upgrade probe，7 天 TTL，不出现在 `LyricsPayload`）
+2. 当 embedded、sidecar 和全部在线 provider（AMLL、LRCLIB、LrcApi）都确定缺失时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
+3. 负缓存行有 7 天 TTL（`NEGATIVE_CACHE_TTL_SECS`）。超过 TTL 后，`fetch_lyrics` / `fetch_lyrics_online` 会跳过缓存重新执行完整查找链，以便发现后续被添加到 AMLL/LRCLIB/LrcAPI 的歌词
 4. 网络错误（非 definitive miss）不会写入负缓存
 5. `source` 序列化值固定为：
-   - `lrc_lib`
+   - `lrc_lib`（IPC；SQLite 仍为历史值 `lrclib`）
    - `lrc_api`
    - `lrc_api_ttml`
+   - `amll`（IPC 与 SQLite 均为 `amll`）
    - `embedded`
    - `sidecar`
    - `sidecar_ttml`
@@ -281,10 +295,11 @@
 
 ## Required dependencies
 
-1. `reqwest` 负责 LRCLIB 和 LrcApi HTTP 请求
+1. `reqwest` 负责 AMLL、LRCLIB 和 LrcApi HTTP 请求
 2. `lofty` 负责读取内嵌歌词标签
 3. `quick-xml` 负责 TTML 解析
 4. `regex` 负责 LYS token 解析
 5. `rusqlite` 负责缓存和 offset 持久化
 6. `playback-position` 事件由播放契约（`playback.md`）提供，歌词契约本身不新增事件
 7. 全局显示偏好由 settings 命令提供；歌词模块当前额外依赖 `AppSettings.lyrics_font_step`
+8. `unicode-normalization` 负责 AMLL 标题/艺人匹配的 NFKC 规范化

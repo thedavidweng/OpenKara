@@ -19,6 +19,7 @@ const line = (
   words: extras.words ?? null,
   bg_words: extras.bg_words ?? null,
   section: extras.section ?? null,
+  roman: extras.roman ?? null,
 });
 
 describe("local-audience-romanize event constants", () => {

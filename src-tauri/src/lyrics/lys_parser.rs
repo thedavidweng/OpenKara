@@ -93,6 +93,7 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
             words,
             bg_words,
             section: None,
+            roman: None,
         });
     }
 

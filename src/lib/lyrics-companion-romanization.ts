@@ -19,7 +19,7 @@ function isTranscriptionCandidate(line: LyricLine): boolean {
   return isLatinScript([text]);
 }
 
-function needsRomanization(line: LyricLine): boolean {
+export function lineNeedsRomanization(line: LyricLine): boolean {
   const text = line.text.trim();
   return text.length > 0 && !isLatinScript([text]);
 }
@@ -38,7 +38,7 @@ function countTimestampPairs(lines: LyricLine[]): number {
     const current = lines[i];
     if (
       sharesTimestamp(previous, current) &&
-      needsRomanization(previous) &&
+      lineNeedsRomanization(previous) &&
       isTranscriptionCandidate(current)
     ) {
       pairs += 1;
@@ -50,7 +50,7 @@ function countTimestampPairs(lines: LyricLine[]): number {
 export function splitCompanionRomanization(
   lines: LyricLine[],
 ): CompanionRomanizationSplit {
-  const primaryCount = lines.filter(needsRomanization).length;
+  const primaryCount = lines.filter(lineNeedsRomanization).length;
   const pairCount = countTimestampPairs(lines);
 
   if (
@@ -78,7 +78,7 @@ export function splitCompanionRomanization(
       previous !== null &&
       !previousHasRomanization &&
       sharesTimestamp(previous, line) &&
-      needsRomanization(previous) &&
+      lineNeedsRomanization(previous) &&
       isTranscriptionCandidate(line)
     ) {
       romanizedLines[previousIndex] = line.text.trim();
@@ -90,7 +90,8 @@ export function splitCompanionRomanization(
   }
 
   const complete = keptLines.every(
-    (line, index) => !needsRomanization(line) || romanizedLines[index] !== "",
+    (line, index) =>
+      !lineNeedsRomanization(line) || romanizedLines[index] !== "",
   );
 
   return { lines: keptLines, romanizedLines, complete };

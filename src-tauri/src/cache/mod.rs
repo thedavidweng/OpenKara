@@ -131,6 +131,12 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
+    if !column_exists(connection, "lyrics", "word_timed_checked_at")? {
+        connection.execute_batch(include_str!(
+            "../../migrations/014_lyrics_word_timed_probe.sql"
+        ))?;
+    }
+
     Ok(())
 }
 
