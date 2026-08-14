@@ -13,6 +13,7 @@ function fakeRomanizer(
   const romanizer: Romanizer = {
     romanizeLine: vi.fn(async (line: string) => line),
     romanizeLines,
+    warmup: vi.fn(async () => undefined),
   };
   return { romanizer, romanizeLines };
 }

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const lockfilePath = "pnpm-lock.yaml";
 const nodeSourcesPath = "packaging/flatpak/generated/node-sources.0.json";
@@ -86,54 +87,56 @@ function parsePnpmLockfilePackages(lockfile) {
   return packages;
 }
 
-const lockfilePackages = parsePnpmLockfilePackages(
-  readFileSync(lockfilePath, "utf8"),
-);
-const existingSources = JSON.parse(readFileSync(nodeSourcesPath, "utf8"));
-const generatedDependencySources = lockfilePackages.map((pkg) => ({
-  type: "file",
-  url: tarballUrl(pkg.name, pkg.version),
-  sha512: pkg.integrityHex,
-  "dest-filename": pkg.filename,
-  dest: PNPM_TARBALL_DEST,
-}));
-const manifestSource = {
-  type: "inline",
-  "dest-filename": PNPM_MANIFEST_FILENAME,
-  dest: "flatpak-node",
-  contents: JSON.stringify(
-    {
-      // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
-      // Populate must use the same version directory or offline install fails
-      // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
-      store_version: "v11",
-      packages: Object.fromEntries(
-        lockfilePackages.map((pkg) => [
-          pkg.filename,
-          {
-            integrity_hex: pkg.integrityHex,
-            name: pkg.name,
-            version: pkg.version,
-          },
-        ]),
-      ),
-    },
-    null,
-    2,
-  ),
-};
-const preservedSources = existingSources.filter(
-  (source) =>
-    source.dest !== PNPM_TARBALL_DEST &&
-    source.dest !== "flatpak-node/cache/esbuild" &&
-    !source.dest?.startsWith("flatpak-node/cache/esbuild/") &&
-    source["dest-filename"] !== PNPM_MANIFEST_FILENAME,
-);
-const nextSources = [
-  ...preservedSources.slice(0, 1),
-  ...generatedDependencySources,
-  manifestSource,
-  ...preservedSources.slice(1),
-];
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const lockfilePackages = parsePnpmLockfilePackages(
+    readFileSync(lockfilePath, "utf8"),
+  );
+  const existingSources = JSON.parse(readFileSync(nodeSourcesPath, "utf8"));
+  const generatedDependencySources = lockfilePackages.map((pkg) => ({
+    type: "file",
+    url: tarballUrl(pkg.name, pkg.version),
+    sha512: pkg.integrityHex,
+    "dest-filename": pkg.filename,
+    dest: PNPM_TARBALL_DEST,
+  }));
+  const manifestSource = {
+    type: "inline",
+    "dest-filename": PNPM_MANIFEST_FILENAME,
+    dest: "flatpak-node",
+    contents: JSON.stringify(
+      {
+        // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
+        // Populate must use the same version directory or offline install fails
+        // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
+        store_version: "v11",
+        packages: Object.fromEntries(
+          lockfilePackages.map((pkg) => [
+            pkg.filename,
+            {
+              integrity_hex: pkg.integrityHex,
+              name: pkg.name,
+              version: pkg.version,
+            },
+          ]),
+        ),
+      },
+      null,
+      2,
+    ),
+  };
+  const preservedSources = existingSources.filter(
+    (source) =>
+      source.dest !== PNPM_TARBALL_DEST &&
+      source.dest !== "flatpak-node/cache/esbuild" &&
+      !source.dest?.startsWith("flatpak-node/cache/esbuild/") &&
+      source["dest-filename"] !== PNPM_MANIFEST_FILENAME,
+  );
+  const nextSources = [
+    ...preservedSources.slice(0, 1),
+    ...generatedDependencySources,
+    manifestSource,
+    ...preservedSources.slice(1),
+  ];
 
-writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);
+  writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);
+}
