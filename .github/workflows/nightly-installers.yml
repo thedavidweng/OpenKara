@@ -264,7 +264,7 @@ jobs:
           cat "${NOTES_FILE}"
           echo "title=nightly-$(date -u +%Y%m%d)-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      - name: Recreate rolling nightly prerelease
+      - name: Publish rolling nightly prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -274,23 +274,38 @@ jobs:
           STAGING_DIR: ${{ runner.temp }}/nightly-assets
         run: |
           set -euo pipefail
-          # Delete-and-recreate keeps the release rolling: stale assets from a
-          # previous package version can never linger, and the nightly tag
-          # always points at the commit the assets were built from.
-          gh release delete nightly --repo "${GH_REPO}" --cleanup-tag --yes \
-            || echo "No existing nightly release to delete."
-          gh api --method DELETE "repos/${GH_REPO}/git/refs/tags/nightly" 2>/dev/null \
-            || echo "No orphan nightly tag to delete."
-
-          # --prerelease is load-bearing: GitHub resolves releases/latest (the
-          # production updater endpoint) only to non-prerelease releases.
-          gh release create nightly \
-            --repo "${GH_REPO}" \
-            --target "${TARGET_SHA}" \
-            --prerelease \
-            --title "${RELEASE_TITLE}" \
-            --notes-file "${NOTES_FILE}" \
-            "${STAGING_DIR}"/*
+          # Do not delete-and-recreate the `nightly` tag. After a GITHUB_TOKEN
+          # deletes that tag, a later create on the same name returns
+          # HTTP 403 Resource not accessible by integration. Edit in place
+          # and move the existing tag. Create only when the release is absent.
+          #
+          # --prerelease and --latest=false keep releases/latest on stable.
+          if gh release view nightly --repo "${GH_REPO}" >/dev/null 2>&1; then
+            gh release edit nightly \
+              --repo "${GH_REPO}" \
+              --title "${RELEASE_TITLE}" \
+              --notes-file "${NOTES_FILE}" \
+              --prerelease \
+              --latest=false \
+              --target "${TARGET_SHA}"
+            gh release upload nightly \
+              --repo "${GH_REPO}" \
+              --clobber \
+              "${STAGING_DIR}"/*
+            gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/nightly" \
+              --field sha="${TARGET_SHA}" \
+              --field force=true \
+              >/dev/null
+          else
+            gh release create nightly \
+              --repo "${GH_REPO}" \
+              --target "${TARGET_SHA}" \
+              --prerelease \
+              --latest=false \
+              --title "${RELEASE_TITLE}" \
+              --notes-file "${NOTES_FILE}" \
+              "${STAGING_DIR}"/*
+          fi
 
       - name: Verify nightly release invariants
         env:

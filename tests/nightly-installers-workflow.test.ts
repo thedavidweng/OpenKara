@@ -49,9 +49,15 @@ describe("nightly installers workflow", () => {
     // GitHub resolves releases/latest (the production updater endpoint) only
     // to non-prerelease releases, so the prerelease flag is load-bearing.
     expect(workflow).toContain("--prerelease");
+    expect(workflow).toContain("--latest=false");
     expect(workflow).toContain("gh release create nightly");
-    expect(workflow).toContain("gh release delete nightly");
-    expect(workflow).toContain("--cleanup-tag");
+    expect(workflow).toContain("gh release edit nightly");
+    expect(workflow).toContain("gh release upload nightly");
+    expect(workflow).toContain("--clobber");
+    expect(workflow).toContain("git/refs/tags/nightly");
+    // Recreating a deleted `nightly` tag with GITHUB_TOKEN returns HTTP 403.
+    expect(workflow).not.toContain("gh release delete nightly");
+    expect(workflow).not.toContain("--cleanup-tag");
     // Updater assets must never ship on the nightly release.
     expect(workflow).toContain("latest.json");
     expect(workflow).toMatch(/-name '\*\.sig'/);
