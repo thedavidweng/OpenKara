@@ -44,10 +44,10 @@ describe("OPTIONS_BY_LANGUAGE", () => {
 });
 
 describe("romanizeLinesWith — pinned language", () => {
-  test("romanizes one line at a time with the pinned options", async () => {
-    const { romanizer, romanizeLines } = fakeRomanizer(async ([line]) => ({
+  test("romanizes the whole array in one call with the pinned options", async () => {
+    const { romanizer, romanizeLines } = fakeRomanizer(async (lines) => ({
       script: "japanese",
-      lines: [`romaji:${line}`],
+      lines: lines.map((line) => `romaji:${line}`),
     }));
 
     const result = await romanizeLinesWith(
@@ -57,33 +57,31 @@ describe("romanizeLinesWith — pinned language", () => {
     );
 
     expect(result).toEqual(["romaji:恋愛", "romaji:約束"]);
-    expect(romanizeLines).toHaveBeenCalledTimes(2);
-    expect(romanizeLines).toHaveBeenNthCalledWith(1, ["恋愛"], {
-      script: "japanese",
-    });
-    expect(romanizeLines).toHaveBeenNthCalledWith(2, ["約束"], {
+    expect(romanizeLines).toHaveBeenCalledTimes(1);
+    expect(romanizeLines).toHaveBeenCalledWith(["恋愛", "約束"], {
       script: "japanese",
     });
   });
 
   test("passes the cantonese dialect for cantonese", async () => {
-    const { romanizer, romanizeLines } = fakeRomanizer(async ([line]) => ({
+    const { romanizer, romanizeLines } = fakeRomanizer(async (lines) => ({
       script: "chinese",
-      lines: [`jyut:${line}`],
+      lines: lines.map((line) => `jyut:${line}`),
     }));
 
     await romanizeLinesWith(romanizer, ["你好"], "cantonese");
 
+    expect(romanizeLines).toHaveBeenCalledTimes(1);
     expect(romanizeLines).toHaveBeenCalledWith(["你好"], {
       script: "chinese",
       dialect: "cantonese",
     });
   });
 
-  test("returns Latin lines unchanged without calling the engine", async () => {
-    const { romanizer, romanizeLines } = fakeRomanizer(async ([line]) => ({
+  test("includes Latin lines in the single pinned call", async () => {
+    const { romanizer, romanizeLines } = fakeRomanizer(async (lines) => ({
       script: "japanese",
-      lines: [`romaji:${line}`],
+      lines: lines.map((line) => (line === "Hello" ? line : `romaji:${line}`)),
     }));
 
     const result = await romanizeLinesWith(
@@ -94,7 +92,7 @@ describe("romanizeLinesWith — pinned language", () => {
 
     expect(result).toEqual(["Hello", "romaji:恋愛"]);
     expect(romanizeLines).toHaveBeenCalledTimes(1);
-    expect(romanizeLines).toHaveBeenCalledWith(["恋愛"], {
+    expect(romanizeLines).toHaveBeenCalledWith(["Hello", "恋愛"], {
       script: "japanese",
     });
   });

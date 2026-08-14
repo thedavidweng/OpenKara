@@ -55,7 +55,6 @@
     "i18next": "^26.3.6",
     "lucide-react": "^1.28.0",
     "lyric-romanizer": "0.3.1",
-    "pinyin-pro": "3.28.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.11",
@@ -64,7 +63,6 @@
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
     "@playwright/test": "^1.62.0",
-    "@sglkc/kuromoji": "1.1.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.8",
     "@tauri-apps/cli": "^2.11.4",

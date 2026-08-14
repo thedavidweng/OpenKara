@@ -65,10 +65,9 @@ describe("bucketForSortKey", () => {
   });
 
   test("maps supplementary-plane Han characters", () => {
-    // 𠀀 is a CJK Ext B character; pinyin-pro should still return an initial
-    // or fall back to #. We just verify it doesn't crash and returns a valid bucket.
     const bucket = bucketForSortKey("𠀀");
     expect(ALPHABET_BUCKETS).toContain(bucket);
+    expect(bucket).toBe("#");
   });
 
   test("normalizes to NFC before segmenting", () => {
