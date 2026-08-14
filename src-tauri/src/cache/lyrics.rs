@@ -9,6 +9,7 @@ pub struct LyricsCacheEntry {
     pub source: LyricsSource,
     pub offset_ms: i64,
     pub fetched_at: i64,
+    pub word_timed_checked_at: Option<i64>,
 }
 
 pub fn upsert_lyrics_cache_entry(
@@ -17,23 +18,21 @@ pub fn upsert_lyrics_cache_entry(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO lyrics (
-            song_hash,
-            lrc,
-            source,
-            offset_ms,
-            fetched_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5)
+            song_hash, lrc, source, offset_ms, fetched_at, word_timed_checked_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ON CONFLICT(song_hash) DO UPDATE SET
             lrc = excluded.lrc,
             source = excluded.source,
             offset_ms = excluded.offset_ms,
-            fetched_at = excluded.fetched_at",
+            fetched_at = excluded.fetched_at,
+            word_timed_checked_at = excluded.word_timed_checked_at",
         params![
             entry.song_hash,
             entry.lrc,
             serialize_source(&entry.source),
             entry.offset_ms,
             entry.fetched_at,
+            entry.word_timed_checked_at,
         ],
     )?;
 
@@ -45,7 +44,7 @@ pub fn get_lyrics_cache_entry(
     song_hash: &str,
 ) -> Result<Option<LyricsCacheEntry>> {
     let mut statement = connection.prepare(
-        "SELECT song_hash, lrc, source, offset_ms, fetched_at
+        "SELECT song_hash, lrc, source, offset_ms, fetched_at, word_timed_checked_at
         FROM lyrics
         WHERE song_hash = ?1
         LIMIT 1",
@@ -59,6 +58,7 @@ pub fn get_lyrics_cache_entry(
             source: deserialize_source(row.get::<_, String>(2)?.as_str())?,
             offset_ms: row.get(3)?,
             fetched_at: row.get(4)?,
+            word_timed_checked_at: row.get(5)?,
         })),
         None => Ok(None),
     }
@@ -79,6 +79,21 @@ pub fn set_lyrics_offset(
     Ok(())
 }
 
+pub fn set_word_timed_checked_at(
+    connection: &Connection,
+    song_hash: &str,
+    word_timed_checked_at: i64,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE lyrics
+        SET word_timed_checked_at = ?2
+        WHERE song_hash = ?1",
+        params![song_hash, word_timed_checked_at],
+    )?;
+
+    Ok(())
+}
+
 pub fn delete_all_lyrics_cache_entries(connection: &Connection) -> rusqlite::Result<usize> {
     connection.execute("DELETE FROM lyrics", [])
 }
@@ -88,6 +103,7 @@ fn serialize_source(source: &LyricsSource) -> &'static str {
         LyricsSource::LrcLib => "lrclib",
         LyricsSource::LrcApi => "lrc_api",
         LyricsSource::LrcApiTtml => "lrc_api_ttml",
+        LyricsSource::Amll => "amll",
         LyricsSource::Embedded => "embedded",
         LyricsSource::Sidecar => "sidecar",
         LyricsSource::SidecarTtml => "sidecar_ttml",
@@ -104,6 +120,7 @@ fn deserialize_source(source: &str) -> Result<LyricsSource> {
         "lrclib" => Ok(LyricsSource::LrcLib),
         "lrc_api" => Ok(LyricsSource::LrcApi),
         "lrc_api_ttml" => Ok(LyricsSource::LrcApiTtml),
+        "amll" => Ok(LyricsSource::Amll),
         "embedded" => Ok(LyricsSource::Embedded),
         "sidecar" => Ok(LyricsSource::Sidecar),
         "sidecar_ttml" => Ok(LyricsSource::SidecarTtml),
@@ -159,6 +176,7 @@ mod tests {
             source,
             offset_ms: 0,
             fetched_at: 1_000_000,
+            word_timed_checked_at: None,
         }
     }
 
@@ -243,9 +261,16 @@ mod tests {
         let sources = [
             LyricsSource::LrcLib,
             LyricsSource::LrcApi,
+            LyricsSource::LrcApiTtml,
+            LyricsSource::Amll,
             LyricsSource::Embedded,
             LyricsSource::Sidecar,
+            LyricsSource::SidecarTtml,
+            LyricsSource::SidecarLys,
             LyricsSource::Manual,
+            LyricsSource::ManualTtml,
+            LyricsSource::ManualLys,
+            LyricsSource::Absent,
         ];
 
         for source in &sources {
@@ -263,6 +288,28 @@ mod tests {
     }
 
     #[test]
+    fn cache_source_keeps_historical_lrclib_split_and_includes_amll() {
+        assert_eq!(serialize_source(&LyricsSource::LrcLib), "lrclib");
+        assert_eq!(
+            deserialize_source("lrclib").expect("lrclib cache token"),
+            LyricsSource::LrcLib
+        );
+        assert_eq!(serialize_source(&LyricsSource::Amll), "amll");
+        assert_eq!(
+            deserialize_source("amll").expect("amll cache token"),
+            LyricsSource::Amll
+        );
+        assert_eq!(
+            serde_json::to_value(LyricsSource::LrcLib).expect("ipc lrc_lib"),
+            serde_json::json!("lrc_lib")
+        );
+        assert_eq!(
+            serde_json::to_value(LyricsSource::Amll).expect("ipc amll"),
+            serde_json::json!("amll")
+        );
+    }
+
+    #[test]
     fn absent_cache_round_trip() {
         let conn = test_db();
         insert_song(&conn, "hash-absent");
@@ -272,11 +319,42 @@ mod tests {
             source: LyricsSource::Absent,
             offset_ms: 0,
             fetched_at: 1,
+            word_timed_checked_at: None,
         };
         upsert_lyrics_cache_entry(&conn, &entry).expect("upsert absent");
         let retrieved = get_lyrics_cache_entry(&conn, "hash-absent")
             .expect("get")
             .expect("entry");
         assert_eq!(retrieved.source, LyricsSource::Absent);
+    }
+
+    #[test]
+    fn upsert_round_trips_word_timed_checked_at_and_amll_win_clears_stamp() {
+        let conn = test_db();
+        insert_song(&conn, "hash-probe");
+        let mut entry = sample_entry("hash-probe", LyricsSource::LrcLib);
+        entry.word_timed_checked_at = Some(1_700_000_000);
+        upsert_lyrics_cache_entry(&conn, &entry).expect("stamp upsert");
+
+        let stamped = get_lyrics_cache_entry(&conn, "hash-probe")
+            .expect("get")
+            .expect("entry");
+        assert_eq!(stamped.word_timed_checked_at, Some(1_700_000_000));
+
+        set_word_timed_checked_at(&conn, "hash-probe", 1_700_000_100).expect("stamp-only");
+        let restamped = get_lyrics_cache_entry(&conn, "hash-probe")
+            .expect("get")
+            .expect("entry");
+        assert_eq!(restamped.word_timed_checked_at, Some(1_700_000_100));
+        assert_eq!(restamped.source, LyricsSource::LrcLib);
+
+        entry.source = LyricsSource::Amll;
+        entry.word_timed_checked_at = None;
+        upsert_lyrics_cache_entry(&conn, &entry).expect("amll win upsert");
+        let cleared = get_lyrics_cache_entry(&conn, "hash-probe")
+            .expect("get")
+            .expect("entry");
+        assert_eq!(cleared.source, LyricsSource::Amll);
+        assert_eq!(cleared.word_timed_checked_at, None);
     }
 }

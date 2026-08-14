@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; img-src 'self' blob: asset: http://asset.localhost; connect-src 'self' https://lrclib.net https://api.lrc.cx; frame-ancestors 'none'; object-src 'none'",
+      "csp": "default-src 'self'; script-src 'self'; img-src 'self' blob: asset: http://asset.localhost; connect-src 'self' https://lrclib.net https://api.lrc.cx https://api.amll.dev; frame-ancestors 'none'; object-src 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": []

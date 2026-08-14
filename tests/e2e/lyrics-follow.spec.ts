@@ -21,6 +21,7 @@ const DENSE_LYRICS_SCRIPT = `
       words: null,
       bg_words: null,
       section: null,
+      roman: null,
     });
   }
   const payload = { raw_lrc: "dense", lines, offset_ms: 0, source: "manual" };

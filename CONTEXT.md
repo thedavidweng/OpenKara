@@ -81,6 +81,26 @@ digests.
 The action that finds, parses, and stores the best available lyrics for a
 song. It follows the fixed source order and records the winning source.
 
+**Word-timed Lyrics (逐字歌词)**:
+Lyrics whose timestamps are finer than a line. The timestamps may mark
+words or syllables.
+_Avoid_: Karaoke lyrics, synced lyrics, AMLL lyrics
+
+**Line-timed Lyrics (逐行歌词)**:
+Lyrics that timestamp only whole lines.
+_Avoid_: LRC lyrics, simple lyrics, unsynced lyrics
+
+**Word-timed Upgrade**:
+The automatic replacement of **Line-timed Lyrics** from an online source
+with **Word-timed Lyrics**. It does not replace lyrics the user or catalog
+owner put there.
+_Avoid_: Auto fetch, refresh lyrics, re-download
+
+**Supplied Romanization**:
+Romanization that arrives with the lyrics. When it is present, it is the
+romanization the player shows.
+_Avoid_: Official romanization, TTML roman, x-roman
+
 ## Relationships
 
 - A **Remote Repository** belongs to exactly one **Remote Provider** account and one **Remote Repository Location**.
@@ -98,6 +118,15 @@ song. It follows the fixed source order and records the winning source.
 - **Delete Repository** removes repository contents and then disconnects the repository from OpenKara.
 - A **Pre-Mutation Refresh** can proceed automatically. The system did not apply the user edit yet.
 - A **Pre-Publish Conflict** stops publication. The remote database is newer than the finished local edit. If OpenKara publishes the edit, it could overwrite another device.
+- **Lyrics Acquisition** may perform a **Word-timed Upgrade** when the
+  cached winner is **Line-timed Lyrics** from an online source. A
+  Word-timed Upgrade does not replace manual, sidecar, or embedded lyrics.
+  Unsynced **embedded** lyrics can still receive the older automatic timed
+  upgrade.
+- A **Word-timed Upgrade** only proceeds when the match is confident. An
+  ambiguous match leaves the current **Line-timed Lyrics** in place.
+- When lyrics include **Supplied Romanization**, the player shows that
+  romanization. It does not generate a local romanization for those lines.
 
 ## Example dialogue
 

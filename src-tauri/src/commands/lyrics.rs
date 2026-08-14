@@ -9,7 +9,7 @@ use crate::{
         acquisition::LyricsPersistenceResult,
         acquisition::{LyricsAcquisition, LyricsAcquisitionResult},
         error::LyricsError,
-        fetch::{LyricsFetchResult, LyricsSource},
+        fetch::{offset_ms_for_raw, LyricsSource},
         parser::LyricLine,
     },
     remote, AppState,
@@ -18,6 +18,9 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, State};
+
+#[cfg(test)]
+use crate::lyrics::fetch::LyricsFetchResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LyricsPayload {
@@ -52,7 +55,11 @@ fn fetch_lyrics_on_thread(
 ) -> CommandResult<LyricsPayload> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-    let acquisition = LyricsAcquisition::new(&state.lrclib_client, &state.lrcapi_client);
+    let acquisition = LyricsAcquisition::new(
+        &state.amll_client,
+        &state.lrclib_client,
+        &state.lrcapi_client,
+    );
     let acquired = acquisition.acquire(&connection, &library_root, song_id)?;
 
     match acquired {
@@ -83,10 +90,7 @@ fn fetch_lyrics_on_thread(
                 },
             ))?;
             publication.publish(&applied.scope)?;
-            match applied.value.fetched {
-                Some(fetched) => Ok(payload_from_fetched(song_id.to_owned(), &fetched)?),
-                None => Ok(empty_lyrics_payload(song_id.to_owned())),
-            }
+            payload_from_latest_cache(&library_root, song_id)
         }
     }
 }
@@ -170,6 +174,7 @@ fn payload_from_cached_entry(
     })
 }
 
+#[cfg(test)]
 fn payload_from_fetched(
     song_id: String,
     fetched: &LyricsFetchResult,
@@ -179,9 +184,7 @@ fn payload_from_fetched(
     if lines.is_empty() {
         lines = plain_text_to_lines(&fetched.raw_lrc);
     }
-    let offset_ms = lyrics::parser::parse_lrc_metadata(&fetched.raw_lrc)
-        .offset_ms
-        .unwrap_or(0);
+    let offset_ms = offset_ms_for_raw(&fetched.raw_lrc);
     Ok(LyricsPayload {
         song_id,
         lines,
@@ -246,9 +249,7 @@ fn save_manual_lyrics_on_thread(
 
             let raw_lrc = text.clone();
 
-            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-                .offset_ms
-                .unwrap_or(0);
+            let offset_ms = offset_ms_for_raw(&raw_lrc);
 
             let fetched_at =
                 current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
@@ -261,6 +262,7 @@ fn save_manual_lyrics_on_thread(
                     source: source.clone(),
                     offset_ms,
                     fetched_at,
+                    word_timed_checked_at: None,
                 },
             )
             .map_err(database_error)?;
@@ -368,9 +370,7 @@ fn import_lyrics_files_on_thread(
                 }
 
                 if let Some(song) = found_song {
-                    let offset_ms = lyrics::parser::parse_lrc_metadata(&content)
-                        .offset_ms
-                        .unwrap_or(0);
+                    let offset_ms = offset_ms_for_raw(&content);
 
                     let fetched_at = current_unix_timestamp()
                         .map_err(|e| LyricsError::Internal(e.to_string()))?;
@@ -381,6 +381,7 @@ fn import_lyrics_files_on_thread(
                         source: LyricsSource::Manual,
                         offset_ms,
                         fetched_at,
+                        word_timed_checked_at: None,
                     };
 
                     if let Err(e) = cache::lyrics::upsert_lyrics_cache_entry(connection, &entry) {
@@ -469,9 +470,7 @@ fn extract_embedded_lyrics_on_thread(
 
             let raw_lrc = embedded.clone();
 
-            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-                .offset_ms
-                .unwrap_or(0);
+            let offset_ms = offset_ms_for_raw(&raw_lrc);
 
             let fetched_at =
                 current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
@@ -484,6 +483,7 @@ fn extract_embedded_lyrics_on_thread(
                     source: LyricsSource::Embedded,
                     offset_ms,
                     fetched_at,
+                    word_timed_checked_at: None,
                 },
             )
             .map_err(database_error)?;
@@ -526,7 +526,11 @@ fn fetch_lyrics_online_on_thread(
 ) -> CommandResult<LyricsPayload> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-    let acquisition = LyricsAcquisition::new(&state.lrclib_client, &state.lrcapi_client);
+    let acquisition = LyricsAcquisition::new(
+        &state.amll_client,
+        &state.lrclib_client,
+        &state.lrcapi_client,
+    );
     let online_result = acquisition.fetch_online(&connection, song_id, intent)?;
     let should_publish = !matches!(
         online_result,
@@ -555,8 +559,18 @@ fn fetch_lyrics_online_on_thread(
         },
     ))?;
     publication.publish(&applied.scope)?;
-    match applied.value.fetched {
-        Some(fetched) => Ok(payload_from_fetched(song_id.to_owned(), &fetched)?),
+    payload_from_latest_cache(&library_root, song_id)
+}
+
+fn payload_from_latest_cache(
+    library_root: &LibraryRoot,
+    song_id: &str,
+) -> CommandResult<LyricsPayload> {
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    match cache::lyrics::get_lyrics_cache_entry(&connection, song_id)
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+    {
+        Some(entry) => Ok(payload_from_cached_entry(song_id.to_owned(), entry)?),
         None => Ok(empty_lyrics_payload(song_id.to_owned())),
     }
 }
@@ -569,6 +583,7 @@ fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
             words: None,
             bg_words: None,
             section: None,
+            roman: None,
         })
         .collect()
 }
@@ -586,6 +601,7 @@ fn empty_lyrics_payload(song_id: String) -> LyricsPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lyrics::fetch::LyricsFetchResult;
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -624,6 +640,7 @@ mod tests {
                 source,
                 offset_ms: 0,
                 fetched_at: 1_000_000,
+                word_timed_checked_at: None,
             },
         )
         .expect("seed lyrics entry");
@@ -633,6 +650,7 @@ mod tests {
         Ok(Some(LyricsFetchResult {
             source: LyricsSource::LrcLib,
             raw_lrc: "[00:01.00]Online line one\n[00:02.00]Online line two\n".to_owned(),
+            word_timed_checked_at: None,
         }))
     }
 
@@ -754,5 +772,85 @@ mod tests {
             .expect("get")
             .expect("entry exists");
         assert_eq!(stored.source, LyricsSource::LrcLib);
+    }
+
+    #[test]
+    fn payload_from_cached_entry_uses_persisted_ttml_offset() {
+        let conn = test_db();
+        insert_song(&conn, "song-ttml-offset");
+        let raw = r#"<tt itunes:timingOffset="150" xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span></p></div></body></tt>"#;
+        cache::lyrics::upsert_lyrics_cache_entry(
+            &conn,
+            &LyricsCacheEntry {
+                song_hash: "song-ttml-offset".to_owned(),
+                lrc: raw.to_owned(),
+                source: LyricsSource::Amll,
+                offset_ms: 150,
+                fetched_at: 1,
+                word_timed_checked_at: None,
+            },
+        )
+        .expect("upsert");
+
+        let cached = cache::lyrics::get_lyrics_cache_entry(&conn, "song-ttml-offset")
+            .expect("get")
+            .expect("entry");
+        let payload =
+            payload_from_cached_entry("song-ttml-offset".to_owned(), cached).expect("payload");
+        assert_eq!(payload.offset_ms, 150);
+        assert_eq!(payload.source, Some(LyricsSource::Amll));
+    }
+
+    #[test]
+    fn payload_from_fetched_uses_declared_ttml_offset() {
+        let raw = r#"<tt itunes:timingOffset="-80" xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span></p></div></body></tt>"#;
+        let payload = payload_from_fetched(
+            "song".to_owned(),
+            &LyricsFetchResult {
+                source: LyricsSource::Amll,
+                raw_lrc: raw.to_owned(),
+                word_timed_checked_at: None,
+            },
+        )
+        .expect("payload");
+        assert_eq!(payload.offset_ms, -80);
+    }
+
+    #[test]
+    fn upgrade_miss_payload_keeps_cached_user_offset() {
+        let conn = test_db();
+        insert_song(&conn, "song-offset");
+        cache::lyrics::upsert_lyrics_cache_entry(
+            &conn,
+            &LyricsCacheEntry {
+                song_hash: "song-offset".to_owned(),
+                lrc: "[offset:-999]\n[00:01.00]Keep me\n".to_owned(),
+                source: LyricsSource::LrcLib,
+                offset_ms: 420,
+                fetched_at: 1,
+                word_timed_checked_at: None,
+            },
+        )
+        .expect("seed");
+
+        let persisted = LyricsAcquisition::persist_online_result(
+            &conn,
+            "song-offset",
+            crate::lyrics::fetch::OnlineLyricsResult::WordTimedProbeMiss,
+            LyricsOnlineFetchIntent::AutomaticUpgrade,
+        )
+        .expect("stamp");
+        assert!(persisted.changed);
+
+        let cached = cache::lyrics::get_lyrics_cache_entry(&conn, "song-offset")
+            .expect("get")
+            .expect("entry");
+        assert_eq!(cached.offset_ms, 420);
+        assert_eq!(cached.source, LyricsSource::LrcLib);
+        assert!(cached.word_timed_checked_at.is_some());
+
+        let payload = payload_from_cached_entry("song-offset".to_owned(), cached).expect("payload");
+        assert_eq!(payload.offset_ms, 420);
+        assert_eq!(payload.source, Some(LyricsSource::LrcLib));
     }
 }

@@ -1,7 +1,7 @@
 # ADR 0015 — Lyrics acquisition uses a multi-source fallback chain
 
 Date: 2026-07-28
-Status: accepted
+Status: superseded by 0026
 
 ## Context
 

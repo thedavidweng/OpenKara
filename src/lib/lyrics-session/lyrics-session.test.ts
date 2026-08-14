@@ -10,8 +10,16 @@ function line(
   timeMs: number,
   text: string,
   words: LyricLine["words"] = [],
+  roman: string | null = null,
 ): LyricLine {
-  return { time_ms: timeMs, text, words, bg_words: null, section: null };
+  return {
+    time_ms: timeMs,
+    text,
+    words,
+    bg_words: null,
+    section: null,
+    roman,
+  };
 }
 
 function payload(input: {
@@ -124,6 +132,34 @@ describe("LyricsSession.load", () => {
     expect(harness.romanization.calls).toEqual([]);
   });
 
+  test("seeds the overlay from line roman when the companion array is empty", async () => {
+    await load(
+      harness,
+      payload({
+        lines: [
+          line(0, "こんにちは", [], "konnichiwa"),
+          line(1000, "世界", [], "sekai"),
+        ],
+      }),
+    );
+
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "sekai",
+    ]);
+    expect(harness.session.getState().lines.map((l) => l.text)).toEqual([
+      "こんにちは",
+      "世界",
+    ]);
+
+    harness.session.setRomanizedVisibility(true);
+    expect(harness.romanization.calls).toEqual([]);
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "sekai",
+    ]);
+  });
+
   test("recomputes romanization when the source transcribes only some lines", async () => {
     await load(
       harness,
@@ -215,13 +251,132 @@ describe("LyricsSession automatic upgrade", () => {
     ]);
   });
 
-  test("skips lyrics that already came from the online source", async () => {
+  test("requests a word-timed upgrade for unsynced lrc_lib", async () => {
     await load(
       harness,
       payload({ lines: [line(0, "Solo")], source: "lrc_lib" }),
     );
 
-    expect(harness.lyrics.fetchLyricsOnline).not.toHaveBeenCalled();
+    expect(harness.lyrics.fetchLyricsOnline).toHaveBeenCalledWith(
+      "song-1",
+      "automatic_upgrade",
+    );
+    expect(harness.session.getState().source).toBe("lrc_lib");
+  });
+
+  test.each(["lrc_lib", "lrc_api", "lrc_api_ttml"] as const)(
+    "requests a word-timed upgrade for timed %s without word tokens",
+    async (source) => {
+      await load(
+        harness,
+        payload({
+          lines: [line(500, "Line A"), line(1500, "Line B")],
+          source,
+        }),
+      );
+
+      expect(harness.lyrics.fetchLyricsOnline).toHaveBeenCalledWith(
+        "song-1",
+        "automatic_upgrade",
+      );
+    },
+  );
+
+  test("does not apply a non-amll follow-up for online line-timed lyrics", async () => {
+    harness.lyrics.fetchLyricsOnline.mockResolvedValue(
+      payload({
+        lines: [line(800, "Other")],
+        source: "lrc_api",
+        offsetMs: 0,
+      }),
+    );
+
+    await load(
+      harness,
+      payload({
+        lines: [line(500, "Keep")],
+        source: "lrc_lib",
+        offsetMs: 250,
+      }),
+    );
+
+    const state = harness.session.getState();
+    expect(state.source).toBe("lrc_lib");
+    expect(state.lines.map((l) => l.text)).toEqual(["Keep"]);
+    expect(state.offsetMs).toBe(250);
+  });
+
+  test("does not paint a late amll upgrade over lyrics saved during the probe", async () => {
+    let releaseUpgrade: (value: LyricsPayload) => void = () => {};
+    harness.lyrics.fetchLyricsOnline.mockReturnValue(
+      new Promise<LyricsPayload>((resolve) => {
+        releaseUpgrade = resolve;
+      }),
+    );
+    harness.lyrics.saveManualLyrics.mockResolvedValue(
+      payload({
+        lines: [line(0, "Hand written")],
+        source: "manual",
+        rawLrc: "Hand written",
+      }),
+    );
+
+    const pendingLoad = load(
+      harness,
+      payload({
+        lines: [line(500, "Keep")],
+        source: "lrc_lib",
+        offsetMs: 250,
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(harness.lyrics.fetchLyricsOnline).toHaveBeenCalled(),
+    );
+
+    await harness.session.saveManualLyrics("song-1", "Hand written");
+    expect(harness.session.getState().source).toBe("manual");
+
+    releaseUpgrade(
+      payload({
+        lines: [
+          line(500, "Hello", [{ time_ms: 500, end_ms: 900, text: "Hello" }]),
+        ],
+        source: "amll",
+        offsetMs: 0,
+      }),
+    );
+    await pendingLoad;
+
+    expect(harness.session.getState().source).toBe("manual");
+    expect(harness.session.getState().lines.map((l) => l.text)).toEqual([
+      "Hand written",
+    ]);
+  });
+
+  test("applies a word-timed amll upgrade and publishes the new offset", async () => {
+    harness.lyrics.fetchLyricsOnline.mockResolvedValue(
+      payload({
+        lines: [
+          line(500, "Hello", [{ time_ms: 500, end_ms: 900, text: "Hello" }]),
+        ],
+        source: "amll",
+        offsetMs: 0,
+      }),
+    );
+
+    await load(
+      harness,
+      payload({
+        lines: [line(500, "Line A")],
+        source: "lrc_lib",
+        offsetMs: 250,
+      }),
+    );
+
+    const state = harness.session.getState();
+    expect(state.source).toBe("amll");
+    expect(state.offsetMs).toBe(0);
+    expect(state.lines[0]?.words?.[0]?.text).toBe("Hello");
   });
 
   test("skips lyrics that carry any timing at all", async () => {
@@ -351,7 +506,7 @@ describe("LyricsSession fetch generation", () => {
         : payload({
             songId: "song-B",
             lines: [line(1000, "B line")],
-            source: "lrc_lib",
+            source: "sidecar",
           }),
     );
 
@@ -637,16 +792,24 @@ describe("LyricsSession romanization", () => {
     expect(tagged.romanization.calls[0]?.language).toBe("mandarin");
   });
 
-  test("empties the transcription when romanization throws", async () => {
+  test("leaves a seeded overlay in place when romanization throws", async () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    await loadChinese();
+    await load(
+      harness,
+      payload({
+        lines: [line(0, "こんにちは", [], "konnichiwa"), line(1000, "世界")],
+      }),
+    );
     harness.romanization.failWith(new Error("romanize failed"));
 
     await harness.session.romanizeCurrentLyrics();
 
-    expect(harness.session.getState().romanizedLines).toEqual([]);
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "",
+    ]);
     expect(harness.session.getState().romanizedLinesIdentity).toBeNull();
     expect(harness.session.getState().isRomanizing).toBe(false);
     consoleError.mockRestore();
@@ -680,6 +843,54 @@ describe("LyricsSession romanization", () => {
     expect(harness.session.getState().romanizedLines).toEqual([]);
   });
 
+  test("discards a transcription when an AMLL upgrade replaces the lines", async () => {
+    let releaseUpgrade: (value: LyricsPayload) => void = () => {};
+    harness.lyrics.fetchLyricsOnline.mockReturnValue(
+      new Promise<LyricsPayload>((resolve) => {
+        releaseUpgrade = resolve;
+      }),
+    );
+    harness.romanization.hold();
+
+    const pendingLoad = load(
+      harness,
+      payload({
+        lines: [line(500, "你好"), line(1500, "世界")],
+        source: "lrc_lib",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(harness.lyrics.fetchLyricsOnline).toHaveBeenCalled(),
+    );
+
+    const inFlight = harness.session.romanizeCurrentLyrics();
+    await vi.waitFor(() => expect(harness.romanization.calls).toHaveLength(1));
+
+    releaseUpgrade(
+      payload({
+        lines: [
+          line(500, "沈むように", [{ time_ms: 500, end_ms: 900, text: "沈" }]),
+          line(1500, "溶けてゆく", [
+            { time_ms: 1500, end_ms: 1900, text: "溶" },
+          ]),
+        ],
+        source: "amll",
+      }),
+    );
+    await pendingLoad;
+    harness.romanization.release();
+    await inFlight;
+
+    expect(harness.session.getState().lines.map((item) => item.text)).toEqual([
+      "沈むように",
+      "溶けてゆく",
+    ]);
+    expect(harness.session.getState().romanizedLines).not.toEqual([
+      "roman(你好)",
+      "roman(世界)",
+    ]);
+  });
+
   test("keeps a transcription that never left the caller's turn", async () => {
     await loadChinese();
     harness.romanization.answerWithoutYielding();
@@ -702,9 +913,96 @@ describe("LyricsSession romanization", () => {
 
     harness.session.setRomanizedVisibility(true);
     await vi.waitFor(() => expect(harness.romanization.calls).toHaveLength(1));
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "roman(你好)",
+      "roman(世界)",
+    ]);
 
+    harness.romanization.respondWith((text) => `fresh(${text})`);
     harness.session.refreshRomanization();
     await vi.waitFor(() => expect(harness.romanization.calls).toHaveLength(2));
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "fresh(你好)",
+      "fresh(世界)",
+    ]);
+  });
+
+  test("refreshRomanization replaces only lines that were not seeded", async () => {
+    await load(
+      harness,
+      payload({
+        lines: [line(0, "こんにちは", [], "konnichiwa"), line(1000, "世界")],
+      }),
+    );
+    harness.romanization.respondWith((text) =>
+      text === "こんにちは" ? "old-kimi" : "old-sekai",
+    );
+
+    harness.session.setRomanizedVisibility(true);
+    await vi.waitFor(() =>
+      expect(harness.session.getState().romanizedLines).toEqual([
+        "konnichiwa",
+        "old-sekai",
+      ]),
+    );
+
+    harness.romanization.respondWith((text) =>
+      text === "こんにちは" ? "new-kimi" : "new-sekai",
+    );
+    harness.session.refreshRomanization();
+    await vi.waitFor(() =>
+      expect(harness.session.getState().romanizedLines).toEqual([
+        "konnichiwa",
+        "new-sekai",
+      ]),
+    );
+    expect(harness.romanization.calls).toHaveLength(2);
+  });
+
+  test("skips the local romanizer when supplied romanization is complete", async () => {
+    await load(
+      harness,
+      payload({
+        lines: [
+          line(0, "こんにちは", [], "konnichiwa"),
+          line(1000, "世界", [], "sekai"),
+        ],
+      }),
+    );
+
+    await harness.session.romanizeCurrentLyrics();
+    harness.session.setRomanizedVisibility(true);
+    harness.session.refreshRomanization();
+    await harness.session.romanizeCurrentLyrics();
+
+    expect(harness.romanization.calls).toEqual([]);
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "sekai",
+    ]);
+  });
+
+  test("keeps incomplete supplied romanization when the companion array is empty", async () => {
+    await load(
+      harness,
+      payload({
+        lines: [line(0, "こんにちは", [], "konnichiwa"), line(1000, "世界")],
+      }),
+    );
+
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "",
+    ]);
+    expect(harness.session.getState().romanizedLinesIdentity).toBeNull();
+
+    harness.session.setRomanizedVisibility(true);
+    await vi.waitFor(() => expect(harness.romanization.calls).toHaveLength(1));
+
+    expect(harness.session.getState().romanizedLines).toEqual([
+      "konnichiwa",
+      "roman(世界)",
+    ]);
   });
 });
 

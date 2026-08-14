@@ -155,6 +155,7 @@ function generateLyrics(count: number, songId = "s0000") {
     words: null,
     bg_words: null,
     section: null,
+    roman: null,
   }));
   return {
     song_id: songId,

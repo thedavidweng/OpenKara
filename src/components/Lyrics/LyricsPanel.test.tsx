@@ -15,11 +15,14 @@ class MockAnimation {
   cancel() {}
 }
 
-function line(input: Omit<LyricLine, "bg_words" | "section">): LyricLine {
+function line(
+  input: Omit<LyricLine, "bg_words" | "section" | "roman">,
+): LyricLine {
   return {
     ...input,
     bg_words: null,
     section: null,
+    roman: null,
   };
 }
 

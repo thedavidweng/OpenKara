@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`, `014_lyrics_word_timed_probe.sql`.
 
 ## `songs`
 
@@ -47,13 +47,14 @@ Created by `002_stems.sql`.
 
 Created by `003_lyrics.sql`.
 
-| Column       | Type      | Notes               |
-| ------------ | --------- | ------------------- |
-| `song_hash`  | `TEXT`    | FK → songs(hash)    |
-| `lrc`        | `TEXT`    | NOT NULL            |
-| `source`     | `TEXT`    | NOT NULL            |
-| `offset_ms`  | `INTEGER` | NOT NULL, default 0 |
-| `fetched_at` | `INTEGER` | NOT NULL            |
+| Column                  | Type      | Notes               |
+| ----------------------- | --------- | ------------------- |
+| `song_hash`             | `TEXT`    | FK → songs(hash)    |
+| `lrc`                   | `TEXT`    | NOT NULL            |
+| `source`                | `TEXT`    | NOT NULL            |
+| `offset_ms`             | `INTEGER` | NOT NULL, default 0 |
+| `fetched_at`            | `INTEGER` | NOT NULL            |
+| `word_timed_checked_at` | `INTEGER` |                     |
 
 ## `library_meta`
 
@@ -151,3 +152,4 @@ Created by `013_remote_publish_outbox.sql`.
 12. `011_waveforms.sql` — CREATE TABLE IF NOT EXISTS waveforms (
 13. `012_artwork_derivatives.sql` — Artwork derivative paths (thumbnail and preview WebP files).
 14. `013_remote_publish_outbox.sql` — Durable publish change-set stored inside the library SQLite database.
+15. `014_lyrics_word_timed_probe.sql` — ALTER TABLE lyrics ADD COLUMN word_timed_checked_at INTEGER;

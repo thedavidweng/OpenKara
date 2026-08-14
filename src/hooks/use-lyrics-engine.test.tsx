@@ -58,8 +58,22 @@ vi.mock("@/stores/player-store", () => ({
 const LYRICS: LyricsPayload = {
   song_id: "song-1",
   lines: [
-    { time_ms: 0, text: "a", words: null, bg_words: null, section: null },
-    { time_ms: 5_000, text: "b", words: null, bg_words: null, section: null },
+    {
+      time_ms: 0,
+      text: "a",
+      words: null,
+      bg_words: null,
+      section: null,
+      roman: null,
+    },
+    {
+      time_ms: 5_000,
+      text: "b",
+      words: null,
+      bg_words: null,
+      section: null,
+      roman: null,
+    },
   ],
   source: "manual",
   offset_ms: 0,

@@ -74,6 +74,7 @@ describe("LyricLine", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         }}
         lineIndex={0}
         state="plain"
@@ -94,6 +95,7 @@ describe("LyricLine", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         }}
         lineIndex={0}
         state="future"
@@ -122,6 +124,7 @@ describe("LyricLine", () => {
             words: null,
             bg_words: null,
             section: null,
+            roman: null,
           }}
           lineIndex={2}
           state="future"
@@ -160,6 +163,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="active"
         activeWordIndex={1}
@@ -182,6 +186,7 @@ describe("LyricLine", () => {
           words: null,
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="active"
         presentation="audience"
@@ -209,6 +214,7 @@ describe("LyricLine", () => {
             { text: "vocal", time_ms: 1800, end_ms: 2000 },
           ],
           section: null,
+          roman: null,
         }}
         state="active"
         activeWordIndex={1}
@@ -233,6 +239,7 @@ describe("LyricLine", () => {
           ],
           bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1800 }],
           section: null,
+          roman: null,
         }}
         lineIndex={0}
         state="future"
@@ -256,6 +263,7 @@ describe("LyricLine", () => {
             { text: "Up", time_ms: 1200, end_ms: 1500 },
           ],
           section: null,
+          roman: null,
         }}
         state="active"
         lyricsFontStep={0}
@@ -284,6 +292,7 @@ describe("LyricLine", () => {
             ],
             bg_words: null,
             section: null,
+            roman: null,
           }}
           state="active"
           lyricsFontStep={0}
@@ -320,6 +329,7 @@ describe("LyricLine", () => {
       ],
       bg_words: null,
       section: null,
+      roman: null,
     };
 
     await act(async () => {
@@ -363,6 +373,7 @@ describe("LyricLine", () => {
       ],
       bg_words: null,
       section: null,
+      roman: null,
     };
 
     await act(async () => {
@@ -411,6 +422,7 @@ describe("LyricLine", () => {
       ],
       bg_words: null,
       section: null,
+      roman: null,
     };
 
     await act(async () => {
@@ -459,6 +471,7 @@ describe("LyricLine", () => {
       ],
       bg_words: null,
       section: null,
+      roman: null,
     });
 
     await act(async () => {
@@ -506,6 +519,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="active"
         activeWordIndex={0}
@@ -533,6 +547,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="active"
         activeWordIndex={1}
@@ -557,6 +572,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="past"
         lyricsFontStep={0}
@@ -578,6 +594,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         lineIndex={0}
         state="future"
@@ -598,6 +615,7 @@ describe("LyricLine", () => {
           words: [{ text: "main", time_ms: 1000, end_ms: 1500 }],
           bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1500 }],
           section: null,
+          roman: null,
         }}
         state="active"
         presentation="audience"
@@ -622,6 +640,7 @@ describe("LyricLine", () => {
           ],
           bg_words: null,
           section: null,
+          roman: null,
         }}
         state="active"
         activeWordIndex={1}
@@ -644,6 +663,7 @@ describe("LyricLine", () => {
       ],
       bg_words: null,
       section: null,
+      roman: null,
     };
 
     const smallStep = renderToStaticMarkup(
@@ -682,6 +702,7 @@ describe("LyricLine", () => {
       ],
       bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1800 }],
       section: null,
+      roman: null,
     };
 
     const smallStep = renderToStaticMarkup(

@@ -23,7 +23,7 @@ use openkara_lib::{
     },
     library::Song,
     library_root::LibraryRoot,
-    lyrics::{fetch::LyricsSource, lrcapi::LrcApiClient, lrclib::LrcLibClient},
+    lyrics::{amll::AmllClient, fetch::LyricsSource, lrcapi::LrcApiClient, lrclib::LrcLibClient},
 };
 use rusqlite::Connection;
 
@@ -122,6 +122,7 @@ fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
             source: LyricsSource::LrcLib,
             offset_ms: 250,
             fetched_at: 10,
+            word_timed_checked_at: None,
         },
     )
     .expect("lyrics cache insert should succeed");
@@ -129,6 +130,7 @@ fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
     let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
+        &AmllClient::new("http://127.0.0.1:9"),
         &LrcLibClient::new("http://127.0.0.1:9"),
         &LrcApiClient::new("http://127.0.0.1:9"),
         &song.hash,
@@ -205,6 +207,7 @@ fn fetch_lyrics_fetches_remote_lrc_api_and_persists_it_in_cache() {
     let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
+        &AmllClient::new("http://127.0.0.1:9"),
         &LrcLibClient::new(lrclib_server.url()),
         &lrcapi_client,
         &song.hash,
@@ -249,6 +252,13 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     let song = fixture_song("song-c", Path::new("media/song-c.mp3"));
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
+    let mut amll_server = mockito::Server::new();
+    let amll_mock = amll_server
+        .mock("GET", "/v1/lyrics/search")
+        .match_query(mockito::Matcher::Any)
+        .with_status(404)
+        .create();
+
     let mut lrclib_server = mockito::Server::new();
     let lrclib_mock = lrclib_server
         .mock("GET", "/api/get")
@@ -268,6 +278,7 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     let persisted = support::acquire_and_persist_lyrics(
         &connection,
         &library,
+        &AmllClient::new(amll_server.url()),
         &LrcLibClient::new(lrclib_server.url()),
         &LrcApiClient::new(lrcapi_server.url()),
         &song.hash,
@@ -282,6 +293,7 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     assert!(cached.lrc.is_empty());
     assert_eq!(cached.offset_ms, 0);
 
+    amll_mock.assert();
     lrclib_mock.assert();
     lrcapi_mock.assert();
     cleanup_dir(&fixture_dir);
@@ -302,6 +314,7 @@ fn set_lyrics_offset_updates_existing_cached_lyrics() {
             source: LyricsSource::LrcLib,
             offset_ms: 0,
             fetched_at: 10,
+            word_timed_checked_at: None,
         },
     )
     .expect("lyrics cache insert should succeed");

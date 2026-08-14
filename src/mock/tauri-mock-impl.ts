@@ -75,6 +75,7 @@ export interface MockLyrics {
     words: unknown;
     bg_words: unknown;
     section: unknown;
+    roman: unknown;
   }>;
   offset_ms: number;
   source: string;

@@ -26,6 +26,12 @@ export class FakeRomanization implements RomanizationPort {
   private transform: (line: string) => string = (line) => `roman(${line})`;
   private failure: unknown = null;
   private withoutYielding = false;
+  private holdNext = false;
+  private held: {
+    lines: string[];
+    resolve: (value: { result: string[]; requestId: number }) => void;
+    reject: (error: unknown) => void;
+  } | null = null;
 
   respondWith(transform: (line: string) => string): this {
     this.transform = transform;
@@ -44,11 +50,38 @@ export class FakeRomanization implements RomanizationPort {
     return this;
   }
 
+  /** Holds the next `romanize` call until `release()` so a mid-flight upgrade can land. */
+  hold(): this {
+    this.holdNext = true;
+    return this;
+  }
+
+  release(): void {
+    const held = this.held;
+    this.held = null;
+    this.holdNext = false;
+    if (!held) return;
+    if (this.failure !== null) {
+      held.reject(this.failure);
+      return;
+    }
+    held.resolve({
+      result: held.lines.map(this.transform),
+      requestId: this.withoutYielding ? -1 : this.nextRequestId++,
+    });
+  }
+
   async romanize(
     lines: readonly string[],
     language: SongLanguage | null,
   ): Promise<{ result: string[]; requestId: number }> {
     this.calls.push({ lines: [...lines], language });
+    if (this.holdNext) {
+      this.holdNext = false;
+      return new Promise((resolve, reject) => {
+        this.held = { lines: [...lines], resolve, reject };
+      });
+    }
     if (this.failure !== null) {
       throw this.failure;
     }

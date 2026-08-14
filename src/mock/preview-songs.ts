@@ -232,6 +232,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 5790,
@@ -239,6 +240,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 10110,
@@ -246,6 +248,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 11920,
@@ -253,6 +256,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 17880,
@@ -260,6 +264,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 23080,
@@ -267,6 +272,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 25800,
@@ -274,6 +280,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 29230,
@@ -281,6 +288,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 31800,
@@ -288,6 +296,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 34000,
@@ -295,6 +304,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 37960,
@@ -302,6 +312,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 41440,
@@ -309,6 +320,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 43000,
@@ -316,6 +328,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 47310,
@@ -323,6 +336,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 53310,
@@ -330,6 +344,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 59560,
@@ -337,6 +352,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 65190,
@@ -344,6 +360,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 71360,
@@ -351,6 +368,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 74170,
@@ -358,6 +376,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 77520,
@@ -365,6 +384,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 80280,
@@ -372,6 +392,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 83440,
@@ -379,6 +400,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 86170,
@@ -386,6 +408,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 89640,
@@ -393,6 +416,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 92120,
@@ -400,6 +424,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 96280,
@@ -407,6 +432,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 97530,
@@ -414,6 +440,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 99080,
@@ -421,6 +448,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 100650,
@@ -428,6 +456,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 102120,
@@ -435,6 +464,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 103730,
@@ -442,6 +472,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 105160,
@@ -449,6 +480,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 106720,
@@ -456,6 +488,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 108170,
@@ -463,6 +496,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 109720,
@@ -470,6 +504,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 111210,
@@ -477,6 +512,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 112650,
@@ -484,6 +520,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 114210,
@@ -491,6 +528,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 117080,
@@ -498,6 +536,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 119720,
@@ -505,6 +544,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 125770,
@@ -512,6 +552,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 131850,
@@ -519,6 +560,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 137600,
@@ -526,6 +568,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 143930,
@@ -533,6 +576,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 145440,
@@ -540,6 +584,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 148320,
@@ -547,6 +592,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 151440,
@@ -554,6 +600,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 157520,
@@ -561,6 +608,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 160440,
@@ -568,6 +616,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 163560,
@@ -575,6 +624,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 167570,
@@ -582,6 +632,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 173660,
@@ -589,6 +640,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 179940,
@@ -596,6 +648,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 186060,
@@ -603,6 +656,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 187980,
@@ -610,6 +664,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,
@@ -625,6 +680,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 2440,
@@ -632,6 +688,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 4460,
@@ -639,6 +696,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 6310,
@@ -646,6 +704,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 8560,
@@ -653,6 +712,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 10580,
@@ -660,6 +720,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 12560,
@@ -667,6 +728,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 14550,
@@ -674,6 +736,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 17980,
@@ -681,6 +744,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 30830,
@@ -688,6 +752,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 34350,
@@ -695,6 +760,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 38500,
@@ -702,6 +768,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 42580,
@@ -709,6 +776,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 47840,
@@ -716,6 +784,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 52590,
@@ -723,6 +792,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 60830,
@@ -730,6 +800,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 64180,
@@ -737,6 +808,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 68710,
@@ -744,6 +816,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 75520,
@@ -751,6 +824,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 79660,
@@ -758,6 +832,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 83150,
@@ -765,6 +840,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 87460,
@@ -772,6 +848,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 91420,
@@ -779,6 +856,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 96650,
@@ -786,6 +864,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 101330,
@@ -793,6 +872,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 109520,
@@ -800,6 +880,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 112940,
@@ -807,6 +888,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 117600,
@@ -814,6 +896,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 123400,
@@ -821,6 +904,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 124810,
@@ -828,6 +912,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 126520,
@@ -835,6 +920,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 128440,
@@ -842,6 +928,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 129390,
@@ -849,6 +936,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 132180,
@@ -856,6 +944,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 136270,
@@ -863,6 +952,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 140250,
@@ -870,6 +960,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 145400,
@@ -877,6 +968,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 150130,
@@ -884,6 +976,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 161240,
@@ -891,6 +984,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 164560,
@@ -898,6 +992,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 168690,
@@ -905,6 +1000,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 172780,
@@ -912,6 +1008,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 177900,
@@ -919,6 +1016,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 182790,
@@ -926,6 +1024,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 190360,
@@ -933,6 +1032,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 194040,
@@ -940,6 +1040,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 199290,
@@ -947,6 +1048,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 204490,
@@ -954,6 +1056,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 206030,
@@ -961,6 +1064,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 207700,
@@ -968,6 +1072,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 209660,
@@ -975,6 +1080,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 211690,
@@ -982,6 +1088,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 213670,
@@ -989,6 +1096,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 215790,
@@ -996,6 +1104,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 217840,
@@ -1003,6 +1112,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 220000,
@@ -1010,6 +1120,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 222110,
@@ -1017,6 +1128,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 224190,
@@ -1024,6 +1136,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 226110,
@@ -1031,6 +1144,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 228010,
@@ -1038,6 +1152,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,
@@ -1053,6 +1168,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 470,
@@ -1060,6 +1176,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 5330,
@@ -1067,6 +1184,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 9300,
@@ -1074,6 +1192,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 14030,
@@ -1081,6 +1200,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 19200,
@@ -1088,6 +1208,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 22550,
@@ -1095,6 +1216,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 37620,
@@ -1102,6 +1224,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 40430,
@@ -1109,6 +1232,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 42240,
@@ -1116,6 +1240,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 44540,
@@ -1123,6 +1248,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 46110,
@@ -1130,6 +1256,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 48260,
@@ -1137,6 +1264,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 50280,
@@ -1144,6 +1272,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 52260,
@@ -1151,6 +1280,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 54260,
@@ -1158,6 +1288,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 54790,
@@ -1165,6 +1296,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 62250,
@@ -1172,6 +1304,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 70140,
@@ -1179,6 +1312,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 73920,
@@ -1186,6 +1320,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 77880,
@@ -1193,6 +1328,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 77920,
@@ -1200,6 +1336,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 82080,
@@ -1207,6 +1344,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 85370,
@@ -1214,6 +1352,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 89840,
@@ -1221,6 +1360,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 93660,
@@ -1228,6 +1368,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 97650,
@@ -1235,6 +1376,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 101040,
@@ -1242,6 +1384,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 105500,
@@ -1249,6 +1392,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 110960,
@@ -1256,6 +1400,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 113670,
@@ -1263,6 +1408,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 116310,
@@ -1270,6 +1416,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 119070,
@@ -1277,6 +1424,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 121030,
@@ -1284,6 +1432,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 122980,
@@ -1291,6 +1440,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 125010,
@@ -1298,6 +1448,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 126940,
@@ -1305,6 +1456,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 128720,
@@ -1312,6 +1464,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 131110,
@@ -1319,6 +1472,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 132990,
@@ -1326,6 +1480,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 133160,
@@ -1333,6 +1488,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 140950,
@@ -1340,6 +1496,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 144810,
@@ -1347,6 +1504,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 148570,
@@ -1354,6 +1512,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 148670,
@@ -1361,6 +1520,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 152720,
@@ -1368,6 +1528,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 156290,
@@ -1375,6 +1536,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 160630,
@@ -1382,6 +1544,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 164320,
@@ -1389,6 +1552,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 168570,
@@ -1396,6 +1560,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 172090,
@@ -1403,6 +1568,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 176300,
@@ -1410,6 +1576,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 181040,
@@ -1417,6 +1584,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 182710,
@@ -1424,6 +1592,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 185620,
@@ -1431,6 +1600,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 187920,
@@ -1438,6 +1608,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 189700,
@@ -1445,6 +1616,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 191890,
@@ -1452,6 +1624,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 193760,
@@ -1459,6 +1632,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 195860,
@@ -1466,6 +1640,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 197640,
@@ -1473,6 +1648,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 199530,
@@ -1480,6 +1656,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 199710,
@@ -1487,6 +1664,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 206570,
@@ -1494,6 +1672,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 210710,
@@ -1501,6 +1680,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 214220,
@@ -1508,6 +1688,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 218540,
@@ -1515,6 +1696,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 222340,
@@ -1522,6 +1704,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 226510,
@@ -1529,6 +1712,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 230150,
@@ -1536,6 +1720,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 234480,
@@ -1543,6 +1728,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 237710,
@@ -1550,6 +1736,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 237830,
@@ -1557,6 +1744,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 239960,
@@ -1564,6 +1752,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 242050,
@@ -1571,6 +1760,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 243890,
@@ -1578,6 +1768,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 245920,
@@ -1585,6 +1776,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 247860,
@@ -1592,6 +1784,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 249870,
@@ -1599,6 +1792,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 251650,
@@ -1606,6 +1800,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 254250,
@@ -1613,6 +1808,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,
@@ -1628,6 +1824,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 7050,
@@ -1635,6 +1832,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 10060,
@@ -1642,6 +1840,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 13160,
@@ -1649,6 +1848,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 15950,
@@ -1656,6 +1856,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 20060,
@@ -1663,6 +1864,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 23520,
@@ -1670,6 +1872,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 27490,
@@ -1677,6 +1880,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 30930,
@@ -1684,6 +1888,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 33650,
@@ -1691,6 +1896,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 36550,
@@ -1698,6 +1904,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 40380,
@@ -1705,6 +1912,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 43630,
@@ -1712,6 +1920,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 46420,
@@ -1719,6 +1928,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 49940,
@@ -1726,6 +1936,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 53700,
@@ -1733,6 +1944,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 57380,
@@ -1740,6 +1952,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 60070,
@@ -1747,6 +1960,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 64020,
@@ -1754,6 +1968,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 68040,
@@ -1761,6 +1976,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 71820,
@@ -1768,6 +1984,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 74910,
@@ -1775,6 +1992,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 78590,
@@ -1782,6 +2000,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 81910,
@@ -1789,6 +2008,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 85130,
@@ -1796,6 +2016,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 89070,
@@ -1803,6 +2024,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 95050,
@@ -1810,6 +2032,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 98120,
@@ -1817,6 +2040,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 98720,
@@ -1824,6 +2048,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 102880,
@@ -1831,6 +2056,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 103890,
@@ -1838,6 +2064,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 105700,
@@ -1845,6 +2072,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 107130,
@@ -1852,6 +2080,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 110060,
@@ -1859,6 +2088,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 112260,
@@ -1866,6 +2096,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 113790,
@@ -1873,6 +2104,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 115420,
@@ -1880,6 +2112,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 117280,
@@ -1887,6 +2120,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 119080,
@@ -1894,6 +2128,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 121060,
@@ -1901,6 +2136,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 123030,
@@ -1908,6 +2144,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 126530,
@@ -1915,6 +2152,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 128140,
@@ -1922,6 +2160,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 131270,
@@ -1929,6 +2168,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 134750,
@@ -1936,6 +2176,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 158590,
@@ -1943,6 +2184,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 161880,
@@ -1950,6 +2192,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 165230,
@@ -1957,6 +2200,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 168360,
@@ -1964,6 +2208,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 172100,
@@ -1971,6 +2216,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 175770,
@@ -1978,6 +2224,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 178980,
@@ -1985,6 +2232,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 182510,
@@ -1992,6 +2240,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 188970,
@@ -1999,6 +2248,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 191800,
@@ -2006,6 +2256,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 193750,
@@ -2013,6 +2264,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 195540,
@@ -2020,6 +2272,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 196450,
@@ -2027,6 +2280,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 198570,
@@ -2034,6 +2288,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 200170,
@@ -2041,6 +2296,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 202140,
@@ -2048,6 +2304,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 205370,
@@ -2055,6 +2312,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 207670,
@@ -2062,6 +2320,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 210980,
@@ -2069,6 +2328,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 213630,
@@ -2076,6 +2336,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 220530,
@@ -2083,6 +2344,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,
@@ -2098,6 +2360,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 10410,
@@ -2105,6 +2368,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 12870,
@@ -2112,6 +2376,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 20360,
@@ -2119,6 +2384,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 22800,
@@ -2126,6 +2392,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 30370,
@@ -2133,6 +2400,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 32850,
@@ -2140,6 +2408,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 40400,
@@ -2147,6 +2416,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 42930,
@@ -2154,6 +2424,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 48470,
@@ -2161,6 +2432,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 53410,
@@ -2168,6 +2440,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 59280,
@@ -2175,6 +2448,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 61850,
@@ -2182,6 +2456,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 64570,
@@ -2189,6 +2464,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 69330,
@@ -2196,6 +2472,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 79050,
@@ -2203,6 +2480,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 85490,
@@ -2210,6 +2488,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 87750,
@@ -2217,6 +2496,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 95300,
@@ -2224,6 +2504,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 98020,
@@ -2231,6 +2512,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 105400,
@@ -2238,6 +2520,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 107830,
@@ -2245,6 +2528,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 115350,
@@ -2252,6 +2536,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 117850,
@@ -2259,6 +2544,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 122160,
@@ -2266,6 +2552,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 128510,
@@ -2273,6 +2560,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 134190,
@@ -2280,6 +2568,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 136760,
@@ -2287,6 +2576,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 139390,
@@ -2294,6 +2584,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 144640,
@@ -2301,6 +2592,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 146940,
@@ -2308,6 +2600,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 149760,
@@ -2315,6 +2608,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 154560,
@@ -2322,6 +2616,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 157050,
@@ -2329,6 +2624,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 159670,
@@ -2336,6 +2632,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 163760,
@@ -2343,6 +2640,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 168450,
@@ -2350,6 +2648,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 174200,
@@ -2357,6 +2656,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 177020,
@@ -2364,6 +2664,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 179480,
@@ -2371,6 +2672,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 184250,
@@ -2378,6 +2680,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 189580,
@@ -2385,6 +2688,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,
@@ -2400,6 +2704,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 1580,
@@ -2407,6 +2712,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 3050,
@@ -2414,6 +2720,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 6020,
@@ -2421,6 +2728,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 9110,
@@ -2428,6 +2736,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 12230,
@@ -2435,6 +2744,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 15190,
@@ -2442,6 +2752,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 17980,
@@ -2449,6 +2760,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 21060,
@@ -2456,6 +2768,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 24040,
@@ -2463,6 +2776,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 27420,
@@ -2470,6 +2784,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 30260,
@@ -2477,6 +2792,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 32900,
@@ -2484,6 +2800,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 35890,
@@ -2491,6 +2808,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 39460,
@@ -2498,6 +2816,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 42380,
@@ -2505,6 +2824,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 45840,
@@ -2512,6 +2832,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 51190,
@@ -2519,6 +2840,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 53530,
@@ -2526,6 +2848,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 56660,
@@ -2533,6 +2856,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 59560,
@@ -2540,6 +2864,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 63420,
@@ -2547,6 +2872,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 65850,
@@ -2554,6 +2880,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 68950,
@@ -2561,6 +2888,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 72230,
@@ -2568,6 +2896,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 74680,
@@ -2575,6 +2904,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 75740,
@@ -2582,6 +2912,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 79490,
@@ -2589,6 +2920,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 82520,
@@ -2596,6 +2928,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 84350,
@@ -2603,6 +2936,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 86280,
@@ -2610,6 +2944,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 88560,
@@ -2617,6 +2952,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 91240,
@@ -2624,6 +2960,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 94540,
@@ -2631,6 +2968,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 97390,
@@ -2638,6 +2976,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 100550,
@@ -2645,6 +2984,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 100760,
@@ -2652,6 +2992,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 103470,
@@ -2659,6 +3000,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 106320,
@@ -2666,6 +3008,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 109020,
@@ -2673,6 +3016,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 112810,
@@ -2680,6 +3024,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 115840,
@@ -2687,6 +3032,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 119260,
@@ -2694,6 +3040,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 124020,
@@ -2701,6 +3048,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 124430,
@@ -2708,6 +3056,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 126930,
@@ -2715,6 +3064,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 130010,
@@ -2722,6 +3072,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 133480,
@@ -2729,6 +3080,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 136720,
@@ -2736,6 +3088,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 139040,
@@ -2743,6 +3096,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 142230,
@@ -2750,6 +3104,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 145390,
@@ -2757,6 +3112,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 149760,
@@ -2764,6 +3120,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 152790,
@@ -2771,6 +3128,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 155750,
@@ -2778,6 +3136,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 158100,
@@ -2785,6 +3144,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 161080,
@@ -2792,6 +3152,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
       {
         time_ms: 161930,
@@ -2799,6 +3160,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
         words: null,
         bg_words: null,
         section: null,
+        roman: null,
       },
     ],
     offset_ms: 0,

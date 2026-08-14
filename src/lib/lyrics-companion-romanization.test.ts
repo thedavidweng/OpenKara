@@ -7,7 +7,14 @@ function line(
   text: string,
   words: LyricLine["words"] = [],
 ): LyricLine {
-  return { time_ms: timeMs, text, words, bg_words: null, section: null };
+  return {
+    time_ms: timeMs,
+    text,
+    words,
+    bg_words: null,
+    section: null,
+    roman: null,
+  };
 }
 
 describe("splitCompanionRomanization", () => {
