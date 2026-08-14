@@ -17,8 +17,8 @@ use openkara_lib::{
         amll::AmllClient,
         fetch::{
             fetch_lyrics_for_song_local, fetch_online_timed_lyrics, lookup_query_from_song,
-            read_embedded_lyrics, LyricsFetchResult, LyricsSource, OnlineLyricsResult,
-            TimedLyricsProvider,
+            parse_lyrics_auto, read_embedded_lyrics, LyricsFetchResult, LyricsSource,
+            OnlineLyricsResult, TimedLyricsProvider,
         },
         lrcapi::LrcApiClient,
         lrclib::LrcLibClient,
@@ -466,7 +466,14 @@ fn word_timed_amll_get_is_found_and_skips_lrclib() {
         result => panic!("AMLL should win, got {result:?}"),
     };
     assert_eq!(fetched.source, LyricsSource::Amll);
-    assert!(fetched.raw_lrc.contains("Hello"));
+    let lines = parse_lyrics_auto(&fetched.raw_lrc).expect("AMLL TTML should parse");
+    let words = lines[0]
+        .words
+        .as_ref()
+        .expect("AMLL result should be word timed");
+    assert_eq!(words[0].text, "Hello");
+    assert_eq!(words[0].time_ms, 1_000);
+    assert_eq!(words[0].end_ms, 2_000);
     assert_eq!(fetched.word_timed_checked_at, None);
     search.assert();
     get.assert();

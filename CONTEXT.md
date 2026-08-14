@@ -119,8 +119,10 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - A **Pre-Mutation Refresh** can proceed automatically. The system did not apply the user edit yet.
 - A **Pre-Publish Conflict** stops publication. The remote database is newer than the finished local edit. If OpenKara publishes the edit, it could overwrite another device.
 - **Lyrics Acquisition** may perform a **Word-timed Upgrade** when the
-  cached winner is **Line-timed Lyrics** from an online source. It does not
-  replace manual, sidecar, or embedded lyrics.
+  cached winner is **Line-timed Lyrics** from an online source. A
+  Word-timed Upgrade does not replace manual, sidecar, or embedded lyrics.
+  Unsynced **embedded** lyrics can still receive the older automatic timed
+  upgrade.
 - A **Word-timed Upgrade** only proceeds when the match is confident. An
   ambiguous match leaves the current **Line-timed Lyrics** in place.
 - When lyrics include **Supplied Romanization**, the player shows that

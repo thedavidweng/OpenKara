@@ -108,6 +108,7 @@
 | ---------------------------------------------------- | ---------------------- | ----------------------- |
 | `automatic_upgrade` + current online Line-timed      | AMLL only              | Only Word-timed `amll`  |
 | `automatic_upgrade` + `embedded` / `absent` / no row | AMLL → LRCLIB → LrcApi | Any timed online winner |
+| `automatic_upgrade` + manual / sidecar / `amll`      | None (no HTTP)         | Nothing                 |
 | `user_replace`                                       | AMLL → LRCLIB → LrcApi | Any existing row        |
 
 Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command still returns the current cache row.

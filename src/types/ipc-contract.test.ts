@@ -819,7 +819,7 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
     expect(line.roman).toBeNull();
   });
 
-  test("LyricLine serializes supplied romanization the same way as section", () => {
+  test("LyricLine carries supplied romanization beside section", () => {
     const withRoman: LyricsPayload = {
       song_id: "abc123",
       lines: [

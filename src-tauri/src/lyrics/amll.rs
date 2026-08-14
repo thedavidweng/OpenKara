@@ -512,7 +512,7 @@ mod tests {
     }
 
     fn line_timed_ttml() -> &'static str {
-        r#"<tt xmlns="http://www.w3.org/ns/ttml" itunes:timing="Line"><body><div><p begin="00:01.000" end="00:02.000">Hello</p></div></body></tt>"#
+        r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><body><div itunes:timing="Line"><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:01.500">Hel</span><span begin="00:01.500" end="00:02.000">lo</span></p></div></body></tt>"#
     }
 
     fn search_hit_body(id: i64) -> String {

@@ -321,6 +321,7 @@ export class LyricsSession {
     const { lines, isRomanizing, songId } = this.getState();
     if (isRomanizing || lines.length === 0) return;
     if (this.suppliedRomanizationComplete) return;
+    const requestedLyricsIdentity = buildLyricsIdentity(lines);
 
     this.set({ isRomanizing: true });
     try {
@@ -329,10 +330,14 @@ export class LyricsSession {
         this.deps.songLanguage.read(songId),
       );
       const answeredWithoutYielding = requestId === -1;
-      if (!answeredWithoutYielding && this.getState().songId !== songId) {
+      const currentLines = this.getState().lines;
+      if (
+        !answeredWithoutYielding &&
+        (this.getState().songId !== songId ||
+          buildLyricsIdentity(currentLines) !== requestedLyricsIdentity)
+      ) {
         return;
       }
-      const currentLines = this.getState().lines;
       const seed = this.overlaySeed;
       this.set({
         romanizedLines: result.map(
