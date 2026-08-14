@@ -291,10 +291,15 @@ describe("SongListItem", () => {
       <SongListItem song={song} orderedHashes={[song.hash]} previewMode />,
     );
 
-    fireEvent.click(getByRole("button", { name: song.title }));
+    const selection = getByRole("button", { name: song.title });
+    fireEvent.click(selection);
 
+    expect(mockPlayerState.playNow).toHaveBeenCalledTimes(1);
     expect(mockPlayerState.playNow).toHaveBeenCalledWith(song.hash);
     expect(mockPlayerState.playSong).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(selection);
+    expect(mockPlayerState.playNow).toHaveBeenCalledTimes(1);
   });
 
   test("opens the song actions from the keyboard context-menu shortcut", () => {

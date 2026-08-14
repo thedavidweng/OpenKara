@@ -69,6 +69,19 @@ describe("preview playback start", () => {
     expect(nextLyrics.lines[0]?.text).toContain("初");
   });
 
+  test("play falls back to loopStartPositionMs when no play start is set", async () => {
+    const { internals } = createTauriMock({
+      ...E2E_MOCK_DATA,
+      playStartPositionMs: undefined,
+      playStartPositionBySongId: undefined,
+      loopStartPositionMs: 12_000,
+    });
+    const snapshot = (await internals.invoke("play", {
+      songId: "earfquake",
+    })) as { position_ms: number };
+    expect(snapshot.position_ms).toBe(12_000);
+  });
+
   test("e2e mock play still starts at zero", async () => {
     const { internals } = createTauriMock(E2E_MOCK_DATA);
     const snapshot = (await internals.invoke("play", {

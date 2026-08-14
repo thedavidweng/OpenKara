@@ -173,7 +173,10 @@ export function createTauriMock(data: any): TauriMockResult {
 
   function resolvePlayStartMs(songId: string, durationMs: number): number {
     const requested =
-      data.playStartPositionBySongId?.[songId] ?? data.playStartPositionMs ?? 0;
+      data.playStartPositionBySongId?.[songId] ??
+      data.playStartPositionMs ??
+      data.loopStartPositionMs ??
+      0;
     return Math.min(Math.max(0, requested), Math.max(0, durationMs - 1));
   }
 

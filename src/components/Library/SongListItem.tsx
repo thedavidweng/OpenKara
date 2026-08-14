@@ -249,11 +249,11 @@ export function SongListItem({
         type="button"
         onClick={(event) => {
           selectSongFromEvent(event);
-          if (previewMode) {
+          if (previewMode && event.detail < 2) {
             handlePlay();
           }
         }}
-        onDoubleClick={handlePlay}
+        onDoubleClick={previewMode ? undefined : handlePlay}
         onContextMenu={handleContextMenu}
         onKeyDown={handleSelectionKeyDown}
         aria-label={songDisplayTitle(song)}
