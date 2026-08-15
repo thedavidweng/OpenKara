@@ -41,6 +41,16 @@ describe("Spring", () => {
     expect(spring.isSettled()).toBe(true);
   });
 
+  test("hands off a flick velocity from the current position", () => {
+    const spring = new Spring(10);
+    spring.syncPosition(40);
+    spring.setVelocity(200);
+    spring.setTarget(120);
+    expect(spring.getPosition()).toBe(40);
+    expect(spring.getVelocity()).toBe(200);
+    expect(spring.isSettled()).toBe(false);
+  });
+
   test("update is a no-op when settled", () => {
     const spring = new Spring(1);
     spring.setTarget(1);

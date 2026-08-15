@@ -8,8 +8,9 @@ describe("getLineVisualTargets", () => {
   test("focus stage makes the current line dominate neighbors", () => {
     expect(getLineVisualTargets(0, "focus").targetScale).toBe(1);
     expect(getLineVisualTargets(1, "focus").targetScale).toBe(0.97);
-    expect(getLineVisualTargets(0, "focus").targetOpacity).toBe(0.85);
+    expect(getLineVisualTargets(0, "focus").targetOpacity).toBe(1);
     expect(getLineVisualTargets(1, "focus").targetBlur).toBeGreaterThan(0);
+    expect(getLineVisualTargets(1, "focus").targetBlur).toBeLessThan(1);
     expect(getLineVisualTargets(0, "focus").targetBlur).toBe(0);
   });
 });

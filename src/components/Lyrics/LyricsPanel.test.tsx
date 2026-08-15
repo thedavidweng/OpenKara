@@ -681,6 +681,18 @@ describe("LyricsPanel contextual reveal", () => {
 
     expect(mockLyricsState.toggleLyricsAlignment).toHaveBeenCalled();
 
+    const romanize = host.querySelector(
+      "[aria-label='lyrics.romanizeTooltip']",
+    ) as HTMLButtonElement;
+    expect(romanize).toBeTruthy();
+    expect(romanize.getAttribute("data-preview-lyrics-interactive")).toBe(
+      "true",
+    );
+    act(() => {
+      romanize.click();
+    });
+    expect(mockLyricsState.toggleRomanized).toHaveBeenCalled();
+
     act(() => {
       root.unmount();
     });

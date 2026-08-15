@@ -50,20 +50,53 @@ vi.mock("./NowPlayingInfo", () => ({
 }));
 
 vi.mock("./PlayControls", () => ({
-  PlayControls: ({ density }: { density?: string }) => (
-    <div data-play-controls-density={density}>Play controls</div>
+  PlayControls: ({
+    density,
+    previewMode,
+  }: {
+    density?: string;
+    previewMode?: boolean;
+  }) => (
+    <div
+      data-play-controls-density={density}
+      data-preview-mode={previewMode ? "true" : undefined}
+    >
+      Play controls
+    </div>
   ),
 }));
 
 vi.mock("./SeekBar", () => ({
-  SeekBar: ({ density }: { density?: string }) => (
-    <div data-seek-bar-density={density}>Seek bar</div>
+  SeekBar: ({
+    density,
+    previewMode,
+  }: {
+    density?: string;
+    previewMode?: boolean;
+  }) => (
+    <div
+      data-seek-bar-density={density}
+      data-preview-mode={previewMode ? "true" : undefined}
+    >
+      Seek bar
+    </div>
   ),
 }));
 
 vi.mock("./VolumeSliders", () => ({
-  VolumeSliders: ({ density }: { density?: string }) => (
-    <div data-volume-sliders-density={density}>Stem sliders</div>
+  VolumeSliders: ({
+    density,
+    previewMode,
+  }: {
+    density?: string;
+    previewMode?: boolean;
+  }) => (
+    <div
+      data-volume-sliders-density={density}
+      data-preview-mode={previewMode ? "true" : undefined}
+    >
+      Stem sliders
+    </div>
   ),
 }));
 
@@ -161,6 +194,12 @@ describe("PlaybackBar", () => {
     expect(markup).toContain('data-volume-sliders-density="tight"');
     expect(markup).toContain("Queue button");
     expect(markup).toContain("audio-level-slider shrink-0 w-[64px]");
+  });
+
+  test("marks playback children as preview-interactive", () => {
+    const markup = renderToStaticMarkup(<PlaybackBar previewMode />);
+    expect(markup).toContain('data-preview-mode="true"');
+    expect(markup).toContain('data-preview-playback-interactive="true"');
   });
 
   test("keeps one shared structure for the flush playback bar chrome", () => {

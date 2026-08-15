@@ -1,27 +1,19 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
-import { createLanguageTable } from "./i18n-language";
+import { createLanguageTable } from "../../src/lib/i18n-language";
+import en from "../../src/locales/en.json";
+import zhCN from "../../src/locales/zh-CN.json";
 
 export type {
   SupportedLanguage,
   SupportedLanguageCode,
   SupportedLanguageNameKey,
-} from "./i18n-language";
+} from "../../src/lib/i18n-language";
 
-const localeModules = import.meta.glob<Record<string, unknown>>(
-  "../locales/*.json",
-  { eager: true, import: "default" },
-);
-
-function codeFromPath(path: string): string {
-  const file = path.slice(path.lastIndexOf("/") + 1);
-  return file.slice(0, -".json".length);
-}
-
-const translations: Record<string, Record<string, unknown>> = {};
-for (const [path, data] of Object.entries(localeModules)) {
-  translations[codeFromPath(path)] = data;
-}
+const translations = {
+  en,
+  "zh-CN": zhCN,
+} as const;
 
 export const { SUPPORTED_LANGUAGES, detectSystemLanguage, resolveAppLanguage } =
   createLanguageTable(Object.keys(translations));

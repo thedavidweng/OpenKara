@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LyricsScrollControl } from "@/lib/lyrics-session";
 import { Spring } from "@/lib/spring";
 import {
+  beginUserLineSnap,
+  COAST_SETTLE_MS,
   computeLineChangeLyricsScrollTop,
   createUserScrollGuard,
   isLyricsPlaybackSeekJump,
@@ -213,6 +215,81 @@ describe("createUserScrollGuard", () => {
 
     guard.destroy();
   });
+
+  test("coasts into a snap sample after the flick settles", () => {
+    const onCoast = vi.fn();
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
+      onCoast,
+    });
+
+    container.scrollTop = 140;
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    expect(onCoast).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(COAST_SETTLE_MS);
+    expect(onCoast).toHaveBeenCalledWith({
+      scrollTop: 140,
+      velocityPxPerSec: expect.any(Number),
+    });
+
+    guard.destroy();
+  });
+
+  test("drops leftover flick velocity after a long sample gap", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const onCoast = vi.fn();
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
+      onCoast,
+    });
+
+    container.scrollTop = 0;
+    container.dispatchEvent(new Event("scroll"));
+    now += 16;
+    container.scrollTop = 80;
+    container.dispatchEvent(new Event("scroll"));
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    vi.advanceTimersByTime(COAST_SETTLE_MS);
+    expect(onCoast.mock.calls[0]?.[0].velocityPxPerSec).toBeGreaterThan(0);
+
+    onCoast.mockClear();
+    now += 200;
+    container.scrollTop = 88;
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 8 }));
+    container.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(COAST_SETTLE_MS);
+    expect(onCoast).toHaveBeenCalledWith({
+      scrollTop: 88,
+      velocityPxPerSec: 0,
+    });
+
+    vi.restoreAllMocks();
+    guard.destroy();
+  });
+
+  test("turns a discrete wheel notch into a one-line step", () => {
+    const onDiscreteStep = vi.fn();
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
+      onDiscreteStep,
+    });
+
+    const event = new WheelEvent("wheel", {
+      deltaY: 3,
+      deltaMode: WheelEvent.DOM_DELTA_LINE,
+      cancelable: true,
+    });
+    container.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onDiscreteStep).toHaveBeenCalledWith(1);
+
+    guard.destroy();
+  });
 });
 
 describe("isLyricsPlaybackSeekJump", () => {
@@ -297,6 +374,7 @@ describe("tickLyricsEngineScroll", () => {
       prevActiveIndexRef: { current: 0 },
       prevAdjustedMsRef: { current: 0 as number | null },
       lastResumeGenerationRef: { current: 0 },
+      userSnapTopRef: { current: null as number | null },
     };
 
     return { container, scrollSpring, scrollState };
@@ -645,6 +723,36 @@ describe("tickLyricsEngineScroll", () => {
     expect(container.scrollTop).toBe(170);
   });
 
+  test("springs to a user snap target while follow is still unlocked", () => {
+    const { container, scrollSpring, scrollState } = makeScrollFixture();
+    scrollState.userSnapTopRef = { current: 170 };
+    scrollState.prevAdjustedMsRef.current = 15000;
+    scrollState.prevActiveIndexRef.current = 1;
+    scrollSpring.syncPosition(80);
+    scrollSpring.setTarget(170);
+    container.scrollTop = 80;
+
+    tickLyricsEngineScroll({
+      container,
+      lines: [{ time_ms: 0 }, { time_ms: 15000 }],
+      adjustedMs: 15000,
+      scrollState,
+      scrollControl,
+      userScrollGuard: {
+        isActive: () => true,
+        clear: () => {},
+        withProgrammatic: (fn) => fn(),
+        unlockWithIdleRelock: () => {},
+        destroy: () => {},
+      },
+      reducedMotion: true,
+      dt: 0.016,
+    });
+
+    expect(container.scrollTop).toBe(170);
+    expect(scrollSpring.getPosition()).toBe(170);
+  });
+
   test("does not overwrite scrollTop while the user has unlocked follow", () => {
     const { container, scrollSpring, scrollState } = makeScrollFixture();
     scrollSpring.jumpTo(0);
@@ -669,6 +777,22 @@ describe("tickLyricsEngineScroll", () => {
     });
 
     expect(container.scrollTop).toBe(180);
+  });
+
+  test("beginUserLineSnap lands a flick on the projected line", () => {
+    const { container, scrollSpring, scrollState } = makeScrollFixture();
+    scrollState.userSnapTopRef = { current: null };
+    beginUserLineSnap({
+      container,
+      scrollState,
+      lineCount: 2,
+      position: 40,
+      velocityPxPerSec: 900,
+      reducedMotion: false,
+    });
+    expect(scrollState.userSnapTopRef.current).toBe(170);
+    expect(scrollSpring.getVelocity()).toBe(900);
+    expect(scrollSpring.isSettled()).toBe(false);
   });
 
   test("idle relock resume snaps scrollTop back while the active line is unchanged", () => {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AlignLeft, Edit2, Languages, LoaderCircle } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import type { LyricsAlignment } from "@/lib/lyrics-session";
-import { LyricsEditDialog } from "./LyricsEditDialog";
+import { LyricsEditDialog } from "@/components/Lyrics/LyricsEditDialog";
 
 const ACTIVE_BUTTON_CLASS =
   "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]";
@@ -51,8 +51,10 @@ export function LyricsPanelToolbar({
         <Tooltip label={t("lyrics.romanizeTooltip")}>
           <button
             type="button"
+            data-preview-lyrics-interactive="true"
             onClick={onToggleRomanized}
             aria-label={t("lyrics.romanizeTooltip")}
+            aria-pressed={showRomanized}
             disabled={isRomanizing}
             className={`${BUTTON_CLASS} ${
               showRomanized ? ACTIVE_BUTTON_CLASS : IDLE_BUTTON_CLASS

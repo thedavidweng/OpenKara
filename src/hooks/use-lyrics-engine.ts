@@ -1,7 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
-import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
+import {
+  FOCUS_ALIGN_POSITION,
+  LIST_ALIGN_POSITION,
+  getScrollTopForLineIndex,
+} from "@/components/Lyrics/lyrics-scroll";
 import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import {
+  beginUserLineSnap,
+  beginUserLineStep,
   createUserScrollGuard,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
@@ -64,7 +70,10 @@ export function useLyricsEngine(input: {
     prevActiveIndexRef: { current: -1 },
     prevAdjustedMsRef: { current: null },
     lastResumeGenerationRef: { current: 0 },
+    userSnapTopRef: { current: null },
   });
+  const focusStageRef = useRef(focusStage);
+  focusStageRef.current = focusStage;
   const lastSeekRevisionRef = useRef(usePlayerStore.getState().seekRevision);
   const engineSongIdRef = useRef<string | null | undefined>(undefined);
 
@@ -77,10 +86,44 @@ export function useLyricsEngine(input: {
       return;
     }
 
+    const alignPosition = () =>
+      focusStageRef.current ? FOCUS_ALIGN_POSITION : LIST_ALIGN_POSITION;
+    const prefersReducedMotion = () =>
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const guard = createUserScrollGuard(container, USER_SCROLL_PAUSE_MS, {
       scrollControl: session.scroll,
       onActiveChange: (active) => {
         onUserScrollActiveChangeRef.current?.(active);
+      },
+      onUserGesture: () => {
+        const snap = scrollStateRef.current.userSnapTopRef;
+        if (snap) {
+          snap.current = null;
+        }
+      },
+      onCoast: ({ scrollTop, velocityPxPerSec }) => {
+        beginUserLineSnap({
+          container,
+          scrollState: scrollStateRef.current,
+          lineCount: session.getState().lines.length,
+          alignPosition: alignPosition(),
+          position: scrollTop,
+          velocityPxPerSec,
+          reducedMotion: prefersReducedMotion(),
+        });
+      },
+      onDiscreteStep: (direction) => {
+        beginUserLineStep({
+          container,
+          scrollState: scrollStateRef.current,
+          lineCount: session.getState().lines.length,
+          alignPosition: alignPosition(),
+          position: container.scrollTop,
+          direction,
+          reducedMotion: prefersReducedMotion(),
+        });
       },
     });
     guardRef.current = guard;
@@ -137,7 +180,11 @@ export function useLyricsEngine(input: {
       const activeIndex = findActiveLyricLineIndex(lines, adjustedMs);
       const measuredTarget =
         previousSongId != null && container && activeIndex >= 0
-          ? getScrollTopForLineIndex(container, activeIndex)
+          ? getScrollTopForLineIndex(
+              container,
+              activeIndex,
+              focusStage ? FOCUS_ALIGN_POSITION : undefined,
+            )
           : null;
       const nextTop = measuredTarget ?? 0;
       scrollSpring.jumpTo(nextTop);
@@ -251,6 +298,7 @@ export function useLyricsEngine(input: {
       const target = getScrollTopForLineIndex(
         currentContainer,
         activeLineIndex,
+        focusStage ? FOCUS_ALIGN_POSITION : undefined,
       );
       if (target === null) {
         return;
@@ -296,5 +344,5 @@ export function useLyricsEngine(input: {
       }
       observer.disconnect();
     };
-  }, [containerRef, isPlainText, session, viewportActive, songId]);
+  }, [containerRef, focusStage, isPlainText, session, viewportActive, songId]);
 }

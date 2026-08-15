@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/Overlay/Tooltip";
 import i18next from "@/lib/i18n";
 import { MOCK_DATA } from "@/mock/tauri-mock-data";
 import { createTauriMock } from "@/mock/tauri-mock-impl";
+import { PREVIEW_COVER_URLS } from "./preview-covers";
 import { useLayoutStore } from "@/stores/layout-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -16,7 +17,23 @@ import type { PlaylistSong } from "@/lib/backend";
 // drift apart.
 function ensureTauriMock() {
   if (!window.__TAURI_INTERNALS__) {
-    const { internals, eventPluginInternals } = createTauriMock(MOCK_DATA);
+    const { internals, eventPluginInternals } = createTauriMock({
+      ...MOCK_DATA,
+      songs: MOCK_DATA.songs.map((song) => ({ ...song, cover_art: null })),
+      coverArtUrls: PREVIEW_COVER_URLS,
+      // Finished four-stem library. MOCK_DATA stays two_stem for E2E
+      // playback-bar geometry fixtures.
+      stemsCompleted: true,
+      settings: {
+        ...MOCK_DATA.settings,
+        stem_mode: "four_stem",
+      },
+      playbackSnapshot: {
+        ...MOCK_DATA.playbackSnapshot,
+        has_stems: true,
+        stem_mode: "four_stem",
+      },
+    });
     window.__TAURI_INTERNALS__ = internals;
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = eventPluginInternals;
   }

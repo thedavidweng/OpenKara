@@ -3,6 +3,7 @@ import {
   CENTERED_BG_FONT_SIZE,
   CENTERED_LINE_FONT_SIZE_BASE,
   CENTERED_ROMAN_FONT_SIZE,
+  evaluateCenteredLineFontSizePx,
   getCenteredLineFontSize,
   shouldEmphasizeWord,
   wordTokenGap,
@@ -26,13 +27,25 @@ describe("wordTokenGap", () => {
 });
 
 describe("centered focus type scale", () => {
-  test("puts the viewport line size on the line, not a rem step", () => {
+  test("puts a clamped display size on the line, not a rem step", () => {
     expect(getCenteredLineFontSize(0)).toBe(CENTERED_LINE_FONT_SIZE_BASE);
+    expect(CENTERED_LINE_FONT_SIZE_BASE).toContain("clamp(");
+    expect(CENTERED_LINE_FONT_SIZE_BASE).not.toContain("5vh");
     expect(getCenteredLineFontSize(-2)).toBe(
       `calc(${CENTERED_LINE_FONT_SIZE_BASE} * 0.76)`,
     );
     expect(getCenteredLineFontSize(2)).toBe(
       `calc(${CENTERED_LINE_FONT_SIZE_BASE} * 1.28)`,
+    );
+  });
+
+  test("clamps the display size at small, mid, and large viewports", () => {
+    expect(evaluateCenteredLineFontSizePx(0, 320, 480)).toBeCloseTo(34.4, 5);
+    expect(evaluateCenteredLineFontSizePx(0, 1600, 900)).toBeCloseTo(43.4, 5);
+    expect(evaluateCenteredLineFontSizePx(0, 1920, 1080)).toBeCloseTo(48, 5);
+    expect(evaluateCenteredLineFontSizePx(-2, 1920, 1080)).toBeCloseTo(
+      48 * 0.76,
+      5,
     );
   });
 

@@ -49,10 +49,13 @@ const CENTERED_LINE_FONT_STEP_SCALE = {
   [2]: 1.28,
 } as const;
 
-/** Viewport line size for centered focus. Secondary rows use em of this. */
-export const CENTERED_LINE_FONT_SIZE_BASE = "max(max(5vh, 2.5vw), 12px)";
+export const CENTERED_LINE_FONT_SIZE_BASE =
+  "clamp(2.15rem, 1.7vw + 1.8vh, 3rem)";
 export const CENTERED_ROMAN_FONT_SIZE = "max(0.5em, 10px)";
 export const CENTERED_BG_FONT_SIZE = "max(0.7em, 10px)";
+export const CENTERED_LINE_LINE_HEIGHT = 1.22;
+export const CENTERED_LINE_LETTER_SPACING = "-0.02em";
+export const CENTERED_LINE_PADDING = "0.42em 0.12em";
 
 function clampStep(lyricsFontStep: number): FontStep {
   return Math.max(-2, Math.min(2, lyricsFontStep)) as FontStep;
@@ -84,6 +87,19 @@ export function getCenteredLineFontSize(lyricsFontStep: number): string {
     return CENTERED_LINE_FONT_SIZE_BASE;
   }
   return `calc(${CENTERED_LINE_FONT_SIZE_BASE} * ${scale})`;
+}
+
+export function evaluateCenteredLineFontSizePx(
+  lyricsFontStep: number,
+  viewportWidthPx: number,
+  viewportHeightPx: number,
+  rootFontSizePx = 16,
+): number {
+  const scale = CENTERED_LINE_FONT_STEP_SCALE[clampStep(lyricsFontStep)];
+  const minPx = 2.15 * rootFontSizePx;
+  const maxPx = 3 * rootFontSizePx;
+  const preferredPx = 0.017 * viewportWidthPx + 0.018 * viewportHeightPx;
+  return Math.min(maxPx, Math.max(minPx, preferredPx)) * scale;
 }
 
 export function getSeekableHoverClass(

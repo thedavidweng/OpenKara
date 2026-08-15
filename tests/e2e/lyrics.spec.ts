@@ -61,6 +61,7 @@ test.describe("Lyrics display", () => {
 test.describe("AMLL preview song", () => {
   test("One Last Kiss plays Word-timed Japanese lyrics from the shared catalog", async ({
     page,
+    tauriMock,
   }) => {
     await page.goto("/");
     await expect(page.getByText("One Last Kiss")).toBeVisible();
@@ -69,6 +70,13 @@ test.describe("AMLL preview song", () => {
       timeout: 10_000,
     });
     await expect(page.getByText("忘れられない人").first()).toBeVisible();
+    // Karaoke fill only mounts on the active word-timed line. E2E play
+    // starts at 0, and the first sung line is at 20.686s.
+    await tauriMock.setPlaybackSnapshot({
+      is_playing: true,
+      state: "playing",
+      position_ms: 21_100,
+    });
     await expect(page.locator("[data-karaoke-fill]").first()).toBeVisible();
   });
 });

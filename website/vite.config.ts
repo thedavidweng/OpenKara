@@ -1,7 +1,32 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
+import {
+  PREVIEW_I18N_MODULE_PATTERN,
+  PREVIEW_ROMANIZER_MODULE_PATTERN,
+  UNUSED_PREVIEW_MODULES,
+  previewUnusedModulePattern,
+} from "./src/preview-aliases";
+import {
+  isPreviewCatalogModule,
+  slimPreviewCatalogSource,
+} from "./src/slim-preview-catalog";
+
+function slimPreviewCatalogPlugin(): Plugin {
+  return {
+    name: "slim-preview-catalog",
+    transform(code, id) {
+      if (!isPreviewCatalogModule(id)) {
+        return null;
+      }
+      return {
+        code: slimPreviewCatalogSource(code),
+        map: null,
+      };
+    },
+  };
+}
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
@@ -9,11 +34,32 @@ export default defineConfig({
   // No CNAME → no custom domain redirect. The xyz domain stays registered for
   // Dropbox app configuration but no longer serves the site.
   base: "/OpenKara/",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), slimPreviewCatalogPlugin()],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("../src", import.meta.url)),
-    },
+    alias: [
+      {
+        find: PREVIEW_ROMANIZER_MODULE_PATTERN,
+        replacement: fileURLToPath(
+          new URL("./src/preview-romanizer.ts", import.meta.url),
+        ),
+      },
+      {
+        find: PREVIEW_I18N_MODULE_PATTERN,
+        replacement: fileURLToPath(
+          new URL("./src/preview-i18n.ts", import.meta.url),
+        ),
+      },
+      ...UNUSED_PREVIEW_MODULES.map((modulePath) => ({
+        find: previewUnusedModulePattern(modulePath),
+        replacement: fileURLToPath(
+          new URL("./src/preview-unused.ts", import.meta.url),
+        ),
+      })),
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("../src", import.meta.url)),
+      },
+    ],
   },
   server: {
     host: "0.0.0.0",
