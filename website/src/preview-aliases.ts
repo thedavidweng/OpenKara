@@ -1,3 +1,6 @@
+export const PREVIEW_ROMANIZER_MODULE_PATTERN = /^@\/lib\/lyrics-romanizer$/;
+export const PREVIEW_I18N_MODULE_PATTERN = /^@\/lib\/i18n$/;
+
 export const UNUSED_PREVIEW_MODULES = [
   "components/Settings/SettingsOverlay",
   "components/Settings/LibrarySetup",

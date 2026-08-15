@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import {
+  PREVIEW_I18N_MODULE_PATTERN,
+  PREVIEW_ROMANIZER_MODULE_PATTERN,
   UNUSED_PREVIEW_MODULES,
   previewUnusedModulePattern,
 } from "./src/preview-aliases";
@@ -36,13 +38,13 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@\/lib\/lyrics-romanizer$/,
+        find: PREVIEW_ROMANIZER_MODULE_PATTERN,
         replacement: fileURLToPath(
           new URL("./src/preview-romanizer.ts", import.meta.url),
         ),
       },
       {
-        find: /^@\/lib\/i18n$/,
+        find: PREVIEW_I18N_MODULE_PATTERN,
         replacement: fileURLToPath(
           new URL("./src/preview-i18n.ts", import.meta.url),
         ),

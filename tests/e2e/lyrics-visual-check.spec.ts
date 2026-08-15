@@ -138,16 +138,27 @@ test.describe("Lyrics visual check", () => {
     await expect(first.getByText("人")).toBeVisible();
     await expect(wordRomans).toHaveCount(4);
 
-    const wipe = await page.evaluate(() => {
-      const fills = [
-        ...document.querySelectorAll<HTMLElement>(
-          "[data-lyrics-line-index='0'] [data-karaoke-fill]",
-        ),
-      ];
-      return fills.map(
-        (el) => el.style.webkitMaskPosition || el.style.maskPosition,
-      );
-    });
+    let wipe: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          wipe = await page.evaluate(() => {
+            const fills = [
+              ...document.querySelectorAll<HTMLElement>(
+                "[data-lyrics-line-index='0'] [data-karaoke-fill]",
+              ),
+            ];
+            return fills.map(
+              (el) => el.style.webkitMaskPosition || el.style.maskPosition,
+            );
+          });
+          const first = wipe[0] ?? "";
+          const last = wipe[3] ?? "";
+          return first !== last && last.includes("-");
+        },
+        { timeout: 2000, intervals: [50, 80, 120] },
+      )
+      .toBe(true);
     expect(wipe[0] ?? "").not.toBe(wipe[3] ?? "");
     expect(wipe[3] ?? "").toContain("-");
     const boxes = await wordRomans.evaluateAll((nodes) =>
