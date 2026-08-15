@@ -252,6 +252,7 @@ describe("SongListItem", () => {
     );
 
     const selection = getByRole("button", { name: song.title });
+    expect(selection.getAttribute("data-preview-song-switch")).toBeNull();
     fireEvent.click(selection);
     fireEvent.keyDown(selection, { key: "Enter" });
 
@@ -292,6 +293,7 @@ describe("SongListItem", () => {
     );
 
     const selection = getByRole("button", { name: song.title });
+    expect(selection.getAttribute("data-preview-song-switch")).toBe("true");
     fireEvent.click(selection);
 
     expect(mockPlayerState.playNow).toHaveBeenCalledTimes(1);

@@ -260,6 +260,7 @@ export function SongListItem({
         aria-pressed={isSelected}
         className="absolute inset-0 z-0 cursor-pointer rounded-[14px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
         data-song-action="select"
+        data-preview-song-switch={previewMode ? "true" : undefined}
       />
 
       <CoverArtThumbnail

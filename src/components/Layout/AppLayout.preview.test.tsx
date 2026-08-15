@@ -308,6 +308,22 @@ describe("AppLayout preview mode", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("allows click interactions on song-switch targets in preview mode", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const songSwitch = document.createElement("button");
+    songSwitch.setAttribute("data-preview-song-switch", "true");
+    songSwitch.addEventListener("click", onClick);
+    outer.appendChild(songSwitch);
+
+    fireEvent.click(songSwitch);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("allows click interactions on play-toggle targets in preview mode", () => {
     const onClick = vi.fn();
     const { container } = render(

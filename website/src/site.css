@@ -445,7 +445,7 @@ a {
     [data-preview-lyrics-interactive="true"]
   ):not([data-preview-sidebar-toggle="true"]):not(
     [data-preview-play-toggle="true"]
-  ),
+  ):not([data-preview-song-switch="true"]),
 .product-preview [data-preview-interaction-mode="playlist-only"] input,
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
@@ -462,7 +462,10 @@ a {
   [data-preview-sidebar-toggle="true"],
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  [data-preview-play-toggle="true"] {
+  [data-preview-play-toggle="true"],
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-song-switch="true"] {
   cursor: pointer;
 }
 

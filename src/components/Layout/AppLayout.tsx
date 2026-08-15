@@ -32,6 +32,7 @@ function isPreviewAllowedTarget(target: EventTarget | null): boolean {
       target.closest("[data-preview-lyrics-interactive='true']") != null ||
       target.closest("[data-preview-sidebar-toggle='true']") != null ||
       target.closest("[data-preview-play-toggle='true']") != null ||
+      target.closest("[data-preview-song-switch='true']") != null ||
       target.closest("[data-preview-song-list='true']") != null)
   );
 }
