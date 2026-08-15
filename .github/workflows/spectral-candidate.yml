@@ -61,7 +61,7 @@ jobs:
           toolchain: stable
 
       - name: Restore Rust cache
-        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: spectral-candidate-${{ matrix.os }}
           workspaces: ./src-tauri -> target
@@ -134,7 +134,7 @@ jobs:
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Install nextest
-        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        uses: taiki-e/install-action@82cd3e7658a6f96c86c0234aeeda1748937cb0a1 # v2.85.13
         with:
           tool: nextest
 
