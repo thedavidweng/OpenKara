@@ -78,6 +78,7 @@ export function LyricsPanelToolbar({
         <Tooltip label={alignmentLabel}>
           <button
             type="button"
+            data-preview-lyrics-interactive="true"
             onClick={onToggleAlignment}
             aria-label={alignmentLabel}
             className={`${BUTTON_CLASS} ${

@@ -21,10 +21,17 @@ pre-commit:
       glob: "*.rs"
       run: cd src-tauri && cargo fmt
       stage_fixed: true
+    knip:
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json}"
+      exclude:
+        - "pnpm-lock.yaml"
+        - "src-tauri/**"
+      run: pnpm knip --no-progress
 
 # Mirrors CI checks (ci.yml) so local pushes fail the same way CI would.
-# pre-commit only formats staged files; these checks verify the entire repo
-# to catch files that slipped through a prior --no-verify or partial staging.
+# pre-commit formats staged files and runs knip. These checks verify the
+# entire repo to catch files that slipped through a prior --no-verify or
+# partial staging.
 #
 # Every command runs through skip-delete-only-push.sh: a push that only
 # deletes remote refs transfers no commits, so there is nothing for these
@@ -43,6 +50,9 @@ pre-push:
     lint:
       use_stdin: true
       run: sh scripts/git-hooks/skip-delete-only-push.sh 'node --run lint'
+    knip:
+      use_stdin: true
+      run: sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm knip --no-progress'
     standards-route:
       use_stdin: true
       run: sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:standards'

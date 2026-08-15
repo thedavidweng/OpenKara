@@ -47,8 +47,9 @@ const {
     setSongsInstrumental: vi.fn(),
   },
   mockPlayerState: {
-    snapshot: null,
+    snapshot: null as { song_id: string; is_playing: boolean } | null,
     playSong: vi.fn(),
+    playNow: vi.fn(),
     loadState: vi.fn(),
   },
   mockLyricsState: {
@@ -175,6 +176,7 @@ describe("SongListItem", () => {
     mockLibraryState.batchSeparation = null;
     mockLibraryState.separationStatuses = {};
     mockLibraryState.uploadStatuses = {};
+    mockPlayerState.snapshot = null;
   });
 
   test("shows a cancel affordance while separating and calls the API on click", () => {
@@ -260,6 +262,44 @@ describe("SongListItem", () => {
     );
     expect(mockPlayerState.playSong).toHaveBeenCalledWith(song.hash);
     expect(selection.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("preview mode plays the clicked song immediately", () => {
+    const song = {
+      hash: "preview-song",
+      file_path: "Artist/Preview Song.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      title: "Preview Song",
+      artist: "Artist",
+      album: null,
+      duration_ms: 180_000,
+      cover_art: null,
+      has_cover_art: false,
+      artwork_thumb_path: null,
+      imported_at: 0,
+      original_ext: "mp3",
+    };
+    mockPlayerState.snapshot = {
+      song_id: "other-song",
+      is_playing: true,
+    };
+    const { getByRole } = render(
+      <SongListItem song={song} orderedHashes={[song.hash]} previewMode />,
+    );
+
+    const selection = getByRole("button", { name: song.title });
+    fireEvent.click(selection);
+
+    expect(mockPlayerState.playNow).toHaveBeenCalledTimes(1);
+    expect(mockPlayerState.playNow).toHaveBeenCalledWith(song.hash);
+    expect(mockPlayerState.playSong).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(selection);
+    expect(mockPlayerState.playNow).toHaveBeenCalledTimes(1);
   });
 
   test("opens the song actions from the keyboard context-menu shortcut", () => {

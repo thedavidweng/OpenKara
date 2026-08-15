@@ -29,9 +29,14 @@ import type { Song } from "@/types/ipc";
 interface SongListItemProps {
   song: Song;
   orderedHashes: string[];
+  previewMode?: boolean;
 }
 
-export function SongListItem({ song, orderedHashes }: SongListItemProps) {
+export function SongListItem({
+  song,
+  orderedHashes,
+  previewMode = false,
+}: SongListItemProps) {
   const backend = useBackend();
   const { t } = useTranslation();
   const isSelected = useLibraryStore((s) => s.selectedSongIds.has(song.hash));
@@ -44,6 +49,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     batchSeparationInProgress(s.batchSeparation),
   );
   const playSong = usePlayerStore((s) => s.playSong);
+  const playNow = usePlayerStore((s) => s.playNow);
   const closeSettings = useSettingsStore((s) => s.close);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -92,6 +98,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         : null;
 
   const handlePlay = () => {
+    if (previewMode) {
+      void playNow(song.hash);
+      closeSettings();
+      return;
+    }
     const current = usePlayerStore.getState().snapshot;
     if (current?.song_id && current.song_id !== song.hash) {
       useQueueStore.getState().addToQueue(song.hash);
@@ -236,8 +247,13 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     >
       <button
         type="button"
-        onClick={selectSongFromEvent}
-        onDoubleClick={handlePlay}
+        onClick={(event) => {
+          selectSongFromEvent(event);
+          if (previewMode && event.detail < 2) {
+            handlePlay();
+          }
+        }}
+        onDoubleClick={previewMode ? undefined : handlePlay}
         onContextMenu={handleContextMenu}
         onKeyDown={handleSelectionKeyDown}
         aria-label={songDisplayTitle(song)}

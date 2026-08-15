@@ -252,12 +252,12 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
             </span>
             <SortModeSelector />
           </div>
-          <SongList />
+          <SongList previewMode={previewMode} />
         </div>
       )}
       {activePlaylistId && (
         <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
-          <SongList />
+          <SongList previewMode={previewMode} />
         </div>
       )}
 

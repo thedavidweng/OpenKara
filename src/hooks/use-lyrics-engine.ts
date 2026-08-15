@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
+import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import {
   createUserScrollGuard,
   shouldRunLyricsEngineLoop,
@@ -119,7 +120,8 @@ export function useLyricsEngine(input: {
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const isSongChange = engineSongIdRef.current !== songId;
+    const previousSongId = engineSongIdRef.current;
+    const isSongChange = previousSongId !== songId;
     engineSongIdRef.current = songId;
 
     const scrollState = scrollStateRef.current;
@@ -129,21 +131,35 @@ export function useLyricsEngine(input: {
     lastSeekRevisionRef.current = usePlayerStore.getState().seekRevision;
 
     if (isSongChange) {
-      scrollSpring.jumpTo(0);
-      scrollState.targetScrollTopRef.current = null;
+      const container = containerRef.current;
+      const { lines } = session.getState();
+      const adjustedMs = session.toAdjustedMs(session.readPositionMs());
+      const activeIndex = findActiveLyricLineIndex(lines, adjustedMs);
+      const measuredTarget =
+        previousSongId != null && container && activeIndex >= 0
+          ? getScrollTopForLineIndex(container, activeIndex)
+          : null;
+      const nextTop = measuredTarget ?? 0;
+      scrollSpring.jumpTo(nextTop);
+      scrollState.targetScrollTopRef.current =
+        measuredTarget === null ? null : nextTop;
+      scrollState.prevActiveIndexRef.current =
+        measuredTarget === null ? -1 : activeIndex;
       scrollState.lastResumeGenerationRef.current =
         session.scroll.peekResumeGeneration();
 
-      const container = containerRef.current;
       if (container) {
         const write = () => {
-          container.scrollTop = 0;
+          container.scrollTop = nextTop;
         };
         if (guardRef.current) {
           guardRef.current.withProgrammatic(write);
         } else {
           write();
         }
+      }
+      if (previousSongId != null) {
+        session.scroll.requestResume();
       }
     } else {
       session.scroll.requestResume();

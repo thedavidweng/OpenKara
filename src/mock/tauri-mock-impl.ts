@@ -49,6 +49,8 @@ export interface MockData {
   };
   loopPlayback?: boolean;
   loopStartPositionMs?: number;
+  playStartPositionMs?: number;
+  playStartPositionBySongId?: Record<string, number>;
 }
 
 export interface MockSong {
@@ -169,6 +171,21 @@ export function createTauriMock(data: any): TauriMockResult {
     return transportGeneration;
   }
 
+  function resolveLyrics(songId: string | undefined): any {
+    if (lyricsOverride) return lyricsOverride;
+    if (songId && mockLyricsBySongId[songId]) return mockLyricsBySongId[songId];
+    return mockLyrics;
+  }
+
+  function resolvePlayStartMs(songId: string, durationMs: number): number {
+    const requested =
+      data.playStartPositionBySongId?.[songId] ??
+      data.playStartPositionMs ??
+      data.loopStartPositionMs ??
+      0;
+    return Math.min(Math.max(0, requested), Math.max(0, durationMs - 1));
+  }
+
   function schedulePlaybackEnd(): void {
     if (playbackEndTimer) {
       clearTimeout(playbackEndTimer);
@@ -183,7 +200,10 @@ export function createTauriMock(data: any): TauriMockResult {
       const gen = (currentPlaybackSnapshot as any).transport_generation;
       if (gen !== transportGeneration) return;
       if (data.loopPlayback) {
-        const loopMs = data.loopStartPositionMs ?? 0;
+        const loopMs = resolvePlayStartMs(
+          snap.song_id || data.primarySongHash,
+          snap.duration_ms || 0,
+        );
         currentPlaybackSnapshot = {
           ...currentPlaybackSnapshot,
           state: "playing",
@@ -387,15 +407,17 @@ export function createTauriMock(data: any): TauriMockResult {
       const songId =
         (args && (args.songId || args.song_id)) || data.primarySongHash;
       const song = mockSongs.find((s: any) => s.hash === songId);
+      const durationMs = song ? song.duration_ms : 300000;
+      const positionMs = resolvePlayStartMs(songId, durationMs);
       bumpTransportGeneration();
       currentPlaybackSnapshot = {
         ...currentPlaybackSnapshot,
         song_id: songId,
         state: "playing",
         is_playing: true,
-        position_ms: 0,
-        duration_ms: song ? song.duration_ms : 300000,
-        buffered_ms: 0,
+        position_ms: positionMs,
+        duration_ms: durationMs,
+        buffered_ms: durationMs,
       };
       schedulePlaybackEnd();
       return clone(currentPlaybackSnapshot);
@@ -479,15 +501,11 @@ export function createTauriMock(data: any): TauriMockResult {
 
     fetch_lyrics: (args: any) => {
       const songId = args && args.songId;
-      const payload =
-        lyricsOverride || (songId && mockLyricsBySongId[songId]) || mockLyrics;
-      return { ...payload, song_id: songId };
+      return { ...resolveLyrics(songId), song_id: songId };
     },
     fetch_lyrics_online: (args: any) => {
       const songId = args && args.songId;
-      const payload =
-        lyricsOverride || (songId && mockLyricsBySongId[songId]) || mockLyrics;
-      return { ...payload, song_id: songId };
+      return { ...resolveLyrics(songId), song_id: songId };
     },
     save_manual_lyrics: (args: any) => ({
       raw_lrc: (args && args.text) || "",
