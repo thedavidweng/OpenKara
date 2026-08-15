@@ -18,6 +18,7 @@ Desktop.ini
 .idea/
 .cursor/
 .claude/
+.grok/
 .agents/*
 !.agents/skills/
 *.swp
