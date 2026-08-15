@@ -2,7 +2,7 @@ import { useCallback, useEffect, type SyntheticEvent } from "react";
 import { Sidebar } from "./Sidebar";
 import { SidebarRail } from "./SidebarRail";
 import { WindowChrome } from "./WindowChrome";
-import { ToastContainer } from "./ToastContainer";
+import { ToastContainer } from "@/components/Layout/ToastContainer";
 import { MainContentView } from "./MainContentView";
 import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialog";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
@@ -32,6 +32,7 @@ function isPreviewAllowedTarget(target: EventTarget | null): boolean {
       target.closest("[data-preview-lyrics-interactive='true']") != null ||
       target.closest("[data-preview-sidebar-toggle='true']") != null ||
       target.closest("[data-preview-play-toggle='true']") != null ||
+      target.closest("[data-preview-playback-interactive='true']") != null ||
       target.closest("[data-preview-song-switch='true']") != null ||
       target.closest("[data-preview-song-list='true']") != null)
   );

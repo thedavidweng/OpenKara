@@ -1,7 +1,41 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
+import {
+  isPreviewCatalogModule,
+  slimPreviewCatalogSource,
+} from "./src/slim-preview-catalog";
+
+const unusedPreviewModules = [
+  "components/Settings/SettingsOverlay",
+  "components/Settings/LibrarySetup",
+  "components/Settings/ConfirmationDialog",
+  "components/Settings/InputDialog",
+  "components/Player/QueuePanel",
+  "components/Lyrics/LyricsEditDialog",
+  "components/Layout/UpdateBanner",
+  "components/Layout/GlobalProgressBar",
+  "components/Layout/ToastContainer",
+  "components/Library/ImportCdgChoiceDialog",
+  "components/Bootstrap/ModelBootstrapBanner",
+  "components/Bootstrap/RuntimeUpdateBanner",
+];
+
+function slimPreviewCatalogPlugin(): Plugin {
+  return {
+    name: "slim-preview-catalog",
+    transform(code, id) {
+      if (!isPreviewCatalogModule(id)) {
+        return null;
+      }
+      return {
+        code: slimPreviewCatalogSource(code),
+        map: null,
+      };
+    },
+  };
+}
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
@@ -9,11 +43,32 @@ export default defineConfig({
   // No CNAME → no custom domain redirect. The xyz domain stays registered for
   // Dropbox app configuration but no longer serves the site.
   base: "/OpenKara/",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), slimPreviewCatalogPlugin()],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("../src", import.meta.url)),
-    },
+    alias: [
+      {
+        find: /^@\/lib\/lyrics-romanizer$/,
+        replacement: fileURLToPath(
+          new URL("./src/preview-romanizer.ts", import.meta.url),
+        ),
+      },
+      {
+        find: /^@\/lib\/i18n$/,
+        replacement: fileURLToPath(
+          new URL("./src/preview-i18n.ts", import.meta.url),
+        ),
+      },
+      ...unusedPreviewModules.map((modulePath) => ({
+        find: new RegExp(`^@\\/${modulePath.replace(/\//g, "\\/")}$`),
+        replacement: fileURLToPath(
+          new URL("./src/preview-unused.ts", import.meta.url),
+        ),
+      })),
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("../src", import.meta.url)),
+      },
+    ],
   },
   server: {
     host: "0.0.0.0",

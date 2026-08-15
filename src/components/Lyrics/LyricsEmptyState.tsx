@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LyricsEditDialog } from "./LyricsEditDialog";
+import { LyricsEditDialog } from "@/components/Lyrics/LyricsEditDialog";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 

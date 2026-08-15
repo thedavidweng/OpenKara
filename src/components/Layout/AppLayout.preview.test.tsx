@@ -101,7 +101,7 @@ vi.mock("./SidebarRail", () => ({
   ),
 }));
 
-vi.mock("./ToastContainer", () => ({
+vi.mock("@/components/Layout/ToastContainer", () => ({
   ToastContainer: () => <div data-testid="toast-container" />,
 }));
 
@@ -321,6 +321,22 @@ describe("AppLayout preview mode", () => {
     outer.appendChild(songSwitch);
 
     fireEvent.click(songSwitch);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows click interactions on playback-interactive targets in preview mode", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const playback = document.createElement("button");
+    playback.setAttribute("data-preview-playback-interactive", "true");
+    playback.addEventListener("click", onClick);
+    outer.appendChild(playback);
+
+    fireEvent.click(playback);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 

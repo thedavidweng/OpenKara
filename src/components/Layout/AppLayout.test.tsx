@@ -86,7 +86,7 @@ vi.mock("./SidebarRail", () => ({
   ),
 }));
 
-vi.mock("./ToastContainer", () => ({
+vi.mock("@/components/Layout/ToastContainer", () => ({
   ToastContainer: () => <div data-testid="toast-container" />,
 }));
 

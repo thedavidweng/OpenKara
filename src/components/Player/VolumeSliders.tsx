@@ -31,10 +31,12 @@ const STEM_POPUP_RAIL_TRAIL_CLASS = "mr-[14px]";
 
 interface VolumeSlidersProps {
   density?: PlaybackBarDensity;
+  previewMode?: boolean;
 }
 
 export function VolumeSliders({
   density = "relaxed",
+  previewMode = false,
 }: VolumeSlidersProps = {}) {
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
@@ -334,6 +336,7 @@ export function VolumeSliders({
   const fourStemPopupRows = (
     <div className="flex flex-col gap-2">
       <StemSlider
+        previewInteractive={previewMode}
         icon={Drum}
         label={t("stems.drums")}
         value={stemVolumes.drums}
@@ -343,6 +346,7 @@ export function VolumeSliders({
         iconButtonVariant="playback_bar"
       />
       <StemSlider
+        previewInteractive={previewMode}
         icon={Guitar}
         label={t("stems.bass")}
         value={stemVolumes.bass}
@@ -352,6 +356,7 @@ export function VolumeSliders({
         iconButtonVariant="playback_bar"
       />
       <StemSlider
+        previewInteractive={previewMode}
         icon={AudioWaveform}
         label={t("stems.other")}
         value={stemVolumes.other}
@@ -366,6 +371,7 @@ export function VolumeSliders({
   const tightPopupRows = (
     <div className="flex flex-col gap-2">
       <StemSlider
+        previewInteractive={previewMode}
         icon={Mic2}
         label={t("stems.vocals")}
         value={stemVolumes.vocals}
@@ -376,6 +382,7 @@ export function VolumeSliders({
         playbackActionName="vocals-mute"
       />
       <StemSlider
+        previewInteractive={previewMode}
         icon={Music}
         label={t("stems.accompaniment")}
         value={accompDragValue ?? accompValue}
@@ -391,6 +398,7 @@ export function VolumeSliders({
         <>
           <div className="h-px bg-[color-mix(in_srgb,var(--color-border)_85%,transparent)]" />
           <StemSlider
+            previewInteractive={previewMode}
             icon={Drum}
             label={t("stems.drums")}
             value={stemVolumes.drums}
@@ -400,6 +408,7 @@ export function VolumeSliders({
             iconButtonVariant="playback_bar"
           />
           <StemSlider
+            previewInteractive={previewMode}
             icon={Guitar}
             label={t("stems.bass")}
             value={stemVolumes.bass}
@@ -409,6 +418,7 @@ export function VolumeSliders({
             iconButtonVariant="playback_bar"
           />
           <StemSlider
+            previewInteractive={previewMode}
             icon={AudioWaveform}
             label={t("stems.other")}
             value={stemVolumes.other}
@@ -429,6 +439,7 @@ export function VolumeSliders({
             ref={popupRef}
             data-state="open"
             data-stem-popup="true"
+            data-preview-playback-interactive={previewMode ? "true" : undefined}
             className={popupSurfaceClassName}
             style={{ left: popupPos.left, bottom: popupPos.bottom }}
           >
@@ -440,7 +451,11 @@ export function VolumeSliders({
 
   if (collapsedMode) {
     return (
-      <div ref={tightAnchorRef} className="relative shrink-0">
+      <div
+        ref={tightAnchorRef}
+        className="relative shrink-0"
+        data-preview-playback-interactive={previewMode ? "true" : undefined}
+      >
         <Tooltip label={triggerLabel}>
           <button
             ref={triggerRef}
@@ -476,8 +491,10 @@ export function VolumeSliders({
       className={`flex items-center ${
         density === "relaxed" ? "gap-5" : "gap-3"
       }`}
+      data-preview-playback-interactive={previewMode ? "true" : undefined}
     >
       <StemSlider
+        previewInteractive={previewMode}
         icon={Mic2}
         label={t("stems.vocals")}
         value={stemVolumes.vocals}
@@ -491,6 +508,7 @@ export function VolumeSliders({
 
       <div className="flex items-center gap-2">
         <StemSlider
+          previewInteractive={previewMode}
           icon={Music}
           label={t("stems.accompaniment")}
           value={accompDragValue ?? accompValue}
@@ -545,6 +563,7 @@ interface StemSliderProps {
   disabled?: boolean;
   sliderWidthClass?: string;
   muteButtonRef?: React.RefObject<HTMLButtonElement | null>;
+  previewInteractive?: boolean;
 }
 
 export function StemSlider({
@@ -561,6 +580,7 @@ export function StemSlider({
   disabled = false,
   sliderWidthClass = "w-16 mr-[14px]",
   muteButtonRef,
+  previewInteractive = false,
 }: StemSliderProps) {
   const { t } = useTranslation();
   const muteLabel =
@@ -606,6 +626,7 @@ export function StemSlider({
           disabled={disabled}
           widthClass={sliderWidthClass}
           ariaLabel={label}
+          previewInteractive={previewInteractive}
         />
       </div>
     );
@@ -641,6 +662,7 @@ export function StemSlider({
         disabled={disabled}
         widthClass={sliderWidthClass}
         ariaLabel={label}
+        previewInteractive={previewInteractive}
       />
     </div>
   );

@@ -11,6 +11,7 @@ interface AudioLevelSliderProps {
   widthClass?: string;
   ariaLabel?: string;
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  previewInteractive?: boolean;
 }
 
 function formatAudioLevelTooltip(label: string, value: number): string {
@@ -27,6 +28,7 @@ export function AudioLevelSlider({
   widthClass = "w-16",
   ariaLabel,
   inputRef,
+  previewInteractive = false,
 }: AudioLevelSliderProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -68,6 +70,9 @@ export function AudioLevelSlider({
         }}
         className={`native-slider audio-level-slider shrink-0 ${widthClass}`}
         disabled={disabled}
+        data-preview-playback-interactive={
+          previewInteractive ? "true" : undefined
+        }
         data-dragging={isDragging ? "true" : undefined}
         aria-label={ariaLabel ?? label}
       />

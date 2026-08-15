@@ -445,11 +445,15 @@ a {
     [data-preview-lyrics-interactive="true"]
   ):not([data-preview-sidebar-toggle="true"]):not(
     [data-preview-play-toggle="true"]
-  ):not([data-preview-song-switch="true"]),
-.product-preview [data-preview-interaction-mode="playlist-only"] input,
+  ):not([data-preview-playback-interactive="true"]):not(
+    [data-preview-song-switch="true"]
+  ),
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  [role="slider"] {
+  input:not([data-preview-playback-interactive="true"]),
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [role="slider"]:not([data-preview-playback-interactive="true"]) {
   pointer-events: none;
   cursor: default;
 }
@@ -465,8 +469,30 @@ a {
   [data-preview-play-toggle="true"],
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
+  [data-preview-playback-interactive="true"],
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
   [data-preview-song-switch="true"] {
   cursor: pointer;
+}
+
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-playback-interactive="true"],
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-playback-interactive="true"]
+  button,
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-playback-interactive="true"]
+  input,
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-playback-interactive="true"]
+  [role="slider"] {
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 /* Lyrics utility controls (font size, offset) are wrapped in containers

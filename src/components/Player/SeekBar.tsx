@@ -18,6 +18,7 @@ import {
 
 interface SeekBarProps {
   density?: PlaybackBarDensity;
+  previewMode?: boolean;
 }
 
 const KEYBOARD_SEEK_STEP_MS = 5_000;
@@ -27,7 +28,10 @@ function clampPosition(positionMs: number, durationMs: number): number {
   return Math.max(0, Math.min(durationMs, positionMs));
 }
 
-export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
+export function SeekBar({
+  density = "relaxed",
+  previewMode = false,
+}: SeekBarProps = {}) {
   const { playback } = useBackend();
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
@@ -295,6 +299,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       <div
         ref={barRef}
         id="seek-slider"
+        data-preview-playback-interactive={previewMode ? "true" : undefined}
         className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 rounded-full bg-[var(--color-border)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
         onMouseDown={handleMouseDown}
         role="slider"

@@ -127,7 +127,7 @@ export function PlaybackBar({
           style={centerZoneStyle}
         >
           <PlayControls density={density} previewMode={previewMode} />
-          <SeekBar density={density} />
+          <SeekBar density={density} previewMode={previewMode} />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <RemoteReconnectIndicator />
           </div>
@@ -139,11 +139,12 @@ export function PlaybackBar({
           style={{ gap: layoutTokens.rightZoneGap }}
         >
           <QueueButton />
-          <VolumeSliders density={density} />
+          <VolumeSliders density={density} previewMode={previewMode} />
 
           <div
             className="flex shrink-0 items-center"
             style={{ gap: layoutTokens.masterVolumeGap }}
+            data-preview-playback-interactive={previewMode ? "true" : undefined}
           >
             <Tooltip
               label={volume === 0 ? t("player.unmute") : t("player.mute")}
@@ -151,6 +152,9 @@ export function PlaybackBar({
               <button
                 id="master-mute"
                 type="button"
+                data-preview-playback-interactive={
+                  previewMode ? "true" : undefined
+                }
                 onClick={handleMasterMuteToggle}
                 aria-label={
                   volume === 0 ? t("player.unmute") : t("player.mute")
@@ -172,6 +176,7 @@ export function PlaybackBar({
               onChange={setVolume}
               widthClass={layoutTokens.masterVolumeWidthClass}
               ariaLabel={t("player.volume")}
+              previewInteractive={previewMode}
             />
           </div>
         </div>

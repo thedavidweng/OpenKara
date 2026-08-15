@@ -48,6 +48,7 @@ export function PlayControls({
     >
       <button
         onClick={skipBack}
+        data-preview-playback-interactive={previewMode ? "true" : undefined}
         className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("player.previous")}
       >
@@ -72,6 +73,7 @@ export function PlayControls({
       </button>
       <button
         onClick={skipForward}
+        data-preview-playback-interactive={previewMode ? "true" : undefined}
         className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("player.next")}
       >

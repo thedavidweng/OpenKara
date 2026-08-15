@@ -51,6 +51,8 @@ export interface MockData {
   loopStartPositionMs?: number;
   playStartPositionMs?: number;
   playStartPositionBySongId?: Record<string, number>;
+  coverArtUrls?: Record<string, string>;
+  stemsCompleted?: boolean;
 }
 
 export interface MockSong {
@@ -134,6 +136,27 @@ export function createTauriMock(data: any): TauriMockResult {
   const playlistSongs = new Map<string, any[]>();
   const menuResources = new Map<number, any>();
   const separationStatuses: Record<string, any> = {};
+  function completedFourStemStatus(songHash: any) {
+    const stemDir = "/tmp/openkara-stems/" + songHash;
+    return {
+      song_id: songHash,
+      state: "completed",
+      percent: 100,
+      cache_hit: true,
+      vocals_path: stemDir + "/vocals.ogg",
+      accomp_path: stemDir + "/accomp.ogg",
+      drums_path: stemDir + "/drums.ogg",
+      bass_path: stemDir + "/bass.ogg",
+      other_path: stemDir + "/other.ogg",
+      model_variant: "htdemucs",
+      error: null,
+    };
+  }
+  if (data.stemsCompleted) {
+    for (const song of mockSongs) {
+      separationStatuses[song.hash] = completedFourStemStatus(song.hash);
+    }
+  }
   let nextPlaylistId = 1;
   let nextEventId = 1;
   let nextMenuRid = 1;
@@ -402,6 +425,22 @@ export function createTauriMock(data: any): TauriMockResult {
       recent_operations: [],
     }),
 
+    get_cover_art: async (args: any) => {
+      const hash = args && (args.hash || args.song_id || args.songId);
+      const song = mockSongs.find((entry: any) => entry.hash === hash);
+      if (song && song.cover_art && song.cover_art.length > 0) {
+        return clone(song.cover_art);
+      }
+      const url = hash ? (data.coverArtUrls || {})[hash] : null;
+      if (!url || typeof fetch !== "function") {
+        return null;
+      }
+      const response = await fetch(url);
+      if (!response.ok) {
+        return null;
+      }
+      return Array.from(new Uint8Array(await response.arrayBuffer()));
+    },
     get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args: any) => {
       const songId =

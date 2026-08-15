@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   PREVIEW_LYRICS,
   PREVIEW_SONGS,
@@ -22,6 +22,12 @@ describe("shared preview catalog", () => {
       "one-last-kiss",
     ]);
     expect(PRIMARY_PREVIEW_SONG_HASH).toBe("earfquake");
+  });
+
+  test("keeps cover art on every preview song", () => {
+    for (const song of PREVIEW_SONGS) {
+      expect(song.has_cover_art, song.hash).toBe(true);
+    }
   });
 
   test("embeds AMLL word-timed lyrics for One Last Kiss", () => {
@@ -80,6 +86,56 @@ describe("preview playback start", () => {
       songId: "earfquake",
     })) as { position_ms: number };
     expect(snapshot.position_ms).toBe(12_000);
+  });
+
+  test("get_cover_art loads JPEG URLs when inline cover bytes are absent", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([255, 216, 255]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { internals } = createTauriMock({
+        ...E2E_MOCK_DATA,
+        songs: E2E_MOCK_DATA.songs.map((song) => ({
+          ...song,
+          cover_art: null,
+        })),
+        coverArtUrls: { earfquake: "/covers/earfquake.jpg" },
+      });
+      const bytes = (await internals.invoke("get_cover_art", {
+        hash: "earfquake",
+      })) as number[];
+      expect(fetchMock).toHaveBeenCalledWith("/covers/earfquake.jpg");
+      expect(bytes).toEqual([255, 216, 255]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("stemsCompleted records a finished four-stem job for every song", async () => {
+    const { internals } = createTauriMock({
+      ...E2E_MOCK_DATA,
+      stemsCompleted: true,
+    });
+    const statuses = (await internals.invoke(
+      "get_all_separation_statuses",
+    )) as Array<{
+      song_id: string;
+      state: string;
+      drums_path: string | null;
+      vocals_path: string | null;
+      bass_path: string | null;
+      other_path: string | null;
+    }>;
+    expect(statuses).toHaveLength(E2E_MOCK_DATA.songs.length);
+    for (const status of statuses) {
+      expect(status.state).toBe("completed");
+      expect(status.drums_path).toContain(status.song_id);
+      expect(status.vocals_path).toBeTruthy();
+      expect(status.bass_path).toBeTruthy();
+      expect(status.other_path).toBeTruthy();
+    }
   });
 
   test("e2e mock play still starts at zero", async () => {
