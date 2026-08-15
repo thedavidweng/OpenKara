@@ -913,8 +913,15 @@
   filter: none !important;
 }
 
-[data-testid="lyrics-scroll-viewport"] {
+[data-lyrics-viewport="true"] {
   mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 2.5rem,
+    #000 calc(100% - 4.5rem),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0,
     #000 2.5rem,

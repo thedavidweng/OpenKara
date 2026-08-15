@@ -32,4 +32,10 @@ describe("createLanguageTable", () => {
     setNavigatorLanguage("ja-JP");
     expect(detectSystemLanguage()).toBe("en");
   });
+
+  it("keeps a persisted language only when the table loaded it", () => {
+    const { resolveAppLanguage } = createLanguageTable(["en", "zh-CN"]);
+    expect(resolveAppLanguage("zh-CN", () => "en")).toBe("zh-CN");
+    expect(resolveAppLanguage("ja", () => "en")).toBe("en");
+  });
 });

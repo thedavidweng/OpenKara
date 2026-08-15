@@ -85,7 +85,10 @@ export function createLanguageTable(loadedCodes: readonly string[]): {
   ): string {
     if (typeof persistedLanguage === "string") {
       const trimmed = persistedLanguage.trim();
-      if (trimmed.length > 0) {
+      if (
+        trimmed.length > 0 &&
+        SUPPORTED_LANGUAGES.some((language) => language.code === trimmed)
+      ) {
         return trimmed;
       }
     }

@@ -93,6 +93,7 @@ export function LyricsPanel({
         ref={model.containerRef}
         key={songId}
         data-testid="lyrics-scroll-viewport"
+        data-lyrics-viewport="true"
         data-preview-lyrics-interactive="true"
         className={`flex w-full flex-1 overflow-y-auto animate-[song-fade-in_var(--motion-duration-slow)_var(--motion-ease-emphasized-out)] ${
           isAudience

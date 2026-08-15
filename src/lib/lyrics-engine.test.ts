@@ -237,6 +237,40 @@ describe("createUserScrollGuard", () => {
     guard.destroy();
   });
 
+  test("drops leftover flick velocity after a long sample gap", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const onCoast = vi.fn();
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS, {
+      scrollControl,
+      onCoast,
+    });
+
+    container.scrollTop = 0;
+    container.dispatchEvent(new Event("scroll"));
+    now += 16;
+    container.scrollTop = 80;
+    container.dispatchEvent(new Event("scroll"));
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    vi.advanceTimersByTime(COAST_SETTLE_MS);
+    expect(onCoast.mock.calls[0]?.[0].velocityPxPerSec).toBeGreaterThan(0);
+
+    onCoast.mockClear();
+    now += 200;
+    container.scrollTop = 88;
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 8 }));
+    container.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(COAST_SETTLE_MS);
+    expect(onCoast).toHaveBeenCalledWith({
+      scrollTop: 88,
+      velocityPxPerSec: 0,
+    });
+
+    vi.restoreAllMocks();
+    guard.destroy();
+  });
+
   test("turns a discrete wheel notch into a one-line step", () => {
     const onDiscreteStep = vi.fn();
     const container = makeContainer();

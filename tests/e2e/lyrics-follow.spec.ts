@@ -46,6 +46,25 @@ async function readScrollTop(page: import("@playwright/test").Page) {
   return page.locator(VIEWPORT).evaluate((el) => el.scrollTop);
 }
 
+async function waitForBrowseSnapSettle(
+  page: import("@playwright/test").Page,
+): Promise<number> {
+  // Browse scroll coasts, then snaps onto a line. Wait for that landing
+  // before asserting the viewport stays put.
+  await expect
+    .poll(
+      async () => {
+        const first = await readScrollTop(page);
+        await page.waitForTimeout(80);
+        const second = await readScrollTop(page);
+        return Math.abs(first - second) < 2 ? second : null;
+      },
+      { timeout: 1500, intervals: [80, 120, 200] },
+    )
+    .not.toBeNull();
+  return readScrollTop(page);
+}
+
 async function emitLayoutDrivenScroll(page: import("@playwright/test").Page) {
   await page.locator(VIEWPORT).evaluate((el) => {
     // Model the bare scroll event WKWebView can emit when active-line layout
@@ -234,11 +253,9 @@ test.describe("Lyrics auto-follow", () => {
 
     // State assertion (built-in retry): unlocking pins the Follow button.
     await expect(followButton).toHaveAttribute("data-visible", "true");
-    const unlockedTop = await readScrollTop(page);
+    const unlockedTop = await waitForBrowseSnapSettle(page);
     expect(unlockedTop).toBeGreaterThan(400);
 
-    // This bounded retry allows WebKit to settle one pending animation frame
-    // while remaining well inside the user's four-second browse window.
     await expect
       .poll(
         async () => Math.abs((await readScrollTop(page)) - unlockedTop) < 2,
@@ -280,7 +297,7 @@ test.describe("Lyrics auto-follow", () => {
 
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
     await expect(followButton).toHaveAttribute("data-visible", "true");
-    const unlockedTop = await readScrollTop(page);
+    const unlockedTop = await waitForBrowseSnapSettle(page);
     expect(unlockedTop).toBeGreaterThan(400);
 
     await expect(followButton).toHaveAttribute("data-visible", "false", {

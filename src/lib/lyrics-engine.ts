@@ -129,6 +129,8 @@ export function createUserScrollGuard(
     if (dtMs > 0 && dtMs < 120) {
       const instant = ((container.scrollTop - lastSampleTop) / dtMs) * 1000;
       velocityPxPerSec = velocityPxPerSec * 0.55 + instant * 0.45;
+    } else {
+      velocityPxPerSec = 0;
     }
     lastSampleTop = container.scrollTop;
     lastSampleAt = now;

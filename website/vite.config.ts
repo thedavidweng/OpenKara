@@ -3,28 +3,13 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import {
+  UNUSED_PREVIEW_MODULES,
+  previewUnusedModulePattern,
+} from "./src/preview-aliases";
+import {
   isPreviewCatalogModule,
   slimPreviewCatalogSource,
 } from "./src/slim-preview-catalog";
-
-const unusedPreviewModules = [
-  "components/Settings/SettingsOverlay",
-  "components/Settings/LibrarySetup",
-  "components/Settings/ConfirmationDialog",
-  "components/Settings/InputDialog",
-  "components/Player/QueuePanel",
-  "components/Lyrics/LyricsEditDialog",
-  "components/Layout/UpdateBanner",
-  "components/Layout/GlobalProgressBar",
-  "components/Layout/ToastContainer",
-  "components/Library/ImportCdgChoiceDialog",
-  "components/Bootstrap/ModelBootstrapBanner",
-  "components/Bootstrap/RuntimeUpdateBanner",
-];
-
-function escapeRegExpLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function slimPreviewCatalogPlugin(): Plugin {
   return {
@@ -62,8 +47,8 @@ export default defineConfig({
           new URL("./src/preview-i18n.ts", import.meta.url),
         ),
       },
-      ...unusedPreviewModules.map((modulePath) => ({
-        find: new RegExp(`^@/${escapeRegExpLiteral(modulePath)}$`),
+      ...UNUSED_PREVIEW_MODULES.map((modulePath) => ({
+        find: previewUnusedModulePattern(modulePath),
         replacement: fileURLToPath(
           new URL("./src/preview-unused.ts", import.meta.url),
         ),

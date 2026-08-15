@@ -89,6 +89,19 @@ export function getCenteredLineFontSize(lyricsFontStep: number): string {
   return `calc(${CENTERED_LINE_FONT_SIZE_BASE} * ${scale})`;
 }
 
+export function evaluateCenteredLineFontSizePx(
+  lyricsFontStep: number,
+  viewportWidthPx: number,
+  viewportHeightPx: number,
+  rootFontSizePx = 16,
+): number {
+  const scale = CENTERED_LINE_FONT_STEP_SCALE[clampStep(lyricsFontStep)];
+  const minPx = 2.15 * rootFontSizePx;
+  const maxPx = 3 * rootFontSizePx;
+  const preferredPx = 0.017 * viewportWidthPx + 0.018 * viewportHeightPx;
+  return Math.min(maxPx, Math.max(minPx, preferredPx)) * scale;
+}
+
 export function getSeekableHoverClass(
   presentation: LyricsPresentation,
   isSeekable: boolean,

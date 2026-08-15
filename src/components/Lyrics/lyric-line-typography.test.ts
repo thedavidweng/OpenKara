@@ -3,6 +3,7 @@ import {
   CENTERED_BG_FONT_SIZE,
   CENTERED_LINE_FONT_SIZE_BASE,
   CENTERED_ROMAN_FONT_SIZE,
+  evaluateCenteredLineFontSizePx,
   getCenteredLineFontSize,
   shouldEmphasizeWord,
   wordTokenGap,
@@ -35,6 +36,16 @@ describe("centered focus type scale", () => {
     );
     expect(getCenteredLineFontSize(2)).toBe(
       `calc(${CENTERED_LINE_FONT_SIZE_BASE} * 1.28)`,
+    );
+  });
+
+  test("clamps the display size at small, mid, and large viewports", () => {
+    expect(evaluateCenteredLineFontSizePx(0, 320, 480)).toBeCloseTo(34.4, 5);
+    expect(evaluateCenteredLineFontSizePx(0, 1600, 900)).toBeCloseTo(43.4, 5);
+    expect(evaluateCenteredLineFontSizePx(0, 1920, 1080)).toBeCloseTo(48, 5);
+    expect(evaluateCenteredLineFontSizePx(-2, 1920, 1080)).toBeCloseTo(
+      48 * 0.76,
+      5,
     );
   });
 

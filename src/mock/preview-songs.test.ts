@@ -113,6 +113,49 @@ describe("preview playback start", () => {
     }
   });
 
+  test("get_cover_art returns null when the cover fetch or body fails", async () => {
+    const rejectFetch = vi.fn().mockRejectedValue(new Error("network"));
+    vi.stubGlobal("fetch", rejectFetch);
+    try {
+      const { internals } = createTauriMock({
+        ...E2E_MOCK_DATA,
+        songs: E2E_MOCK_DATA.songs.map((song) => ({
+          ...song,
+          cover_art: null,
+        })),
+        coverArtUrls: { earfquake: "/covers/earfquake.jpg" },
+      });
+      await expect(
+        internals.invoke("get_cover_art", { hash: "earfquake" }),
+      ).resolves.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const rejectBody = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => {
+        throw new Error("decode");
+      },
+    });
+    vi.stubGlobal("fetch", rejectBody);
+    try {
+      const { internals } = createTauriMock({
+        ...E2E_MOCK_DATA,
+        songs: E2E_MOCK_DATA.songs.map((song) => ({
+          ...song,
+          cover_art: null,
+        })),
+        coverArtUrls: { earfquake: "/covers/earfquake.jpg" },
+      });
+      await expect(
+        internals.invoke("get_cover_art", { hash: "earfquake" }),
+      ).resolves.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("stemsCompleted records a finished four-stem job for every song", async () => {
     const { internals } = createTauriMock({
       ...E2E_MOCK_DATA,
@@ -125,6 +168,7 @@ describe("preview playback start", () => {
       state: string;
       drums_path: string | null;
       vocals_path: string | null;
+      accomp_path: string | null;
       bass_path: string | null;
       other_path: string | null;
     }>;
@@ -133,6 +177,7 @@ describe("preview playback start", () => {
       expect(status.state).toBe("completed");
       expect(status.drums_path).toContain(status.song_id);
       expect(status.vocals_path).toBeTruthy();
+      expect(status.accomp_path).toBeTruthy();
       expect(status.bass_path).toBeTruthy();
       expect(status.other_path).toBeTruthy();
     }

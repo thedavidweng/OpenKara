@@ -435,11 +435,15 @@ export function createTauriMock(data: any): TauriMockResult {
       if (!url || typeof fetch !== "function") {
         return null;
       }
-      const response = await fetch(url);
-      if (!response.ok) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          return null;
+        }
+        return Array.from(new Uint8Array(await response.arrayBuffer()));
+      } catch {
         return null;
       }
-      return Array.from(new Uint8Array(await response.arrayBuffer()));
     },
     get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args: any) => {
