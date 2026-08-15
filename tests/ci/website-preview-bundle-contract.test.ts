@@ -35,5 +35,6 @@ describe("website preview bundle contract", () => {
     expect(websiteVite).toContain("SettingsOverlay");
     expect(websiteVite).toContain("QueuePanel");
     expect(websiteVite).toContain("UpdateBanner");
+    expect(websiteVite).toContain("escapeRegExpLiteral");
   });
 });

@@ -22,6 +22,10 @@ const unusedPreviewModules = [
   "components/Bootstrap/RuntimeUpdateBanner",
 ];
 
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function slimPreviewCatalogPlugin(): Plugin {
   return {
     name: "slim-preview-catalog",
@@ -59,7 +63,7 @@ export default defineConfig({
         ),
       },
       ...unusedPreviewModules.map((modulePath) => ({
-        find: new RegExp(`^@\\/${modulePath.replace(/\//g, "\\/")}$`),
+        find: new RegExp(`^@/${escapeRegExpLiteral(modulePath)}$`),
         replacement: fileURLToPath(
           new URL("./src/preview-unused.ts", import.meta.url),
         ),
