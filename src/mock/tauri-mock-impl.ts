@@ -171,6 +171,12 @@ export function createTauriMock(data: any): TauriMockResult {
     return transportGeneration;
   }
 
+  function resolveLyrics(songId: string | undefined): any {
+    if (lyricsOverride) return lyricsOverride;
+    if (songId && mockLyricsBySongId[songId]) return mockLyricsBySongId[songId];
+    return mockLyrics;
+  }
+
   function resolvePlayStartMs(songId: string, durationMs: number): number {
     const requested =
       data.playStartPositionBySongId?.[songId] ??
@@ -495,15 +501,11 @@ export function createTauriMock(data: any): TauriMockResult {
 
     fetch_lyrics: (args: any) => {
       const songId = args && args.songId;
-      const bySong = songId ? mockLyricsBySongId[songId] : null;
-      const payload = bySong || lyricsOverride || mockLyrics;
-      return { ...payload, song_id: songId };
+      return { ...resolveLyrics(songId), song_id: songId };
     },
     fetch_lyrics_online: (args: any) => {
       const songId = args && args.songId;
-      const bySong = songId ? mockLyricsBySongId[songId] : null;
-      const payload = bySong || lyricsOverride || mockLyrics;
-      return { ...payload, song_id: songId };
+      return { ...resolveLyrics(songId), song_id: songId };
     },
     save_manual_lyrics: (args: any) => ({
       raw_lrc: (args && args.text) || "",

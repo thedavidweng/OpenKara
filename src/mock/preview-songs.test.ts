@@ -89,4 +89,27 @@ describe("preview playback start", () => {
     })) as { position_ms: number };
     expect(snapshot.position_ms).toBe(0);
   });
+
+  test("setMockLyrics overrides catalog lyrics for the next fetch", async () => {
+    const { internals, helpers } = createTauriMock(E2E_MOCK_DATA);
+    helpers.setMockLyrics({
+      raw_lrc: "override",
+      lines: [
+        {
+          time_ms: 0,
+          text: "Lyric line 0",
+          words: null,
+          bg_words: null,
+          section: null,
+          roman: null,
+        },
+      ],
+      offset_ms: 0,
+      source: "test",
+    });
+    const lyrics = (await internals.invoke("fetch_lyrics", {
+      songId: "earfquake",
+    })) as { lines: Array<{ text: string }> };
+    expect(lyrics.lines[0]?.text).toBe("Lyric line 0");
+  });
 });
