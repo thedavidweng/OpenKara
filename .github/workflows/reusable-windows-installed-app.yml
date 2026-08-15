@@ -114,7 +114,7 @@ jobs:
           toolchain: stable
 
       - name: Restore Rust cache
-        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Stable across commits so adjacent pushes hit the cache. Do not key
           # on github.sha — that forced a cold cache on every push.

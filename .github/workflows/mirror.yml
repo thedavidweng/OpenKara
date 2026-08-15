@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
 
       - name: Mirror to Codeberg
-        uses: cssnr/mirror-repository-action@2af5bf347684245f52b5f56502956a57f9b8813e # v1
+        uses: cssnr/mirror-repository-action@2af5bf347684245f52b5f56502956a57f9b8813e # v1.2.0
         with:
           host: https://codeberg.org
           username: thedavidweng
