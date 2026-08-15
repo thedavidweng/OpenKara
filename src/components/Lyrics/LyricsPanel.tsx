@@ -95,10 +95,15 @@ export function LyricsPanel({
         data-testid="lyrics-scroll-viewport"
         data-preview-lyrics-interactive="true"
         className={`flex w-full flex-1 overflow-y-auto animate-[song-fade-in_var(--motion-duration-slow)_var(--motion-ease-emphasized-out)] ${
-          isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
+          isAudience
+            ? ""
+            : spaciousStageLayout
+              ? "px-16 pt-10 pb-24"
+              : "px-12 pt-8 pb-20"
         }`}
         style={{
           overflowAnchor: "none",
+          overscrollBehaviorY: "contain",
           ...(isAudience
             ? {
                 padding: `${audienceSpec.verticalPaddingPx}px ${audienceSpec.horizontalPaddingPx}px`,

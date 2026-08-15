@@ -26,8 +26,10 @@ describe("wordTokenGap", () => {
 });
 
 describe("centered focus type scale", () => {
-  test("puts the viewport line size on the line, not a rem step", () => {
+  test("puts a clamped display size on the line, not a rem step", () => {
     expect(getCenteredLineFontSize(0)).toBe(CENTERED_LINE_FONT_SIZE_BASE);
+    expect(CENTERED_LINE_FONT_SIZE_BASE).toContain("clamp(");
+    expect(CENTERED_LINE_FONT_SIZE_BASE).not.toContain("5vh");
     expect(getCenteredLineFontSize(-2)).toBe(
       `calc(${CENTERED_LINE_FONT_SIZE_BASE} * 0.76)`,
     );

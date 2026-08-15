@@ -349,8 +349,9 @@ describe("LyricLine", () => {
     expect(mockControllerInstances).toHaveLength(1);
     expect(controller.deactivateLine).toHaveBeenCalled();
     expect(controller.destroy).not.toHaveBeenCalled();
-    expect(container.querySelectorAll("[data-karaoke-fill]")).toHaveLength(2);
-    expect(container.innerHTML).toContain("--bright-mask-alpha: 0.2");
+    expect(container.querySelectorAll("[data-karaoke-fill]")).toHaveLength(0);
+    expect(container.innerHTML).toContain("text-[var(--color-lyrics-past)]");
+    expect(container.innerHTML).not.toContain("--bright-mask-alpha");
 
     await act(async () => {
       root.unmount();
@@ -576,11 +577,12 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("--bright-mask-alpha:0.2");
-    expect(markup).toContain("--dark-mask-alpha:0.2");
+    expect(markup).toContain("text-[var(--color-lyrics-past)]");
+    expect(markup).not.toContain("data-karaoke-fill");
+    expect(markup).not.toContain("--bright-mask-alpha");
   });
 
-  test("renders future line words with active text color", () => {
+  test("renders future line words with future text color", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         line={{
@@ -600,8 +602,9 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("--bright-mask-alpha:0.2");
-    expect(markup).toContain("--dark-mask-alpha:0.2");
+    expect(markup).toContain("text-[var(--color-lyrics-future)]");
+    expect(markup).not.toContain("data-karaoke-fill");
+    expect(markup).not.toContain("--bright-mask-alpha");
   });
 
   test("renders audience presentation with bg_words", () => {
@@ -685,8 +688,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(smallStep).toContain("max(max(5vh, 2.5vw), 12px) * 0.76");
-    expect(largeStep).toContain("max(max(5vh, 2.5vw), 12px) * 1.28");
+    expect(smallStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 0.76");
+    expect(largeStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 1.28");
     expect(smallStep).toContain("max(0.5em, 10px)");
     expect(smallStep).toContain('data-lyrics-roman="true"');
     expect(smallStep).not.toContain("text-[0.5em]");

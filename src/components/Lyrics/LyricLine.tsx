@@ -3,9 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   ACTIVE_BRIGHT_ALPHA,
   ACTIVE_DARK_ALPHA,
-  INACTIVE_MASK_ALPHA,
   KaraokeFillController,
-  applyWordMask,
 } from "./karaoke-fill";
 import {
   buildAudiencePresentationSpec,
@@ -16,6 +14,9 @@ import { usePlayerStore } from "@/stores/player-store";
 import type { LyricLine as LyricLineType } from "@/types/ipc";
 import {
   CENTERED_BG_FONT_SIZE,
+  CENTERED_LINE_LETTER_SPACING,
+  CENTERED_LINE_LINE_HEIGHT,
+  CENTERED_LINE_PADDING,
   CENTERED_ROMAN_FONT_SIZE,
   displayWordText,
   getCenteredLineFontSize,
@@ -119,14 +120,6 @@ export const LyricLine = memo(function LyricLine({
   wordsRef.current = words;
 
   useEffect(() => {
-    if (hasWordMask) {
-      for (const el of wordElsRef.current) {
-        if (el) {
-          applyWordMask(el);
-        }
-      }
-    }
-
     if (shouldUseKaraokeFill) {
       if (!karaokeRef.current) {
         karaokeRef.current = new KaraokeFillController();
@@ -146,7 +139,7 @@ export const LyricLine = memo(function LyricLine({
 
     lyricsLineRuntime.unregisterKaraoke(lineIndex);
     karaokeRef.current?.deactivateLine();
-  }, [hasWordMask, lineIndex, shouldUseKaraokeFill]);
+  }, [lineIndex, shouldUseKaraokeFill]);
 
   useEffect(
     () => () => {
@@ -169,26 +162,25 @@ export const LyricLine = memo(function LyricLine({
       } items-baseline gap-x-8 gap-y-1.5 text-left ${
         isSeekable ? "cursor-pointer group/line" : ""
       }`
-    : `flex flex-col items-center gap-[0.3em] text-center ${
+    : `flex flex-col items-center gap-[0.28em] text-center ${
         isSeekable ? "cursor-pointer group/line" : ""
       }`;
   const lineStyle = {
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+    fontFamily: "inherit",
     ...(usesCenteredLineType
       ? {
           fontSize: getCenteredLineFontSize(lyricsFontStep),
-          lineHeight: 1.2,
+          lineHeight: CENTERED_LINE_LINE_HEIGHT,
+          letterSpacing: CENTERED_LINE_LETTER_SPACING,
+          padding: CENTERED_LINE_PADDING,
+          fontWeight: state === "active" || state === "plain" ? 600 : 500,
+          textWrap: "pretty" as const,
         }
       : undefined),
-    ...(hasWordMask
+    ...(shouldUseKaraokeFill
       ? ({
-          "--bright-mask-alpha": shouldUseKaraokeFill
-            ? String(ACTIVE_BRIGHT_ALPHA)
-            : String(INACTIVE_MASK_ALPHA),
-          "--dark-mask-alpha": shouldUseKaraokeFill
-            ? String(ACTIVE_DARK_ALPHA)
-            : String(INACTIVE_MASK_ALPHA),
+          "--bright-mask-alpha": String(ACTIVE_BRIGHT_ALPHA),
+          "--dark-mask-alpha": String(ACTIVE_DARK_ALPHA),
         } as CSSProperties)
       : undefined),
     ...(presentation === "audience" && !isLeftAligned
@@ -207,11 +199,15 @@ export const LyricLine = memo(function LyricLine({
       className={(presentation === "audience"
         ? `tracking-tight min-w-0 break-words ${hoverClass}`
         : usesCenteredLineType
-          ? `font-semibold tracking-tight min-w-0 break-words ${hoverClass}`
+          ? `tracking-tight min-w-0 break-words ${hoverClass}`
           : `${textSizeClass} min-w-0 break-words ${hoverClass}`
       ).trim()}
       style={{
-        fontWeight: state === "active" ? 500 : 400,
+        fontWeight: usesCenteredLineType
+          ? "inherit"
+          : state === "active" || state === "plain"
+            ? 500
+            : 400,
         ...(presentation === "audience"
           ? {
               fontSize: audiencePresentationSpec.fontSizePx,
@@ -267,7 +263,7 @@ export const LyricLine = memo(function LyricLine({
           </span>
         ) : null;
 
-        if (hasWordMask) {
+        if (shouldUseKaraokeFill) {
           return (
             <span key={idx}>
               <span className="inline-flex flex-col items-center align-bottom">
@@ -338,9 +334,7 @@ export const LyricLine = memo(function LyricLine({
       className={(presentation === "audience"
         ? `motion-surface font-bold tracking-tight min-w-0 break-words ${hoverClass}`
         : `motion-surface ${
-            usesCenteredLineType
-              ? "font-semibold tracking-tight"
-              : textSizeClass
+            usesCenteredLineType ? "tracking-tight" : textSizeClass
           } min-w-0 break-words ${
             state === "plain" || state === "active"
               ? "text-[var(--color-lyrics-active)]"

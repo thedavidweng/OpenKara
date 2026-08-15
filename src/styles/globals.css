@@ -909,6 +909,26 @@
   -webkit-mask-repeat: no-repeat;
 }
 
+[data-lyrics-stage="focus"]:hover [data-lyrics-line-index] {
+  filter: none !important;
+}
+
+[data-testid="lyrics-scroll-viewport"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 2.5rem,
+    #000 calc(100% - 4.5rem),
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-lyrics-stage="focus"] [data-lyrics-line-index] {
+    filter: none !important;
+  }
+}
+
 .marquee-active {
   animation: marquee-scroll 8s ease-in-out infinite;
   white-space: nowrap;

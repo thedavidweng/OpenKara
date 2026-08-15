@@ -22,14 +22,18 @@ export function getLineVisualTargets(
   targetBlur: number;
 } {
   if (distance === 0) {
-    return { targetScale: 1, targetOpacity: 0.85, targetBlur: 0 };
+    return { targetScale: 1, targetOpacity: 1, targetBlur: 0 };
+  }
+
+  if (stage === "focus") {
+    return {
+      targetScale: 0.97,
+      targetOpacity: 1,
+      targetBlur: Math.min(1.1, 0.22 * distance),
+    };
   }
 
   const blur = Math.min(5, 1 + distance);
-  if (stage === "focus") {
-    return { targetScale: 0.97, targetOpacity: 1, targetBlur: blur };
-  }
-
   const targetScale =
     distance === 1 ? 0.98 : Math.max(0.94, 1 - distance * 0.018);
   return { targetScale, targetOpacity: 1, targetBlur: blur };

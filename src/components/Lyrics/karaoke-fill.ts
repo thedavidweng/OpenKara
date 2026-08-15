@@ -1,6 +1,6 @@
 export const INACTIVE_MASK_ALPHA = 0.2;
 export const ACTIVE_BRIGHT_ALPHA = 1;
-export const ACTIVE_DARK_ALPHA = 0.18;
+export const ACTIVE_DARK_ALPHA = 0.4;
 export const WORD_FADE_HEIGHT_RATIO = 0.5;
 
 const BRIGHT = "rgba(0,0,0,var(--bright-mask-alpha, 1))";
@@ -77,6 +77,7 @@ export function applyWordMask(element: HTMLElement): {
   style.webkitMaskRepeat = "no-repeat";
   style.webkitMaskOrigin = "left";
   style.webkitMaskSize = size;
+  setWordMaskProgress(element, 0, measured.width, measured.fade);
   return measured;
 }
 
@@ -166,6 +167,9 @@ export class KaraokeFillController {
 
   deactivateLine() {
     this.disconnectWordObserver();
+    for (const word of this.wordFills) {
+      clearWordMask(word.element);
+    }
     this.wordFills = [];
     this.activeLineEl = null;
     this.activeWordEls = [];
