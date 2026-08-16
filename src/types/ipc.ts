@@ -37,6 +37,16 @@ export type CoverArtSize = "thumb" | "preview" | "original";
 
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
 
+export type OnlineSourceId = "youtube" | "netease";
+
+export type OnlineSourceKind = "video" | "streaming";
+
+export interface OnlineSourceSnapshot {
+  id: OnlineSourceId;
+  kind: OnlineSourceKind;
+  enabled: boolean;
+}
+
 export interface WebDavRemoteAuthPayload {
   type: "webdav";
   server_url: string;
@@ -232,6 +242,8 @@ export interface AppSettings {
   library_sort_mode: LibrarySortMode;
   theme_preference: ThemePreference;
   update_policy: UpdatePolicy;
+  youtube_source_enabled: boolean;
+  netease_source_enabled: boolean;
 }
 
 export interface DebugInfo {

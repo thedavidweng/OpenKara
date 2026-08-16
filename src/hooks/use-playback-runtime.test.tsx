@@ -551,6 +551,8 @@ describe("fullscreen playback runtime", () => {
       library_sort_mode: "recently_imported" as const,
       theme_preference: "dark" as const,
       update_policy: "notify" as const,
+      youtube_source_enabled: false,
+      netease_source_enabled: false,
     };
     const updateSnapshot = vi.fn();
     const applyPlaybackPositionEvent = vi.fn();

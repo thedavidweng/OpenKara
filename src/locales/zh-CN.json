@@ -476,6 +476,14 @@
         "message": "GPU 运行时在本机无响应，OpenKara 已切换到 CPU 运行时。人声分离功能可用，但速度较慢。"
       }
     },
+    "onlineSources": {
+      "label": "在线来源",
+      "description": "打开音乐或视频来源。未选择前两者都保持关闭。",
+      "youtube": "YouTube",
+      "youtubeDescription": "把公开视频或播放列表链接加入队列。OpenKara 不会下载 YouTube 音频。",
+      "netease": "网易云音乐",
+      "neteaseDescription": "登录后浏览并导入你能播放的歌曲。导入后的文件由 OpenKara 管理。"
+    },
     "hideBatchSeparate": {
       "hide": "隐藏“全部分离”按钮",
       "description": "隐藏侧栏中用于分离全部歌曲的按钮。"

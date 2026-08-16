@@ -301,6 +301,19 @@ const SETTINGS_COMMANDS: CommandContract[] = [
     hasArgs: true,
     rustParams: ["preference"],
   },
+  {
+    command: "list_online_sources",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "listOnlineSources",
+    hasArgs: false,
+  },
+  {
+    command: "set_online_source_enabled",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setOnlineSourceEnabled",
+    hasArgs: true,
+    rustParams: ["source_id", "enabled"],
+  },
 ];
 
 const SEPARATION_COMMANDS: CommandContract[] = [
@@ -417,6 +430,8 @@ describe("IPC command registry", () => {
       "set_eq_gains",
       "set_library_sort_mode",
       "set_theme_preference",
+      "list_online_sources",
+      "set_online_source_enabled",
     ];
     const registered = SETTINGS_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedSettingsCommands.sort());
@@ -1161,6 +1176,8 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
       update_policy: "notify",
+      youtube_source_enabled: false,
+      netease_source_enabled: false,
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");
@@ -1179,6 +1196,8 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("library_sort_mode");
     expect(settings).toHaveProperty("theme_preference");
     expect(settings).toHaveProperty("update_policy");
+    expect(settings).toHaveProperty("youtube_source_enabled");
+    expect(settings).toHaveProperty("netease_source_enabled");
   });
 
   test("stem_mode values match Rust StemMode enum", () => {
