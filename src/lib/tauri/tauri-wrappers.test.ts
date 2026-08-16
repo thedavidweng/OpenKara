@@ -433,6 +433,7 @@ describe("settings", () => {
     language: null,
     hide_batch_separate: false,
     cover_art_backdrop: true,
+    lyrics_blur_inactive: false,
     hide_upgrade_all: false,
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
@@ -606,6 +607,15 @@ describe("settings", () => {
     const returned = await settings.setCoverArtBackdrop(false);
     expect(mockInvoke).toHaveBeenCalledWith("set_cover_art_backdrop", {
       value: false,
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setLyricsBlurInactive invokes set_lyrics_blur_inactive", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setLyricsBlurInactive(true);
+    expect(mockInvoke).toHaveBeenCalledWith("set_lyrics_blur_inactive", {
+      value: true,
     });
     expect(returned).toBe(appSettings);
   });

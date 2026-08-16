@@ -671,6 +671,10 @@
     "hideUpgradeAll": {
       "hide": "“전체 4스템으로 업그레이드” 숨기기",
       "description": "모든 노래를 4스템 모드로 다시 분리하는 사이드바 버튼을 숨겨요."
+    },
+    "lyricsBlurInactive": {
+      "enable": "재생 중이 아닌 가사 흐리기",
+      "description": "현재 소절 이외를 흐리게 합니다. 다음 소절을 미리 읽으려면 끄세요."
     }
   },
   "bootstrap": {

@@ -28,7 +28,7 @@ test.describe("Library sort modes", () => {
 
     const songList = page.getByTestId("song-list");
     const firstSong = songList.locator("[data-song-hash]").first();
-    await expect(firstSong).toContainText("Earfquake");
+    await expect(firstSong).toContainText("One Last Kiss");
   });
 
   test("title_asc sorts alphabetically by title", async ({ page }) => {

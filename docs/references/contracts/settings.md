@@ -13,6 +13,7 @@ Field or command semantic changes must update this document before changing UI c
 | `language` | `string       | null` | App UI language. Once set (OOBE or Settings), every label, error, menu, and progress string uses this code and ignores later OS locale changes. `null` means not chosen yet: the app recommends the system language only until the first explicit choice. |
 | `hide_batch_separate` | `boolean` | Hide batch-separate action in UI |
 | `cover_art_backdrop` | `boolean` | Show blurred cover-art backdrop in player |
+| `lyrics_blur_inactive` | `boolean` | Blur past and upcoming lyric lines. Default `false` so singers can read ahead. |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
 | `execution_provider` | `string` | Active ONNX Runtime execution provider. When unset, OpenKara selects a runtime provider only when the current target and host capability support it; otherwise it selects CPU. Apple Silicon uses CoreML, Windows uses DirectML only with a usable D3D12 hardware adapter, and Intel macOS/Linux use the measured CPU default. |
@@ -76,6 +77,7 @@ stays explicitly dark regardless of the primary preference.
 - `set_language(language: String) -> AppSettings`
 - `set_hide_batch_separate(value: bool) -> AppSettings`
 - `set_cover_art_backdrop(value: bool) -> AppSettings`
+- `set_lyrics_blur_inactive(value: bool) -> AppSettings`
 - `set_hide_upgrade_all(value: bool) -> AppSettings`
 - `set_lyrics_font_step(step: i8) -> AppSettings`
 - `set_execution_provider(provider: String) -> AppSettings`

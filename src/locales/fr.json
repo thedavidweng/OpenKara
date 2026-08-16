@@ -673,6 +673,10 @@
     "hideUpgradeAll": {
       "hide": "Masquer « Tout mettre à niveau en 4-pistes »",
       "description": "Masque le bouton de la barre latérale qui re-sépare toutes les chansons en mode 4-pistes."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Flouter les paroles non en cours",
+      "description": "Adoucit les lignes passées et suivantes. Laissez désactivé pour lire à l’avance."
     }
   },
   "bootstrap": {

@@ -171,7 +171,6 @@ export function LyricsPanel({
                   presentation={presentation}
                   lyricsFontStep={lyricsFontStep}
                   romanizedText={model.romanizedTextAt(absoluteIndex)}
-                  activeWordIndex={model.activeWordIndexAt(absoluteIndex)}
                   alignment={lyricsAlignment}
                 />
               </div>

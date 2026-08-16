@@ -672,6 +672,10 @@
       "reportHint": "Reporting a bug? Copy this info into your report and attach the log file shown above.",
       "copyDebugInfo": "Copy debug info",
       "copied": "Copied!"
+    },
+    "lyricsBlurInactive": {
+      "enable": "Blur lyrics that are not playing",
+      "description": "Softens past and upcoming lines. Leave this off so you can read ahead while singing."
     }
   },
   "bootstrap": {

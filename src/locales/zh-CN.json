@@ -672,6 +672,10 @@
       "reportHint": "报告问题？请把这些信息复制到反馈中，并附上上方显示的日志文件。",
       "copyDebugInfo": "复制调试信息",
       "copied": "已复制！"
+    },
+    "lyricsBlurInactive": {
+      "enable": "模糊非当前歌词",
+      "description": "虚化当前句以外的歌词。卡拉OK需要提前看清后面几行时请保持关闭。"
     }
   },
   "bootstrap": {

@@ -167,6 +167,62 @@ export function createTauriMock(data: any): TauriMockResult {
   let currentPlaybackSnapshot = { ...data.playbackSnapshot };
 
   let playbackEndTimer: ReturnType<typeof setTimeout> | null = null;
+  let playheadAnchorMs: number | null = null;
+  let playheadPositionMs = Number(currentPlaybackSnapshot.position_ms) || 0;
+
+  function nowMs(): number {
+    return typeof performance !== "undefined" &&
+      typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  function isPlayheadRunning(): boolean {
+    const snap = currentPlaybackSnapshot as {
+      is_playing?: boolean;
+      state?: string;
+    };
+    return Boolean(
+      snap.is_playing &&
+      snap.state !== "buffering" &&
+      playheadAnchorMs !== null,
+    );
+  }
+
+  function livePositionMs(): number {
+    const snap = currentPlaybackSnapshot as { duration_ms?: number | null };
+    const duration = snap.duration_ms ?? Number.POSITIVE_INFINITY;
+    const position = isPlayheadRunning()
+      ? playheadPositionMs + (nowMs() - (playheadAnchorMs as number))
+      : playheadPositionMs;
+    return Math.max(0, Math.min(position, duration));
+  }
+
+  function writePositionMs(positionMs: number): void {
+    playheadPositionMs = positionMs;
+    currentPlaybackSnapshot = {
+      ...currentPlaybackSnapshot,
+      position_ms: positionMs,
+    };
+  }
+
+  function startPlayhead(positionMs: number): void {
+    writePositionMs(positionMs);
+    playheadAnchorMs = nowMs();
+  }
+
+  function stopPlayhead(): void {
+    writePositionMs(livePositionMs());
+    playheadAnchorMs = null;
+  }
+
+  function snapshotWithLivePosition(): typeof currentPlaybackSnapshot {
+    if (isPlayheadRunning()) {
+      writePositionMs(livePositionMs());
+      playheadAnchorMs = nowMs();
+    }
+    return currentPlaybackSnapshot;
+  }
 
   // Initialize playlist songs from data
   if (data.playlistSongs) {
@@ -216,7 +272,7 @@ export function createTauriMock(data: any): TauriMockResult {
     }
     const snap = currentPlaybackSnapshot as any;
     if (!snap.is_playing || snap.state === "buffering") return;
-    const remaining = (snap.duration_ms || 0) - (snap.position_ms || 0);
+    const remaining = (snap.duration_ms || 0) - livePositionMs();
     if (remaining <= 0) return;
     playbackEndTimer = setTimeout(() => {
       playbackEndTimer = null;
@@ -233,6 +289,7 @@ export function createTauriMock(data: any): TauriMockResult {
           is_playing: true,
           position_ms: loopMs,
         };
+        startPlayhead(loopMs);
         emitMockEvent("playback-position", {
           ms: loopMs,
           transport_generation: transportGeneration,
@@ -240,14 +297,18 @@ export function createTauriMock(data: any): TauriMockResult {
         });
         schedulePlaybackEnd();
       } else {
+        const endedMs = Number(
+          (currentPlaybackSnapshot as { duration_ms?: number }).duration_ms,
+        );
+        writePositionMs(Number.isFinite(endedMs) ? endedMs : 0);
+        playheadAnchorMs = null;
         currentPlaybackSnapshot = {
           ...currentPlaybackSnapshot,
           state: "idle",
           is_playing: false,
-          position_ms: (currentPlaybackSnapshot as any).duration_ms,
         };
         emitMockEvent("playback-position", {
-          ms: (currentPlaybackSnapshot as any).duration_ms,
+          ms: currentPlaybackSnapshot.position_ms,
           transport_generation: transportGeneration,
           snapshot: clone(currentPlaybackSnapshot),
         });
@@ -445,7 +506,7 @@ export function createTauriMock(data: any): TauriMockResult {
         return null;
       }
     },
-    get_playback_state: () => clone(currentPlaybackSnapshot),
+    get_playback_state: () => clone(snapshotWithLivePosition()),
     play: (args: any) => {
       const songId =
         (args && (args.songId || args.song_id)) || data.primarySongHash;
@@ -462,22 +523,27 @@ export function createTauriMock(data: any): TauriMockResult {
         duration_ms: durationMs,
         buffered_ms: durationMs,
       };
+      startPlayhead(positionMs);
       schedulePlaybackEnd();
       return clone(currentPlaybackSnapshot);
     },
     resume: () => {
       bumpTransportGeneration();
+      const positionMs = livePositionMs();
       currentPlaybackSnapshot = {
         ...currentPlaybackSnapshot,
         state: "playing",
         is_playing: true,
+        position_ms: positionMs,
       };
+      startPlayhead(positionMs);
       schedulePlaybackEnd();
       return clone(currentPlaybackSnapshot);
     },
     pause: () => {
       bumpTransportGeneration();
       clearPlaybackEnd();
+      stopPlayhead();
       currentPlaybackSnapshot = {
         ...currentPlaybackSnapshot,
         state: "idle",
@@ -489,6 +555,8 @@ export function createTauriMock(data: any): TauriMockResult {
       bumpTransportGeneration();
       clearPlaybackEnd();
       const targetMs = (args && args.ms) || 0;
+      writePositionMs(targetMs);
+      playheadAnchorMs = null;
       const bufferingSnapshot = {
         ...currentPlaybackSnapshot,
         state: "buffering",
@@ -512,6 +580,7 @@ export function createTauriMock(data: any): TauriMockResult {
       });
       setTimeout(() => {
         currentPlaybackSnapshot = playingSnapshot;
+        startPlayhead(playingSnapshot.position_ms);
         emitMockEvent("playback-position", {
           ms: playingSnapshot.position_ms,
           transport_generation: (playingSnapshot as any).transport_generation,
@@ -657,6 +726,13 @@ export function createTauriMock(data: any): TauriMockResult {
       settingsSnapshot = {
         ...settingsSnapshot,
         cover_art_backdrop: (args && args.value) || false,
+      };
+      return settingsSnapshot;
+    },
+    set_lyrics_blur_inactive: (args: any) => {
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        lyrics_blur_inactive: !!(args && args.value),
       };
       return settingsSnapshot;
     },
@@ -860,6 +936,7 @@ export function createTauriMock(data: any): TauriMockResult {
   // If the initial snapshot is already playing (website preview auto-play),
   // schedule the end-of-song timer so playback loops correctly.
   if ((currentPlaybackSnapshot as any).is_playing) {
+    startPlayhead(Number(currentPlaybackSnapshot.position_ms) || 0);
     schedulePlaybackEnd();
   }
 
@@ -927,6 +1004,12 @@ export function createTauriMock(data: any): TauriMockResult {
           };
         }
         currentPlaybackSnapshot = next;
+        if (next.is_playing && next.state !== "buffering") {
+          startPlayhead(Number(next.position_ms) || 0);
+        } else {
+          writePositionMs(Number(next.position_ms) || 0);
+          playheadAnchorMs = null;
+        }
         emitMockEvent("playback-position", {
           ms: next.position_ms,
           transport_generation: next.transport_generation,
@@ -957,7 +1040,7 @@ export function createTauriMock(data: any): TauriMockResult {
           status: { song_id: songHash, state: "completed" },
         });
       },
-      getPlaybackSnapshot: () => clone(currentPlaybackSnapshot),
+      getPlaybackSnapshot: () => clone(snapshotWithLivePosition()),
     },
   };
 }

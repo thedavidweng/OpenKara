@@ -351,9 +351,23 @@ export function createSettingsController({
     patch: Partial<AppSettingsSnapshot>,
     write: () => Promise<AppSettings>,
   ) => {
+    const previous = stores.preferences.getSnapshot();
     stores.preferences.patch(patch);
     syncStores();
-    await writeBackendPreference(write);
+    try {
+      stores.preferences.hydrate(await write());
+    } catch (error) {
+      const rollback = Object.fromEntries(
+        (Object.keys(patch) as Array<keyof AppSettingsSnapshot>).map((key) => [
+          key,
+          previous[key],
+        ]),
+      ) as Partial<AppSettingsSnapshot>;
+      stores.preferences.patch(rollback);
+      notifyError(error);
+    } finally {
+      syncStores();
+    }
   };
 
   const writeStorePreference = async (write: () => Promise<void>) => {
@@ -368,6 +382,7 @@ export function createSettingsController({
       executionProvider,
       hideBatchSeparate,
       coverArtBackdrop,
+      lyricsBlurInactive,
       hideUpgradeAll,
       eqEnabled,
       eqGainsDb,
@@ -407,6 +422,12 @@ export function createSettingsController({
     if (coverArtBackdrop !== undefined) {
       await writeOptimisticPreference({ coverArtBackdrop }, () =>
         backend.settings.setCoverArtBackdrop(coverArtBackdrop),
+      );
+    }
+
+    if (lyricsBlurInactive !== undefined) {
+      await writeOptimisticPreference({ lyricsBlurInactive }, () =>
+        backend.settings.setLyricsBlurInactive(lyricsBlurInactive),
       );
     }
 

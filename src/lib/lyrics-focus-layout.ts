@@ -1,5 +1,5 @@
 export const FOCUS_LINE_GAP_PX = 16;
-export const FOCUS_HEAD_PAD_RATIO = 0.38;
+export const FOCUS_HEAD_PAD_RATIO = 0.45;
 
 export function focusHeadPadPx(viewportHeight: number): number {
   return Math.max(48, viewportHeight * FOCUS_HEAD_PAD_RATIO);

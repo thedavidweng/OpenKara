@@ -33,6 +33,9 @@ const STANDARD_SECONDARY_TEXT_SIZE_CLASSES = {
   [2]: "text-lg md:text-2xl xl:text-3xl",
 } as const;
 
+export const LEFT_ROMAN_GRID_CLASS =
+  "grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)]";
+
 const LEFT_ROMAN_TEXT_SIZE_CLASSES = {
   [-2]: "text-base font-medium tracking-tight md:text-lg",
   [-1]: "text-lg font-medium tracking-tight md:text-xl",
@@ -56,6 +59,8 @@ export const CENTERED_BG_FONT_SIZE = "max(0.7em, 10px)";
 export const CENTERED_LINE_LINE_HEIGHT = 1.22;
 export const CENTERED_LINE_LETTER_SPACING = "-0.02em";
 export const CENTERED_LINE_PADDING = "0.42em 0.12em";
+export const CENTERED_LINE_FONT_WEIGHT = 600;
+export const STANDARD_LINE_FONT_WEIGHT = 500;
 
 function clampStep(lyricsFontStep: number): FontStep {
   return Math.max(-2, Math.min(2, lyricsFontStep)) as FontStep;

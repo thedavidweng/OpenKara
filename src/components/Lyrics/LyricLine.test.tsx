@@ -458,6 +458,128 @@ describe("LyricLine", () => {
     container.remove();
   });
 
+  test("rebinds karaoke fill when word timings change without romanized text changing", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const makeLine = (startMs: number) => ({
+      time_ms: startMs,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: startMs, end_ms: startMs + 500, roman: "kimi" },
+        {
+          text: "の",
+          time_ms: startMs + 500,
+          end_ms: startMs + 1000,
+          roman: "no",
+        },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    });
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={makeLine(1000)}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+    const activateCount = controller.activateLine.mock.calls.length;
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={makeLine(4000)}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+
+    expect(controller.activateLine.mock.calls.length).toBeGreaterThan(
+      activateCount,
+    );
+    const lastCall =
+      controller.activateLine.mock.calls[
+        controller.activateLine.mock.calls.length - 1
+      ];
+    expect(lastCall?.[1]?.[0]?.time_ms).toBe(4000);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("binds roman karaoke fills when pronunciation is turned on mid-line", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+        { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    };
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={line}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+    const activateCount = controller.activateLine.mock.calls.length;
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={line}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+
+    expect(controller.activateLine.mock.calls.length).toBeGreaterThan(
+      activateCount,
+    );
+    const lastCall =
+      controller.activateLine.mock.calls[
+        controller.activateLine.mock.calls.length - 1
+      ];
+    expect(lastCall?.[4]).toHaveLength(2);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("keeps the karaoke controller when the same logical line gets a new object reference", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -691,8 +813,49 @@ describe("LyricLine", () => {
     expect(smallStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 0.76");
     expect(largeStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 1.28");
     expect(smallStep).toContain("max(0.5em, 10px)");
-    expect(smallStep).toContain('data-lyrics-roman="true"');
+    expect(smallStep).toContain('data-word-roman="true"');
+    expect(smallStep).toContain("ni hao");
+    expect(smallStep).toContain("shi jie");
     expect(smallStep).not.toContain("text-[0.5em]");
+  });
+
+  test("keeps centered type metrics stable so highlight does not reflow the line", () => {
+    const line = {
+      time_ms: 34000,
+      text: "'Cause you make my earthquake (Earthquake)",
+      words: null,
+      bg_words: null,
+      section: null,
+      roman: null,
+    };
+
+    const active = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+    const past = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="past"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+
+    expect(active).toContain("font-weight:600");
+    expect(past).toContain("font-weight:600");
+    expect(active).not.toContain("font-weight:500");
+    expect(past).not.toContain("font-weight:500");
+    expect(active).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem)");
+    expect(past).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem)");
   });
 
   test("scales left-aligned roman with lyricsFontStep in standard mode", () => {
@@ -759,15 +922,124 @@ describe("LyricLine", () => {
       />,
     );
 
-    const romanAt = markup.indexOf("data-lyrics-roman");
+    const romanAt = markup.indexOf("data-word-roman");
     const bgAt = markup.indexOf("I love you more");
     const mainAt = markup.indexOf("忘れられない人");
     expect(romanAt).toBeGreaterThan(mainAt);
     expect(bgAt).toBeGreaterThan(romanAt);
+    expect(markup).toContain("wasurerarenai hito");
     expect(markup).toContain("max(0.5em, 10px)");
     expect(markup).toContain("max(0.7em, 10px)");
     expect(markup).toContain('data-lyrics-bg="true"');
     expect(markup).not.toContain("text-[0.5em]");
+  });
+
+  test("does not echo English lyrics as a second romanization row", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "'Cause you make my earthquake (Earthquake)",
+          words: null,
+          bg_words: null,
+          section: null,
+          roman: "'Cause you make my earthquake (Earthquake)",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+
+    expect(markup).toContain("Cause you make my earthquake (Earthquake)");
+    expect(markup).not.toContain('data-lyrics-roman="true"');
+    expect(markup).not.toContain('data-word-roman="true"');
+  });
+
+  test("puts left-aligned roman in the right column even when word romans resolve", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "君の",
+          words: [
+            { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+            { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+          ],
+          bg_words: null,
+          section: null,
+          roman: "kimi no",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+
+    expect(markup).toContain("minmax(14rem,18rem)");
+    expect(markup).toContain('data-lyrics-roman="true"');
+    expect(markup).toContain("kimi");
+    expect(markup).toContain("no");
+    expect(markup).toContain('data-karaoke-roman-fill="true"');
+    expect(markup).not.toContain('data-word-roman="true"');
+  });
+
+  test("keeps left-aligned original and roman on the same line highlight", () => {
+    const line = {
+      time_ms: 1000,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+        { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    };
+
+    const past = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="past"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+    const future = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="future"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+
+    expect(past.match(/text-\[var\(--color-lyrics-past\)\]/g)?.length).toBe(3);
+    expect(past).toMatch(
+      /data-lyrics-roman="true"[^>]*text-\[var\(--color-lyrics-past\)\]/,
+    );
+    expect(past).not.toMatch(
+      /(?<!group-hover\/line:)text-\[var\(--color-lyrics-active\)\]/,
+    );
+    expect(past).not.toContain("text-[var(--color-lyrics-future)]");
+    expect(future.match(/text-\[var\(--color-lyrics-future\)\]/g)?.length).toBe(
+      3,
+    );
+    expect(future).toMatch(
+      /data-lyrics-roman="true"[^>]*text-\[var\(--color-lyrics-future\)\]/,
+    );
+    expect(future).not.toMatch(
+      /(?<!group-hover\/line:)text-\[var\(--color-lyrics-active\)\]/,
+    );
+    expect(future).not.toContain("text-[var(--color-lyrics-past)]");
   });
 
   test("puts aligned roman under each word and hides the line sub-row", () => {
@@ -801,6 +1073,7 @@ describe("LyricLine", () => {
     expect(markup).toContain('data-word-roman="true"');
     expect(markup).toMatch(/data-word-roman="true"[^>]*>kimi</);
     expect(markup).toMatch(/data-word-roman="true"[^>]*>no</);
+    expect(markup).toContain('data-karaoke-roman-fill="true"');
     expect(markup).not.toContain('data-lyrics-roman="true"');
     expect(markup.indexOf("kimi")).toBeLessThan(markup.indexOf("(harmony)"));
   });

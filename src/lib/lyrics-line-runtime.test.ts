@@ -9,8 +9,10 @@ describe("getLineVisualTargets", () => {
     expect(getLineVisualTargets(0, "focus").targetScale).toBe(1);
     expect(getLineVisualTargets(1, "focus").targetScale).toBe(0.97);
     expect(getLineVisualTargets(0, "focus").targetOpacity).toBe(1);
-    expect(getLineVisualTargets(1, "focus").targetBlur).toBeGreaterThan(0);
-    expect(getLineVisualTargets(1, "focus").targetBlur).toBeLessThan(1);
+    expect(getLineVisualTargets(1, "focus").targetBlur).toBeCloseTo(1.7);
+    expect(getLineVisualTargets(1, "focus").targetBlur).toBeLessThan(
+      getLineVisualTargets(1).targetBlur,
+    );
     expect(getLineVisualTargets(0, "focus").targetBlur).toBe(0);
   });
 });
@@ -53,6 +55,59 @@ describe("LyricsLineRuntime", () => {
 
     expect(wrapper.style.transform).toContain("scale(");
     expect(wrapper.style.opacity).not.toBe("");
+    expect(wrapper.style.willChange).toBe("transform");
+  });
+
+  test("keeps inactive lines sharp unless blur is enabled", () => {
+    const runtime = new LyricsLineRuntime();
+    const wrapper = document.createElement("div");
+    runtime.registerWrapper(1, wrapper);
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+    expect(wrapper.style.filter).toBe("none");
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+      blurInactiveLines: true,
+    });
+    expect(wrapper.style.filter).toContain("blur(");
+  });
+
+  test("leaves settled wrapper styles unchanged across idle ticks", () => {
+    const runtime = new LyricsLineRuntime();
+    const wrapper = document.createElement("div");
+    runtime.registerWrapper(0, wrapper);
+    for (let index = 0; index < 80; index += 1) {
+      runtime.tick({
+        activeLineIndex: 0,
+        adjustedMs: 0,
+        isPlaying: true,
+        dt: 0.05,
+        isPlainText: false,
+      });
+    }
+    const transform = wrapper.style.transform;
+    const opacity = wrapper.style.opacity;
+    const filter = wrapper.style.filter;
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 16,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: false,
+    });
+    expect(wrapper.style.transform).toBe(transform);
+    expect(wrapper.style.opacity).toBe(opacity);
+    expect(wrapper.style.filter).toBe(filter);
   });
 
   test("focus stage reserves absolute slots once lines have real height", () => {
@@ -135,6 +190,33 @@ describe("LyricsLineRuntime", () => {
     expect(wrapper.style.transform).toBe("");
   });
 
+  test("clearUnmounted keeps live wrappers and drops detached ones", () => {
+    const runtime = new LyricsLineRuntime();
+    const live = document.createElement("div");
+    const stale = document.createElement("div");
+    runtime.registerWrapper(0, live);
+    runtime.registerWrapper(1, stale);
+    runtime.registerKaraoke(0, {
+      update: vi.fn(),
+    } as unknown as KaraokeFillController);
+    runtime.registerKaraoke(1, {
+      update: vi.fn(),
+    } as unknown as KaraokeFillController);
+    runtime.unregisterWrapper(1);
+
+    runtime.clearUnmounted();
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+    expect(live.style.transform).toContain("scale(");
+    expect(stale.style.transform).toBe("");
+  });
+
   test("re-registering an existing wrapper only updates the element pointer", () => {
     const runtime = new LyricsLineRuntime();
     const first = document.createElement("div");
@@ -166,6 +248,7 @@ describe("LyricsLineRuntime", () => {
         isPlaying: true,
         dt: 0.05,
         isPlainText: false,
+        blurInactiveLines: true,
       });
     }
 
@@ -180,6 +263,7 @@ describe("LyricsLineRuntime", () => {
       isPlaying: true,
       dt: 0.016,
       isPlainText: false,
+      blurInactiveLines: true,
     });
 
     expect(wrapper.style.filter).toBe(settledBlur);

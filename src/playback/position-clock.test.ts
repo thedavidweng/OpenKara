@@ -40,6 +40,52 @@ describe("selectCurrentPositionMs", () => {
   });
 });
 
+describe("reduceAuthoritativeSnapshot", () => {
+  test("freezes the interpolated playhead when a stale pause snapshot arrives", () => {
+    const prev: PositionClockState = {
+      snapshot: snapshot({ is_playing: true, position_ms: 1000 }),
+      positionMs: 1000,
+      playingSinceMs: 2000,
+    };
+
+    const next = reduceAuthoritativeSnapshot(
+      prev,
+      snapshot({
+        is_playing: false,
+        state: "idle",
+        position_ms: 1000,
+        transport_generation: 2,
+      }),
+      4500,
+    );
+
+    expect(next?.positionMs).toBe(3500);
+    expect(next?.playingSinceMs).toBeNull();
+    expect(next?.snapshot?.is_playing).toBe(false);
+  });
+
+  test("does not advance past a newer pause snapshot", () => {
+    const prev: PositionClockState = {
+      snapshot: snapshot({ is_playing: true, position_ms: 1000 }),
+      positionMs: 1000,
+      playingSinceMs: 2000,
+    };
+
+    const next = reduceAuthoritativeSnapshot(
+      prev,
+      snapshot({
+        is_playing: false,
+        state: "idle",
+        position_ms: 4200,
+        transport_generation: 2,
+      }),
+      3500,
+    );
+
+    expect(next?.positionMs).toBe(4200);
+  });
+});
+
 describe("reducePositionEvent", () => {
   test("ignores events whose transport_generation disagrees with the snapshot", () => {
     const prev = {

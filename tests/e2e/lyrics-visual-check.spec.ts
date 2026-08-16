@@ -192,6 +192,16 @@ test.describe("Lyrics visual check", () => {
     await expect(leftLine.getByText("忘れ")).toBeVisible();
     await expect(leftLine.getByText("られ")).toBeVisible();
     await expect(leftLine.getByText("人")).toBeVisible();
+    await expect(leftLine.locator("[data-word-roman]")).toHaveCount(0);
+    const leftRoman = leftLine.locator("[data-lyrics-roman]");
+    await expect(leftRoman).toHaveText("wasure rare nai hito");
+    const [glyphBox, romanBox] = await Promise.all([
+      leftLine.getByText("忘れ").boundingBox(),
+      leftRoman.boundingBox(),
+    ]);
+    expect(glyphBox).toBeTruthy();
+    expect(romanBox).toBeTruthy();
+    expect(romanBox!.x).toBeGreaterThan(glyphBox!.x);
     await expect(
       page.getByText("Can you give me one last kiss?"),
     ).toBeVisible();

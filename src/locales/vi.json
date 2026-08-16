@@ -671,6 +671,10 @@
     "hideUpgradeAll": {
       "hide": "Ẩn “Nâng cấp tất cả lên 4-stem”",
       "description": "Ẩn nút ở thanh bên dùng để tách lại tất cả bài hát sang chế độ 4-stem."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Làm mờ lời chưa/đã hát",
+      "description": "Làm mềm các dòng trước và sau. Hãy tắt nếu cần đọc trước khi hát."
     }
   },
   "bootstrap": {

@@ -673,6 +673,10 @@
     "hideUpgradeAll": {
       "hide": "Ocultar “Atualizar tudo para 4-stem”",
       "description": "Oculta o botão da barra lateral que separa novamente todas as músicas no modo 4-stem."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Desfocar letras que não estão tocando",
+      "description": "Suaviza linhas passadas e futuras. Deixe desligado para ler com antecedência."
     }
   },
   "bootstrap": {

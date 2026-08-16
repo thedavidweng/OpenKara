@@ -674,6 +674,10 @@
     "hideUpgradeAll": {
       "hide": "Ukryj „Uaktualnij wszystkie do 4-stem”",
       "description": "Ukryj przycisk panelu bocznego, który ponownie rozdziela wszystkie utwory w trybie 4-stem."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Rozmyj nieodtwarzane wersy",
+      "description": "Zmiękcza minione i nadchodzące linie. Zostaw wyłączone, by czytać z wyprzedzeniem."
     }
   },
   "bootstrap": {

@@ -133,6 +133,7 @@ export interface WritablePreferences {
   executionProvider: ExecutionProvider;
   hideBatchSeparate: boolean;
   coverArtBackdrop: boolean;
+  lyricsBlurInactive: boolean;
   hideUpgradeAll: boolean;
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];

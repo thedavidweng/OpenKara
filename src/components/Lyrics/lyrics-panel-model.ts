@@ -18,6 +18,7 @@ import {
 import { lyricsSession, useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { visibleRomanizedText } from "@/lib/lyrics-roman-visibility";
 import type { AudiencePresentationSpec, LyricLine } from "@/types/ipc";
 
 export type LyricsPresentation = "standard" | "audience";
@@ -63,7 +64,6 @@ export interface LyricsPanelModel {
 
   lineState: (absoluteIndex: number) => LyricLineState;
   romanizedTextAt: (absoluteIndex: number) => string | undefined;
-  activeWordIndexAt: (absoluteIndex: number) => number;
   registerLineWrapper: (
     lineIndex: number,
   ) => (node: HTMLDivElement | null) => (() => void) | void;
@@ -80,7 +80,6 @@ export function useLyricsPanelModel(
 ): LyricsPanelModel {
   const lines = useLyricsStore((s) => s.lines);
   const activeLineIndex = useLyricsStore((s) => s.activeLineIndex);
-  const activeWordIndex = useLyricsStore((s) => s.activeWordIndex);
   const offsetMs = useLyricsStore((s) => s.offsetMs);
   const isLoading = useLyricsStore((s) => s.isLoading);
   const rawLrc = useLyricsStore((s) => s.rawLrc);
@@ -247,9 +246,12 @@ export function useLyricsPanelModel(
             ? "past"
             : "future",
     romanizedTextAt: (absoluteIndex) =>
-      showRomanized ? romanizedLines[absoluteIndex] : undefined,
-    activeWordIndexAt: (absoluteIndex) =>
-      absoluteIndex === activeLineIndex ? activeWordIndex : -1,
+      showRomanized
+        ? visibleRomanizedText(
+            lines[absoluteIndex]?.text ?? "",
+            romanizedLines[absoluteIndex],
+          )
+        : undefined,
     registerLineWrapper,
   };
 }

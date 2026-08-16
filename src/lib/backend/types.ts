@@ -229,6 +229,7 @@ export interface SettingsBackend {
   setModelVariant(variant: string): Promise<AppSettings>;
   setHideBatchSeparate(value: boolean): Promise<AppSettings>;
   setCoverArtBackdrop(value: boolean): Promise<AppSettings>;
+  setLyricsBlurInactive(value: boolean): Promise<AppSettings>;
   setHideUpgradeAll(value: boolean): Promise<AppSettings>;
   setExecutionProvider(provider: ExecutionProvider): Promise<AppSettings>;
   setLyricsFontStep(step: number): Promise<AppSettings>;

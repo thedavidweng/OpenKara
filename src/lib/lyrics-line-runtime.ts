@@ -29,7 +29,7 @@ export function getLineVisualTargets(
     return {
       targetScale: 0.97,
       targetOpacity: 1,
-      targetBlur: Math.min(1.1, 0.22 * distance),
+      targetBlur: Math.min(3.5, 0.8 + 0.9 * distance),
     };
   }
 
@@ -79,6 +79,7 @@ export class LyricsLineRuntime {
       top: new Spring(0, LINE_SPRING_SCALE),
       hasFocusOrigin: false,
     });
+    el.style.willChange = "transform";
   }
 
   unregisterWrapper(lineIndex: number): void {
@@ -103,6 +104,16 @@ export class LyricsLineRuntime {
     this.karaokeByLine.clear();
   }
 
+  clearUnmounted(): void {
+    this.clearFocusSlots();
+    for (const [index, entry] of this.wrappers) {
+      if (entry.wrapperEl == null) {
+        this.wrappers.delete(index);
+        this.karaokeByLine.delete(index);
+      }
+    }
+  }
+
   tick(input: {
     activeLineIndex: number;
     adjustedMs: number;
@@ -111,6 +122,7 @@ export class LyricsLineRuntime {
     isPlainText: boolean;
     stage?: LyricsStage;
     viewportEl?: HTMLElement | null;
+    blurInactiveLines?: boolean;
   }): void {
     if (input.isPlainText) {
       return;
@@ -118,7 +130,7 @@ export class LyricsLineRuntime {
 
     const stage = input.stage ?? "list";
     const origin = stage === "focus" ? "center center" : "left center";
-    const placed = this.placeFocusSlots(stage, input.viewportEl, input.dt);
+    this.placeFocusSlots(stage, input.viewportEl, input.dt);
 
     for (const [index, entry] of this.wrappers) {
       const distance = Math.abs(index - input.activeLineIndex);
@@ -126,12 +138,23 @@ export class LyricsLineRuntime {
         distance,
         stage,
       );
+      const nextBlur = input.blurInactiveLines ? targetBlur : 0;
       entry.scale.setTarget(targetScale);
       entry.opacity.setTarget(targetOpacity);
-      entry.blur.setTarget(targetBlur);
-      entry.scale.update(input.dt);
-      entry.opacity.update(input.dt);
-      entry.blur.update(input.dt);
+      if (input.blurInactiveLines) {
+        entry.blur.setTarget(nextBlur);
+      } else {
+        entry.blur.jumpTo(0);
+      }
+      if (!entry.scale.isSettled()) {
+        entry.scale.update(input.dt);
+      }
+      if (!entry.opacity.isSettled()) {
+        entry.opacity.update(input.dt);
+      }
+      if (!entry.blur.isSettled()) {
+        entry.blur.update(input.dt);
+      }
 
       const wrapperEl = entry.wrapperEl;
       if (!wrapperEl) {
@@ -139,15 +162,21 @@ export class LyricsLineRuntime {
       }
 
       const blur = entry.blur.getPosition();
-      wrapperEl.style.transformOrigin = origin;
-      wrapperEl.style.transform = `scale(${entry.scale.getPosition().toFixed(4)})`;
-      wrapperEl.style.opacity = String(entry.opacity.getPosition());
-      wrapperEl.style.filter =
-        blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : "none";
-      wrapperEl.style.willChange = placed
-        ? "transform, opacity, filter, top"
-        : "transform, opacity, filter";
-      wrapperEl.style.contain = "";
+      const transform = `scale(${entry.scale.getPosition().toFixed(4)})`;
+      const opacity = String(entry.opacity.getPosition());
+      const filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : "none";
+      if (wrapperEl.style.transformOrigin !== origin) {
+        wrapperEl.style.transformOrigin = origin;
+      }
+      if (wrapperEl.style.transform !== transform) {
+        wrapperEl.style.transform = transform;
+      }
+      if (wrapperEl.style.opacity !== opacity) {
+        wrapperEl.style.opacity = opacity;
+      }
+      if (wrapperEl.style.filter !== filter) {
+        wrapperEl.style.filter = filter;
+      }
     }
 
     const karaoke = this.karaokeByLine.get(input.activeLineIndex);
@@ -232,7 +261,10 @@ export class LyricsLineRuntime {
       if (wrapperEl.style.width !== "100%") {
         wrapperEl.style.width = "100%";
       }
-      wrapperEl.style.top = `${entry.top.getPosition().toFixed(1)}px`;
+      const nextTop = `${entry.top.getPosition().toFixed(1)}px`;
+      if (wrapperEl.style.top !== nextTop) {
+        wrapperEl.style.top = nextTop;
+      }
     });
 
     return true;

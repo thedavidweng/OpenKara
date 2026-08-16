@@ -517,12 +517,14 @@ describe("handleAppKeyDown", () => {
     expect(setVolume).not.toHaveBeenCalled();
   });
 
-  test("does not intercept Space from a focused button", () => {
+  test("does not intercept Space from a keyboard-focused button", () => {
     const pause = vi.fn();
     const button = {
       tagName: "BUTTON",
       isContentEditable: false,
-      closest: (selector: string) => (selector.includes("button") ? {} : null),
+      matches: (selector: string) => selector === ":focus-visible",
+      closest: (selector: string) =>
+        selector.includes("button") ? button : null,
     };
     const event = createKeyboardEvent({
       code: "Space",
@@ -545,6 +547,39 @@ describe("handleAppKeyDown", () => {
 
     expect(handled).toBe(false);
     expect(pause).not.toHaveBeenCalled();
+  });
+
+  test("uses Space for play/pause after a pointer-focused button", () => {
+    const pause = vi.fn();
+    const button = {
+      tagName: "BUTTON",
+      isContentEditable: false,
+      matches: () => false,
+      closest: (selector: string) =>
+        selector.includes("button") ? button : null,
+    };
+    const event = createKeyboardEvent({
+      code: "Space",
+      key: " ",
+      target: button as unknown as EventTarget,
+    });
+
+    const handled = handleAppKeyDown(
+      event,
+      baseDeps({
+        player: {
+          snapshot: { is_playing: true, song_id: "abc", volume: 1 } as never,
+          pause,
+          resume: vi.fn(),
+          setVolume: vi.fn(),
+          seek: vi.fn(),
+        },
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(pause).toHaveBeenCalledOnce();
   });
 
   test("does not intercept slider arrows as global volume changes", () => {

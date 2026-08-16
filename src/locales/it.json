@@ -673,6 +673,10 @@
     "hideUpgradeAll": {
       "hide": "Nascondi “Aggiorna tutto a 4-stem”",
       "description": "Nascondi il pulsante della barra laterale che ripete la separazione di tutte le canzoni in modalità 4-stem."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Sfoca i versi non in riproduzione",
+      "description": "Ammorbidisce i versi passati e successivi. Lascialo spento per leggere in anticipo."
     }
   },
   "bootstrap": {

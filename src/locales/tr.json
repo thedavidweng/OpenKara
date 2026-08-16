@@ -672,6 +672,10 @@
     "hideUpgradeAll": {
       "hide": "“Tümünü 4-stem’e yükselt”i gizle",
       "description": "Tüm şarkıları 4-stem modunda yeniden ayıran kenar çubuğu düğmesini gizler."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Çalmayan dizeleri bulanıklaştır",
+      "description": "Geçmiş ve gelecek dizeleri yumuşatır. Önceden okumak için kapalı bırakın."
     }
   },
   "bootstrap": {

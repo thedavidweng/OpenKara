@@ -79,4 +79,31 @@ describe("SettingsGeneralSection", () => {
 
     expect(setThemePreference).toHaveBeenCalledWith("light");
   });
+
+  test("leaves lyric blur off until the user opts in", async () => {
+    const harness = await createInitializedSettingsHarness();
+    const setLyricsBlurInactive = vi.spyOn(
+      harness.backend.settings,
+      "setLyricsBlurInactive",
+    );
+
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsGeneralSection />
+        </SettingsControllerContext>,
+      );
+    });
+
+    const blurLabel = [...container.querySelectorAll("label")].find((label) =>
+      label.textContent?.includes("Blur lyrics that are not playing"),
+    );
+    const blurCheckbox = blurLabel?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    expect(blurCheckbox?.checked).toBe(false);
+
+    await user.click(blurCheckbox!);
+    expect(setLyricsBlurInactive).toHaveBeenCalledWith(true);
+  });
 });

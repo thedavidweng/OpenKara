@@ -13,15 +13,15 @@ import {
 import { createTauriMock } from "./tauri-mock-impl";
 
 describe("shared preview catalog", () => {
-  test("places One Last Kiss after Earfquake in recently imported order", () => {
+  test("places One Last Kiss first in recently imported order", () => {
     const sorted = [...PREVIEW_SONGS].sort(
       (left, right) => right.imported_at - left.imported_at,
     );
     expect(sorted.map((song) => song.hash).slice(0, 2)).toEqual([
-      "earfquake",
       "one-last-kiss",
+      "earfquake",
     ]);
-    expect(PRIMARY_PREVIEW_SONG_HASH).toBe("earfquake");
+    expect(PRIMARY_PREVIEW_SONG_HASH).toBe("one-last-kiss");
   });
 
   test("keeps cover art on every preview song", () => {
@@ -51,6 +51,54 @@ describe("preview playback start", () => {
     })) as { position_ms: number; song_id: string };
     expect(snapshot.song_id).toBe("earfquake");
     expect(snapshot.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS);
+  });
+
+  test("looping past the end restarts the live playhead at the demo start", async () => {
+    vi.useFakeTimers();
+    try {
+      const { internals } = createTauriMock(MOCK_DATA);
+      await internals.invoke("play", { songId: "earfquake" });
+      const durationMs =
+        PREVIEW_SONGS.find((song) => song.hash === "earfquake")?.duration_ms ??
+        0;
+      await vi.advanceTimersByTimeAsync(
+        durationMs - PREVIEW_EARFQUAKE_START_MS + 1500,
+      );
+      const looped = (await internals.invoke("get_playback_state")) as {
+        position_ms: number;
+        is_playing: boolean;
+        state: string;
+      };
+      expect(looped.is_playing).toBe(true);
+      expect(looped.state).toBe("playing");
+      expect(looped.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS + 1500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("pause keeps the live playhead instead of rewinding to play start", async () => {
+    vi.useFakeTimers();
+    try {
+      const { internals } = createTauriMock(MOCK_DATA);
+      await internals.invoke("play", { songId: "earfquake" });
+      await vi.advanceTimersByTimeAsync(2500);
+      const paused = (await internals.invoke("pause")) as {
+        position_ms: number;
+        is_playing: boolean;
+      };
+      expect(paused.is_playing).toBe(false);
+      expect(paused.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS + 2500);
+
+      const resumed = (await internals.invoke("resume")) as {
+        position_ms: number;
+        is_playing: boolean;
+      };
+      expect(resumed.is_playing).toBe(true);
+      expect(resumed.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS + 2500);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("switching songs loads that song's lyrics and demo start", async () => {

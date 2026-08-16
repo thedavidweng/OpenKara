@@ -673,6 +673,10 @@
     "hideUpgradeAll": {
       "hide": "Ocultar «Actualizar todo a 4-pistas»",
       "description": "Oculta el botón de la barra lateral que vuelve a separar todas las canciones en modo 4-pistas."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Desenfocar las letras que no suenan",
+      "description": "Suaviza las líneas pasadas y siguientes. Déjalo apagado para leer con antelación."
     }
   },
   "bootstrap": {

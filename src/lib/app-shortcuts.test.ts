@@ -3,6 +3,7 @@ import {
   APP_SHORTCUTS,
   getShortcutDisplay,
   matchesShortcut,
+  shouldYieldSpaceToTarget,
 } from "./app-shortcuts";
 
 describe("app-shortcuts", () => {
@@ -168,5 +169,44 @@ describe("app-shortcuts", () => {
         shiftKey: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldYieldSpaceToTarget", () => {
+  function mockControl(options: {
+    selectorHint: string;
+    focusVisible: boolean;
+  }) {
+    const element = {
+      matches: (selector: string) =>
+        selector === ":focus-visible" ? options.focusVisible : false,
+      closest: (selector: string) =>
+        selector.includes(options.selectorHint) ? element : null,
+    };
+    return element as unknown as Element;
+  }
+
+  test("yields Space to a keyboard-focused button", () => {
+    expect(
+      shouldYieldSpaceToTarget(
+        mockControl({ selectorHint: "button", focusVisible: true }),
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps Space for play/pause after a pointer-focused button", () => {
+    expect(
+      shouldYieldSpaceToTarget(
+        mockControl({ selectorHint: "button", focusVisible: false }),
+      ),
+    ).toBe(false);
+  });
+
+  test("always yields Space inside a dialog", () => {
+    expect(
+      shouldYieldSpaceToTarget(
+        mockControl({ selectorHint: "dialog", focusVisible: false }),
+      ),
+    ).toBe(true);
   });
 });
