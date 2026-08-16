@@ -102,7 +102,7 @@ export function useLyricsEngine(input: {
 
   useEffect(() => {
     return () => {
-      lineRuntime.clear();
+      lineRuntime.clearUnmounted();
     };
   }, [lineRuntime, songId]);
 

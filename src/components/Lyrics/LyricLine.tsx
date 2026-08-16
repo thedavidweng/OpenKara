@@ -12,7 +12,7 @@ import {
 import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
-import type { LyricLine as LyricLineType } from "@/types/ipc";
+import type { LyricLine as LyricLineType, WordToken } from "@/types/ipc";
 import {
   CENTERED_BG_FONT_SIZE,
   CENTERED_LINE_LETTER_SPACING,
@@ -33,7 +33,11 @@ import {
   shouldEmphasizeWord,
   wordTokenGap,
 } from "./lyric-line-typography";
-import { resolveRomanFillUnits, resolveWordRomans } from "./lyric-word-romans";
+import {
+  resolveRomanFillUnits,
+  resolveWordRomans,
+  type RomanFillUnit,
+} from "./lyric-word-romans";
 import { visibleRomanizedText } from "@/lib/lyrics-roman-visibility";
 import type { LyricLineState, LyricsPresentation } from "./lyrics-panel-model";
 
@@ -55,6 +59,19 @@ function lineHighlightState(
     return "active";
   }
   return state;
+}
+
+function karaokeTimingKey(
+  words: WordToken[] | null,
+  romanFillUnits: RomanFillUnit[] | null,
+): string {
+  const wordKey = (words ?? [])
+    .map((word) => `${word.time_ms}:${word.end_ms}`)
+    .join(",");
+  const romanKey = (romanFillUnits ?? [])
+    .map((unit) => `${unit.time_ms}:${unit.end_ms}`)
+    .join(",");
+  return `${wordKey}|${romanKey}`;
 }
 
 function lineStateColorClass(state: LyricLineState): string {
@@ -159,6 +176,7 @@ export const LyricLine = memo(function LyricLine({
   wordsRef.current = words;
   const romanFillUnitsRef = useRef(romanFillUnits);
   romanFillUnitsRef.current = romanFillUnits;
+  const timingKey = karaokeTimingKey(words, romanFillUnits);
 
   useEffect(() => {
     if (shouldUseKaraokeFill) {
@@ -196,7 +214,13 @@ export const LyricLine = memo(function LyricLine({
 
     lyricsLineRuntime.unregisterKaraoke(lineIndex);
     karaokeRef.current?.deactivateLine();
-  }, [displayRomanizedText, isLeftAligned, lineIndex, shouldUseKaraokeFill]);
+  }, [
+    displayRomanizedText,
+    isLeftAligned,
+    lineIndex,
+    shouldUseKaraokeFill,
+    timingKey,
+  ]);
 
   useEffect(
     () => () => {

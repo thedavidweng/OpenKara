@@ -458,6 +458,70 @@ describe("LyricLine", () => {
     container.remove();
   });
 
+  test("rebinds karaoke fill when word timings change without romanized text changing", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const makeLine = (startMs: number) => ({
+      time_ms: startMs,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: startMs, end_ms: startMs + 500, roman: "kimi" },
+        {
+          text: "の",
+          time_ms: startMs + 500,
+          end_ms: startMs + 1000,
+          roman: "no",
+        },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    });
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={makeLine(1000)}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+    const activateCount = controller.activateLine.mock.calls.length;
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={makeLine(4000)}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+
+    expect(controller.activateLine.mock.calls.length).toBeGreaterThan(
+      activateCount,
+    );
+    const lastCall =
+      controller.activateLine.mock.calls[
+        controller.activateLine.mock.calls.length - 1
+      ];
+    expect(lastCall?.[1]?.[0]?.time_ms).toBe(4000);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("binds roman karaoke fills when pronunciation is turned on mid-line", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

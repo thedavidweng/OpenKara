@@ -769,6 +769,24 @@ describe("preferences", () => {
     expect(harness.view().preferences.lyricsBlurInactive).toBe(true);
   });
 
+  test("a rejected lyrics blur write restores the previous preference", async () => {
+    const harness = createSettingsHarness({
+      overrides: {
+        settings: {
+          setLyricsBlurInactive: async () => {
+            throw new Error("blur write failed");
+          },
+        },
+      },
+    });
+
+    expect(harness.view().preferences.lyricsBlurInactive).toBe(false);
+    await harness.controller.preferences.set({ lyricsBlurInactive: true });
+
+    expect(harness.notifyError).toHaveBeenCalledWith(expect.any(Error));
+    expect(harness.view().preferences.lyricsBlurInactive).toBe(false);
+  });
+
   test("the equaliser clamps gains to ±12 dB", async () => {
     const setEqGains = vi.fn(async () =>
       appSettings({ eq_gains_db: [12, -12, 0, 0, 0] }),

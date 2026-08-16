@@ -53,6 +53,30 @@ describe("preview playback start", () => {
     expect(snapshot.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS);
   });
 
+  test("looping past the end restarts the live playhead at the demo start", async () => {
+    vi.useFakeTimers();
+    try {
+      const { internals } = createTauriMock(MOCK_DATA);
+      await internals.invoke("play", { songId: "earfquake" });
+      const durationMs =
+        PREVIEW_SONGS.find((song) => song.hash === "earfquake")?.duration_ms ??
+        0;
+      await vi.advanceTimersByTimeAsync(
+        durationMs - PREVIEW_EARFQUAKE_START_MS + 1500,
+      );
+      const looped = (await internals.invoke("get_playback_state")) as {
+        position_ms: number;
+        is_playing: boolean;
+        state: string;
+      };
+      expect(looped.is_playing).toBe(true);
+      expect(looped.state).toBe("playing");
+      expect(looped.position_ms).toBe(PREVIEW_EARFQUAKE_START_MS + 1500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("pause keeps the live playhead instead of rewinding to play start", async () => {
     vi.useFakeTimers();
     try {

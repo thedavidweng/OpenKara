@@ -104,6 +104,16 @@ export class LyricsLineRuntime {
     this.karaokeByLine.clear();
   }
 
+  clearUnmounted(): void {
+    this.clearFocusSlots();
+    for (const [index, entry] of this.wrappers) {
+      if (entry.wrapperEl == null) {
+        this.wrappers.delete(index);
+        this.karaokeByLine.delete(index);
+      }
+    }
+  }
+
   tick(input: {
     activeLineIndex: number;
     adjustedMs: number;

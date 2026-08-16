@@ -54,8 +54,6 @@ export function SeekBar({
   const [dragPercent, setDragPercent] = useState(0);
   const isDraggingRef = useRef(false);
   const dragPercentRef = useRef(0);
-  isDraggingRef.current = isDragging;
-  dragPercentRef.current = dragPercent;
 
   useEffect(() => {
     let rafId = 0;
@@ -236,8 +234,11 @@ export function SeekBar({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      const percent = getPercentFromEvent(e.clientX);
+      isDraggingRef.current = true;
+      dragPercentRef.current = percent;
       setIsDragging(true);
-      setDragPercent(getPercentFromEvent(e.clientX));
+      setDragPercent(percent);
     },
     [getPercentFromEvent],
   );
@@ -246,11 +247,15 @@ export function SeekBar({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      setDragPercent(getPercentFromEvent(e.clientX));
+      const percent = getPercentFromEvent(e.clientX);
+      dragPercentRef.current = percent;
+      setDragPercent(percent);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
       const percent = getPercentFromEvent(e.clientX);
+      dragPercentRef.current = percent;
+      isDraggingRef.current = false;
       const targetMs = (percent / 100) * durationMs;
       void seek(targetMs);
       setIsDragging(false);

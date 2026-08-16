@@ -674,7 +674,7 @@
       "copied": "已复制！"
     },
     "lyricsBlurInactive": {
-      "enable": "模糊未唱到的歌词",
+      "enable": "模糊非当前歌词",
       "description": "虚化当前句以外的歌词。卡拉OK需要提前看清后面几行时请保持关闭。"
     }
   },

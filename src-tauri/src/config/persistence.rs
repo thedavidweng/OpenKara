@@ -165,7 +165,7 @@ mod tests {
             language: None,
             hide_batch_separate: None,
             cover_art_backdrop: None,
-            lyrics_blur_inactive: None,
+            lyrics_blur_inactive: Some(true),
             hide_upgrade_all: None,
             model_variant: None,
             lyrics_font_step: Some(1),
@@ -189,6 +189,7 @@ mod tests {
         assert_eq!(loaded.libraries.len(), 1);
         assert_eq!(loaded.active_library_id, config.active_library_id);
         assert_eq!(loaded.stem_mode, Some(StemMode::FourStem));
+        assert_eq!(loaded.lyrics_blur_inactive, Some(true));
         assert_eq!(loaded.lyrics_font_step, Some(1));
     }
 

@@ -1168,6 +1168,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("hide_batch_separate");
     expect(settings).toHaveProperty("cover_art_backdrop");
     expect(settings).toHaveProperty("lyrics_blur_inactive");
+    expect(settings.lyrics_blur_inactive).toBe(false);
     expect(settings).toHaveProperty("hide_upgrade_all");
     expect(settings).toHaveProperty("lyrics_font_step");
     expect(settings).toHaveProperty("execution_provider");

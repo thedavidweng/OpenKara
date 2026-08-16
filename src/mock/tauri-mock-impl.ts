@@ -289,6 +289,7 @@ export function createTauriMock(data: any): TauriMockResult {
           is_playing: true,
           position_ms: loopMs,
         };
+        startPlayhead(loopMs);
         emitMockEvent("playback-position", {
           ms: loopMs,
           transport_generation: transportGeneration,
@@ -296,14 +297,18 @@ export function createTauriMock(data: any): TauriMockResult {
         });
         schedulePlaybackEnd();
       } else {
+        const endedMs = Number(
+          (currentPlaybackSnapshot as { duration_ms?: number }).duration_ms,
+        );
+        writePositionMs(Number.isFinite(endedMs) ? endedMs : 0);
+        playheadAnchorMs = null;
         currentPlaybackSnapshot = {
           ...currentPlaybackSnapshot,
           state: "idle",
           is_playing: false,
-          position_ms: (currentPlaybackSnapshot as any).duration_ms,
         };
         emitMockEvent("playback-position", {
-          ms: (currentPlaybackSnapshot as any).duration_ms,
+          ms: currentPlaybackSnapshot.position_ms,
           transport_generation: transportGeneration,
           snapshot: clone(currentPlaybackSnapshot),
         });

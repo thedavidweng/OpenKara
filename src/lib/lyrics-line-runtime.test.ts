@@ -190,6 +190,33 @@ describe("LyricsLineRuntime", () => {
     expect(wrapper.style.transform).toBe("");
   });
 
+  test("clearUnmounted keeps live wrappers and drops detached ones", () => {
+    const runtime = new LyricsLineRuntime();
+    const live = document.createElement("div");
+    const stale = document.createElement("div");
+    runtime.registerWrapper(0, live);
+    runtime.registerWrapper(1, stale);
+    runtime.registerKaraoke(0, {
+      update: vi.fn(),
+    } as unknown as KaraokeFillController);
+    runtime.registerKaraoke(1, {
+      update: vi.fn(),
+    } as unknown as KaraokeFillController);
+    runtime.unregisterWrapper(1);
+
+    runtime.clearUnmounted();
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+    expect(live.style.transform).toContain("scale(");
+    expect(stale.style.transform).toBe("");
+  });
+
   test("re-registering an existing wrapper only updates the element pointer", () => {
     const runtime = new LyricsLineRuntime();
     const first = document.createElement("div");

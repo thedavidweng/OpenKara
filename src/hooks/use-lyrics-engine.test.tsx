@@ -33,6 +33,7 @@ const { mockPlayerState, mockSelectCurrentPositionMs, mockLineRuntime } =
     ),
     mockLineRuntime: {
       clear: vi.fn(),
+      clearUnmounted: vi.fn(),
       tick: vi.fn(),
       registerWrapper: vi.fn(),
       unregisterWrapper: vi.fn(),
@@ -40,6 +41,7 @@ const { mockPlayerState, mockSelectCurrentPositionMs, mockLineRuntime } =
       unregisterKaraoke: vi.fn(),
     } as unknown as LyricsLineRuntime & {
       clear: ReturnType<typeof vi.fn>;
+      clearUnmounted: ReturnType<typeof vi.fn>;
       tick: ReturnType<typeof vi.fn>;
     },
   }));
@@ -225,6 +227,7 @@ describe("useLyricsEngine", () => {
       displayedPositionMs: null,
     };
     mockLineRuntime.clear.mockReset();
+    mockLineRuntime.clearUnmounted.mockReset();
     mockLineRuntime.tick.mockReset();
 
     session = await createSession();
