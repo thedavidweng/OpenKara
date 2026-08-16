@@ -27,6 +27,8 @@ const DEFAULT_SETTINGS = {
   library_sort_mode: "recently_imported",
   theme_preference: "dark",
   update_policy: "notify",
+  youtube_source_enabled: false,
+  netease_source_enabled: false,
 } satisfies AppSettings;
 
 const DEFAULT_PLAYBACK_SNAPSHOT = {

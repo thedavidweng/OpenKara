@@ -120,9 +120,9 @@ impl<'a> LyricsAcquisition<'a> {
         }
     }
 
-    /// Fetch online lyrics for a song with an explicit overwrite intent.
+    /// Fetch lyrics from Online Lyrics Sources with an explicit overwrite intent.
     ///
-    /// Word-timed Upgrade of online Line-timed Lyrics calls AMLL only.
+    /// Word-timed Upgrade of Line-timed Lyrics from an Online Lyrics Source calls AMLL only.
     /// `user_replace` and unsynced embedded / absent use the full chain.
     pub fn fetch_online(
         &self,
