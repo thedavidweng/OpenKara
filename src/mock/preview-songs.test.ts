@@ -13,15 +13,15 @@ import {
 import { createTauriMock } from "./tauri-mock-impl";
 
 describe("shared preview catalog", () => {
-  test("places One Last Kiss after Earfquake in recently imported order", () => {
+  test("places One Last Kiss first in recently imported order", () => {
     const sorted = [...PREVIEW_SONGS].sort(
       (left, right) => right.imported_at - left.imported_at,
     );
     expect(sorted.map((song) => song.hash).slice(0, 2)).toEqual([
-      "earfquake",
       "one-last-kiss",
+      "earfquake",
     ]);
-    expect(PRIMARY_PREVIEW_SONG_HASH).toBe("earfquake");
+    expect(PRIMARY_PREVIEW_SONG_HASH).toBe("one-last-kiss");
   });
 
   test("keeps cover art on every preview song", () => {

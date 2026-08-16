@@ -120,11 +120,18 @@ interface WordFill {
   fade: number;
 }
 
+export type KaraokeTimedFill = {
+  element: HTMLElement;
+  time_ms: number;
+  end_ms: number;
+};
+
 export class KaraokeFillController {
   private wordFills: WordFill[] = [];
   private activeLineEl: HTMLElement | null = null;
   private activeWordEls: HTMLElement[] = [];
   private activeCompanionEls: Array<HTMLElement | null> = [];
+  private activeExtraFillEls: HTMLElement[] = [];
   private activeWordTimings: Array<{ time_ms: number; end_ms: number }> = [];
   private wordResizeObserver: ResizeObserver | null = null;
 
@@ -133,10 +140,11 @@ export class KaraokeFillController {
     words: Array<{ time_ms: number; end_ms: number }>,
     wordEls: HTMLElement[],
     companionEls: Array<HTMLElement | null> = [],
+    extraFills: KaraokeTimedFill[] = [],
   ) {
     if (
       this.activeLineEl === lineEl &&
-      this.hasSameBinding(words, wordEls, companionEls)
+      this.hasSameBinding(words, wordEls, companionEls, extraFills)
     ) {
       return;
     }
@@ -151,8 +159,15 @@ export class KaraokeFillController {
         this.bindFill(companion, words[i]);
       }
     }
+    for (const fill of extraFills) {
+      this.bindFill(fill.element, {
+        time_ms: fill.time_ms,
+        end_ms: fill.end_ms,
+      });
+    }
     this.activeWordEls = wordEls.slice(0, bindingLength);
     this.activeCompanionEls = companionEls.slice(0, bindingLength);
+    this.activeExtraFillEls = extraFills.map((fill) => fill.element);
     this.activeWordTimings = words.slice(0, bindingLength);
     this.observeWordSizes();
   }
@@ -195,6 +210,7 @@ export class KaraokeFillController {
     this.activeLineEl = null;
     this.activeWordEls = [];
     this.activeCompanionEls = [];
+    this.activeExtraFillEls = [];
     this.activeWordTimings = [];
   }
 
@@ -235,7 +251,16 @@ export class KaraokeFillController {
     words: Array<{ time_ms: number; end_ms: number }>,
     wordEls: HTMLElement[],
     companionEls: Array<HTMLElement | null>,
+    extraFills: KaraokeTimedFill[],
   ) {
+    if (extraFills.length !== this.activeExtraFillEls.length) {
+      return false;
+    }
+    for (let index = 0; index < extraFills.length; index += 1) {
+      if (this.activeExtraFillEls[index] !== extraFills[index]?.element) {
+        return false;
+      }
+    }
     const bindingLength = Math.min(words.length, wordEls.length);
     if (bindingLength !== this.activeWordEls.length) {
       return false;

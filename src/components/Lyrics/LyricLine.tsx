@@ -20,6 +20,7 @@ import {
   CENTERED_LINE_PADDING,
   CENTERED_LINE_FONT_WEIGHT,
   CENTERED_ROMAN_FONT_SIZE,
+  LEFT_ROMAN_GRID_CLASS,
   STANDARD_LINE_FONT_WEIGHT,
   displayWordText,
   getCenteredLineFontSize,
@@ -32,7 +33,7 @@ import {
   shouldEmphasizeWord,
   wordTokenGap,
 } from "./lyric-line-typography";
-import { resolveWordRomans } from "./lyric-word-romans";
+import { resolveRomanFillUnits, resolveWordRomans } from "./lyric-word-romans";
 import { visibleRomanizedText } from "@/lib/lyrics-roman-visibility";
 import type { LyricLineState, LyricsPresentation } from "./lyrics-panel-model";
 
@@ -141,6 +142,10 @@ export const LyricLine = memo(function LyricLine({
   const wordRomans = displayRomanizedText
     ? resolveWordRomans(words, displayRomanizedText)
     : null;
+  const romanFillUnits =
+    hasWords && displayRomanizedText
+      ? resolveRomanFillUnits(words, displayRomanizedText)
+      : null;
   const hideLineRoman = !isLeftAligned && wordRomans !== null;
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const hasWordMask = hasWords && presentation !== "audience";
@@ -152,6 +157,8 @@ export const LyricLine = memo(function LyricLine({
   const romanElsRef = useRef<Array<HTMLElement | null>>([]);
   const wordsRef = useRef(words);
   wordsRef.current = words;
+  const romanFillUnitsRef = useRef(romanFillUnits);
+  romanFillUnitsRef.current = romanFillUnits;
 
   useEffect(() => {
     if (shouldUseKaraokeFill) {
@@ -161,11 +168,26 @@ export const LyricLine = memo(function LyricLine({
       const container = wordElsRef.current[0]?.closest("[data-karaoke-line]");
       const currentWords = wordsRef.current;
       if (container instanceof HTMLElement && currentWords) {
+        const extraFills = isLeftAligned
+          ? (romanFillUnitsRef.current ?? []).flatMap((unit, index) => {
+              const element = romanElsRef.current[index];
+              return element
+                ? [
+                    {
+                      element,
+                      time_ms: unit.time_ms,
+                      end_ms: unit.end_ms,
+                    },
+                  ]
+                : [];
+            })
+          : [];
         karaokeRef.current.activateLine(
           container,
           currentWords,
           wordElsRef.current,
-          romanElsRef.current,
+          isLeftAligned ? [] : romanElsRef.current,
+          extraFills,
         );
       }
       lyricsLineRuntime.registerKaraoke(lineIndex, karaokeRef.current);
@@ -174,7 +196,7 @@ export const LyricLine = memo(function LyricLine({
 
     lyricsLineRuntime.unregisterKaraoke(lineIndex);
     karaokeRef.current?.deactivateLine();
-  }, [lineIndex, shouldUseKaraokeFill]);
+  }, [displayRomanizedText, isLeftAligned, lineIndex, shouldUseKaraokeFill]);
 
   useEffect(
     () => () => {
@@ -192,9 +214,9 @@ export const LyricLine = memo(function LyricLine({
         showLineRoman
           ? presentation === "audience"
             ? "grid-cols-[minmax(0,1fr)_auto]"
-            : "grid-cols-[minmax(0,1fr)_220px]"
+            : LEFT_ROMAN_GRID_CLASS
           : "grid-cols-1"
-      } items-baseline gap-x-8 gap-y-1.5 text-left ${
+      } isolate items-baseline gap-x-8 gap-y-1.5 text-left ${
         isSeekable ? "cursor-pointer group/line" : ""
       }`
     : `flex flex-col items-center gap-[0.28em] text-center ${
@@ -472,7 +494,7 @@ export const LyricLine = memo(function LyricLine({
         data-lyrics-roman="true"
         className={
           isLeftAligned
-            ? `motion-surface font-medium tracking-tight min-w-0 break-words ${hoverClass} ${
+            ? `relative z-10 motion-surface overflow-visible font-medium tracking-tight break-keep ${hoverClass} ${
                 presentation === "standard"
                   ? `${romanTextSizeClass} ${lineStateColorClass(state)}`
                   : ""
@@ -514,35 +536,30 @@ export const LyricLine = memo(function LyricLine({
                 }
         }
       >
-        {isLeftAligned && wordRomans
-          ? wordRomans.map((wordRoman, idx) => {
-              if (!wordRoman) {
-                return null;
-              }
-              return (
-                <span key={idx}>
-                  <span
-                    ref={(el) => {
-                      romanElsRef.current[idx] = el;
-                    }}
-                    data-karaoke-roman-fill={
-                      shouldUseKaraokeFill ? "true" : undefined
-                    }
-                    className="inline-block"
-                  >
-                    {wordRoman}
-                  </span>
-                  {idx < wordRomans.length - 1 ? " " : ""}
+        {isLeftAligned && romanFillUnits
+          ? romanFillUnits.map((unit, idx) => (
+              <span key={`${unit.time_ms}-${idx}`}>
+                <span
+                  ref={(el) => {
+                    romanElsRef.current[idx] = el;
+                  }}
+                  data-karaoke-roman-fill={
+                    shouldUseKaraokeFill ? "true" : undefined
+                  }
+                  className="inline-block px-[0.08em]"
+                >
+                  {unit.text}
                 </span>
-              );
-            })
+                {idx < romanFillUnits.length - 1 ? " " : ""}
+              </span>
+            ))
           : displayRomanizedText}
       </span>
     ) : null;
 
   const lineContent = isLeftAligned ? (
     <>
-      <span className="flex min-w-0 flex-col break-words">
+      <span className="flex min-w-0 flex-col overflow-hidden break-words">
         {mainText}
         {bgWords}
       </span>

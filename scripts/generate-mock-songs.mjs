@@ -53,13 +53,13 @@ const coverSize = Number(arg("cover-size", "300"));
 // (hash → slug) — the slugs become file names and song hashes in the mock.
 const PLAYLIST = [
   {
-    hash: "905fd10b4162e0359de6a9921326ce87b65644883c7a7595226144df47c0b374",
-    slug: "earfquake",
-  },
-  {
     hash: "624fba475c9e0dae7b5c9aa589f620ef722cae6d1527ab83f1f1acea65a0acc5",
     slug: "one-last-kiss",
     lyrics: "amll",
+  },
+  {
+    hash: "905fd10b4162e0359de6a9921326ce87b65644883c7a7595226144df47c0b374",
+    slug: "earfquake",
   },
   {
     hash: "589f36455e597669a513a3d9aede378798d2b3237d422513336de7d2531c493d",

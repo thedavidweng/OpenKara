@@ -33,6 +33,9 @@ const STANDARD_SECONDARY_TEXT_SIZE_CLASSES = {
   [2]: "text-lg md:text-2xl xl:text-3xl",
 } as const;
 
+export const LEFT_ROMAN_GRID_CLASS =
+  "grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)]";
+
 const LEFT_ROMAN_TEXT_SIZE_CLASSES = {
   [-2]: "text-base font-medium tracking-tight md:text-lg",
   [-1]: "text-lg font-medium tracking-tight md:text-xl",

@@ -107,7 +107,7 @@ export const MOCK_DATA: MockData = {
     song_id: PRIMARY_PREVIEW_SONG_HASH,
     state: "playing",
     is_playing: true,
-    position_ms: PREVIEW_EARFQUAKE_START_MS,
+    position_ms: PREVIEW_OTHER_SONG_START_MS,
     duration_ms: PRIMARY_PREVIEW_DURATION_MS,
     buffered_ms: PRIMARY_PREVIEW_DURATION_MS,
     volume: 0.8,
@@ -135,10 +135,11 @@ export const MOCK_DATA: MockData = {
   },
 
   loopPlayback: true,
-  loopStartPositionMs: PREVIEW_EARFQUAKE_START_MS,
+  loopStartPositionMs: PREVIEW_OTHER_SONG_START_MS,
   playStartPositionMs: PREVIEW_OTHER_SONG_START_MS,
   playStartPositionBySongId: {
     earfquake: PREVIEW_EARFQUAKE_START_MS,
+    "one-last-kiss": PREVIEW_OTHER_SONG_START_MS,
   },
 };
 

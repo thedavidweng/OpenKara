@@ -458,6 +458,64 @@ describe("LyricLine", () => {
     container.remove();
   });
 
+  test("binds roman karaoke fills when pronunciation is turned on mid-line", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+        { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    };
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={line}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+    const activateCount = controller.activateLine.mock.calls.length;
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          lineIndex={0}
+          line={line}
+          state="active"
+          lyricsFontStep={0}
+          alignment="left"
+          romanizedText="kimi no"
+        />,
+      );
+    });
+
+    expect(controller.activateLine.mock.calls.length).toBeGreaterThan(
+      activateCount,
+    );
+    const lastCall =
+      controller.activateLine.mock.calls[
+        controller.activateLine.mock.calls.length - 1
+      ];
+    expect(lastCall?.[4]).toHaveLength(2);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("keeps the karaoke controller when the same logical line gets a new object reference", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -800,11 +858,12 @@ describe("LyricLine", () => {
       />,
     );
 
-    const romanAt = markup.indexOf("data-lyrics-roman");
+    const romanAt = markup.indexOf("data-word-roman");
     const bgAt = markup.indexOf("I love you more");
     const mainAt = markup.indexOf("忘れられない人");
     expect(romanAt).toBeGreaterThan(mainAt);
     expect(bgAt).toBeGreaterThan(romanAt);
+    expect(markup).toContain("wasurerarenai hito");
     expect(markup).toContain("max(0.5em, 10px)");
     expect(markup).toContain("max(0.7em, 10px)");
     expect(markup).toContain('data-lyrics-bg="true"');
@@ -857,7 +916,7 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("grid-cols-[minmax(0,1fr)_220px]");
+    expect(markup).toContain("minmax(14rem,18rem)");
     expect(markup).toContain('data-lyrics-roman="true"');
     expect(markup).toContain("kimi");
     expect(markup).toContain("no");

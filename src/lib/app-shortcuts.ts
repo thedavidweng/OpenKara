@@ -194,16 +194,19 @@ const MEDIA_SHORTCUT_CONTROL_SELECTOR =
 
 export const MEDIA_SHORTCUT_YIELD_SELECTOR = `${MEDIA_SHORTCUT_COMPOSITE_SELECTOR}, ${MEDIA_SHORTCUT_CONTROL_SELECTOR}`;
 
-function asClosestElement(
-  target: EventTarget | null,
-): { closest: (selector: string) => Element | null } | null {
-  if (
-    target == null ||
-    typeof (target as { closest?: unknown }).closest !== "function"
-  ) {
+type ClosestHost = {
+  closest: (selector: string) => Element | null;
+};
+
+function asClosestElement(target: EventTarget | null): ClosestHost | null {
+  if (target == null || !("closest" in target)) {
     return null;
   }
-  return target as { closest: (selector: string) => Element | null };
+  const closest = Reflect.get(target, "closest");
+  if (typeof closest !== "function") {
+    return null;
+  }
+  return target as unknown as ClosestHost;
 }
 
 export function isMediaShortcutYieldTarget(
