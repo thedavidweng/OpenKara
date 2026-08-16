@@ -476,6 +476,14 @@
         "message": "OpenKara uses the CPU-only ONNX Runtime. The GPU runtime did not respond. Stem separation still works. It runs slower."
       }
     },
+    "onlineSources": {
+      "label": "Online Sources",
+      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+    },
     "hideBatchSeparate": {
       "hide": "Hide “Separate All”",
       "description": "Hide the sidebar button that separates all songs."

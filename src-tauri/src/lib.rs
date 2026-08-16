@@ -13,6 +13,7 @@ pub mod automation_report;
 #[cfg(feature = "automation-smoke")]
 pub mod automation_smoke;
 pub mod cache;
+pub mod catalog;
 pub mod cdg;
 pub mod commands;
 pub mod config;
@@ -200,6 +201,8 @@ pub fn run() {
             commands::settings::set_stem_mode,
             commands::settings::set_model_variant,
             commands::settings::set_language,
+            commands::settings::list_online_sources,
+            commands::settings::set_online_source_enabled,
             commands::settings::set_hide_batch_separate,
             commands::settings::set_cover_art_backdrop,
             commands::settings::set_lyrics_blur_inactive,

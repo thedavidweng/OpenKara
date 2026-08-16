@@ -412,6 +412,8 @@ export function createSettingsController({
       crossfadeDurationMs,
       themePreference,
       updatePolicy,
+      youtubeSourceEnabled,
+      neteaseSourceEnabled,
     } = patch;
 
     if (language !== undefined) {
@@ -456,6 +458,24 @@ export function createSettingsController({
     if (hideUpgradeAll !== undefined) {
       await writeOptimisticPreference({ hideUpgradeAll }, () =>
         backend.settings.setHideUpgradeAll(hideUpgradeAll),
+      );
+    }
+
+    if (youtubeSourceEnabled !== undefined) {
+      await writeOptimisticPreference({ youtubeSourceEnabled }, () =>
+        backend.settings.setOnlineSourceEnabled(
+          "youtube",
+          youtubeSourceEnabled,
+        ),
+      );
+    }
+
+    if (neteaseSourceEnabled !== undefined) {
+      await writeOptimisticPreference({ neteaseSourceEnabled }, () =>
+        backend.settings.setOnlineSourceEnabled(
+          "netease",
+          neteaseSourceEnabled,
+        ),
       );
     }
 

@@ -21,6 +21,8 @@ import type {
   IntegrityReport,
   LibraryRegistrySnapshot,
   LibrarySortMode,
+  OnlineSourceId,
+  OnlineSourceSnapshot,
   LyricsOnlineFetchIntent,
   LyricsPayload,
   ModelBootstrapStatusSnapshot,
@@ -242,6 +244,11 @@ export interface SettingsBackend {
   setLibrarySortMode(mode: LibrarySortMode): Promise<AppSettings>;
   setThemePreference(preference: ThemePreference): Promise<AppSettings>;
   setUpdatePolicy(policy: UpdatePolicy): Promise<AppSettings>;
+  listOnlineSources(): Promise<OnlineSourceSnapshot[]>;
+  setOnlineSourceEnabled(
+    sourceId: OnlineSourceId,
+    enabled: boolean,
+  ): Promise<AppSettings>;
   getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot>;
   getModelStatus(variant: string): Promise<ModelStatusSnapshot>;
   downloadModel(variant: string): Promise<ModelBootstrapStatusSnapshot>;

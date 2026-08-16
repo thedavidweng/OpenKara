@@ -675,6 +675,14 @@
     "lyricsBlurInactive": {
       "enable": "เบลอท่อนที่ไม่ใช่ท่อนปัจจุบัน",
       "description": "ทำให้นุ่มทั้งท่อนที่ผ่านไปแล้วและท่อนถัดไป ปิดตัวเลือกนี้ถ้าต้องการอ่านล่วงหน้า"
+    },
+    "onlineSources": {
+      "label": "Online Sources",
+      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
     }
   },
   "bootstrap": {

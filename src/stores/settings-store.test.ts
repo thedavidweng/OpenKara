@@ -80,6 +80,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
     update_policy: "notify",
+    youtube_source_enabled: false,
+    netease_source_enabled: false,
     ...overrides,
   };
 }
@@ -555,6 +557,8 @@ describe("settings-store actions", () => {
       librarySortMode: "title_asc",
       themePreference: "dark",
       updatePolicy: "notify",
+      youtubeSourceEnabled: false,
+      neteaseSourceEnabled: false,
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });

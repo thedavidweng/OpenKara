@@ -778,6 +778,34 @@ export function createTauriMock(data: any): TauriMockResult {
       };
       return settingsSnapshot;
     },
+    list_online_sources: () => [
+      {
+        id: "youtube",
+        kind: "video",
+        enabled: !!settingsSnapshot.youtube_source_enabled,
+      },
+      {
+        id: "netease",
+        kind: "streaming",
+        enabled: !!settingsSnapshot.netease_source_enabled,
+      },
+    ],
+    set_online_source_enabled: (args: any) => {
+      const sourceId = args && args.source_id;
+      const enabled = !!(args && args.enabled);
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        youtube_source_enabled:
+          sourceId === "youtube"
+            ? enabled
+            : !!settingsSnapshot.youtube_source_enabled,
+        netease_source_enabled:
+          sourceId === "netease"
+            ? enabled
+            : !!settingsSnapshot.netease_source_enabled,
+      };
+      return settingsSnapshot;
+    },
     check_runtime_updates: () => ({
       generation: 1,
       release_id: "mock-release",

@@ -9,6 +9,7 @@ import { SettingsEqSection } from "./SettingsEqSection";
 import { SettingsExecutionProviderSection } from "./SettingsExecutionProviderSection";
 import { SettingsGeneralSection } from "./SettingsGeneralSection";
 import { SettingsLibrarySection } from "./SettingsLibrarySection";
+import { SettingsOnlineSourcesSection } from "./SettingsOnlineSourcesSection";
 import { SettingsModelVariantSection } from "./SettingsModelVariantSection";
 import { SettingsRuntimeSection } from "./SettingsRuntimeSection";
 import { SettingsControllerProvider } from "./SettingsController.provider";
@@ -63,6 +64,7 @@ export function SettingsOverlay() {
         </div>
         <SettingsControllerProvider>
           <SettingsLibrarySection />
+          <SettingsOnlineSourcesSection />
           <SettingsStemModeSection />
           <SettingsModelVariantSection />
           <SettingsRuntimeSection />

@@ -445,6 +445,9 @@ describe("settings", () => {
     crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported" as const,
     theme_preference: "dark" as const,
+    update_policy: "notify" as const,
+    youtube_source_enabled: false,
+    netease_source_enabled: false,
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -661,6 +664,27 @@ describe("settings", () => {
     const returned = await settings.setThemePreference("light");
     expect(mockInvoke).toHaveBeenCalledWith("set_theme_preference", {
       preference: "light",
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("listOnlineSources invokes list_online_sources", async () => {
+    const sources = [
+      { id: "youtube" as const, kind: "video" as const, enabled: false },
+      { id: "netease" as const, kind: "streaming" as const, enabled: true },
+    ];
+    mockInvoke.mockResolvedValueOnce(sources);
+    const returned = await settings.listOnlineSources();
+    expect(mockInvoke).toHaveBeenCalledWith("list_online_sources");
+    expect(returned).toBe(sources);
+  });
+
+  test("setOnlineSourceEnabled invokes set_online_source_enabled", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setOnlineSourceEnabled("netease", true);
+    expect(mockInvoke).toHaveBeenCalledWith("set_online_source_enabled", {
+      source_id: "netease",
+      enabled: true,
     });
     expect(returned).toBe(appSettings);
   });
