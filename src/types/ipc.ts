@@ -219,6 +219,7 @@ export interface AppSettings {
   language: string | null;
   hide_batch_separate: boolean;
   cover_art_backdrop: boolean;
+  lyrics_blur_inactive: boolean;
   hide_upgrade_all: boolean;
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;

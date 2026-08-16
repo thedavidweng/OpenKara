@@ -53,6 +53,7 @@ const BASE_SETTINGS: AppSettings = {
   language: "en",
   hide_batch_separate: false,
   cover_art_backdrop: true,
+  lyrics_blur_inactive: false,
   hide_upgrade_all: false,
   lyrics_font_step: 0,
   execution_provider: "cpu",
@@ -738,12 +739,17 @@ describe("preferences", () => {
       stored = { ...stored, cover_art_backdrop: value };
       return stored;
     });
+    const setLyricsBlurInactive = vi.fn(async (value: boolean) => {
+      stored = { ...stored, lyrics_blur_inactive: value };
+      return stored;
+    });
     const harness = createSettingsHarness({
       overrides: {
         settings: {
           setHideBatchSeparate,
           setHideUpgradeAll,
           setCoverArtBackdrop,
+          setLyricsBlurInactive,
         },
       },
     });
@@ -751,13 +757,16 @@ describe("preferences", () => {
     await harness.controller.preferences.set({ hideBatchSeparate: true });
     await harness.controller.preferences.set({ hideUpgradeAll: true });
     await harness.controller.preferences.set({ coverArtBackdrop: false });
+    await harness.controller.preferences.set({ lyricsBlurInactive: true });
 
     expect(setHideBatchSeparate).toHaveBeenCalledWith(true);
     expect(setHideUpgradeAll).toHaveBeenCalledWith(true);
     expect(setCoverArtBackdrop).toHaveBeenCalledWith(false);
+    expect(setLyricsBlurInactive).toHaveBeenCalledWith(true);
     expect(harness.view().preferences.hideBatchSeparate).toBe(true);
     expect(harness.view().preferences.hideUpgradeAll).toBe(true);
     expect(harness.view().preferences.coverArtBackdrop).toBe(false);
+    expect(harness.view().preferences.lyricsBlurInactive).toBe(true);
   });
 
   test("the equaliser clamps gains to ±12 dB", async () => {

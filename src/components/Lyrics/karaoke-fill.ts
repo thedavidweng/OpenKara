@@ -77,7 +77,6 @@ export function applyWordMask(element: HTMLElement): {
   style.webkitMaskRepeat = "no-repeat";
   style.webkitMaskOrigin = "left";
   style.webkitMaskSize = size;
-  setWordMaskProgress(element, 0, measured.width, measured.fade);
   return measured;
 }
 
@@ -89,6 +88,12 @@ export function setWordMaskProgress(
 ) {
   const position = `${maskOffsetPx(progress, wordWidth, fadeWidth)}px 0px`;
   const style = element.style as MaskStyle;
+  if (
+    style.maskPosition === position &&
+    style.webkitMaskPosition === position
+  ) {
+    return;
+  }
   style.maskPosition = position;
   style.webkitMaskPosition = position;
 }
@@ -119,6 +124,7 @@ export class KaraokeFillController {
   private wordFills: WordFill[] = [];
   private activeLineEl: HTMLElement | null = null;
   private activeWordEls: HTMLElement[] = [];
+  private activeCompanionEls: Array<HTMLElement | null> = [];
   private activeWordTimings: Array<{ time_ms: number; end_ms: number }> = [];
   private wordResizeObserver: ResizeObserver | null = null;
 
@@ -126,29 +132,44 @@ export class KaraokeFillController {
     lineEl: HTMLElement,
     words: Array<{ time_ms: number; end_ms: number }>,
     wordEls: HTMLElement[],
+    companionEls: Array<HTMLElement | null> = [],
   ) {
-    if (this.activeLineEl === lineEl && this.hasSameBinding(words, wordEls)) {
+    if (
+      this.activeLineEl === lineEl &&
+      this.hasSameBinding(words, wordEls, companionEls)
+    ) {
       return;
     }
     this.deactivateLine();
     this.activeLineEl = lineEl;
 
-    for (let i = 0; i < words.length && i < wordEls.length; i++) {
-      const word = words[i];
-      const el = wordEls[i];
-      const measured = applyWordMask(el);
-      setWordMaskProgress(el, 0, measured.width, measured.fade);
-      this.wordFills.push({
-        element: el,
-        startTime: word.time_ms,
-        endTime: word.end_ms,
-        width: measured.width,
-        fade: measured.fade,
-      });
+    const bindingLength = Math.min(words.length, wordEls.length);
+    for (let i = 0; i < bindingLength; i++) {
+      this.bindFill(wordEls[i], words[i]);
+      const companion = companionEls[i];
+      if (companion) {
+        this.bindFill(companion, words[i]);
+      }
     }
-    this.activeWordEls = wordEls.slice(0, this.wordFills.length);
-    this.activeWordTimings = words.slice(0, this.wordFills.length);
+    this.activeWordEls = wordEls.slice(0, bindingLength);
+    this.activeCompanionEls = companionEls.slice(0, bindingLength);
+    this.activeWordTimings = words.slice(0, bindingLength);
     this.observeWordSizes();
+  }
+
+  private bindFill(
+    element: HTMLElement,
+    word: { time_ms: number; end_ms: number },
+  ): void {
+    const measured = applyWordMask(element);
+    setWordMaskProgress(element, 0, measured.width, measured.fade);
+    this.wordFills.push({
+      element,
+      startTime: word.time_ms,
+      endTime: word.end_ms,
+      width: measured.width,
+      fade: measured.fade,
+    });
   }
 
   update(currentMs: number, _isPlaying: boolean) {
@@ -173,6 +194,7 @@ export class KaraokeFillController {
     this.wordFills = [];
     this.activeLineEl = null;
     this.activeWordEls = [];
+    this.activeCompanionEls = [];
     this.activeWordTimings = [];
   }
 
@@ -212,6 +234,7 @@ export class KaraokeFillController {
   private hasSameBinding(
     words: Array<{ time_ms: number; end_ms: number }>,
     wordEls: HTMLElement[],
+    companionEls: Array<HTMLElement | null>,
   ) {
     const bindingLength = Math.min(words.length, wordEls.length);
     if (bindingLength !== this.activeWordEls.length) {
@@ -223,6 +246,8 @@ export class KaraokeFillController {
       const nextTiming = words[index];
       if (
         this.activeWordEls[index] !== wordEls[index] ||
+        (this.activeCompanionEls[index] ?? null) !==
+          (companionEls[index] ?? null) ||
         activeTiming.time_ms !== nextTiming.time_ms ||
         activeTiming.end_ms !== nextTiming.end_ms
       ) {

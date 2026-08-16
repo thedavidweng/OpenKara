@@ -40,23 +40,11 @@ export function SeekBar({
   const seek = usePlayerStore((s) => s.seek);
 
   const [displayPositionMs, setDisplayPositionMs] = useState(positionMs);
-
-  useEffect(() => {
-    let rafId: number;
-    const tick = () => {
-      const current = selectCurrentPositionMs({
-        snapshot,
-        positionMs,
-        playingSinceMs,
-      });
-      setDisplayPositionMs(current);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [snapshot, positionMs, playingSinceMs]);
-
+  const displayPositionMsRef = useRef(positionMs);
+  const elapsedLabelRef = useRef<HTMLSpanElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
   const durationMs = snapshot?.duration_ms ?? 0;
+
   const progressPercent =
     durationMs > 0 ? (displayPositionMs / durationMs) * 100 : 0;
 
@@ -64,6 +52,40 @@ export function SeekBar({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPercent, setDragPercent] = useState(0);
+  const isDraggingRef = useRef(false);
+  const dragPercentRef = useRef(0);
+  isDraggingRef.current = isDragging;
+  dragPercentRef.current = dragPercent;
+
+  useEffect(() => {
+    let rafId = 0;
+    let lastRenderedSecond = Number.NaN;
+    const tick = () => {
+      const current = isDraggingRef.current
+        ? (dragPercentRef.current / 100) * durationMs
+        : selectCurrentPositionMs({
+            snapshot,
+            positionMs,
+            playingSinceMs,
+          });
+      displayPositionMsRef.current = current;
+      const percent = durationMs > 0 ? (current / durationMs) * 100 : 0;
+      if (fillRef.current) {
+        fillRef.current.style.width = `${percent}%`;
+      }
+      const second = Math.floor(current / 1000);
+      if (second !== lastRenderedSecond) {
+        lastRenderedSecond = second;
+        if (elapsedLabelRef.current) {
+          elapsedLabelRef.current.textContent = formatDuration(current);
+        }
+        setDisplayPositionMs(current);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [snapshot, positionMs, playingSinceMs, durationMs]);
 
   const songId = snapshot?.song_id ?? null;
   const waveformRef = useRef<WaveformData | null>(null);
@@ -257,17 +279,19 @@ export function SeekBar({
       switch (event.key) {
         case "ArrowLeft":
         case "ArrowDown":
-          nextPositionMs = displayPositionMs - KEYBOARD_SEEK_STEP_MS;
+          nextPositionMs = displayPositionMsRef.current - KEYBOARD_SEEK_STEP_MS;
           break;
         case "ArrowRight":
         case "ArrowUp":
-          nextPositionMs = displayPositionMs + KEYBOARD_SEEK_STEP_MS;
+          nextPositionMs = displayPositionMsRef.current + KEYBOARD_SEEK_STEP_MS;
           break;
         case "PageDown":
-          nextPositionMs = displayPositionMs - KEYBOARD_SEEK_PAGE_STEP_MS;
+          nextPositionMs =
+            displayPositionMsRef.current - KEYBOARD_SEEK_PAGE_STEP_MS;
           break;
         case "PageUp":
-          nextPositionMs = displayPositionMs + KEYBOARD_SEEK_PAGE_STEP_MS;
+          nextPositionMs =
+            displayPositionMsRef.current + KEYBOARD_SEEK_PAGE_STEP_MS;
           break;
         case "Home":
           nextPositionMs = 0;
@@ -282,7 +306,7 @@ export function SeekBar({
       event.preventDefault();
       void seek(clampPosition(nextPositionMs, durationMs));
     },
-    [displayPositionMs, durationMs, seek],
+    [durationMs, seek],
   );
 
   return (
@@ -292,6 +316,7 @@ export function SeekBar({
       }`}
     >
       <span
+        ref={elapsedLabelRef}
         className={`${PLAYBACK_BAR_TIME_LABEL_WIDTH_CLASS} shrink-0 whitespace-nowrap text-center`}
       >
         {formatDuration(displayMs)}
@@ -320,6 +345,7 @@ export function SeekBar({
           data-waveform-canvas
         />
         <div
+          ref={fillRef}
           className={`relative h-full rounded-full transition-colors ${
             isDragging
               ? "bg-[var(--color-control-primary)]"

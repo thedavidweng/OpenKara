@@ -75,16 +75,4 @@ export class Spring {
     this.velocity = 0;
     this.settled = true;
   }
-
-  syncPosition(position: number) {
-    this.position = position;
-    this.settled = false;
-  }
-
-  setVelocity(velocity: number) {
-    this.velocity = velocity;
-    if (velocity !== 0) {
-      this.settled = false;
-    }
-  }
 }

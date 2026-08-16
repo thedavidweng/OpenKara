@@ -56,6 +56,8 @@ export const CENTERED_BG_FONT_SIZE = "max(0.7em, 10px)";
 export const CENTERED_LINE_LINE_HEIGHT = 1.22;
 export const CENTERED_LINE_LETTER_SPACING = "-0.02em";
 export const CENTERED_LINE_PADDING = "0.42em 0.12em";
+export const CENTERED_LINE_FONT_WEIGHT = 600;
+export const STANDARD_LINE_FONT_WEIGHT = 500;
 
 function clampStep(lyricsFontStep: number): FontStep {
   return Math.max(-2, Math.min(2, lyricsFontStep)) as FontStep;

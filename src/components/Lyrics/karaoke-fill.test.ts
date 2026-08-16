@@ -93,6 +93,25 @@ describe("KaraokeFillController", () => {
     );
   });
 
+  test("update while paused keeps the wipe at the current time", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl();
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
+    );
+
+    controller.update(1250, false);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-50px 0px",
+    );
+    controller.update(1250, false);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-50px 0px",
+    );
+  });
+
   test("activateLine is a no-op when called with the same binding", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
@@ -130,6 +149,26 @@ describe("KaraokeFillController", () => {
     controller.update(1250, true);
     expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
       "-50px 0px",
+    );
+  });
+
+  test("wipes companion roman fills with the same word timing", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl(80, 40);
+    const romanEl = createMockEl(60, 20);
+    controller.activateLine(
+      lineEl,
+      [{ time_ms: 1000, end_ms: 1500 }],
+      [wordEl],
+      [romanEl],
+    );
+
+    controller.update(1250, true);
+    expect(wordEl.style.maskPosition || wordEl.style.webkitMaskPosition).toBe(
+      "-50px 0px",
+    );
+    expect(romanEl.style.maskPosition || romanEl.style.webkitMaskPosition).toBe(
+      "-35px 0px",
     );
   });
 

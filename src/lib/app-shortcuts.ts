@@ -185,3 +185,60 @@ export function isEditableShortcutTarget(target: EventTarget | null): boolean {
     element.isContentEditable === true
   );
 }
+
+const MEDIA_SHORTCUT_COMPOSITE_SELECTOR =
+  '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"], [role="slider"]';
+
+const MEDIA_SHORTCUT_CONTROL_SELECTOR =
+  'button, a[href], summary, [role="button"], [role="switch"], [role="checkbox"], [role="radio"], [role="tab"]';
+
+export const MEDIA_SHORTCUT_YIELD_SELECTOR = `${MEDIA_SHORTCUT_COMPOSITE_SELECTOR}, ${MEDIA_SHORTCUT_CONTROL_SELECTOR}`;
+
+function asClosestElement(
+  target: EventTarget | null,
+): { closest: (selector: string) => Element | null } | null {
+  if (
+    target == null ||
+    typeof (target as { closest?: unknown }).closest !== "function"
+  ) {
+    return null;
+  }
+  return target as { closest: (selector: string) => Element | null };
+}
+
+export function isMediaShortcutYieldTarget(
+  target: EventTarget | null,
+): boolean {
+  return (
+    asClosestElement(target)?.closest(MEDIA_SHORTCUT_YIELD_SELECTOR) != null
+  );
+}
+
+function isFocusVisible(element: Element): boolean {
+  if (typeof element.matches !== "function") {
+    return true;
+  }
+  try {
+    return element.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
+export function shouldYieldSpaceToTarget(target: EventTarget | null): boolean {
+  const element = asClosestElement(target);
+  if (!element) {
+    return false;
+  }
+
+  if (element.closest(MEDIA_SHORTCUT_COMPOSITE_SELECTOR)) {
+    return true;
+  }
+
+  const control = element.closest(MEDIA_SHORTCUT_CONTROL_SELECTOR);
+  if (!control) {
+    return false;
+  }
+
+  return isFocusVisible(control);
+}

@@ -539,6 +539,7 @@ describe("fullscreen playback runtime", () => {
       language: "en",
       hide_batch_separate: false,
       cover_art_backdrop: true,
+      lyrics_blur_inactive: false,
       hide_upgrade_all: false,
       lyrics_font_step: 0,
       execution_provider: "cpu" as const,

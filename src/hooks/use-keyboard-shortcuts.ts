@@ -15,7 +15,9 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   APP_SHORTCUTS,
   isEditableShortcutTarget,
+  isMediaShortcutYieldTarget,
   matchesShortcut,
+  shouldYieldSpaceToTarget,
 } from "@/lib/app-shortcuts";
 
 const SEEK_STEP_MS = 5_000;
@@ -129,18 +131,11 @@ export function handleAppKeyDown(
 
   const { snapshot, resume, pause, setVolume } = player;
 
-  const target = e.target as HTMLElement | null;
-  if (
-    typeof target?.closest === "function" &&
-    target.closest(
-      '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"], [role="slider"], button, a[href], summary, [role="button"], [role="switch"], [role="checkbox"], [role="radio"], [role="tab"]',
-    )
-  ) {
-    return false;
-  }
-
   switch (e.code) {
     case "Space": {
+      if (shouldYieldSpaceToTarget(e.target)) {
+        return false;
+      }
       e.preventDefault();
       if (snapshot?.state === "loading") {
         return true;
@@ -153,12 +148,18 @@ export function handleAppKeyDown(
       return true;
     }
     case "ArrowUp": {
+      if (isMediaShortcutYieldTarget(e.target)) {
+        return false;
+      }
       e.preventDefault();
       const volume = snapshot?.volume ?? 1;
       setVolume(Math.min(1, volume + 0.05));
       return true;
     }
     case "ArrowDown": {
+      if (isMediaShortcutYieldTarget(e.target)) {
+        return false;
+      }
       e.preventDefault();
       const volume = snapshot?.volume ?? 1;
       setVolume(Math.max(0, volume - 0.05));

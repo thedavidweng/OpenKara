@@ -671,6 +671,10 @@
       "reportHint": "要回報問題嗎？請把這些資訊複製到你的回報中，並附上上方顯示的記錄檔。",
       "copyDebugInfo": "複製除錯資訊",
       "copied": "已複製！"
+    },
+    "lyricsBlurInactive": {
+      "enable": "模糊未唱到的歌詞",
+      "description": "虛化目前句子以外的歌詞。卡拉OK需要提前看清楚後面幾行時請保持關閉。"
     }
   },
   "bootstrap": {

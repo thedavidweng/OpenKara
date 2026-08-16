@@ -1148,6 +1148,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       language: "en",
       hide_batch_separate: false,
       cover_art_backdrop: true,
+      lyrics_blur_inactive: false,
       hide_upgrade_all: false,
       lyrics_font_step: 0,
       execution_provider: "cpu",
@@ -1166,6 +1167,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("language");
     expect(settings).toHaveProperty("hide_batch_separate");
     expect(settings).toHaveProperty("cover_art_backdrop");
+    expect(settings).toHaveProperty("lyrics_blur_inactive");
     expect(settings).toHaveProperty("hide_upgrade_all");
     expect(settings).toHaveProperty("lyrics_font_step");
     expect(settings).toHaveProperty("execution_provider");

@@ -691,8 +691,49 @@ describe("LyricLine", () => {
     expect(smallStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 0.76");
     expect(largeStep).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem) * 1.28");
     expect(smallStep).toContain("max(0.5em, 10px)");
-    expect(smallStep).toContain('data-lyrics-roman="true"');
+    expect(smallStep).toContain('data-word-roman="true"');
+    expect(smallStep).toContain("ni hao");
+    expect(smallStep).toContain("shi jie");
     expect(smallStep).not.toContain("text-[0.5em]");
+  });
+
+  test("keeps centered type metrics stable so highlight does not reflow the line", () => {
+    const line = {
+      time_ms: 34000,
+      text: "'Cause you make my earthquake (Earthquake)",
+      words: null,
+      bg_words: null,
+      section: null,
+      roman: null,
+    };
+
+    const active = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+    const past = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="past"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+
+    expect(active).toContain("font-weight:600");
+    expect(past).toContain("font-weight:600");
+    expect(active).not.toContain("font-weight:500");
+    expect(past).not.toContain("font-weight:500");
+    expect(active).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem)");
+    expect(past).toContain("clamp(2.15rem, 1.7vw + 1.8vh, 3rem)");
   });
 
   test("scales left-aligned roman with lyricsFontStep in standard mode", () => {
@@ -770,6 +811,114 @@ describe("LyricLine", () => {
     expect(markup).not.toContain("text-[0.5em]");
   });
 
+  test("does not echo English lyrics as a second romanization row", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "'Cause you make my earthquake (Earthquake)",
+          words: null,
+          bg_words: null,
+          section: null,
+          roman: "'Cause you make my earthquake (Earthquake)",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="'Cause you make my earthquake (Earthquake)"
+        alignment="center"
+      />,
+    );
+
+    expect(markup).toContain("Cause you make my earthquake (Earthquake)");
+    expect(markup).not.toContain('data-lyrics-roman="true"');
+    expect(markup).not.toContain('data-word-roman="true"');
+  });
+
+  test("puts left-aligned roman in the right column even when word romans resolve", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={{
+          time_ms: 1000,
+          text: "君の",
+          words: [
+            { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+            { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+          ],
+          bg_words: null,
+          section: null,
+          roman: "kimi no",
+        }}
+        state="active"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+
+    expect(markup).toContain("grid-cols-[minmax(0,1fr)_220px]");
+    expect(markup).toContain('data-lyrics-roman="true"');
+    expect(markup).toContain("kimi");
+    expect(markup).toContain("no");
+    expect(markup).toContain('data-karaoke-roman-fill="true"');
+    expect(markup).not.toContain('data-word-roman="true"');
+  });
+
+  test("keeps left-aligned original and roman on the same line highlight", () => {
+    const line = {
+      time_ms: 1000,
+      text: "君の",
+      words: [
+        { text: "君", time_ms: 1000, end_ms: 1500, roman: "kimi" },
+        { text: "の", time_ms: 1500, end_ms: 2000, roman: "no" },
+      ],
+      bg_words: null,
+      section: null,
+      roman: "kimi no",
+    };
+
+    const past = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="past"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+    const future = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="future"
+        lyricsFontStep={0}
+        romanizedText="kimi no"
+        alignment="left"
+      />,
+    );
+
+    expect(past.match(/text-\[var\(--color-lyrics-past\)\]/g)?.length).toBe(3);
+    expect(past).toMatch(
+      /data-lyrics-roman="true"[^>]*text-\[var\(--color-lyrics-past\)\]/,
+    );
+    expect(past).not.toMatch(
+      /(?<!group-hover\/line:)text-\[var\(--color-lyrics-active\)\]/,
+    );
+    expect(past).not.toContain("text-[var(--color-lyrics-future)]");
+    expect(future.match(/text-\[var\(--color-lyrics-future\)\]/g)?.length).toBe(
+      3,
+    );
+    expect(future).toMatch(
+      /data-lyrics-roman="true"[^>]*text-\[var\(--color-lyrics-future\)\]/,
+    );
+    expect(future).not.toMatch(
+      /(?<!group-hover\/line:)text-\[var\(--color-lyrics-active\)\]/,
+    );
+    expect(future).not.toContain("text-[var(--color-lyrics-past)]");
+  });
+
   test("puts aligned roman under each word and hides the line sub-row", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
@@ -801,6 +950,7 @@ describe("LyricLine", () => {
     expect(markup).toContain('data-word-roman="true"');
     expect(markup).toMatch(/data-word-roman="true"[^>]*>kimi</);
     expect(markup).toMatch(/data-word-roman="true"[^>]*>no</);
+    expect(markup).toContain('data-karaoke-roman-fill="true"');
     expect(markup).not.toContain('data-lyrics-roman="true"');
     expect(markup.indexOf("kimi")).toBeLessThan(markup.indexOf("(harmony)"));
   });

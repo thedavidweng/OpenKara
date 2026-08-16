@@ -29,7 +29,7 @@ describe("layoutFocusLineTops", () => {
 describe("focusHeadPadPx", () => {
   test("holds a minimum pad on short viewports", () => {
     expect(focusHeadPadPx(0)).toBe(48);
-    expect(focusHeadPadPx(1000)).toBe(380);
+    expect(focusHeadPadPx(1000)).toBe(450);
   });
 });
 

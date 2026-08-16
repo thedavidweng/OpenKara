@@ -368,6 +368,7 @@ export function createSettingsController({
       executionProvider,
       hideBatchSeparate,
       coverArtBackdrop,
+      lyricsBlurInactive,
       hideUpgradeAll,
       eqEnabled,
       eqGainsDb,
@@ -407,6 +408,12 @@ export function createSettingsController({
     if (coverArtBackdrop !== undefined) {
       await writeOptimisticPreference({ coverArtBackdrop }, () =>
         backend.settings.setCoverArtBackdrop(coverArtBackdrop),
+      );
+    }
+
+    if (lyricsBlurInactive !== undefined) {
+      await writeOptimisticPreference({ lyricsBlurInactive }, () =>
+        backend.settings.setLyricsBlurInactive(lyricsBlurInactive),
       );
     }
 

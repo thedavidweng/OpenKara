@@ -671,6 +671,10 @@
     "hideUpgradeAll": {
       "hide": "Sembunyikan \"Upgrade Semua ke 4-stem\"",
       "description": "Sembunyikan tombol bilah samping yang memisahkan ulang semua lagu ke mode 4-stem."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Buramkan lirik yang tidak sedang diputar",
+      "description": "Melembutkan baris lalu dan berikutnya. Biarkan mati agar bisa membaca ke depan."
     }
   },
   "bootstrap": {

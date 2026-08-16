@@ -90,6 +90,28 @@ export function SettingsGeneralSection() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={settings.lyricsBlurInactive}
+              onChange={(event) =>
+                void preferences.set({
+                  lyricsBlurInactive: event.target.checked,
+                })
+              }
+              disabled={isInitializing}
+              className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
+            />
+            <span className="text-[13px] text-[var(--color-text)]">
+              {t("settings.lyricsBlurInactive.enable")}
+            </span>
+          </label>
+          <p className="text-[11px] text-[var(--color-text-dim)]">
+            {t("settings.lyricsBlurInactive.description")}
+          </p>
+        </div>
+
+        <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
           <label
             htmlFor="settings-output-device"
             className="text-[12px] font-medium text-[var(--color-text-dim)]"

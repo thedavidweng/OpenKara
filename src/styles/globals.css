@@ -909,7 +909,7 @@
   -webkit-mask-repeat: no-repeat;
 }
 
-[data-lyrics-stage="focus"]:hover [data-lyrics-line-index] {
+[data-lyrics-stage="focus"] [data-lyrics-line-index]:hover {
   filter: none !important;
 }
 

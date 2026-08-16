@@ -34,4 +34,16 @@ describe("resolveWordRomans", () => {
       ),
     ).toBeNull();
   });
+
+  test("packs pinyin onto multi-character Chinese words", () => {
+    expect(
+      resolveWordRomans(
+        [
+          { text: "你好", time_ms: 0, end_ms: 400 },
+          { text: "世界", time_ms: 400, end_ms: 800 },
+        ],
+        "ni hao shi jie",
+      ),
+    ).toEqual(["ni hao", "shi jie"]);
+  });
 });

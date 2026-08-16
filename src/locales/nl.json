@@ -672,6 +672,10 @@
     "hideUpgradeAll": {
       "hide": "“Alles naar 4-stem upgraden” verbergen",
       "description": "Verberg de zijbalkknop die alle nummers opnieuw scheidt in 4-stem modus."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Niet-spelende regels vervagen",
+      "description": "Maakt vorige en volgende regels zachter. Laat uit om vooruit te lezen."
     }
   },
   "bootstrap": {

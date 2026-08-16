@@ -67,6 +67,25 @@ export function selectCurrentPositionMs(
   return positionMs;
 }
 
+function resolveAuthoritativePositionMs(
+  prev: PositionClockState,
+  nextSnapshot: PlaybackStateSnapshot,
+  nowMs: number,
+): number {
+  const snapshotPosition = nextSnapshot.position_ms;
+  const wasPlaying =
+    prev.snapshot !== null &&
+    shouldAnchorPlayingSinceMs(prev.snapshot) &&
+    prev.playingSinceMs !== null;
+  if (wasPlaying && !shouldAnchorPlayingSinceMs(nextSnapshot)) {
+    return Math.max(
+      snapshotPosition,
+      selectCurrentPositionMs(prev, () => nowMs),
+    );
+  }
+  return snapshotPosition;
+}
+
 export function selectSyncDisplayPositionMs(
   state: Pick<PositionClockState, "positionMs"> & {
     airPlayOutput: AirPlayOutputStateEvent;
@@ -89,7 +108,7 @@ export function reduceAuthoritativeSnapshot(
 
   return {
     snapshot: nextSnapshot,
-    positionMs: nextSnapshot.position_ms,
+    positionMs: resolveAuthoritativePositionMs(prev, nextSnapshot, nowMs),
     playingSinceMs: resolvePlayingSinceMs(nextSnapshot, nowMs),
   };
 }
@@ -111,7 +130,7 @@ export function reducePositionEvent(
   if (shouldReplaceSnapshotFromPositionEvent(currentSnapshot, nextSnapshot)) {
     return {
       snapshot: nextSnapshot,
-      positionMs: nextSnapshot.position_ms,
+      positionMs: resolveAuthoritativePositionMs(prev, nextSnapshot, nowMs),
       playingSinceMs: resolvePlayingSinceMs(nextSnapshot, nowMs),
     };
   }

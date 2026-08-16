@@ -672,6 +672,10 @@
     "hideUpgradeAll": {
       "hide": "„Alle auf 4-Stemm aktualisieren“ ausblenden",
       "description": "Blendet die Seitenleisten-Schaltfläche aus, die alle Songs erneut im 4-Stemm-Modus trennt."
+    },
+    "lyricsBlurInactive": {
+      "enable": "Nicht gespielte Zeilen unscharf machen",
+      "description": "Weicht vergangene und kommende Zeilen auf. Aus lassen, um vorauslesen zu können."
     }
   },
   "bootstrap": {

@@ -1,13 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import {
   FOCUS_ALIGN_POSITION,
-  LIST_ALIGN_POSITION,
   getScrollTopForLineIndex,
 } from "@/components/Lyrics/lyrics-scroll";
 import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import {
-  beginUserLineSnap,
-  beginUserLineStep,
   createUserScrollGuard,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
@@ -27,6 +24,7 @@ import type { LyricsSession } from "@/lib/lyrics-session";
 import { Spring } from "@/lib/spring";
 import { lyricsSession as appLyricsSession } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 
@@ -58,6 +56,9 @@ export function useLyricsEngine(input: {
     session = appLyricsSession,
     onUserScrollActiveChange,
   } = input;
+  const blurInactiveLines = useSettingsStore(
+    (state) => state.lyricsBlurInactive,
+  );
 
   const guardRef = useRef<UserScrollGuard | null>(null);
   const onUserScrollActiveChangeRef = useRef(onUserScrollActiveChange);
@@ -70,10 +71,7 @@ export function useLyricsEngine(input: {
     prevActiveIndexRef: { current: -1 },
     prevAdjustedMsRef: { current: null },
     lastResumeGenerationRef: { current: 0 },
-    userSnapTopRef: { current: null },
   });
-  const focusStageRef = useRef(focusStage);
-  focusStageRef.current = focusStage;
   const lastSeekRevisionRef = useRef(usePlayerStore.getState().seekRevision);
   const engineSongIdRef = useRef<string | null | undefined>(undefined);
 
@@ -86,44 +84,10 @@ export function useLyricsEngine(input: {
       return;
     }
 
-    const alignPosition = () =>
-      focusStageRef.current ? FOCUS_ALIGN_POSITION : LIST_ALIGN_POSITION;
-    const prefersReducedMotion = () =>
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
     const guard = createUserScrollGuard(container, USER_SCROLL_PAUSE_MS, {
       scrollControl: session.scroll,
       onActiveChange: (active) => {
         onUserScrollActiveChangeRef.current?.(active);
-      },
-      onUserGesture: () => {
-        const snap = scrollStateRef.current.userSnapTopRef;
-        if (snap) {
-          snap.current = null;
-        }
-      },
-      onCoast: ({ scrollTop, velocityPxPerSec }) => {
-        beginUserLineSnap({
-          container,
-          scrollState: scrollStateRef.current,
-          lineCount: session.getState().lines.length,
-          alignPosition: alignPosition(),
-          position: scrollTop,
-          velocityPxPerSec,
-          reducedMotion: prefersReducedMotion(),
-        });
-      },
-      onDiscreteStep: (direction) => {
-        beginUserLineStep({
-          container,
-          scrollState: scrollStateRef.current,
-          lineCount: session.getState().lines.length,
-          alignPosition: alignPosition(),
-          position: container.scrollTop,
-          direction,
-          reducedMotion: prefersReducedMotion(),
-        });
       },
     });
     guardRef.current = guard;
@@ -137,7 +101,9 @@ export function useLyricsEngine(input: {
   }, [containerRef, isPlainText, session, songId, viewportActive]);
 
   useEffect(() => {
-    lineRuntime.clear();
+    return () => {
+      lineRuntime.clear();
+    };
   }, [lineRuntime, songId]);
 
   useEffect(() => {
@@ -246,6 +212,7 @@ export function useLyricsEngine(input: {
         isPlaying: playerState.snapshot?.is_playing ?? false,
         audienceMode: presentation === "audience",
         focusStage,
+        blurInactiveLines,
       });
 
       rafId = requestAnimationFrame(tick);
@@ -267,6 +234,7 @@ export function useLyricsEngine(input: {
     viewportActive,
     layoutVersion,
     lineRuntime,
+    blurInactiveLines,
   ]);
 
   useLayoutEffect(() => {
