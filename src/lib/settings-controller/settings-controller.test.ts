@@ -787,6 +787,45 @@ describe("preferences", () => {
     expect(harness.view().preferences.lyricsBlurInactive).toBe(false);
   });
 
+  test("overlapping lyrics blur writes keep the last requested value", async () => {
+    let stored = appSettings();
+    let releaseFirst: ((settings: AppSettings) => void) | undefined;
+    const firstWrite = new Promise<AppSettings>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const setLyricsBlurInactive = vi
+      .fn<(value: boolean) => Promise<AppSettings>>()
+      .mockImplementationOnce(() => firstWrite)
+      .mockImplementation(async (value: boolean) => {
+        stored = { ...stored, lyrics_blur_inactive: value };
+        return stored;
+      });
+    const harness = createSettingsHarness({
+      overrides: {
+        settings: { setLyricsBlurInactive },
+      },
+    });
+
+    const first = harness.controller.preferences.set({
+      lyricsBlurInactive: true,
+    });
+    const second = harness.controller.preferences.set({
+      lyricsBlurInactive: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(setLyricsBlurInactive).toHaveBeenCalledTimes(1);
+    });
+    expect(setLyricsBlurInactive).toHaveBeenCalledWith(true);
+
+    releaseFirst?.({ ...stored, lyrics_blur_inactive: true });
+    await first;
+    await second;
+
+    expect(setLyricsBlurInactive).toHaveBeenNthCalledWith(2, false);
+    expect(harness.view().preferences.lyricsBlurInactive).toBe(false);
+  });
+
   test("the equaliser clamps gains to ±12 dB", async () => {
     const setEqGains = vi.fn(async () =>
       appSettings({ eq_gains_db: [12, -12, 0, 0, 0] }),

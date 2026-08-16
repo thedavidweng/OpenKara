@@ -194,14 +194,15 @@ describe("LyricsLineRuntime", () => {
     const runtime = new LyricsLineRuntime();
     const live = document.createElement("div");
     const stale = document.createElement("div");
+    const liveKaraoke = { update: vi.fn() };
+    const detachedKaraoke = { update: vi.fn() };
     runtime.registerWrapper(0, live);
     runtime.registerWrapper(1, stale);
-    runtime.registerKaraoke(0, {
-      update: vi.fn(),
-    } as unknown as KaraokeFillController);
-    runtime.registerKaraoke(1, {
-      update: vi.fn(),
-    } as unknown as KaraokeFillController);
+    runtime.registerKaraoke(0, liveKaraoke as unknown as KaraokeFillController);
+    runtime.registerKaraoke(
+      1,
+      detachedKaraoke as unknown as KaraokeFillController,
+    );
     runtime.unregisterWrapper(1);
 
     runtime.clearUnmounted();
@@ -215,6 +216,18 @@ describe("LyricsLineRuntime", () => {
     });
     expect(live.style.transform).toContain("scale(");
     expect(stale.style.transform).toBe("");
+    expect(liveKaraoke.update).toHaveBeenCalledWith(0, true);
+
+    liveKaraoke.update.mockClear();
+    runtime.tick({
+      activeLineIndex: 1,
+      adjustedMs: 800,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+    expect(detachedKaraoke.update).not.toHaveBeenCalled();
+    expect(liveKaraoke.update).not.toHaveBeenCalled();
   });
 
   test("re-registering an existing wrapper only updates the element pointer", () => {

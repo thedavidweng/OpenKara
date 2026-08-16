@@ -347,27 +347,49 @@ export function createSettingsController({
     }
   };
 
+  const optimisticWriteByKey = new Map<string, Promise<void>>();
+
+  const enqueueOptimisticWrite = (
+    keys: string[],
+    task: () => Promise<void>,
+  ): Promise<void> => {
+    const pending = keys
+      .map((key) => optimisticWriteByKey.get(key))
+      .filter((write): write is Promise<void> => write !== undefined);
+    const run =
+      pending.length === 0 ? task() : Promise.all(pending).then(task, task);
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    for (const key of keys) {
+      optimisticWriteByKey.set(key, settled);
+    }
+    return run;
+  };
+
   const writeOptimisticPreference = async (
     patch: Partial<AppSettingsSnapshot>,
     write: () => Promise<AppSettings>,
   ) => {
-    const previous = stores.preferences.getSnapshot();
-    stores.preferences.patch(patch);
-    syncStores();
-    try {
-      stores.preferences.hydrate(await write());
-    } catch (error) {
-      const rollback = Object.fromEntries(
-        (Object.keys(patch) as Array<keyof AppSettingsSnapshot>).map((key) => [
-          key,
-          previous[key],
-        ]),
-      ) as Partial<AppSettingsSnapshot>;
-      stores.preferences.patch(rollback);
-      notifyError(error);
-    } finally {
+    await enqueueOptimisticWrite(Object.keys(patch), async () => {
+      const previous = stores.preferences.getSnapshot();
+      stores.preferences.patch(patch);
       syncStores();
-    }
+      try {
+        stores.preferences.hydrate(await write());
+      } catch (error) {
+        const rollback = Object.fromEntries(
+          (Object.keys(patch) as Array<keyof AppSettingsSnapshot>).map(
+            (key) => [key, previous[key]],
+          ),
+        ) as Partial<AppSettingsSnapshot>;
+        stores.preferences.patch(rollback);
+        notifyError(error);
+      } finally {
+        syncStores();
+      }
+    });
   };
 
   const writeStorePreference = async (write: () => Promise<void>) => {
