@@ -105,12 +105,12 @@
 6. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
 7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache。429 / 5xx / timeout 不盖 probe 戳
 
-| Intent                                               | Online providers       | May replace             |
-| ---------------------------------------------------- | ---------------------- | ----------------------- |
-| `automatic_upgrade` + current online Line-timed      | AMLL only              | Only Word-timed `amll`  |
-| `automatic_upgrade` + `embedded` / `absent` / no row | AMLL → LRCLIB → LrcApi | Any timed online winner |
-| `automatic_upgrade` + manual / sidecar / `amll`      | None (no HTTP)         | Nothing                 |
-| `user_replace`                                       | AMLL → LRCLIB → LrcApi | Any existing row        |
+| Intent                                                        | Online providers       | May replace             |
+| ------------------------------------------------------------- | ---------------------- | ----------------------- |
+| `automatic_upgrade` + current Online Lyrics Source Line-timed | AMLL only              | Only Word-timed `amll`  |
+| `automatic_upgrade` + `embedded` / `absent` / no row          | AMLL → LRCLIB → LrcApi | Any timed online winner |
+| `automatic_upgrade` + manual / sidecar / `amll`               | None (no HTTP)         | Nothing                 |
+| `user_replace`                                                | AMLL → LRCLIB → LrcApi | Any existing row        |
 
 Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command still returns the current cache row.
 

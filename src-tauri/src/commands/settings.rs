@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub library_sort_mode: String,
     pub theme_preference: String,
     pub update_policy: String,
+    pub youtube_source_enabled: bool,
+    pub netease_source_enabled: bool,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -62,6 +64,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         library_sort_mode: sort_mode.as_str().to_owned(),
         theme_preference: config.effective_theme_preference().as_str().to_owned(),
         update_policy: config.effective_update_policy().as_str().to_owned(),
+        youtube_source_enabled: config.effective_youtube_source_enabled(),
+        netease_source_enabled: config.effective_netease_source_enabled(),
     }
 }
 
@@ -155,6 +159,40 @@ pub fn set_language(app_handle: AppHandle, language: String) -> CommandResult<Ap
         .map_err(|e| internal_error(format!("failed to load config: {e}")))?
         .unwrap_or_default();
     config.language = Some(language.clone());
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn list_online_sources(
+    app_handle: AppHandle,
+) -> CommandResult<Vec<crate::catalog::OnlineSourceSnapshot>> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    Ok(crate::catalog::list_online_sources(&config))
+}
+
+#[tauri::command]
+pub fn set_online_source_enabled(
+    app_handle: AppHandle,
+    source_id: String,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    crate::catalog::set_online_source_enabled(&mut config, &source_id, enabled)
+        .map_err(|error| internal_error(format!("unknown online source: {}", error.source_id)))?;
     config::save_config(&app_data_dir, &config)
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
     Ok(settings_from_config(&config))
@@ -1059,6 +1097,24 @@ mod tests {
             ..AppConfig::default()
         });
         assert_eq!(settings.library_sort_mode, "artist_asc");
+    }
+
+    #[test]
+    fn settings_snapshot_defaults_online_sources_to_off() {
+        let settings = settings_from_config(&AppConfig::default());
+        assert!(!settings.youtube_source_enabled);
+        assert!(!settings.netease_source_enabled);
+    }
+
+    #[test]
+    fn settings_snapshot_reflects_enabled_online_sources() {
+        let settings = settings_from_config(&AppConfig {
+            youtube_source_enabled: Some(true),
+            netease_source_enabled: Some(true),
+            ..AppConfig::default()
+        });
+        assert!(settings.youtube_source_enabled);
+        assert!(settings.netease_source_enabled);
     }
 
     #[test]

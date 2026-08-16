@@ -8,6 +8,7 @@ import type {
   RuntimeBootstrapStatusSnapshot,
   RuntimeUpdateReport,
   WindowShellStateSnapshot,
+  OnlineSourceSnapshot,
 } from "@/types/ipc";
 import type { InvokeCommand } from "./invoke";
 
@@ -75,6 +76,15 @@ export function createSettingsCommands(invoke: InvokeCommand): SettingsBackend {
 
     setUpdatePolicy: (policy) =>
       invoke<AppSettings>("set_update_policy", { policy }),
+
+    listOnlineSources: () =>
+      invoke<OnlineSourceSnapshot[]>("list_online_sources"),
+
+    setOnlineSourceEnabled: (sourceId, enabled) =>
+      invoke<AppSettings>("set_online_source_enabled", {
+        source_id: sourceId,
+        enabled,
+      }),
 
     getModelBootstrapStatus: () =>
       invoke<ModelBootstrapStatusSnapshot>("get_model_bootstrap_status"),
