@@ -191,16 +191,16 @@
     "modelPreparing": "Ayırma modeli hazırlanıyor…",
     "cancelSeparation": "Ayırmayı iptal et",
     "usingCachedSeparation": "Önbellekteki ayırma kullanılıyor",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Şarkı dosyasını göster",
+    "revealStems": "Stem klasörünü aç",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Kitaplık kararı",
+      "importConflict": "Bu parça kitaplıkta farklı bir dosyayla zaten var. Kitaplıktaki şarkıyı tutun veya değiştirin.",
+      "keep": "Kitaplıktaki şarkıyı tut",
+      "replace": "Kitaplıktaki şarkıyı değiştir",
+      "applyToRemaining": "Kalan çakışmalara uygula",
+      "librarySong": "Kitaplıktaki şarkı",
+      "incoming": "Gelen dosya"
     }
   },
   "player": {
@@ -690,12 +690,12 @@
       "description": "Geçmiş ve gelecek dizeleri yumuşatır. Önceden okumak için kapalı bırakın."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Çevrimiçi kaynaklar",
+      "description": "Bir müzik veya video kaynağını açın. Siz seçene kadar ikisi de kapalı kalır.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Herkese açık bir video veya oynatma listesi bağlantısını kuyruğa yapıştırın. OpenKara YouTube sesini indirmez.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Çalabileceğiniz şarkıları içe aktarmak için oturum açın. OpenKara sonra içe aktarılan dosyaları yönetir."
     }
   },
   "bootstrap": {
@@ -758,9 +758,9 @@
     "internal": "İç Hata",
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",
     "somethingWentWrong": "Bir şeyler ters gitti",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "Bu çevrimiçi kaynak kapalı.",
+    "streaming_session_expired": "Yayın kaynağı oturumunun süresi doldu. Yeniden oturum açın.",
+    "video_source_unavailable": "Bu video konuk olarak oynatılamaz."
   },
   "updater": {
     "available": "Sürüm {{version}} mevcut",
@@ -774,41 +774,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "Oturum aç",
+      "signOut": "Oturumu kapat",
+      "qr": "QR ile oturum aç",
+      "phone": "Telefon ve parola",
+      "email": "E-posta ve parola",
+      "password": "Parola",
+      "phoneNumber": "Telefon numarası",
+      "countryCode": "Ülke kodu",
+      "signedInAs": "{{name}} olarak oturum açık",
+      "sessionExpired": "Oturumun süresi doldu. Yeniden oturum açın.",
+      "liked": "Beğenilen parçalar",
+      "playlists": "Yayın oynatma listeleri",
+      "search": "Ara",
+      "searchPlaceholder": "NetEase’de ara",
+      "importTrack": "Parçayı içe aktar",
+      "importPlaylist": "Yayın oynatma listesini içe aktar",
+      "importRefusal": "İçe aktarma reddedildi",
+      "waitingForScan": "Bu QR kodunu NetEase uygulamasıyla tarayın.",
+      "scanned": "Tarandı. Telefonda onaylayın.",
+      "qrExpired": "Bu QR kodunun süresi doldu. Yenisini alın.",
+      "loginWithPhone": "Telefonla oturum aç",
+      "loginWithEmail": "E-postayla oturum aç",
+      "loginWithQr": "QR ile oturum aç",
+      "passwordNotice": "OpenKara parolayı bir kez gönderir ve saklamaz.",
+      "qrHint": "NetEase Cloud Music uygulamasını açın ve bu kodu tarayın.",
+      "refreshQr": "Yeni QR kodu al"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "YouTube bağlantısı yapıştır",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Kuyruğa ekle",
+    "invalidUrl": "Bu herkese açık bir YouTube izleme veya oynatma listesi bağlantısı değil.",
+    "ageRestricted": "Bu videoda yaş sınırı var.",
+    "private": "Bu video özel.",
+    "unlisted": "Bu video listede yok."
   }
 }

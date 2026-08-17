@@ -758,9 +758,9 @@
     "internal": "内部错误",
     "remote_repository_unavailable": "远程仓库不可用",
     "somethingWentWrong": "出了点问题",
-    "onlineSourceDisabled": "此在线来源已关闭。",
-    "streamingSessionExpired": "流媒体源会话已过期，请重新登录。",
-    "videoSourceUnavailable": "此视频无法以访客身份播放。"
+    "online_source_disabled": "此在线来源已关闭。",
+    "streaming_session_expired": "流媒体源会话已过期，请重新登录。",
+    "video_source_unavailable": "此视频无法以访客身份播放。"
   },
   "updater": {
     "available": "版本 {{version}} 可用",

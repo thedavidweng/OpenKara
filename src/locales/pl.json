@@ -193,16 +193,16 @@
     "modelPreparing": "Przygotowywanie modelu rozdzielania…",
     "cancelSeparation": "Anuluj rozdzielanie",
     "usingCachedSeparation": "Używanie rozdzielenia z pamięci podręcznej",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Pokaż plik utworu",
+    "revealStems": "Otwórz folder stemów",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Decyzja biblioteki",
+      "importConflict": "Ten utwór jest już w bibliotece, ale plik jest inny. Zachowaj utwór z biblioteki albo go zastąp.",
+      "keep": "Zachowaj utwór z biblioteki",
+      "replace": "Zastąp utwór z biblioteki",
+      "applyToRemaining": "Zastosuj do pozostałych konfliktów",
+      "librarySong": "Utwór z biblioteki",
+      "incoming": "Przychodzący plik"
     }
   },
   "player": {
@@ -692,12 +692,12 @@
       "description": "Zmiękcza minione i nadchodzące linie. Zostaw wyłączone, by czytać z wyprzedzeniem."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Źródła online",
+      "description": "Włącz źródło muzyki lub wideo. Oba pozostają wyłączone, dopóki ich nie wybierzesz.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Wklej publiczny link do filmu lub playlisty do kolejki. OpenKara nie pobiera dźwięku z YouTube.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Zaloguj się, aby przeglądać i importować utwory, które możesz odtworzyć. OpenKara zarządza potem zaimportowanymi plikami."
     }
   },
   "bootstrap": {
@@ -760,9 +760,9 @@
     "internal": "Błąd wewnętrzny",
     "remote_repository_unavailable": "Zdalne repozytorium jest niedostępne",
     "somethingWentWrong": "Coś poszło nie tak",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "To źródło online jest wyłączone.",
+    "streaming_session_expired": "Sesja źródła streamingowego wygasła. Zaloguj się ponownie.",
+    "video_source_unavailable": "Tego filmu nie można odtworzyć jako gość."
   },
   "updater": {
     "available": "Dostępna jest wersja {{version}}",
@@ -776,41 +776,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "Zaloguj się",
+      "signOut": "Wyloguj się",
+      "qr": "Zaloguj się kodem QR",
+      "phone": "Telefon i hasło",
+      "email": "E-mail i hasło",
+      "password": "Hasło",
+      "phoneNumber": "Numer telefonu",
+      "countryCode": "Numer kierunkowy",
+      "signedInAs": "Zalogowano jako {{name}}",
+      "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
+      "liked": "Polubione utwory",
+      "playlists": "Playlisty streamingowe",
+      "search": "Szukaj",
+      "searchPlaceholder": "Szukaj w NetEase",
+      "importTrack": "Importuj utwór",
+      "importPlaylist": "Importuj playlistę streamingową",
+      "importRefusal": "Import odrzucony",
+      "waitingForScan": "Zeskanuj ten kod QR aplikacją NetEase.",
+      "scanned": "Zeskanowano. Potwierdź na telefonie.",
+      "qrExpired": "Ten kod QR wygasł. Pobierz nowy.",
+      "loginWithPhone": "Zaloguj się telefonem",
+      "loginWithEmail": "Zaloguj się e-mailem",
+      "loginWithQr": "Zaloguj się kodem QR",
+      "passwordNotice": "OpenKara wysyła hasło tylko raz i go nie zapisuje.",
+      "qrHint": "Otwórz aplikację NetEase Cloud Music i zeskanuj ten kod.",
+      "refreshQr": "Pobierz nowy kod QR"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "Wklej link YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Dodaj do kolejki",
+    "invalidUrl": "To nie jest publiczny link do filmu ani playlisty YouTube.",
+    "ageRestricted": "Ten film ma ograniczenie wiekowe.",
+    "private": "Ten film jest prywatny.",
+    "unlisted": "Ten film nie jest na liście."
   }
 }

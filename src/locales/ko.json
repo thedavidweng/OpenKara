@@ -191,16 +191,16 @@
     "cancelSeparation": "분리 취소",
     "usingCachedSeparation": "캐시된 분리 결과 사용 중",
     "confirmDeleteTitle_one": "Delete {{count}} Track",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "노래 파일 보기",
+    "revealStems": "스템 폴더 열기",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "라이브러리 결정",
+      "importConflict": "같은 스트리밍 곡이 이미 라이브러리에 있지만 파일이 다릅니다. 라이브러리 곡을 유지하거나 바꾸세요.",
+      "keep": "라이브러리 곡 유지",
+      "replace": "라이브러리 곡 바꾸기",
+      "applyToRemaining": "남은 충돌에 적용",
+      "librarySong": "라이브러리 곡",
+      "incoming": "가져올 파일"
     }
   },
   "player": {
@@ -690,12 +690,12 @@
       "description": "현재 소절 이외를 흐리게 합니다. 다음 소절을 미리 읽으려면 끄세요."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "온라인 소스",
+      "description": "음악 또는 동영상 출처를 켭니다. 선택하기 전까지 둘 다 꺼져 있습니다.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "공개 동영상이나 재생목록 링크를 대기열에 붙여넣습니다. OpenKara는 YouTube 오디오를 다운로드하지 않습니다.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "로그인한 뒤 재생할 수 있는 곡을 가져옵니다. 가져온 파일은 OpenKara가 관리합니다."
     }
   },
   "bootstrap": {
@@ -758,9 +758,9 @@
     "internal": "내부 오류",
     "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",
     "somethingWentWrong": "문제가 발생했어요",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "이 온라인 소스가 꺼져 있습니다.",
+    "streaming_session_expired": "스트리밍 소스 세션이 만료되었습니다. 다시 로그인하세요.",
+    "video_source_unavailable": "이 동영상은 게스트로 재생할 수 없습니다."
   },
   "updater": {
     "available": "{{version}} 버전을 사용할 수 있어요",
@@ -774,41 +774,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "로그인",
+      "signOut": "로그아웃",
+      "qr": "QR로 로그인",
+      "phone": "전화번호와 비밀번호",
+      "email": "이메일과 비밀번호",
+      "password": "비밀번호",
+      "phoneNumber": "전화번호",
+      "countryCode": "국가 번호",
+      "signedInAs": "{{name}}(으)로 로그인됨",
+      "sessionExpired": "세션이 만료되었습니다. 다시 로그인하세요.",
+      "liked": "좋아요한 곡",
+      "playlists": "스트리밍 재생목록",
+      "search": "검색",
+      "searchPlaceholder": "NetEase 검색",
+      "importTrack": "이 곡 가져오기",
+      "importPlaylist": "스트리밍 재생목록 가져오기",
+      "importRefusal": "가져오기 거부",
+      "waitingForScan": "NetEase 앱으로 이 QR 코드를 스캔하세요.",
+      "scanned": "스캔했습니다. 휴대폰에서 확인하세요.",
+      "qrExpired": "QR 코드가 만료되었습니다. 새 코드를 받으세요.",
+      "loginWithPhone": "전화번호로 로그인",
+      "loginWithEmail": "이메일로 로그인",
+      "loginWithQr": "QR로 로그인",
+      "passwordNotice": "OpenKara는 비밀번호를 한 번만 보내며 저장하지 않습니다.",
+      "qrHint": "NetEase Cloud Music 앱에서 이 코드를 스캔하세요.",
+      "refreshQr": "새 QR 코드 받기"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "YouTube 링크 붙여넣기",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "대기열에 추가",
+    "invalidUrl": "공개 YouTube 시청 또는 재생목록 링크가 아닙니다.",
+    "ageRestricted": "이 동영상은 연령 제한이 있습니다.",
+    "private": "이 동영상은 비공개입니다.",
+    "unlisted": "이 동영상은 일부 공개입니다."
   }
 }

@@ -313,41 +313,50 @@ fn apply_replace(
     let old_hash = lookup_song_hash(connection, identity)?.ok_or_else(|| {
         CatalogError::Internal("import conflict is missing a library song".to_owned())
     })?;
-    let new_hash = import_file(connection, library, incoming_path)?;
+    let old_song = cache::get_song_by_hash(connection, &old_hash)
+        .ok()
+        .flatten();
+    let tx = connection
+        .transaction()
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    let new_hash = import_file(&tx, library, incoming_path)?;
     if new_hash == old_hash {
-        stamp_identity(connection, identity, &new_hash)?;
+        stamp_identity(&tx, identity, &new_hash)?;
+        tx.commit()
+            .map_err(|error| CatalogError::Internal(error.to_string()))?;
+        let _ = std::fs::remove_file(incoming_path);
         return Ok(new_hash);
     }
 
-    if let Ok(Some(entry)) = lyrics_cache::get_lyrics_cache_entry(connection, &old_hash) {
+    if let Ok(Some(entry)) = lyrics_cache::get_lyrics_cache_entry(&tx, &old_hash) {
         let mut copied = entry;
         copied.song_hash = new_hash.clone();
-        lyrics_cache::upsert_lyrics_cache_entry(connection, &copied)
+        lyrics_cache::upsert_lyrics_cache_entry(&tx, &copied)
             .map_err(|error| CatalogError::Internal(error.to_string()))?;
     }
 
-    connection
-        .execute(
-            "UPDATE OR IGNORE playlist_songs SET song_hash = ?1 WHERE song_hash = ?2",
-            params![new_hash, old_hash],
-        )
+    tx.execute(
+        "UPDATE OR IGNORE playlist_songs SET song_hash = ?1 WHERE song_hash = ?2",
+        params![new_hash, old_hash],
+    )
+    .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    tx.execute(
+        "DELETE FROM playlist_songs WHERE song_hash = ?1",
+        params![old_hash],
+    )
+    .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    waveforms::delete_waveforms_for_song(&tx, &old_hash)
         .map_err(|error| CatalogError::Internal(error.to_string()))?;
-    connection
-        .execute(
-            "DELETE FROM playlist_songs WHERE song_hash = ?1",
-            params![old_hash],
-        )
+    crate::library::delete_song_rows_from_database(&tx, library, &old_hash)
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    stamp_identity(&tx, identity, &new_hash)?;
+    tx.commit()
         .map_err(|error| CatalogError::Internal(error.to_string()))?;
 
-    let _ = cache::stems::delete_stem_cache_entry(connection, library, &old_hash);
-    let _ = waveforms::delete_waveforms_for_song(connection, &old_hash);
-
-    if let Ok(Some(old_song)) = cache::get_song_by_hash(connection, &old_hash) {
+    if let Some(old_song) = old_song {
         let _ = crate::library::delete_song_files_from_working_copy(library, &old_song);
     }
-    let _ = crate::library::delete_song_rows_from_database(connection, library, &old_hash);
-
-    stamp_identity(connection, identity, &new_hash)?;
+    let _ = cache::stems::delete_stem_cache_entry(connection, library, &old_hash);
     let _ = std::fs::remove_file(incoming_path);
     Ok(new_hash)
 }
@@ -555,7 +564,10 @@ mod tests {
             .sign_in_password(
                 crate::catalog::types::StreamingPasswordMethod::Email,
                 "user@example.com",
-                "pw",
+                &[0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
+                    .into_iter()
+                    .map(char::from)
+                    .collect::<String>(),
                 None,
             )
             .expect("sign in");

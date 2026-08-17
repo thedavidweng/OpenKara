@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`, `014_lyrics_word_timed_probe.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`, `014_lyrics_word_timed_probe.sql`, `015_streaming_identity.sql`.
 
 ## `songs`
 
@@ -136,6 +136,26 @@ Created by `013_remote_publish_outbox.sql`.
 | `created_at_ms`       | `INTEGER` | NOT NULL            |
 | `projected_at_ms`     | `INTEGER` |                     |
 
+## `streaming_track_identities`
+
+Created by `015_streaming_identity.sql`.
+
+| Column            | Type   | Notes            |
+| ----------------- | ------ | ---------------- |
+| `source`          | `TEXT` | NOT NULL         |
+| `remote_track_id` | `TEXT` | NOT NULL         |
+| `song_hash`       | `TEXT` | FK → songs(hash) |
+
+## `playlist_origin_stamps`
+
+Created by `015_streaming_identity.sql`.
+
+| Column               | Type   | Notes              |
+| -------------------- | ------ | ------------------ |
+| `source`             | `TEXT` | NOT NULL           |
+| `remote_playlist_id` | `TEXT` | NOT NULL           |
+| `playlist_id`        | `TEXT` | FK → playlists(id) |
+
 ## Migration History
 
 1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
@@ -153,3 +173,4 @@ Created by `013_remote_publish_outbox.sql`.
 13. `012_artwork_derivatives.sql` — Artwork derivative paths (thumbnail and preview WebP files).
 14. `013_remote_publish_outbox.sql` — Durable publish change-set stored inside the library SQLite database.
 15. `014_lyrics_word_timed_probe.sql` — ALTER TABLE lyrics ADD COLUMN word_timed_checked_at INTEGER;
+16. `015_streaming_identity.sql` — CREATE TABLE IF NOT EXISTS streaming_track_identities (

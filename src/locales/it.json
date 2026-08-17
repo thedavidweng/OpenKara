@@ -192,16 +192,16 @@
     "modelPreparing": "Preparazione del modello di separazione…",
     "cancelSeparation": "Annulla separazione",
     "usingCachedSeparation": "Uso della separazione in cache",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Mostra il file del brano",
+    "revealStems": "Apri la cartella degli stem",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Decisione della libreria",
+      "importConflict": "Questo brano è già in libreria con un file diverso. Mantieni il brano o sostituiscilo.",
+      "keep": "Mantieni il brano della libreria",
+      "replace": "Sostituisci il brano della libreria",
+      "applyToRemaining": "Applica ai conflitti rimanenti",
+      "librarySong": "Brano della libreria",
+      "incoming": "File in arrivo"
     }
   },
   "player": {
@@ -691,12 +691,12 @@
       "description": "Ammorbidisce i versi passati e successivi. Lascialo spento per leggere in anticipo."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Origini online",
+      "description": "Attiva un’origine musicale o video. Entrambe restano disattivate finché non le scegli.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Incolla un link pubblico di video o playlist nella coda. OpenKara non scarica l’audio di YouTube.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Accedi per sfogliare e importare i brani che puoi riprodurre. OpenKara gestisce poi i file importati."
     }
   },
   "bootstrap": {
@@ -759,9 +759,9 @@
     "internal": "Errore interno",
     "remote_repository_unavailable": "Repository remoto non disponibile",
     "somethingWentWrong": "Qualcosa è andato storto",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "Questa origine online è disattivata.",
+    "streaming_session_expired": "La sessione dell’origine in streaming è scaduta. Accedi di nuovo.",
+    "video_source_unavailable": "Questo video non può essere riprodotto come ospite."
   },
   "updater": {
     "available": "È disponibile la versione {{version}}",
@@ -775,41 +775,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
+      "signIn": "Accedi",
+      "signOut": "Esci",
+      "qr": "Accedi con QR",
+      "phone": "Telefono e password",
+      "email": "Email e password",
       "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "phoneNumber": "Numero di telefono",
+      "countryCode": "Prefisso",
+      "signedInAs": "Accesso come {{name}}",
+      "sessionExpired": "La sessione è scaduta. Accedi di nuovo.",
+      "liked": "Brani preferiti",
+      "playlists": "Playlist in streaming",
+      "search": "Cerca",
+      "searchPlaceholder": "Cerca su NetEase",
+      "importTrack": "Importa brano",
+      "importPlaylist": "Importa playlist in streaming",
+      "importRefusal": "Importazione rifiutata",
+      "waitingForScan": "Scansiona questo QR con l’app NetEase.",
+      "scanned": "Scansionato. Conferma sul telefono.",
+      "qrExpired": "Questo QR è scaduto. Ottienine uno nuovo.",
+      "loginWithPhone": "Accedi con il telefono",
+      "loginWithEmail": "Accedi con l’email",
+      "loginWithQr": "Accedi con QR",
+      "passwordNotice": "OpenKara invia la password una sola volta e non la memorizza.",
+      "qrHint": "Apri l’app NetEase Cloud Music e scansiona questo codice.",
+      "refreshQr": "Ottieni un nuovo QR"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "Incolla un link YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Aggiungi alla coda",
+    "invalidUrl": "Non è un link YouTube pubblico di riproduzione o playlist.",
+    "ageRestricted": "Questo video ha una restrizione di età.",
+    "private": "Questo video è privato.",
+    "unlisted": "Questo video non è in elenco."
   }
 }

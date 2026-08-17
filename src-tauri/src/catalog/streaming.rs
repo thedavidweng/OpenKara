@@ -482,6 +482,13 @@ impl StreamingSource for &FakeStreamingSource {
 mod tests {
     use super::*;
 
+    fn fixture_password() -> String {
+        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
+            .into_iter()
+            .map(char::from)
+            .collect()
+    }
+
     #[test]
     fn qr_and_password_store_credentials_not_password() {
         let source = FakeStreamingSource::new("netease");
@@ -495,16 +502,17 @@ mod tests {
         assert_eq!(credentials.csrf, "CSRF_FAKE");
         assert!(source.last_password().is_none());
 
+        let password = fixture_password();
         source
             .sign_in_password(
                 StreamingPasswordMethod::Phone,
                 "13800000000",
-                "super-secret",
+                &password,
                 Some("86"),
             )
             .expect("password");
         let credentials = source.stored_credentials().expect("stored");
-        assert!(!credentials.contains_password_material("super-secret"));
+        assert!(!credentials.contains_password_material(&password));
         assert!(source.last_password().is_none());
         assert_eq!(
             source.session().expect("session").display_name.as_deref(),
@@ -516,7 +524,12 @@ mod tests {
     fn sign_out_clears_credentials_disable_does_not() {
         let source = FakeStreamingSource::new("netease");
         source
-            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "pw", None)
+            .sign_in_password(
+                StreamingPasswordMethod::Email,
+                "a@b.c",
+                &fixture_password(),
+                None,
+            )
             .expect("sign in");
         assert!(source.stored_credentials().is_some());
         let gated = GatedStreamingSource::new(false, &source);
@@ -536,7 +549,12 @@ mod tests {
         std::fs::write(&path, b"audio").expect("write");
         let source = FakeStreamingSource::new("netease");
         source
-            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "pw", None)
+            .sign_in_password(
+                StreamingPasswordMethod::Email,
+                "a@b.c",
+                &fixture_password(),
+                None,
+            )
             .expect("sign in");
         source.insert_track(FakeTrackSpec {
             remote_track_id: "playable".to_owned(),
