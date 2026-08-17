@@ -277,36 +277,45 @@ describe("PlaybackStage", () => {
 
     const container = document.createElement("div");
     document.body.appendChild(container);
-    const hostBox = document.createElement("div");
-    hostBox.getBoundingClientRect = () =>
-      ({
-        left: 10,
-        top: 20,
-        width: 640,
-        height: 360,
-        right: 650,
-        bottom: 380,
-        x: 10,
-        y: 20,
-        toJSON() {
-          return {};
-        },
-      }) as DOMRect;
+    const observed: Element[] = [];
+    class FakeResizeObserver {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        observed.push(target);
+        Object.defineProperty(target, "getBoundingClientRect", {
+          value: () =>
+            ({
+              left: 10,
+              top: 20,
+              width: 640,
+              height: 360,
+              right: 650,
+              bottom: 380,
+              x: 10,
+              y: 20,
+              toJSON() {
+                return {};
+              },
+            }) as DOMRect,
+        });
+        this.callback([], this);
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    const previous = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      FakeResizeObserver as unknown as typeof ResizeObserver;
     const root = createRoot(container);
     await act(async () => {
       root.render(<PlaybackStage />);
     });
-    const host = container.querySelector(
-      "[data-youtube-watch-host='true']",
-    ) as HTMLElement;
-    expect(host).toBeTruthy();
+    expect(
+      container.querySelector("[data-youtube-watch-host='true']"),
+    ).toBeTruthy();
     expect(container.textContent).toContain("Karaoke");
-    Object.defineProperty(host, "getBoundingClientRect", {
-      value: hostBox.getBoundingClientRect,
-    });
-    await act(async () => {
-      window.dispatchEvent(new Event("resize"));
-    });
+    expect(observed.length).toBeGreaterThan(0);
+    globalThis.ResizeObserver = previous;
     await act(async () => {
       root.unmount();
     });
