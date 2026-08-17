@@ -818,18 +818,18 @@ export function createTauriMock(data: any): TauriMockResult {
       session: null,
     }),
     sign_in_streaming_source: (args: {
-      source_id?: string;
+      sourceId?: string;
       method?: string;
       identifier?: string;
       password?: string;
-      country_code?: string;
+      countryCode?: string;
     }) => {
       void args.password;
-      if (args.source_id && args.source_id !== "netease") {
+      if (args.sourceId && args.sourceId !== "netease") {
         throw new Error("mock streaming source is netease");
       }
       const identifier = (args.identifier ?? "User").replace(/\s/g, "");
-      const country = (args.country_code ?? "").replace(/[+\s]/g, "");
+      const country = (args.countryCode ?? "").replace(/[+\s]/g, "");
       return {
         source_id: "netease",
         signed_in: true,
@@ -848,8 +848,8 @@ export function createTauriMock(data: any): TauriMockResult {
     }),
     list_streaming_liked_tracks: () => [],
     list_streaming_playlists: () => [],
-    get_streaming_playlist: (args: { remote_playlist_id: string }) => ({
-      remote_id: args.remote_playlist_id,
+    get_streaming_playlist: (args: { remotePlaylistId: string }) => ({
+      remote_id: args.remotePlaylistId,
       name: "Streaming Playlist",
       tracks: [],
     }),
