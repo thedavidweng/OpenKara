@@ -58,6 +58,10 @@ vi.mock("@/components/Library/ImportCdgChoiceDialog", () => ({
   ImportCdgChoiceDialog: () => <div data-testid="import-cdg-dialog" />,
 }));
 
+vi.mock("@/components/Library/LibraryDecisionDialog", () => ({
+  LibraryDecisionDialog: () => <div data-testid="library-decision-dialog" />,
+}));
+
 vi.mock("@/components/Player/PlaybackBar", () => ({
   PlaybackBar: () => <div data-testid="playback-bar" />,
 }));

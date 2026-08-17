@@ -277,6 +277,23 @@ export function createSongCommands({
         dialogs.confirmDelete(describeSelection(library, song).contextSongIds);
         return;
 
+      case "revealSongFile":
+      case "revealStems": {
+        try {
+          const targets = await (
+            backend ?? tauriBackend
+          ).catalog.getRevealTargets(song.hash);
+          const target =
+            command.id === "revealSongFile" ? targets.song_file : targets.stems;
+          if (target.available && target.path) {
+            await (backend ?? tauriBackend).catalog.revealInFolder(target.path);
+          }
+        } catch (error) {
+          notifyError(error);
+        }
+        return;
+      }
+
       default: {
         const unhandled: never = command;
         return unhandled;
@@ -334,6 +351,10 @@ export function createSongCommands({
       onCreatePlaylistAndAdd: () => dispatch({ id: "openCreatePlaylist" }),
       onRemoveFromActivePlaylist: () =>
         dispatch({ id: "removeFromActivePlaylist" }),
+      revealSongFileAvailable: context.revealTargets?.song_file.available,
+      revealStemsAvailable: context.revealTargets?.stems.available,
+      onRevealSongFile: () => dispatch({ id: "revealSongFile" }),
+      onRevealStems: () => dispatch({ id: "revealStems" }),
     });
   };
 

@@ -1,7 +1,7 @@
 import type { ContextMenuItem } from "@/components/Library/ContextMenu";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
 import type { Backend } from "@/lib/backend";
-import type { Song } from "@/types/ipc";
+import type { RevealTargets, Song } from "@/types/ipc";
 
 export interface SongCommandPlaylist {
   id: string;
@@ -86,6 +86,7 @@ export type SongCommandTranslate = (
 export interface SongCommandContext {
   song: Song;
   t: SongCommandTranslate;
+  revealTargets?: RevealTargets;
 }
 
 export type SongCommand =
@@ -108,7 +109,9 @@ export type SongCommand =
   | { id: "editInfo" }
   | { id: "openProperties" }
   | { id: "deleteSong" }
-  | { id: "deleteSelected" };
+  | { id: "deleteSelected" }
+  | { id: "revealSongFile" }
+  | { id: "revealStems" };
 
 export interface SongCommandDependencies {
   backend?: Backend;

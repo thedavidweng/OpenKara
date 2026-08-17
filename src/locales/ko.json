@@ -108,7 +108,8 @@
       "title": "전체 노래를 4스템으로 업그레이드",
       "message": "모든 노래를 4스템 모드로 다시 분리해요. 스템의 디스크 사용량이 약 2배로 늘어나요.",
       "confirm": "전체 업그레이드"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "가져오기",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "분리 모델을 준비하는 중…",
     "cancelSeparation": "분리 취소",
-    "usingCachedSeparation": "캐시된 분리 결과 사용 중"
+    "usingCachedSeparation": "캐시된 분리 결과 사용 중",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "Reveal Song File",
+    "revealStems": "Reveal Stems",
+    "decision": {
+      "title": "Library Decision",
+      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
+      "keep": "Keep Library Song",
+      "replace": "Replace Library Song",
+      "applyToRemaining": "Apply to Remaining",
+      "librarySong": "Library song",
+      "incoming": "Incoming file"
+    }
   },
   "player": {
     "previous": "이전",
@@ -744,7 +757,10 @@
     "separation_failed": "분리 실패",
     "internal": "내부 오류",
     "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",
-    "somethingWentWrong": "문제가 발생했어요"
+    "somethingWentWrong": "문제가 발생했어요",
+    "onlineSourceDisabled": "This Online Source is off.",
+    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
+    "videoSourceUnavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "{{version}} 버전을 사용할 수 있어요",
@@ -754,5 +770,45 @@
     "restartToApply": "업데이트가 준비됐어요 — 적용하려면 다시 시작하세요",
     "restart": "다시 시작",
     "failed": "업데이트 실패 — 최신 릴리스를 직접 다운로드하세요"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "qr": "Sign in with QR",
+      "phone": "Phone and password",
+      "email": "Email and password",
+      "password": "Password",
+      "phoneNumber": "Phone number",
+      "countryCode": "Country code",
+      "signedInAs": "Signed in as {{name}}",
+      "sessionExpired": "This session expired. Sign in again.",
+      "liked": "Liked tracks",
+      "playlists": "Streaming Playlists",
+      "search": "Search",
+      "searchPlaceholder": "Search NetEase",
+      "importTrack": "Import track",
+      "importPlaylist": "Import Streaming Playlist",
+      "importRefusal": "Import Refusal",
+      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
+      "scanned": "Scanned. Confirm on your phone.",
+      "qrExpired": "This QR code expired. Get a new one.",
+      "loginWithPhone": "Use phone",
+      "loginWithEmail": "Use email",
+      "loginWithQr": "Use QR code",
+      "passwordNotice": "OpenKara sends the password once and does not store it.",
+      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
+      "refreshQr": "Get a new QR code"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Paste a YouTube link",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Add to Queue",
+    "invalidUrl": "That is not a public YouTube watch or playlist link.",
+    "ageRestricted": "This video is age-restricted.",
+    "private": "This video is private.",
+    "unlisted": "This video is unlisted."
   }
 }

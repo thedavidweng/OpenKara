@@ -679,6 +679,58 @@ describe("settings", () => {
     expect(returned).toBe(sources);
   });
 
+  test("getStreamingSession invokes get_streaming_session", async () => {
+    const session = {
+      source_id: "netease" as const,
+      signed_in: false,
+      display_name: null,
+      expired: false,
+    };
+    mockInvoke.mockResolvedValueOnce(session);
+    const { createCatalogCommands } = await import("./catalog");
+    const catalog = createCatalogCommands(mockInvoke);
+    const returned = await catalog.getStreamingSession("netease");
+    expect(mockInvoke).toHaveBeenCalledWith("get_streaming_session", {
+      source_id: "netease",
+    });
+    expect(returned).toBe(session);
+  });
+
+  test("controlYoutubeWatch invokes control_youtube_watch", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ended: false,
+      paused: true,
+      current_time_ms: 0,
+      duration_ms: null,
+    });
+    const { createYoutubeWatchCommands } = await import("./youtube-watch");
+    const youtubeWatch = createYoutubeWatchCommands(mockInvoke);
+    await youtubeWatch.controlYoutubeWatch({
+      type: "navigate",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("control_youtube_watch", {
+      action: {
+        type: "navigate",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      },
+    });
+  });
+
+  test("resolveVideoSourceUrl invokes resolve_video_source_url", async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    const { createCatalogCommands } = await import("./catalog");
+    const catalog = createCatalogCommands(mockInvoke);
+    await catalog.resolveVideoSourceUrl(
+      "youtube",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("resolve_video_source_url", {
+      source_id: "youtube",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
+  });
+
   test("setOnlineSourceEnabled invokes set_online_source_enabled", async () => {
     mockInvoke.mockResolvedValueOnce(appSettings);
     const returned = await settings.setOnlineSourceEnabled("netease", true);

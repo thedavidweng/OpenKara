@@ -89,6 +89,12 @@ vi.mock("@/stores/settings-store", () => ({
     selector({ coverArtBackdrop: true }),
 }));
 
+vi.mock("@/stores/catalog-store", () => ({
+  useCatalogStore: (
+    selector: (state: { videoItems: Record<string, never> }) => unknown,
+  ) => selector({ videoItems: {} }),
+}));
+
 afterEach(() => {
   mockGetCoverArtPreview.mockReset();
 });

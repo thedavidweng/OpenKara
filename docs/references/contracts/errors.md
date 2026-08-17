@@ -45,6 +45,9 @@
 - `execution_provider_unavailable`
 - `runtime_post_download_timeout`
 - `separation_failed`
+- `online_source_disabled`
+- `streaming_session_expired`
+- `video_source_unavailable`
 - `internal`
 
 ## Shared enum: `FallbackAction`
@@ -126,6 +129,18 @@
    - `code = runtime_post_download_timeout`
    - `fallback = retry`
    - UI 使用本地化错误正文，不解析 `message`
+
+### Catalog / Online Sources
+
+1. A disabled Online Source receives a browse, sign-in, import, or resolve command:
+   - `code = online_source_disabled`
+   - `fallback = keep_current_state`
+2. A NetEase session is expired or under risk control (including 301):
+   - `code = streaming_session_expired`
+   - `fallback = retry`
+3. A YouTube watch or playlist item is age-restricted, private, unlisted, or otherwise unplayable as a guest:
+   - `code = video_source_unavailable`
+   - `fallback = keep_current_state`
 
 ## Important boundaries
 

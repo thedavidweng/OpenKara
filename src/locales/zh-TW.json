@@ -108,7 +108,8 @@
       "title": "將所有歌曲升級為 4軌",
       "message": "這會使用 4軌模式重新分離所有歌曲。音軌佔用的磁碟空間大約會加倍。",
       "confirm": "全部升級"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "匯入",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "正在準備分離模型…",
     "cancelSeparation": "取消分離",
-    "usingCachedSeparation": "使用快取的分離結果"
+    "usingCachedSeparation": "使用快取的分離結果",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "Reveal Song File",
+    "revealStems": "Reveal Stems",
+    "decision": {
+      "title": "Library Decision",
+      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
+      "keep": "Keep Library Song",
+      "replace": "Replace Library Song",
+      "applyToRemaining": "Apply to Remaining",
+      "librarySong": "Library song",
+      "incoming": "Incoming file"
+    }
   },
   "player": {
     "previous": "上一首",
@@ -744,7 +757,10 @@
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
     "remote_repository_unavailable": "遠端儲存庫無法使用",
-    "somethingWentWrong": "發生錯誤"
+    "somethingWentWrong": "發生錯誤",
+    "onlineSourceDisabled": "This Online Source is off.",
+    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
+    "videoSourceUnavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "{{version}} 版現已推出",
@@ -754,5 +770,45 @@
     "restartToApply": "更新已就緒——請重新啟動以套用",
     "restart": "重新啟動",
     "failed": "更新失敗——請手動下載最新版本"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "qr": "Sign in with QR",
+      "phone": "Phone and password",
+      "email": "Email and password",
+      "password": "Password",
+      "phoneNumber": "Phone number",
+      "countryCode": "Country code",
+      "signedInAs": "Signed in as {{name}}",
+      "sessionExpired": "This session expired. Sign in again.",
+      "liked": "Liked tracks",
+      "playlists": "Streaming Playlists",
+      "search": "Search",
+      "searchPlaceholder": "Search NetEase",
+      "importTrack": "Import track",
+      "importPlaylist": "Import Streaming Playlist",
+      "importRefusal": "Import Refusal",
+      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
+      "scanned": "Scanned. Confirm on your phone.",
+      "qrExpired": "QR 碼已失效，請取得新的 QR 碼。",
+      "loginWithPhone": "手機號碼登入",
+      "loginWithEmail": "電子郵件登入",
+      "loginWithQr": "QR 碼登入",
+      "passwordNotice": "OpenKara 只會傳送一次密碼，不會儲存。",
+      "qrHint": "開啟網易雲音樂 App 並掃描此 QR 碼。",
+      "refreshQr": "取得新的 QR 碼"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Paste a YouTube link",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Add to Queue",
+    "invalidUrl": "That is not a public YouTube watch or playlist link.",
+    "ageRestricted": "This video is age-restricted.",
+    "private": "This video is private.",
+    "unlisted": "This video is unlisted."
   }
 }
