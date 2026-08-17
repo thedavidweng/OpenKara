@@ -21,11 +21,48 @@ const { mockState } = vi.hoisted(() => ({
     session: null as StreamingSessionSnapshot | null,
     qr: null as StreamingQrChallenge | null,
     qrStatus: null as StreamingQrStatus | null,
-    liked: [] as never[],
-    playlists: [] as never[],
-    playlistDetail: null,
+    liked: [] as Array<{
+      source_id: "netease";
+      remote_track_id: string;
+      title: string;
+      artist: string;
+      album: string | null;
+      duration_ms: number | null;
+      refusal: null | {
+        reason: "no_play_rights";
+        title: string;
+        artist: string;
+      };
+    }>,
+    playlists: [] as Array<{
+      remote_id: string;
+      name: string;
+      track_count: number;
+    }>,
+    playlistDetail: null as null | {
+      remote_id: string;
+      name: string;
+      tracks: Array<{
+        source_id: "netease";
+        remote_track_id: string;
+        title: string;
+        artist: string;
+        album: string | null;
+        duration_ms: number | null;
+        refusal: null | {
+          reason: "no_play_rights";
+          title: string;
+          artist: string;
+        };
+      }>;
+    },
     searchResults: [] as never[],
-    importFailures: [] as never[],
+    importFailures: [] as Array<{
+      remote_track_id: string;
+      title: string;
+      artist: string;
+      reason: "refusal";
+    }>,
     loadSession: vi.fn(),
     startQr: vi.fn(),
     pollQr: vi.fn(),
@@ -69,6 +106,10 @@ describe("NeteasePanel sign-in", () => {
     mockState.session = null;
     mockState.qr = qrChallenge;
     mockState.qrStatus = "waiting";
+    mockState.liked = [];
+    mockState.playlists = [];
+    mockState.playlistDetail = null;
+    mockState.importFailures = [];
     mockState.startQr.mockReset();
     mockState.pollQr.mockReset();
     mockState.signInPassword.mockReset();
@@ -207,5 +248,180 @@ describe("NeteasePanel sign-in", () => {
     expect(
       container.querySelector("[data-testid='netease-signed-in']"),
     ).toBeNull();
+  });
+
+  test("signed-in browse can load, search, and import tracks", async () => {
+    const track = {
+      source_id: "netease" as const,
+      remote_track_id: "1",
+      title: "Night",
+      artist: "Ada",
+      album: null,
+      duration_ms: 1000,
+      refusal: null,
+    };
+    mockState.session = {
+      source_id: "netease",
+      signed_in: true,
+      display_name: "Ada",
+      expired: false,
+    };
+    mockState.liked = [
+      track,
+      {
+        ...track,
+        remote_track_id: "9",
+        title: "Grey",
+        refusal: {
+          reason: "no_play_rights",
+          title: "Grey",
+          artist: "C",
+        },
+      },
+    ];
+    mockState.playlists = [{ remote_id: "pl-1", name: "Set", track_count: 1 }];
+    mockState.playlistDetail = {
+      remote_id: "pl-1",
+      name: "Set",
+      tracks: [track],
+    };
+    mockState.importFailures = [
+      {
+        remote_track_id: "9",
+        title: "Grey",
+        artist: "C",
+        reason: "refusal",
+      },
+    ];
+
+    await act(async () => {
+      root.render(<NeteasePanel />);
+    });
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.signOut"),
+      )!,
+    );
+    expect(mockState.signOut).toHaveBeenCalled();
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.liked"),
+      )!,
+    );
+    expect(mockState.loadLiked).toHaveBeenCalled();
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.playlists"),
+      )!,
+    );
+    expect(mockState.loadPlaylists).toHaveBeenCalled();
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Set"),
+      )!,
+    );
+    expect(mockState.openPlaylist).toHaveBeenCalledWith("pl-1");
+
+    const search = container.querySelector(
+      "[aria-label='catalog.netease.search']",
+    ) as HTMLInputElement;
+    await user.type(search, "night");
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.search"),
+      )!,
+    );
+    expect(mockState.search).toHaveBeenCalledWith("night");
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.importPlaylist"),
+      )!,
+    );
+    expect(mockState.importTracks).toHaveBeenCalledWith(["1"], "pl-1");
+
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.importTrack"),
+      )!,
+    );
+    expect(mockState.importTracks).toHaveBeenCalledWith(["1"]);
+    expect(container.textContent).toContain("Grey");
+  });
+
+  test("QR starts itself, refreshes when expired, and password forms sign in once", async () => {
+    mockState.qr = null;
+    mockState.qrStatus = null;
+    await act(async () => {
+      root.render(<NeteasePanel />);
+    });
+    expect(mockState.startQr).toHaveBeenCalled();
+
+    mockState.qr = qrChallenge;
+    mockState.qrStatus = "expired";
+    await act(async () => {
+      root.render(<NeteasePanel />);
+    });
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("catalog.netease.refreshQr"),
+      )!,
+    );
+    expect(mockState.startQr).toHaveBeenCalled();
+
+    await user.click(
+      container.querySelector("[data-testid='netease-use-phone']")!,
+    );
+    const phone = container.querySelector(
+      "#netease-phone-number",
+    ) as HTMLInputElement;
+    const phonePassword = container.querySelector(
+      "#netease-phone-password",
+    ) as HTMLInputElement;
+    await user.type(phone, "138 0013 8000");
+    await user.type(phonePassword, "secret");
+    await user.click(
+      container.querySelector(
+        "[data-testid='netease-phone-form'] button[type='submit']",
+      )!,
+    );
+    expect(mockState.signInPassword).toHaveBeenCalledWith(
+      "phone",
+      "13800138000",
+      "secret",
+      "86",
+    );
+
+    await user.click(
+      container.querySelector("[data-testid='netease-use-email']")!,
+    );
+    await user.type(
+      container.querySelector("#netease-email") as HTMLInputElement,
+      "ada@example.com",
+    );
+    await user.type(
+      container.querySelector("#netease-email-password") as HTMLInputElement,
+      "secret",
+    );
+    await user.click(
+      container.querySelector(
+        "[data-testid='netease-email-form'] button[type='submit']",
+      )!,
+    );
+    expect(mockState.signInPassword).toHaveBeenCalledWith(
+      "email",
+      "ada@example.com",
+      "secret",
+    );
+
+    mockState.qr = null;
+    await user.click(
+      container.querySelector("[data-testid='netease-use-qr']")!,
+    );
+    expect(mockState.startQr).toHaveBeenCalled();
   });
 });
