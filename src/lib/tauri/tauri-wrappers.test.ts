@@ -691,7 +691,7 @@ describe("settings", () => {
     const catalog = createCatalogCommands(mockInvoke);
     const returned = await catalog.getStreamingSession("netease");
     expect(mockInvoke).toHaveBeenCalledWith("get_streaming_session", {
-      source_id: "netease",
+      sourceId: "netease",
     });
     expect(returned).toBe(session);
   });
@@ -726,7 +726,7 @@ describe("settings", () => {
       "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     );
     expect(mockInvoke).toHaveBeenCalledWith("resolve_video_source_url", {
-      source_id: "youtube",
+      sourceId: "youtube",
       url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     });
   });
@@ -735,7 +735,7 @@ describe("settings", () => {
     mockInvoke.mockResolvedValueOnce(appSettings);
     const returned = await settings.setOnlineSourceEnabled("netease", true);
     expect(mockInvoke).toHaveBeenCalledWith("set_online_source_enabled", {
-      source_id: "netease",
+      sourceId: "netease",
       enabled: true,
     });
     expect(returned).toBe(appSettings);

@@ -82,7 +82,7 @@ export function createSettingsCommands(invoke: InvokeCommand): SettingsBackend {
 
     setOnlineSourceEnabled: (sourceId, enabled) =>
       invoke<AppSettings>("set_online_source_enabled", {
-        source_id: sourceId,
+        sourceId,
         enabled,
       }),
 
