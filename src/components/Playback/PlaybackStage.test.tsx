@@ -18,6 +18,7 @@ const {
     snapshot: {
       song_id: "song-1" as string | null,
     },
+    localAudienceOutputActive: false,
   },
   mockLibraryState: {
     songs: [
@@ -91,8 +92,10 @@ vi.mock("@/stores/settings-store", () => ({
 
 vi.mock("@/stores/catalog-store", () => ({
   useCatalogStore: (
-    selector: (state: { videoItems: Record<string, never> }) => unknown,
-  ) => selector({ videoItems: {} }),
+    selector: (state: {
+      videoItems: Record<string, { title: string }>;
+    }) => unknown,
+  ) => selector({ videoItems: { "yt:abc": { title: "Karaoke" } } }),
 }));
 
 afterEach(() => {
@@ -260,6 +263,50 @@ describe("PlaybackStage", () => {
     expect(viewportAfter).toBe(viewportBefore);
     expect(viewportAfter.scrollTop).toBe(240);
 
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("hosts a YouTube watch slot for a yt: queue id", async () => {
+    mockCdgState.hasCdg = false;
+    mockLibraryState.songs = [];
+    mockPlayerState.snapshot = { song_id: "yt:abc" };
+    mockPlayerState.localAudienceOutputActive = false;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const hostBox = document.createElement("div");
+    hostBox.getBoundingClientRect = () =>
+      ({
+        left: 10,
+        top: 20,
+        width: 640,
+        height: 360,
+        right: 650,
+        bottom: 380,
+        x: 10,
+        y: 20,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<PlaybackStage />);
+    });
+    const host = container.querySelector(
+      "[data-youtube-watch-host='true']",
+    ) as HTMLElement;
+    expect(host).toBeTruthy();
+    expect(container.textContent).toContain("Karaoke");
+    Object.defineProperty(host, "getBoundingClientRect", {
+      value: hostBox.getBoundingClientRect,
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
     await act(async () => {
       root.unmount();
     });
