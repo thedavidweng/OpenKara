@@ -114,6 +114,16 @@ const PLAYBACK_COMMANDS: CommandContract[] = [
   },
 ];
 
+const YOUTUBE_WATCH_COMMANDS: CommandContract[] = [
+  {
+    command: "control_youtube_watch",
+    frontendFile: "src/lib/tauri/youtube-watch.ts",
+    frontendFn: "controlYoutubeWatch",
+    hasArgs: true,
+    rustParams: ["action"],
+  },
+];
+
 const LIBRARY_COMMANDS: CommandContract[] = [
   {
     command: "import_songs",
@@ -316,6 +326,113 @@ const SETTINGS_COMMANDS: CommandContract[] = [
   },
 ];
 
+const CATALOG_COMMANDS: CommandContract[] = [
+  {
+    command: "get_streaming_session",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "getStreamingSession",
+    hasArgs: true,
+    rustParams: ["source_id"],
+  },
+  {
+    command: "start_streaming_qr_signin",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "startStreamingQrSignin",
+    hasArgs: true,
+    rustParams: ["source_id"],
+  },
+  {
+    command: "poll_streaming_qr_signin",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "pollStreamingQrSignin",
+    hasArgs: true,
+    rustParams: ["source_id", "key"],
+  },
+  {
+    command: "sign_in_streaming_source",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "signInStreamingSource",
+    hasArgs: true,
+    rustParams: [
+      "source_id",
+      "method",
+      "identifier",
+      "password",
+      "country_code",
+    ],
+  },
+  {
+    command: "sign_out_streaming_source",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "signOutStreamingSource",
+    hasArgs: true,
+    rustParams: ["source_id"],
+  },
+  {
+    command: "list_streaming_liked_tracks",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "listStreamingLikedTracks",
+    hasArgs: true,
+    rustParams: ["source_id"],
+  },
+  {
+    command: "list_streaming_playlists",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "listStreamingPlaylists",
+    hasArgs: true,
+    rustParams: ["source_id"],
+  },
+  {
+    command: "get_streaming_playlist",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "getStreamingPlaylist",
+    hasArgs: true,
+    rustParams: ["source_id", "remote_playlist_id"],
+  },
+  {
+    command: "search_streaming_source",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "searchStreamingSource",
+    hasArgs: true,
+    rustParams: ["source_id", "query"],
+  },
+  {
+    command: "start_streaming_import",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "startStreamingImport",
+    hasArgs: true,
+    rustParams: ["source_id", "remote_track_ids", "remote_playlist_id"],
+  },
+  {
+    command: "continue_streaming_import",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "continueStreamingImport",
+    hasArgs: true,
+    rustParams: ["action"],
+  },
+  {
+    command: "resolve_video_source_url",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "resolveVideoSourceUrl",
+    hasArgs: true,
+    rustParams: ["source_id", "url"],
+  },
+  {
+    command: "get_reveal_targets",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "getRevealTargets",
+    hasArgs: true,
+    rustParams: ["song_id"],
+  },
+  {
+    command: "reveal_in_folder",
+    frontendFile: "src/lib/tauri/catalog.ts",
+    frontendFn: "revealInFolder",
+    hasArgs: true,
+    rustParams: ["path"],
+  },
+];
+
 const SEPARATION_COMMANDS: CommandContract[] = [
   {
     command: "separate",
@@ -355,10 +472,12 @@ const SEPARATION_COMMANDS: CommandContract[] = [
 
 const ALL_COMMANDS = [
   ...PLAYBACK_COMMANDS,
+  ...YOUTUBE_WATCH_COMMANDS,
   ...LIBRARY_COMMANDS,
   ...LYRICS_COMMANDS,
   ...SEPARATION_COMMANDS,
   ...SETTINGS_COMMANDS,
+  ...CATALOG_COMMANDS,
 ];
 
 describe("IPC command registry", () => {
@@ -435,6 +554,33 @@ describe("IPC command registry", () => {
     ];
     const registered = SETTINGS_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedSettingsCommands.sort());
+  });
+
+  test("youtube watch commands match contract documentation", () => {
+    expect(YOUTUBE_WATCH_COMMANDS.map((c) => c.command)).toEqual([
+      "control_youtube_watch",
+    ]);
+  });
+
+  test("catalog commands match contract documentation", () => {
+    const expectedCatalogCommands = [
+      "get_streaming_session",
+      "start_streaming_qr_signin",
+      "poll_streaming_qr_signin",
+      "sign_in_streaming_source",
+      "sign_out_streaming_source",
+      "list_streaming_liked_tracks",
+      "list_streaming_playlists",
+      "get_streaming_playlist",
+      "search_streaming_source",
+      "start_streaming_import",
+      "continue_streaming_import",
+      "resolve_video_source_url",
+      "get_reveal_targets",
+      "reveal_in_folder",
+    ];
+    const registered = CATALOG_COMMANDS.map((c) => c.command);
+    expect(registered.sort()).toEqual(expectedCatalogCommands.sort());
   });
 
   test("separation commands match contract documentation", () => {
@@ -1038,10 +1184,12 @@ describe("CommandError shape matches Rust CommandError", () => {
       "invalid_playback_state",
       "execution_provider_unavailable",
       "separation_failed",
+      "online_source_disabled",
+      "streaming_session_expired",
+      "video_source_unavailable",
       "internal",
     ];
-    // All 14 error codes from the Rust ErrorCode enum.
-    expect(validCodes).toHaveLength(14);
+    expect(validCodes).toHaveLength(17);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }

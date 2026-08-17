@@ -108,7 +108,8 @@
       "title": "升级全部歌曲为4轨",
       "message": "这将使用4轨模式重新分离所有歌曲。音轨的磁盘占用将大约翻倍。",
       "confirm": "全部升级"
-    }
+    },
+    "netease": "网易云音乐"
   },
   "toolbar": {
     "import": "导入",
@@ -189,7 +190,18 @@
     },
     "modelPreparing": "正在准备分离模型…",
     "cancelSeparation": "取消分离",
-    "usingCachedSeparation": "已使用缓存的分离结果"
+    "usingCachedSeparation": "已使用缓存的分离结果",
+    "revealSongFile": "在访达中显示歌曲文件",
+    "revealStems": "打开分轨文件夹",
+    "decision": {
+      "title": "资料库决定",
+      "importConflict": "资料库里已有同一条流媒体曲目，但文件不同。请选择保留资料库歌曲或替换。",
+      "keep": "保留资料库歌曲",
+      "replace": "替换资料库歌曲",
+      "applyToRemaining": "应用到剩余冲突",
+      "librarySong": "资料库歌曲",
+      "incoming": "导入文件"
+    }
   },
   "player": {
     "previous": "上一首",
@@ -745,7 +757,10 @@
     "separation_failed": "分离失败",
     "internal": "内部错误",
     "remote_repository_unavailable": "远程仓库不可用",
-    "somethingWentWrong": "出了点问题"
+    "somethingWentWrong": "出了点问题",
+    "onlineSourceDisabled": "此在线来源已关闭。",
+    "streamingSessionExpired": "流媒体源会话已过期，请重新登录。",
+    "videoSourceUnavailable": "此视频无法以访客身份播放。"
   },
   "updater": {
     "available": "版本 {{version}} 可用",
@@ -755,5 +770,45 @@
     "restartToApply": "更新已就绪 — 重启以应用",
     "restart": "重启",
     "failed": "更新失败 — 请手动下载最新版本"
+  },
+  "catalog": {
+    "netease": {
+      "title": "网易云音乐",
+      "signIn": "登录",
+      "signOut": "退出登录",
+      "qr": "扫码登录",
+      "phone": "手机号和密码",
+      "email": "邮箱和密码",
+      "password": "密码",
+      "phoneNumber": "手机号",
+      "countryCode": "国家区号",
+      "signedInAs": "已登录为 {{name}}",
+      "sessionExpired": "会话已过期，请重新登录。",
+      "liked": "我喜欢的音乐",
+      "playlists": "流媒体歌单",
+      "search": "搜索",
+      "searchPlaceholder": "搜索网易云音乐",
+      "importTrack": "导入这首歌",
+      "importPlaylist": "导入流媒体歌单",
+      "importRefusal": "拒绝导入",
+      "waitingForScan": "请用网易云音乐扫描此二维码。",
+      "scanned": "已扫码，请在手机上确认。",
+      "qrExpired": "二维码已失效，请获取新的二维码。",
+      "loginWithPhone": "手机号登录",
+      "loginWithEmail": "邮箱登录",
+      "loginWithQr": "二维码登录",
+      "passwordNotice": "OpenKara 只会发送一次密码，不会保存。",
+      "qrHint": "打开网易云音乐 App 扫码登录。",
+      "refreshQr": "获取新的二维码"
+    }
+  },
+  "youtube": {
+    "pasteLink": "粘贴 YouTube 链接",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "加入队列",
+    "invalidUrl": "这不是可公开播放的 YouTube 视频或播放列表链接。",
+    "ageRestricted": "此视频有年龄限制。",
+    "private": "此视频是私密的。",
+    "unlisted": "此视频未公开列出。"
   }
 }

@@ -174,6 +174,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         airplay: airplay_state.clone(),
         separation: separation_state.clone(),
         remote: remote_state.clone(),
+        catalog: crate::state::CatalogState::new(),
         shell: shell_state.clone(),
         amll_client: crate::lyrics::amll::AmllClient::new_default(),
         lrclib_client: crate::lyrics::lrclib::LrcLibClient::new_default(),

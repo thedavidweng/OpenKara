@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { formatDuration } from "@/lib/format";
 import { useBackend } from "@/lib/backend";
+import { shouldIgnoreYoutubeChrome } from "@/playback/youtube-transport";
 import {
   bucketsForRailWidth,
   getWaveformCache,
@@ -142,7 +143,7 @@ export function SeekBar({
     waveformRef.current = null;
     setWaveformVersion((v) => v + 1);
 
-    if (!songId) {
+    if (!songId || shouldIgnoreYoutubeChrome(songId)) {
       return;
     }
 

@@ -42,6 +42,13 @@ cc = "1.2.61"
 tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
+aes = "0.8"
+cbc = "0.1"
+cipher = "0.4"
+md-5 = "0.10"
+num-bigint = "0.4"
+num-traits = "0.2"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 anyhow = "1.0.104"
 biquad = "0.6"
 thiserror = "2"
@@ -53,7 +60,7 @@ lofty = "0.24.0"
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "coreml", "directml", "xnnpack"] }
 rand = "0.10.2"
 rayon = "1.12.0"
-reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "query", "rustls"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "form", "json", "query", "rustls"] }
 ringbuf = "0.5"
 rubato = "4.0.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }

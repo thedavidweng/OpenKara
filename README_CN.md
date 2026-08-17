@@ -314,6 +314,10 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 - [demucs.onnx](https://github.com/sevagh/demucs.onnx) — STFT/ISTFT 实值 ONNX 转换参考
 - [LRCLIB](https://lrclib.net) — 开放的同步歌词 API
 - [monochrome](https://github.com/monochrome-music/monochrome) — 歌词同步与 LRCLIB 集成方案参考
+- [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) — 社区维护的逐字歌词库（CC0）
+- [AMLL (Apple Music-like Lyrics)](https://github.com/amll-dev/applemusic-like-lyrics) — 歌词渲染手法（karaoke fill、弹簧、光晕）
+- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) — 网易云登录、Cookie 会话与中国客户端地址
+- [Kaset](https://github.com/sozercan/kaset) — 公开 YouTube 观看页 WebView 播放，不走游客 `/player` 流地址
 
 ## 许可证
 

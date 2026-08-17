@@ -7,24 +7,46 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SERVICE_NAME: &str = "org.openkara.remote-library";
+pub const REMOTE_LIBRARY_SERVICE: &str = "org.openkara.remote-library";
+pub const STREAMING_SOURCE_SERVICE: &str = "org.openkara.streaming-source";
 
 pub fn store_json<T: Serialize>(app_data_dir: &Path, library_id: &str, value: &T) -> Result<()> {
-    let payload = serde_json::to_string(value).context("failed to serialize credential payload")?;
-    store_string(app_data_dir, library_id, &payload)
+    store_json_in(REMOTE_LIBRARY_SERVICE, app_data_dir, library_id, value)
 }
 
 pub fn load_json<T: DeserializeOwned>(app_data_dir: &Path, library_id: &str) -> Result<Option<T>> {
-    let Some(payload) = load_string(app_data_dir, library_id)? else {
+    load_json_in(REMOTE_LIBRARY_SERVICE, app_data_dir, library_id)
+}
+
+pub fn delete(app_data_dir: &Path, library_id: &str) -> Result<()> {
+    delete_in(REMOTE_LIBRARY_SERVICE, app_data_dir, library_id)
+}
+
+pub fn store_json_in<T: Serialize>(
+    service: &str,
+    app_data_dir: &Path,
+    account: &str,
+    value: &T,
+) -> Result<()> {
+    let payload = serde_json::to_string(value).context("failed to serialize credential payload")?;
+    store_string(service, app_data_dir, account, &payload)
+}
+
+pub fn load_json_in<T: DeserializeOwned>(
+    service: &str,
+    app_data_dir: &Path,
+    account: &str,
+) -> Result<Option<T>> {
+    let Some(payload) = load_string(service, app_data_dir, account)? else {
         return Ok(None);
     };
     let value = serde_json::from_str(&payload).context("failed to parse credential payload")?;
     Ok(Some(value))
 }
 
-pub fn delete(_app_data_dir: &Path, library_id: &str) -> Result<()> {
+pub fn delete_in(service: &str, _app_data_dir: &Path, account: &str) -> Result<()> {
     if let Some(dir) = test_store_dir() {
-        let path = test_store_path(&dir, library_id);
+        let path = test_store_path(&dir, service, account);
         if path.exists() {
             fs::remove_file(&path)
                 .with_context(|| format!("failed to remove {}", path.display()))?;
@@ -32,24 +54,24 @@ pub fn delete(_app_data_dir: &Path, library_id: &str) -> Result<()> {
         return Ok(());
     }
 
-    platform::delete(target_name(library_id))
+    platform::delete(service, target_name(service, account))
 }
 
-fn store_string(app_data_dir: &Path, library_id: &str, payload: &str) -> Result<()> {
+fn store_string(service: &str, app_data_dir: &Path, account: &str, payload: &str) -> Result<()> {
     if let Some(dir) = test_store_dir() {
         fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-        let path = test_store_path(&dir, library_id);
+        let path = test_store_path(&dir, service, account);
         fs::write(&path, payload).with_context(|| format!("failed to write {}", path.display()))?;
         let _ = app_data_dir;
         return Ok(());
     }
 
-    platform::store(target_name(library_id), payload)
+    platform::store(service, target_name(service, account), payload)
 }
 
-fn load_string(app_data_dir: &Path, library_id: &str) -> Result<Option<String>> {
+fn load_string(service: &str, app_data_dir: &Path, account: &str) -> Result<Option<String>> {
     if let Some(dir) = test_store_dir() {
-        let path = test_store_path(&dir, library_id);
+        let path = test_store_path(&dir, service, account);
         if !path.exists() {
             return Ok(None);
         }
@@ -59,11 +81,11 @@ fn load_string(app_data_dir: &Path, library_id: &str) -> Result<Option<String>> 
         return Ok(Some(payload));
     }
 
-    platform::load(target_name(library_id))
+    platform::load(service, target_name(service, account))
 }
 
-fn target_name(library_id: &str) -> String {
-    format!("{SERVICE_NAME}:{library_id}")
+fn target_name(service: &str, account: &str) -> String {
+    format!("{service}:{account}")
 }
 
 fn test_store_dir() -> Option<PathBuf> {
@@ -77,8 +99,8 @@ fn test_store_dir() -> Option<PathBuf> {
     }
 }
 
-fn test_store_path(directory: &Path, library_id: &str) -> PathBuf {
-    let digest = Sha256::digest(library_id.as_bytes());
+fn test_store_path(directory: &Path, service: &str, account: &str) -> PathBuf {
+    let digest = Sha256::digest(format!("{service}:{account}").as_bytes());
     directory.join(format!("{}.json", hash::hex_lower(digest)))
 }
 
@@ -87,13 +109,13 @@ mod platform {
     use super::*;
     use std::process::Command;
 
-    pub fn store(target: String, payload: &str) -> Result<()> {
+    pub fn store(service: &str, target: String, payload: &str) -> Result<()> {
         let output = Command::new("security")
             .args([
                 "add-generic-password",
                 "-U",
                 "-s",
-                SERVICE_NAME,
+                service,
                 "-a",
                 &target,
                 "-w",
@@ -111,16 +133,9 @@ mod platform {
         )
     }
 
-    pub fn load(target: String) -> Result<Option<String>> {
+    pub fn load(service: &str, target: String) -> Result<Option<String>> {
         let output = Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                SERVICE_NAME,
-                "-a",
-                &target,
-                "-w",
-            ])
+            .args(["find-generic-password", "-s", service, "-a", &target, "-w"])
             .output()
             .context("failed to launch macOS security CLI")?;
         if output.status.success() {
@@ -140,9 +155,9 @@ mod platform {
         )
     }
 
-    pub fn delete(target: String) -> Result<()> {
+    pub fn delete(service: &str, target: String) -> Result<()> {
         let output = Command::new("security")
-            .args(["delete-generic-password", "-s", SERVICE_NAME, "-a", &target])
+            .args(["delete-generic-password", "-s", service, "-a", &target])
             .output()
             .context("failed to launch macOS security CLI")?;
         if output.status.success() {
@@ -169,13 +184,13 @@ mod platform {
     const ATTR_SCOPE: &str = "openkara_scope";
     const ATTR_LIBRARY_ID: &str = "library_id";
 
-    pub fn store(target: String, payload: &str) -> Result<()> {
+    pub fn store(service: &str, target: String, payload: &str) -> Result<()> {
         let mut child = Command::new("secret-tool")
             .args([
                 "store",
-                "--label=OpenKara remote repository credentials",
+                "--label=OpenKara credentials",
                 ATTR_SCOPE,
-                SERVICE_NAME,
+                service,
                 ATTR_LIBRARY_ID,
                 &target,
             ])
@@ -204,9 +219,9 @@ mod platform {
         )
     }
 
-    pub fn load(target: String) -> Result<Option<String>> {
+    pub fn load(service: &str, target: String) -> Result<Option<String>> {
         let output = Command::new("secret-tool")
-            .args(["lookup", ATTR_SCOPE, SERVICE_NAME, ATTR_LIBRARY_ID, &target])
+            .args(["lookup", ATTR_SCOPE, service, ATTR_LIBRARY_ID, &target])
             .output()
             .context(linux_unavailable_message())?;
         if output.status.success() {
@@ -229,9 +244,9 @@ mod platform {
         )
     }
 
-    pub fn delete(target: String) -> Result<()> {
+    pub fn delete(service: &str, target: String) -> Result<()> {
         let output = Command::new("secret-tool")
-            .args(["clear", ATTR_SCOPE, SERVICE_NAME, ATTR_LIBRARY_ID, &target])
+            .args(["clear", ATTR_SCOPE, service, ATTR_LIBRARY_ID, &target])
             .output()
             .context(linux_unavailable_message())?;
         if output.status.success() || String::from_utf8_lossy(&output.stderr).trim().is_empty() {
@@ -311,7 +326,7 @@ mod platform {
         fn GetLastError() -> Dword;
     }
 
-    pub fn store(target: String, payload: &str) -> Result<()> {
+    pub fn store(_service: &str, target: String, payload: &str) -> Result<()> {
         let mut target_utf16 = to_utf16(&target);
         let mut username_utf16 = to_utf16("OpenKara");
         let mut blob = payload.as_bytes().to_vec();
@@ -344,7 +359,7 @@ mod platform {
         )
     }
 
-    pub fn load(target: String) -> Result<Option<String>> {
+    pub fn load(_service: &str, target: String) -> Result<Option<String>> {
         let mut credential_ptr: *mut CredentialW = ptr::null_mut();
         let target_utf16 = to_utf16(&target);
         // SAFETY: the target name is a NUL-terminated UTF-16 local that
@@ -391,7 +406,7 @@ mod platform {
         Ok(Some(value))
     }
 
-    pub fn delete(target: String) -> Result<()> {
+    pub fn delete(_service: &str, target: String) -> Result<()> {
         let target_utf16 = to_utf16(&target);
         // SAFETY: the target name is a NUL-terminated UTF-16 local that
         // outlives the call.

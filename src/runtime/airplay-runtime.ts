@@ -6,6 +6,7 @@ import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
 import { LOCAL_AUDIENCE_OUTPUT_STATE_EVENT } from "@/lib/plain-text-page-controls";
 import { songHasCdgMedia } from "@/lib/song-media";
 import { projectAudienceState, type AudienceProjectorInput } from "@/playback";
+import { shouldRefuseAirPlayLyrics } from "@/playback/youtube-transport";
 import { useBackend } from "@/lib/backend";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -44,6 +45,10 @@ export function useAirPlayAudienceSync(enabled = true): void {
 
   useEffect(() => {
     if (!enabled || !isMac) {
+      return;
+    }
+
+    if (shouldRefuseAirPlayLyrics(playbackSnapshot?.song_id)) {
       return;
     }
 

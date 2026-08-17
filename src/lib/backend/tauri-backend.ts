@@ -1,3 +1,4 @@
+import { createCatalogCommands } from "@/lib/tauri/catalog";
 import { createCdgCommands } from "@/lib/tauri/cdg";
 import { tauriInvoke, type InvokeCommand } from "@/lib/tauri/invoke";
 import { createLibraryCommands } from "@/lib/tauri/library";
@@ -23,6 +24,7 @@ export function createTauriBackend(invoke: InvokeCommand): Backend {
     maintenance: createMaintenanceCommands(invoke),
     playlist: createPlaylistCommands(invoke),
     cdg: createCdgCommands(invoke),
+    catalog: createCatalogCommands(invoke),
   };
 }
 

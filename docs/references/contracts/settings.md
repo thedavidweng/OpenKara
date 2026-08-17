@@ -90,6 +90,7 @@ stays explicitly dark regardless of the primary preference.
 - `set_update_policy(policy: UpdatePolicy) -> AppSettings`
 - `list_online_sources() -> Vec<OnlineSourceSnapshot>` — see [catalog.md](./catalog.md)
 - `set_online_source_enabled(source_id: OnlineSourceId, enabled: bool) -> AppSettings`
+- Session, browse, import, YouTube resolve, and reveal commands — see [catalog.md](./catalog.md)
 - `restart_app() -> ()`
 
 ## Update policy
