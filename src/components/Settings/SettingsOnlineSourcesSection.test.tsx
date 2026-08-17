@@ -52,6 +52,30 @@ describe("SettingsOnlineSourcesSection", () => {
     expect(netease?.checked).toBe(false);
   });
 
+  test("enabling youtube writes the video source flag", async () => {
+    const harness = await createInitializedSettingsHarness();
+    const setOnlineSourceEnabled = vi.spyOn(
+      harness.backend.settings,
+      "setOnlineSourceEnabled",
+    );
+
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsOnlineSourcesSection />
+        </SettingsControllerContext>,
+      );
+    });
+
+    const youtube = container.querySelector<HTMLInputElement>(
+      '[data-testid="online-source-youtube"]',
+    );
+    expect(youtube).not.toBeNull();
+    await user.click(youtube!);
+
+    expect(setOnlineSourceEnabled).toHaveBeenCalledWith("youtube", true);
+  });
+
   test("enabling netease writes the streaming source flag", async () => {
     const harness = await createInitializedSettingsHarness();
     const setOnlineSourceEnabled = vi.spyOn(

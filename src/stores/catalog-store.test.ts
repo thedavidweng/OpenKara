@@ -212,4 +212,50 @@ describe("catalog store QR status", () => {
     expect(store.getState().session?.signed_in).toBe(true);
     expect(JSON.stringify(store.getState())).not.toContain("once-only");
   });
+
+  test("catalog helpers notify when the backend rejects", async () => {
+    const boom = new Error("offline");
+    const reject = async () => {
+      throw boom;
+    };
+    const backend = createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: reject,
+          startStreamingQrSignin: reject,
+          pollStreamingQrSignin: reject,
+          signInStreamingSource: reject,
+          signOutStreamingSource: reject,
+          listStreamingLikedTracks: reject,
+          listStreamingPlaylists: reject,
+          getStreamingPlaylist: reject,
+          searchStreamingSource: reject,
+          startStreamingImport: reject,
+          continueStreamingImport: reject,
+        },
+      },
+    });
+    const store = createCatalogStore(backend);
+    store.setState({
+      qr: {
+        key: "unikey",
+        login_url: "https://music.163.com/login?codekey=unikey",
+        qr_svg: "<svg></svg>",
+      },
+    });
+    const { notifyError } = await import("@/lib/errors");
+    await store.getState().loadSession();
+    await store.getState().startQr();
+    await store.getState().pollQr();
+    await store.getState().signInPassword("email", "a@b.c", "x");
+    await store.getState().signOut();
+    await store.getState().loadLiked();
+    await store.getState().loadPlaylists();
+    await store.getState().openPlaylist("pl-1");
+    await store.getState().search("night");
+    await store.getState().importTracks(["1"]);
+    await store.getState().resolveConflict("keep");
+    expect(notifyError).toHaveBeenCalled();
+    expect(vi.mocked(notifyError).mock.calls.length).toBeGreaterThanOrEqual(11);
+  });
 });
