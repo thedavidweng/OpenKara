@@ -191,16 +191,16 @@
     "cancelSeparation": "ยกเลิกการแยกเสียง",
     "usingCachedSeparation": "กำลังใช้ผลการแยกเสียงจากแคช",
     "confirmDeleteTitle_one": "Delete {{count}} Track",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "แสดงไฟล์เพลง",
+    "revealStems": "เปิดโฟลเดอร์สเต็ม",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "การตัดสินใจของคลัง",
+      "importConflict": "รายการนี้อยู่ในคลังแล้วแต่ไฟล์ต่างกัน เก็บเพลงในคลังหรือแทนที่",
+      "keep": "เก็บเพลงในคลัง",
+      "replace": "แทนที่เพลงในคลัง",
+      "applyToRemaining": "ใช้กับความขัดแย้งที่เหลือ",
+      "librarySong": "เพลงในคลัง",
+      "incoming": "ไฟล์ที่นำเข้า"
     }
   },
   "player": {
@@ -690,12 +690,12 @@
       "description": "ทำให้นุ่มทั้งท่อนที่ผ่านไปแล้วและท่อนถัดไป ปิดตัวเลือกนี้ถ้าต้องการอ่านล่วงหน้า"
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "แหล่งออนไลน์",
+      "description": "เปิดแหล่งเพลงหรือวิดีโอ ทั้งสองจะปิดอยู่จนกว่าคุณจะเลือก",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "วางลิงก์วิดีโอหรือเพลย์ลิสต์สาธารณะลงในคิว OpenKara ไม่ดาวน์โหลดเสียง YouTube",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "ลงชื่อเข้าใช้เพื่อเรียกดูและนำเข้าเพลงที่เล่นได้ จากนั้น OpenKara จะจัดการไฟล์ที่นำเข้า"
     }
   },
   "bootstrap": {
@@ -758,9 +758,9 @@
     "internal": "ข้อผิดพลาดภายใน",
     "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
     "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "แหล่งออนไลน์นี้ปิดอยู่",
+    "streaming_session_expired": "เซสชันแหล่งสตรีมมิงหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
+    "video_source_unavailable": "เล่นวิดีโอนี้ในฐานะผู้เยี่ยมชมไม่ได้"
   },
   "updater": {
     "available": "มีเวอร์ชัน {{version}} ให้ใช้งาน",
@@ -774,41 +774,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "ลงชื่อเข้าใช้",
+      "signOut": "ออกจากระบบ",
+      "qr": "ลงชื่อเข้าใช้ด้วย QR",
+      "phone": "โทรศัพท์และรหัสผ่าน",
+      "email": "อีเมลและรหัสผ่าน",
+      "password": "รหัสผ่าน",
+      "phoneNumber": "หมายเลขโทรศัพท์",
+      "countryCode": "รหัสประเทศ",
+      "signedInAs": "ลงชื่อเข้าใช้เป็น {{name}}",
+      "sessionExpired": "เซสชันหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
+      "liked": "เพลงที่ถูกใจ",
+      "playlists": "เพลย์ลิสต์สตรีมมิง",
+      "search": "ค้นหา",
+      "searchPlaceholder": "ค้นหา NetEase",
+      "importTrack": "นำเข้าเพลงนี้",
+      "importPlaylist": "นำเข้าเพลย์ลิสต์สตรีมมิง",
+      "importRefusal": "ปฏิเสธการนำเข้า",
+      "waitingForScan": "สแกน QR นี้ด้วยแอป NetEase",
+      "scanned": "สแกนแล้ว ยืนยันบนโทรศัพท์",
+      "qrExpired": "QR นี้หมดอายุแล้ว ขออันใหม่",
+      "loginWithPhone": "เข้าสู่ระบบด้วยโทรศัพท์",
+      "loginWithEmail": "เข้าสู่ระบบด้วยอีเมล",
+      "loginWithQr": "เข้าสู่ระบบด้วย QR",
+      "passwordNotice": "OpenKara ส่งรหัสผ่านครั้งเดียวและไม่จัดเก็บ",
+      "qrHint": "เปิดแอป NetEase Cloud Music แล้วสแกนรหัสนี้",
+      "refreshQr": "ขอ QR ใหม่"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "วางลิงก์ YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "เพิ่มในคิว",
+    "invalidUrl": "นั่นไม่ใช่ลิงก์รับชมหรือเพลย์ลิสต์ YouTube สาธารณะ",
+    "ageRestricted": "วิดีโอนี้มีข้อจำกัดด้านอายุ",
+    "private": "วิดีโอนี้เป็นส่วนตัว",
+    "unlisted": "วิดีโอนี้ไม่อยู่ในรายการ"
   }
 }

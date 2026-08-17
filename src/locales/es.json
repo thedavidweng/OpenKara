@@ -192,16 +192,16 @@
     "modelPreparing": "Preparando el modelo de separación…",
     "cancelSeparation": "Cancelar separación",
     "usingCachedSeparation": "Usando separación en caché",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Mostrar archivo de la canción",
+    "revealStems": "Abrir carpeta de stems",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Decisión de biblioteca",
+      "importConflict": "Esta pista ya está en la biblioteca con un archivo distinto. Conserva la canción o reemplázala.",
+      "keep": "Conservar canción de la biblioteca",
+      "replace": "Reemplazar canción de la biblioteca",
+      "applyToRemaining": "Aplicar a los conflictos restantes",
+      "librarySong": "Canción de la biblioteca",
+      "incoming": "Archivo entrante"
     }
   },
   "player": {
@@ -691,12 +691,12 @@
       "description": "Suaviza las líneas pasadas y siguientes. Déjalo apagado para leer con antelación."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Orígenes en línea",
+      "description": "Activa un origen de música o vídeo. Ambos siguen apagados hasta que los elijas.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Pega un enlace público de vídeo o lista en la cola. OpenKara no descarga audio de YouTube.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Inicia sesión para explorar e importar canciones que puedes reproducir. OpenKara gestiona después los archivos importados."
     }
   },
   "bootstrap": {
@@ -759,9 +759,9 @@
     "internal": "Error interno",
     "remote_repository_unavailable": "Repositorio remoto no disponible",
     "somethingWentWrong": "Algo salió mal",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "Este origen en línea está desactivado.",
+    "streaming_session_expired": "La sesión del origen de streaming caducó. Vuelve a iniciar sesión.",
+    "video_source_unavailable": "Este vídeo no se puede reproducir como invitado."
   },
   "updater": {
     "available": "La versión {{version}} está disponible",
@@ -775,41 +775,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "Iniciar sesión",
+      "signOut": "Cerrar sesión",
+      "qr": "Iniciar sesión con QR",
+      "phone": "Teléfono y contraseña",
+      "email": "Correo y contraseña",
+      "password": "Contraseña",
+      "phoneNumber": "Número de teléfono",
+      "countryCode": "Código de país",
+      "signedInAs": "Sesión iniciada como {{name}}",
+      "sessionExpired": "La sesión caducó. Vuelve a iniciar sesión.",
+      "liked": "Canciones que te gustan",
+      "playlists": "Listas de streaming",
+      "search": "Buscar",
+      "searchPlaceholder": "Buscar en NetEase",
+      "importTrack": "Importar canción",
+      "importPlaylist": "Importar lista de streaming",
+      "importRefusal": "Importación rechazada",
+      "waitingForScan": "Escanea este QR con la app de NetEase.",
+      "scanned": "Escaneado. Confirma en el teléfono.",
+      "qrExpired": "Este QR caducó. Obtén uno nuevo.",
+      "loginWithPhone": "Usar teléfono",
+      "loginWithEmail": "Usar correo",
+      "loginWithQr": "Usar código QR",
+      "passwordNotice": "OpenKara envía la contraseña una vez y no la guarda.",
+      "qrHint": "Abre la app de NetEase Cloud Music y escanea este código.",
+      "refreshQr": "Obtener un QR nuevo"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "Pegar un enlace de YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Añadir a la cola",
+    "invalidUrl": "Eso no es un enlace público de YouTube de reproducción o lista.",
+    "ageRestricted": "Este vídeo tiene restricción de edad.",
+    "private": "Este vídeo es privado.",
+    "unlisted": "Este vídeo no está en la lista."
   }
 }

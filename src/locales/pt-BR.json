@@ -192,16 +192,16 @@
     "modelPreparing": "Preparando o modelo de separação…",
     "cancelSeparation": "Cancelar separação",
     "usingCachedSeparation": "Usando separação em cache",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Mostrar arquivo da música",
+    "revealStems": "Abrir pasta de stems",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Decisão da biblioteca",
+      "importConflict": "Esta faixa já está na biblioteca com um arquivo diferente. Mantenha a música da biblioteca ou substitua.",
+      "keep": "Manter música da biblioteca",
+      "replace": "Substituir música da biblioteca",
+      "applyToRemaining": "Aplicar aos conflitos restantes",
+      "librarySong": "Música da biblioteca",
+      "incoming": "Arquivo de entrada"
     }
   },
   "player": {
@@ -691,12 +691,12 @@
       "description": "Suaviza linhas passadas e futuras. Deixe desligado para ler com antecedência."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Fontes online",
+      "description": "Ative uma origem de música ou vídeo. As duas ficam desligadas até você escolhê-las.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Cole um link público de vídeo ou playlist na fila. O OpenKara não baixa o áudio do YouTube.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Entre para navegar e importar músicas que você pode reproduzir. O OpenKara passa a gerenciar os arquivos importados."
     }
   },
   "bootstrap": {
@@ -759,9 +759,9 @@
     "internal": "Erro interno",
     "remote_repository_unavailable": "Repositório remoto indisponível",
     "somethingWentWrong": "Algo deu errado",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "Esta fonte online está desligada.",
+    "streaming_session_expired": "A sessão da fonte de streaming expirou. Entre novamente.",
+    "video_source_unavailable": "Este vídeo não pode ser reproduzido como convidado."
   },
   "updater": {
     "available": "A versão {{version}} está disponível",
@@ -775,41 +775,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "Entrar",
+      "signOut": "Sair",
+      "qr": "Entrar com QR",
+      "phone": "Telefone e senha",
+      "email": "E-mail e senha",
+      "password": "Senha",
+      "phoneNumber": "Número de telefone",
+      "countryCode": "Código do país",
+      "signedInAs": "Conectado como {{name}}",
+      "sessionExpired": "A sessão expirou. Entre novamente.",
+      "liked": "Faixas curtidas",
+      "playlists": "Playlists de streaming",
+      "search": "Pesquisar",
+      "searchPlaceholder": "Pesquisar no NetEase",
+      "importTrack": "Importar faixa",
+      "importPlaylist": "Importar playlist de streaming",
+      "importRefusal": "Importação recusada",
+      "waitingForScan": "Escaneie este QR no app NetEase.",
+      "scanned": "Escaneado. Confirme no telefone.",
+      "qrExpired": "Este QR expirou. Obtenha um novo.",
+      "loginWithPhone": "Entrar com telefone",
+      "loginWithEmail": "Entrar com e-mail",
+      "loginWithQr": "Entrar com QR",
+      "passwordNotice": "O OpenKara envia a senha uma vez e não a armazena.",
+      "qrHint": "Abra o app NetEase Cloud Music e escaneie este código.",
+      "refreshQr": "Obter um novo QR"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "Colar um link do YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Adicionar à fila",
+    "invalidUrl": "Isso não é um link público de reprodução ou playlist do YouTube.",
+    "ageRestricted": "Este vídeo tem restrição de idade.",
+    "private": "Este vídeo é privado.",
+    "unlisted": "Este vídeo não está listado."
   }
 }

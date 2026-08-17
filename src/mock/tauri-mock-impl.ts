@@ -817,12 +817,29 @@ export function createTauriMock(data: any): TauriMockResult {
       status: "waiting",
       session: null,
     }),
-    sign_in_streaming_source: (args: { identifier?: string }) => ({
-      source_id: "netease",
-      signed_in: true,
-      display_name: args.identifier ?? "User",
-      expired: false,
-    }),
+    sign_in_streaming_source: (args: {
+      source_id?: string;
+      method?: string;
+      identifier?: string;
+      password?: string;
+      country_code?: string;
+    }) => {
+      void args.password;
+      if (args.source_id && args.source_id !== "netease") {
+        throw new Error("mock streaming source is netease");
+      }
+      const identifier = (args.identifier ?? "User").replace(/\s/g, "");
+      const country = (args.country_code ?? "").replace(/[+\s]/g, "");
+      return {
+        source_id: "netease",
+        signed_in: true,
+        display_name:
+          args.method === "phone" && country
+            ? `${country}${identifier}`
+            : identifier,
+        expired: false,
+      };
+    },
     sign_out_streaming_source: () => ({
       source_id: "netease",
       signed_in: false,
@@ -844,10 +861,20 @@ export function createTauriMock(data: any): TauriMockResult {
       playlist_id: null,
       conflict: null,
     }),
-    continue_streaming_import: () => ({
+    continue_streaming_import: (args: { action?: string }) => ({
       status: "completed",
       imported_song_ids: [],
-      failed: [],
+      failed:
+        args.action === "cancel"
+          ? [
+              {
+                remote_track_id: "",
+                title: "",
+                artist: "",
+                reason: "cancelled" as const,
+              },
+            ]
+          : [],
       playlist_id: null,
       conflict: null,
     }),
