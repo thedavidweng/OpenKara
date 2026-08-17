@@ -130,6 +130,7 @@ export function createMockBackend({
     maintenance: { ...base.maintenance, ...overrides.maintenance },
     playlist: { ...base.playlist, ...overrides.playlist },
     cdg: { ...base.cdg, ...overrides.cdg },
+    catalog: { ...base.catalog, ...overrides.catalog },
     helpers: mock.helpers,
   };
 }

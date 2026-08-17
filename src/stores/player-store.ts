@@ -3,12 +3,14 @@ import { tauriBackend, type Backend } from "@/lib/backend";
 import { notifyError } from "@/lib/errors";
 import {
   createPlaybackSession,
+  isVideoSourceQueueId,
   selectCurrentPositionMs as selectSessionPositionMs,
   selectSyncDisplayPositionMs as selectSessionSyncDisplayPositionMs,
   type PlaybackSession,
   type PlaybackTransport,
   type PositionClockState,
 } from "@/playback";
+import { createYoutubeVideoTransport } from "@/playback/youtube-transport";
 import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,
@@ -170,8 +172,40 @@ export function createPlayerStore(
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
 
+    const videoTransport = createYoutubeVideoTransport({
+      onEnded: (endedId) => {
+        void usePlayerStore.getState().playNextFromQueue(endedId);
+      },
+      audienceActive: () => get().localAudienceOutputActive,
+      onTime: (positionMs, durationMs) => {
+        const snapshot = get().snapshot;
+        if (!snapshot?.song_id || !isVideoSourceQueueId(snapshot.song_id)) {
+          return;
+        }
+        sessionRef.applyPosition({
+          ms: positionMs,
+          transport_generation: snapshot.transport_generation,
+          snapshot: {
+            ...snapshot,
+            position_ms: positionMs,
+            duration_ms: durationMs,
+            buffered_ms: durationMs ?? snapshot.buffered_ms,
+          },
+        });
+      },
+    });
+
     const session = createPlaybackSession({
       transport: sessionTransport,
+      videoTransport,
+      stopLocalAndCancelPreload: async () => {
+        await backend.playback.setPreloadCandidate(null);
+        try {
+          await backend.playback.pause();
+        } catch {
+          // idle local transport is fine
+        }
+      },
       queue: {
         addToQueue: (id) => useQueueStore.getState().addToQueue(id),
         dequeue: () => useQueueStore.getState().dequeue() ?? null,
@@ -338,6 +372,7 @@ export function createPlayerStore(
 
       updateLocalAudienceOutputActive: (active) => {
         syncPatch({ localAudienceOutputActive: active });
+        void videoTransport.relayout?.();
       },
 
       startAirPlayPlainTextPagePending: (direction, lockMs) => {

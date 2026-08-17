@@ -108,7 +108,8 @@
       "title": "Alle nummers upgraden naar 4 sporen",
       "message": "Hiermee worden alle nummers opnieuw gescheiden met de 4-sporenmodus. Het schijfruimtegebruik voor sporen wordt ongeveer verdubbeld.",
       "confirm": "Alles upgraden"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Importeren",
@@ -189,7 +190,18 @@
     },
     "modelPreparing": "Scheidingsmodel voorbereiden…",
     "cancelSeparation": "Scheiding annuleren",
-    "usingCachedSeparation": "Scheiding uit cache gebruiken"
+    "usingCachedSeparation": "Scheiding uit cache gebruiken",
+    "revealSongFile": "Reveal Song File",
+    "revealStems": "Reveal Stems",
+    "decision": {
+      "title": "Library Decision",
+      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
+      "keep": "Keep Library Song",
+      "replace": "Replace Library Song",
+      "applyToRemaining": "Apply to Remaining",
+      "librarySong": "Library song",
+      "incoming": "Incoming file"
+    }
   },
   "player": {
     "previous": "Vorige",
@@ -745,7 +757,10 @@
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",
     "remote_repository_unavailable": "Externe opslagplaats niet beschikbaar",
-    "somethingWentWrong": "Er is iets misgegaan"
+    "somethingWentWrong": "Er is iets misgegaan",
+    "onlineSourceDisabled": "This Online Source is off.",
+    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
+    "videoSourceUnavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "Versie {{version}} is beschikbaar",
@@ -755,5 +770,45 @@
     "restartToApply": "Update klaar — start opnieuw op om toe te passen",
     "restart": "Opnieuw opstarten",
     "failed": "Update mislukt — download de nieuwste release handmatig"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "qr": "Sign in with QR",
+      "phone": "Phone and password",
+      "email": "Email and password",
+      "password": "Password",
+      "phoneNumber": "Phone number",
+      "countryCode": "Country code",
+      "signedInAs": "Signed in as {{name}}",
+      "sessionExpired": "This session expired. Sign in again.",
+      "liked": "Liked tracks",
+      "playlists": "Streaming Playlists",
+      "search": "Search",
+      "searchPlaceholder": "Search NetEase",
+      "importTrack": "Import track",
+      "importPlaylist": "Import Streaming Playlist",
+      "importRefusal": "Import Refusal",
+      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
+      "scanned": "Scanned. Confirm on your phone.",
+      "qrExpired": "This QR code expired. Get a new one.",
+      "loginWithPhone": "Use phone",
+      "loginWithEmail": "Use email",
+      "loginWithQr": "Use QR code",
+      "passwordNotice": "OpenKara sends the password once and does not store it.",
+      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
+      "refreshQr": "Get a new QR code"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Paste a YouTube link",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Add to Queue",
+    "invalidUrl": "That is not a public YouTube watch or playlist link.",
+    "ageRestricted": "This video is age-restricted.",
+    "private": "This video is private.",
+    "unlisted": "This video is unlisted."
   }
 }

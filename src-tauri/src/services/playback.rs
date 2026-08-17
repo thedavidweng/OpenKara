@@ -170,6 +170,7 @@ mod tests {
             },
             separation: SeparationState::new(),
             remote: RemoteState::test_fixture(),
+            catalog: crate::state::CatalogState::test_fixture(),
             shell: AppShell::new(
                 Arc::new(Mutex::new(None)),
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))

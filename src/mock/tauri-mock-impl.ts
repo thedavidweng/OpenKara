@@ -783,13 +783,99 @@ export function createTauriMock(data: any): TauriMockResult {
         id: "youtube",
         kind: "video",
         enabled: !!settingsSnapshot.youtube_source_enabled,
+        capabilities: {
+          sign_in: false,
+          browse: false,
+          import: false,
+          resolve_video: !!settingsSnapshot.youtube_source_enabled,
+        },
       },
       {
         id: "netease",
         kind: "streaming",
         enabled: !!settingsSnapshot.netease_source_enabled,
+        capabilities: {
+          sign_in: !!settingsSnapshot.netease_source_enabled,
+          browse: !!settingsSnapshot.netease_source_enabled,
+          import: !!settingsSnapshot.netease_source_enabled,
+          resolve_video: false,
+        },
       },
     ],
+    get_streaming_session: () => ({
+      source_id: "netease",
+      signed_in: false,
+      display_name: null,
+      expired: false,
+    }),
+    start_streaming_qr_signin: () => ({
+      key: "mock-qr",
+      login_url: "https://music.163.com/login?codekey=mock-qr",
+      qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    }),
+    poll_streaming_qr_signin: () => ({
+      status: "waiting",
+      session: null,
+    }),
+    sign_in_streaming_source: (args: { identifier?: string }) => ({
+      source_id: "netease",
+      signed_in: true,
+      display_name: args.identifier ?? "User",
+      expired: false,
+    }),
+    sign_out_streaming_source: () => ({
+      source_id: "netease",
+      signed_in: false,
+      display_name: null,
+      expired: false,
+    }),
+    list_streaming_liked_tracks: () => [],
+    list_streaming_playlists: () => [],
+    get_streaming_playlist: (args: { remote_playlist_id: string }) => ({
+      remote_id: args.remote_playlist_id,
+      name: "Streaming Playlist",
+      tracks: [],
+    }),
+    search_streaming_source: () => [],
+    start_streaming_import: () => ({
+      status: "completed",
+      imported_song_ids: [],
+      failed: [],
+      playlist_id: null,
+      conflict: null,
+    }),
+    continue_streaming_import: () => ({
+      status: "completed",
+      imported_song_ids: [],
+      failed: [],
+      playlist_id: null,
+      conflict: null,
+    }),
+    resolve_video_source_url: (args: { url: string }) => {
+      if (String(args.url).includes("/player")) {
+        throw new Error("YouTube /player stream URLs are not used");
+      }
+      return [];
+    },
+    control_youtube_watch: (args: {
+      action?: { type?: string; url?: string };
+    }) => {
+      const url = args.action?.url;
+      if (url?.includes("/player")) {
+        throw new Error("YouTube /player stream URLs are not used");
+      }
+      return {
+        ended: false,
+        paused: args.action?.type !== "play",
+        current_time_ms: 0,
+        duration_ms: null,
+      };
+    },
+    get_reveal_targets: () => ({
+      song_file: { available: false, path: null },
+      stems: { available: false, path: null },
+    }),
+    reveal_in_folder: () => {},
     set_online_source_enabled: (args: any) => {
       const sourceId = args && args.source_id;
       const enabled = !!(args && args.enabled);
