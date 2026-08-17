@@ -3267,7 +3267,6 @@ dependencies = [
  "biquad",
  "cbc",
  "cc",
- "cipher",
  "cpal",
  "filetime",
  "flate2",

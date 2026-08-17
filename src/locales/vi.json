@@ -191,16 +191,16 @@
     "cancelSeparation": "Hủy tách",
     "usingCachedSeparation": "Đang dùng kết quả tách đã lưu",
     "confirmDeleteTitle_one": "Delete {{count}} Track",
-    "revealSongFile": "Reveal Song File",
-    "revealStems": "Reveal Stems",
+    "revealSongFile": "Hiện tệp bài hát",
+    "revealStems": "Mở thư mục stem",
     "decision": {
-      "title": "Library Decision",
-      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
-      "keep": "Keep Library Song",
-      "replace": "Replace Library Song",
-      "applyToRemaining": "Apply to Remaining",
-      "librarySong": "Library song",
-      "incoming": "Incoming file"
+      "title": "Quyết định thư viện",
+      "importConflict": "Bài này đã có trong thư viện nhưng tệp khác. Giữ bài trong thư viện hoặc thay thế.",
+      "keep": "Giữ bài trong thư viện",
+      "replace": "Thay bài trong thư viện",
+      "applyToRemaining": "Áp dụng cho các xung đột còn lại",
+      "librarySong": "Bài trong thư viện",
+      "incoming": "Tệp đang nhập"
     }
   },
   "player": {
@@ -690,12 +690,12 @@
       "description": "Làm mềm các dòng trước và sau. Hãy tắt nếu cần đọc trước khi hát."
     },
     "onlineSources": {
-      "label": "Online Sources",
-      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "label": "Nguồn trực tuyến",
+      "description": "Bật nguồn nhạc hoặc video. Cả hai đều tắt cho đến khi bạn chọn.",
       "youtube": "YouTube",
-      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube.",
       "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+      "neteaseDescription": "Đăng nhập để duyệt và nhập các bài bạn có thể phát. OpenKara sẽ quản lý các tệp đã nhập."
     }
   },
   "bootstrap": {
@@ -758,9 +758,9 @@
     "internal": "Lỗi nội bộ",
     "remote_repository_unavailable": "Kho lưu trữ từ xa không khả dụng",
     "somethingWentWrong": "Đã xảy ra lỗi",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "Nguồn trực tuyến này đang tắt.",
+    "streaming_session_expired": "Phiên nguồn streaming đã hết hạn. Đăng nhập lại.",
+    "video_source_unavailable": "Không thể phát video này với tư cách khách."
   },
   "updater": {
     "available": "Đã có phiên bản {{version}}",
@@ -774,41 +774,41 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Sign in",
-      "signOut": "Sign out",
-      "qr": "Sign in with QR",
-      "phone": "Phone and password",
-      "email": "Email and password",
-      "password": "Password",
-      "phoneNumber": "Phone number",
-      "countryCode": "Country code",
-      "signedInAs": "Signed in as {{name}}",
-      "sessionExpired": "This session expired. Sign in again.",
-      "liked": "Liked tracks",
-      "playlists": "Streaming Playlists",
-      "search": "Search",
-      "searchPlaceholder": "Search NetEase",
-      "importTrack": "Import track",
-      "importPlaylist": "Import Streaming Playlist",
-      "importRefusal": "Import Refusal",
-      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
-      "scanned": "Scanned. Confirm on your phone.",
-      "qrExpired": "This QR code expired. Get a new one.",
-      "loginWithPhone": "Use phone",
-      "loginWithEmail": "Use email",
-      "loginWithQr": "Use QR code",
-      "passwordNotice": "OpenKara sends the password once and does not store it.",
-      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
-      "refreshQr": "Get a new QR code"
+      "signIn": "Đăng nhập",
+      "signOut": "Đăng xuất",
+      "qr": "Đăng nhập bằng QR",
+      "phone": "Điện thoại và mật khẩu",
+      "email": "Email và mật khẩu",
+      "password": "Mật khẩu",
+      "phoneNumber": "Số điện thoại",
+      "countryCode": "Mã quốc gia",
+      "signedInAs": "Đã đăng nhập là {{name}}",
+      "sessionExpired": "Phiên đã hết hạn. Đăng nhập lại.",
+      "liked": "Bài đã thích",
+      "playlists": "Danh sách phát streaming",
+      "search": "Tìm",
+      "searchPlaceholder": "Tìm trên NetEase",
+      "importTrack": "Nhập bài này",
+      "importPlaylist": "Nhập danh sách phát streaming",
+      "importRefusal": "Từ chối nhập",
+      "waitingForScan": "Quét mã QR này bằng ứng dụng NetEase.",
+      "scanned": "Đã quét. Xác nhận trên điện thoại.",
+      "qrExpired": "Mã QR này đã hết hạn. Lấy mã mới.",
+      "loginWithPhone": "Đăng nhập bằng điện thoại",
+      "loginWithEmail": "Đăng nhập bằng email",
+      "loginWithQr": "Đăng nhập bằng QR",
+      "passwordNotice": "OpenKara gửi mật khẩu một lần và không lưu.",
+      "qrHint": "Mở ứng dụng NetEase Cloud Music và quét mã này.",
+      "refreshQr": "Lấy mã QR mới"
     }
   },
   "youtube": {
-    "pasteLink": "Paste a YouTube link",
+    "pasteLink": "Dán liên kết YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
-    "addToQueue": "Add to Queue",
-    "invalidUrl": "That is not a public YouTube watch or playlist link.",
-    "ageRestricted": "This video is age-restricted.",
-    "private": "This video is private.",
-    "unlisted": "This video is unlisted."
+    "addToQueue": "Thêm vào hàng đợi",
+    "invalidUrl": "Đó không phải liên kết xem hoặc danh sách phát YouTube công khai.",
+    "ageRestricted": "Video này bị giới hạn độ tuổi.",
+    "private": "Video này ở chế độ riêng tư.",
+    "unlisted": "Video này không được liệt kê."
   }
 }
