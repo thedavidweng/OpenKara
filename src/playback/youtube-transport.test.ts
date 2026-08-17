@@ -189,6 +189,73 @@ describe("youtube watch host", () => {
     expect(controls).toContain("query");
     expect(controls).toContain("close");
   });
+
+  test("tauri host retries play, reports time, and relayouts the same watch URL", async () => {
+    const times: number[] = [];
+    let created = false;
+    const surface: YoutubeWatchNativeSurface = {
+      async getByLabel(label) {
+        if (label !== "youtube-watch" || !created) {
+          return null;
+        }
+        return {
+          reparent: async () => {},
+          setPosition: async () => {},
+          setSize: async () => {},
+          close: async () => {},
+        };
+      },
+      async create() {
+        created = true;
+      },
+      async currentWindowLabel() {
+        return "main";
+      },
+      async audienceFillBounds() {
+        return { x: 0, y: 0, width: 800, height: 450 };
+      },
+      async control(action) {
+        if (action.type === "query" || action.type === "play") {
+          return {
+            ended: false,
+            paused: false,
+            current_time_ms: 1200,
+            duration_ms: 10_000,
+          };
+        }
+        return {
+          ended: false,
+          paused: true,
+          current_time_ms: 0,
+          duration_ms: null,
+        };
+      },
+      async listenBounds() {
+        return () => {};
+      },
+    };
+    const host = createTauriYoutubeWatchHost({
+      surface,
+      audienceActive: () => true,
+      onTime: (positionMs) => {
+        times.push(positionMs);
+      },
+    });
+    await host.load("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    await host.play();
+    await host.relayout();
+    await host.seek(500);
+    await host.setVolume(0.2);
+    await host.pause();
+    expect(times[0]).toBe(1200);
+    expect(
+      resolveYoutubeWatchAttachTarget({
+        audienceActive: true,
+        localWindowLabel: "fullscreen-player",
+        localBounds: { x: 1, y: 2, width: 3, height: 4 },
+      })?.windowLabel,
+    ).toBe("fullscreen-player");
+  });
 });
 
 describe("youtube session wiring", () => {
