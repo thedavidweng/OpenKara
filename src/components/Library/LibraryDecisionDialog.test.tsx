@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LibraryDecisionDialog } from "./LibraryDecisionDialog";
 
 const mockResolve = vi.fn();
+let currentPending: typeof pending | null = null;
 const pending = {
   remote_track_id: "1",
   library: {
@@ -57,7 +58,7 @@ vi.mock("@/stores/catalog-store", () => ({
     }) => unknown,
   ) =>
     selector({
-      pendingConflict: pending,
+      pendingConflict: currentPending,
       resolveConflict: mockResolve,
     }),
 }));
@@ -76,6 +77,15 @@ describe("LibraryDecisionDialog", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     mockResolve.mockReset();
+    currentPending = pending;
+  });
+
+  test("renders nothing when there is no pending Library Decision", async () => {
+    currentPending = null;
+    await act(async () => {
+      root.render(<LibraryDecisionDialog />);
+    });
+    expect(container.querySelector("[role='dialog']")).toBeNull();
   });
 
   afterEach(() => {
