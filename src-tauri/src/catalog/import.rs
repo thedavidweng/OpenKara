@@ -143,7 +143,7 @@ pub fn advance_import_session<S: StreamingSource>(
             ItemOutcome::Continue => {}
             ItemOutcome::Pause(paused) => {
                 let prompt = paused.prompt.clone();
-                session.paused = Some(paused);
+                session.paused = Some(*paused);
                 return Ok(progress_of(
                     session,
                     StreamingImportStatus::AwaitingDecision,
@@ -158,7 +158,7 @@ pub fn advance_import_session<S: StreamingSource>(
 
 enum ItemOutcome {
     Continue,
-    Pause(PausedConflict),
+    Pause(Box<PausedConflict>),
 }
 
 enum Decision {
@@ -243,12 +243,12 @@ fn process_item<S: StreamingSource>(
                             &file.album,
                         )?,
                     };
-                    return Ok(ItemOutcome::Pause(PausedConflict {
+                    return Ok(ItemOutcome::Pause(Box::new(PausedConflict {
                         item,
                         incoming_path: file.path,
                         identity,
                         prompt,
-                    }));
+                    })));
                 }
             }
 

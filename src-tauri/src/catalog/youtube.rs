@@ -180,7 +180,7 @@ fn items_from_playlist_html(html: &str) -> Vec<VideoQueueItem> {
     items
 }
 
-fn extract_between<'a>(haystack: &'a str, start: &str, end: &str) -> Option<String> {
+fn extract_between(haystack: &str, start: &str, end: &str) -> Option<String> {
     let from = haystack.find(start)? + start.len();
     let tail = haystack.get(from..)?;
     let to = tail.find(end)?;
