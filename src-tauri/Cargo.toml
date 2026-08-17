@@ -45,7 +45,7 @@ tauri-build = { version = "2.6.0", features = [] }
 anyhow = "1.0.104"
 biquad = "0.6"
 thiserror = "2"
-audioadapter-buffers = "4.0.0"
+audioadapter-buffers = "5.1.0"
 base64 = "0.23.0"
 cpal = "0.18.1"
 libc = "0.2.186"
