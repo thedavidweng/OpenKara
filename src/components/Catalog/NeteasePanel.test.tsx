@@ -424,4 +424,58 @@ describe("NeteasePanel sign-in", () => {
     );
     expect(mockState.startQr).toHaveBeenCalled();
   });
+
+  test("QR poll interval fires and phone country code is stripped", async () => {
+    vi.useFakeTimers();
+    mockState.qr = qrChallenge;
+    mockState.qrStatus = "waiting";
+    await act(async () => {
+      root.render(<NeteasePanel />);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(mockState.pollQr).toHaveBeenCalled();
+    vi.useRealTimers();
+
+    mockState.qr = null;
+    await act(async () => {
+      root.render(<NeteasePanel />);
+    });
+    await user.click(
+      container.querySelector("[data-testid='netease-use-phone']")!,
+    );
+    await user.click(
+      container.querySelector("[data-testid='netease-use-qr']")!,
+    );
+    expect(mockState.startQr).toHaveBeenCalled();
+
+    await user.click(
+      container.querySelector("[data-testid='netease-use-phone']")!,
+    );
+    const country = container.querySelector(
+      "#netease-country-code",
+    ) as HTMLInputElement;
+    await user.clear(country);
+    await user.type(country, "+1");
+    await user.type(
+      container.querySelector("#netease-phone-number") as HTMLInputElement,
+      "5551234567",
+    );
+    await user.type(
+      container.querySelector("#netease-phone-password") as HTMLInputElement,
+      "secret",
+    );
+    await user.click(
+      container.querySelector(
+        "[data-testid='netease-phone-form'] button[type='submit']",
+      )!,
+    );
+    expect(mockState.signInPassword).toHaveBeenCalledWith(
+      "phone",
+      "5551234567",
+      "secret",
+      "1",
+    );
+  });
 });
