@@ -151,14 +151,14 @@ pub async fn control_youtube_watch(
     let payload = rx
         .await
         .map_err(|_| internal_error("YouTube watch page did not answer"))?;
-    serde_json::from_str(&payload).or_else(|_| {
-        Ok(YoutubeWatchMediaState {
+    Ok(
+        serde_json::from_str(&payload).unwrap_or(YoutubeWatchMediaState {
             ended: false,
             paused: true,
             current_time_ms: 0,
             duration_ms: None,
-        })
-    })
+        }),
+    )
 }
 
 #[cfg(test)]

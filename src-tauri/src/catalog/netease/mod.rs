@@ -14,7 +14,9 @@ use crate::catalog::credentials;
 use qrcode::render::svg;
 use qrcode::QrCode;
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
