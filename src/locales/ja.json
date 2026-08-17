@@ -108,7 +108,8 @@
       "title": "すべての楽曲を4ステムにアップグレード",
       "message": "すべての楽曲を4ステムモードで再分離します。ステムのディスク使用量は約2倍になります。",
       "confirm": "すべてアップグレード"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "インポート",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "分離モデルを準備しています…",
     "cancelSeparation": "分離をキャンセル",
-    "usingCachedSeparation": "キャッシュされた分離結果を使用"
+    "usingCachedSeparation": "キャッシュされた分離結果を使用",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "Reveal Song File",
+    "revealStems": "Reveal Stems",
+    "decision": {
+      "title": "Library Decision",
+      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
+      "keep": "Keep Library Song",
+      "replace": "Replace Library Song",
+      "applyToRemaining": "Apply to Remaining",
+      "librarySong": "Library song",
+      "incoming": "Incoming file"
+    }
   },
   "player": {
     "previous": "前へ",
@@ -744,7 +757,10 @@
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
     "remote_repository_unavailable": "リモートリポジトリを利用できません",
-    "somethingWentWrong": "問題が発生しました"
+    "somethingWentWrong": "問題が発生しました",
+    "onlineSourceDisabled": "This Online Source is off.",
+    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
+    "videoSourceUnavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "バージョン {{version}} が利用可能です",
@@ -754,5 +770,45 @@
     "restartToApply": "更新の準備ができました — 再起動して適用してください",
     "restart": "再起動",
     "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "qr": "Sign in with QR",
+      "phone": "Phone and password",
+      "email": "Email and password",
+      "password": "Password",
+      "phoneNumber": "Phone number",
+      "countryCode": "Country code",
+      "signedInAs": "Signed in as {{name}}",
+      "sessionExpired": "This session expired. Sign in again.",
+      "liked": "Liked tracks",
+      "playlists": "Streaming Playlists",
+      "search": "Search",
+      "searchPlaceholder": "Search NetEase",
+      "importTrack": "Import track",
+      "importPlaylist": "Import Streaming Playlist",
+      "importRefusal": "Import Refusal",
+      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
+      "scanned": "Scanned. Confirm on your phone.",
+      "qrExpired": "QRコードの期限が切れました。新しいコードを取得してください。",
+      "loginWithPhone": "電話番号でログイン",
+      "loginWithEmail": "メールでログイン",
+      "loginWithQr": "QRコードでログイン",
+      "passwordNotice": "OpenKara はパスワードを一度だけ送信し、保存しません。",
+      "qrHint": "NetEase Cloud Music アプリでこのコードをスキャンしてください。",
+      "refreshQr": "新しいQRコードを取得"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Paste a YouTube link",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Add to Queue",
+    "invalidUrl": "That is not a public YouTube watch or playlist link.",
+    "ageRestricted": "This video is age-restricted.",
+    "private": "This video is private.",
+    "unlisted": "This video is unlisted."
   }
 }

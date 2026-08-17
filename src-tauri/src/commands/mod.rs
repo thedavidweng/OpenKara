@@ -1,6 +1,7 @@
 pub mod airplay;
 pub mod batch_separation;
 pub mod bootstrap;
+pub mod catalog;
 pub mod cdg;
 pub mod diagnostics;
 pub mod error;
@@ -17,6 +18,7 @@ pub mod runtime_worker;
 pub mod self_update;
 pub mod separation;
 pub mod settings;
+pub mod youtube_watch;
 
 pub use bootstrap::get_model_bootstrap_status;
 pub use cdg::{get_cdg_frame, get_cdg_status};

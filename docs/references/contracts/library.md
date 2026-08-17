@@ -45,6 +45,14 @@
 36. `rename_library(library_id: String, display_name: String) -> LibraryRegistrySnapshot` — 重命名资料库显示名
 37. `delete_library(library_id: String) -> LibraryRegistrySnapshot` — 永久删除资料库（本地删除文件，远程删除 provider 内容）
 
+**Online Sources / Streaming Import (issue #418):**
+
+38. `streaming_track_identities` maps Streaming Track Identity `(source, remote_track_id)` to `songs.hash`. It does not replace `songs.hash` as the file primary key.
+39. `playlist_origin_stamps` maps `(source, remote_playlist_id)` to one Playlist. A later Streaming Import of the same Streaming Playlist updates that Playlist and does not create a duplicate.
+40. `get_reveal_targets(song_id: String) -> RevealTargets` — see [catalog.md](./catalog.md)
+41. `reveal_in_folder(path: String) -> ()` — see [catalog.md](./catalog.md)
+42. Library Decision for Import Conflict and CDG pairing share one prompt surface. Import Conflict actions are Keep, Replace, Apply to Remaining, and cancel. The prompt never includes the file hash.
+
 ## Inputs / outputs / required dependencies
 
 ### Command: `import_songs`

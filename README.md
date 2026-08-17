@@ -363,6 +363,8 @@ Contributions are welcome! Please open an issue before starting major changes so
 - [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration reference
 - [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) — Community-maintained word-by-word lyrics database (CC0)
 - [AMLL (Apple Music-like Lyrics)](https://github.com/amll-dev/applemusic-like-lyrics) — Lyrics rendering techniques (karaoke fill, spring physics, glow effects)
+- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) — NetEase Cloud Music sign-in, cookie session, and China Client Address
+- [Kaset](https://github.com/sozercan/kaset) — Public YouTube watch-page WebView playback without guest `/player` stream URLs
 
 ## License
 

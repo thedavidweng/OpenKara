@@ -48,6 +48,12 @@ vi.mock("@/stores/library-store", () => ({
     selector(mockLibraryState),
 }));
 
+vi.mock("@/stores/catalog-store", () => ({
+  useCatalogStore: (
+    selector: (state: { videoItems: Record<string, never> }) => unknown,
+  ) => selector({ videoItems: {} }),
+}));
+
 describe("NowPlayingInfo", () => {
   test("renders cover art alongside the current song metadata", () => {
     vi.stubGlobal("URL", {

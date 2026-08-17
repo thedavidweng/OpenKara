@@ -17,6 +17,8 @@ import {
   batchSeparationInProgress,
   batchSeparationLabelArgs,
 } from "@/lib/task-progress";
+import { NeteasePanel } from "@/components/Catalog/NeteasePanel";
+import { useCatalogStore } from "@/stores/catalog-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -43,6 +45,9 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const hideBatchSeparate = useSettingsStore((s) => s.hideBatchSeparate);
   const hideUpgradeAll = useSettingsStore((s) => s.hideUpgradeAll);
   const stemMode = useSettingsStore((s) => s.stemMode);
+  const neteaseSourceEnabled = useSettingsStore((s) => s.neteaseSourceEnabled);
+  const catalogView = useCatalogStore((s) => s.activeView);
+  const setCatalogView = useCatalogStore((s) => s.setActiveView);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
 
@@ -149,6 +154,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
             onClick={() => {
               setFilter("all");
               setActivePlaylist(null);
+              setCatalogView("library");
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
               filter === "all" && !activePlaylistId
@@ -175,6 +181,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
             onClick={() => {
               setFilter("separated");
               setActivePlaylist(null);
+              setCatalogView("library");
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
               filter === "separated" && !activePlaylistId
@@ -190,6 +197,26 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               {separatedCount}
             </span>
           </button>
+          {neteaseSourceEnabled ? (
+            <button
+              type="button"
+              aria-label={t("sidebar.netease")}
+              onClick={() => {
+                setCatalogView("netease");
+                setActivePlaylist(null);
+              }}
+              className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
+                catalogView === "netease"
+                  ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
+                  : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ListMusic size={14} className="text-[var(--color-accent)]" />
+                <span>{t("sidebar.netease")}</span>
+              </span>
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -217,7 +244,10 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
             {playlists.map((playlist) => (
               <button
                 key={playlist.id}
-                onClick={() => setActivePlaylist(playlist.id)}
+                onClick={() => {
+                  setCatalogView("library");
+                  setActivePlaylist(playlist.id);
+                }}
                 data-preview-playlist-switch={previewMode ? "true" : undefined}
                 aria-current={
                   activePlaylistId === playlist.id ? "page" : undefined
@@ -244,7 +274,14 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         )}
       </div>
 
-      {!activePlaylistId && (
+      {!activePlaylistId &&
+      catalogView === "netease" &&
+      neteaseSourceEnabled ? (
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden">
+          <NeteasePanel />
+        </div>
+      ) : null}
+      {!activePlaylistId && catalogView !== "netease" && (
         <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">

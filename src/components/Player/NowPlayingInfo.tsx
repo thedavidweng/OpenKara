@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { useCatalogStore } from "@/stores/catalog-store";
 import type { PlaybackBarDensity } from "./playback-bar-layout";
 
 interface NowPlayingInfoProps {
@@ -17,6 +18,7 @@ export function NowPlayingInfo({
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
   const songs = useLibraryStore((s) => s.songs);
+  const videoItems = useCatalogStore((s) => s.videoItems);
 
   if (!snapshot?.song_id) {
     return (
@@ -29,8 +31,9 @@ export function NowPlayingInfo({
   }
 
   const song = songs.find((s) => s.hash === snapshot.song_id);
-  const title = song?.title || t("common.unknownTitle");
-  const artist = song?.artist || t("common.unknownArtist");
+  const video = videoItems[snapshot.song_id];
+  const title = song?.title || video?.title || t("common.unknownTitle");
+  const artist = song?.artist || video?.channel || t("common.unknownArtist");
   const hideArtist = density === "tight";
   const showCoverArt = !hideCoverArt && (song?.has_cover_art ?? false);
 

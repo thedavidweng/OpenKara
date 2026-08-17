@@ -34,7 +34,12 @@ async function buildMenuItems(
     } else {
       const mi = await MenuItem.new({
         text: item.label,
-        action: () => item.onClick?.(),
+        enabled: !item.disabled,
+        action: () => {
+          if (!item.disabled) {
+            item.onClick?.();
+          }
+        },
       });
       if (item.indicator === "checked") {
       }

@@ -81,6 +81,28 @@ describe("buildSongListContextMenuItems", () => {
       expect(labels).toContain("library.extractEmbeddedCoverArt");
     });
 
+    test("includes reveal actions and disables missing targets", () => {
+      const items = buildSongListContextMenuItems(
+        makeDefaults({
+          revealSongFileAvailable: true,
+          revealStemsAvailable: false,
+        }),
+      );
+      const file = findItem(items, "library.revealSongFile");
+      const stems = findItem(items, "library.revealStems");
+      expect(file?.disabled).toBe(false);
+      expect(stems?.disabled).toBe(true);
+    });
+
+    test("hides reveal actions on a Video Source queue item", () => {
+      const items = buildSongListContextMenuItems(
+        makeDefaults({ isVideoSourceItem: true }),
+      );
+      const labels = items.map((i) => i.label);
+      expect(labels).not.toContain("library.revealSongFile");
+      expect(labels).not.toContain("library.revealStems");
+    });
+
     test("does NOT include extractEmbeddedLyrics when supportsEmbeddedLyrics is false", () => {
       const items = buildSongListContextMenuItems(
         makeDefaults({ supportsEmbeddedLyrics: false }),
