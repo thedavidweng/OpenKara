@@ -44,7 +44,6 @@ tauri-build = { version = "2.6.0", features = [] }
 [dependencies]
 aes = "0.8"
 cbc = "0.1"
-cipher = "0.4"
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"

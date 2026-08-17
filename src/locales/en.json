@@ -798,9 +798,9 @@
     "internal": "Internal Error",
     "remote_repository_unavailable": "Remote Repository Unavailable",
     "somethingWentWrong": "Something went wrong",
-    "onlineSourceDisabled": "This Online Source is off.",
-    "streamingSessionExpired": "The Streaming Source session expired. Sign in again.",
-    "videoSourceUnavailable": "This video cannot play as a guest."
+    "online_source_disabled": "This Online Source is off.",
+    "streaming_session_expired": "The Streaming Source session expired. Sign in again.",
+    "video_source_unavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "Version {{version}} is available",
