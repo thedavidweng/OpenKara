@@ -194,6 +194,13 @@ describe("NeteasePanel sign-in", () => {
       "#netease-phone-password",
     );
     expect(phonePassword?.type).toBe("password");
+    expect(
+      container.querySelector('label[for="netease-country-code"]')?.textContent,
+    ).toBe("catalog.netease.countryCode");
+    expect(
+      container.querySelector('label[for="netease-phone-number"]')?.textContent,
+    ).toBe("catalog.netease.phoneNumber");
+    expect(container.querySelector("#netease-phone-number")).not.toBeNull();
     expect(container.textContent).toContain("catalog.netease.passwordNotice");
 
     await user.click(
