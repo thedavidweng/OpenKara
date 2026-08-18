@@ -5,7 +5,9 @@ import { useCatalogStore } from "@/stores/catalog-store";
 export type NeteaseSignInMode = "qr" | "phone" | "email";
 
 const inputClassName =
-  "w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-[var(--color-text)]";
+  "min-w-0 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-[var(--color-text)]";
+
+const labelClassName = "block text-[11px] text-[var(--color-text-dim)]";
 
 const buttonClassName =
   "rounded-md border border-[var(--color-border-light)] px-3 py-1.5 text-[12px] text-[var(--color-text)]";
@@ -102,7 +104,7 @@ export function NeteaseSignIn() {
         <div className="flex flex-col items-center gap-2">
           {qr ? (
             <div
-              className="flex h-[188px] w-[188px] items-center justify-center rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-2 text-[var(--color-text)]"
+              className="flex aspect-square w-full max-w-[188px] items-center justify-center rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-2 text-[var(--color-text)]"
               role="img"
               aria-label={t("catalog.netease.qr")}
               data-testid="netease-qr"
@@ -111,7 +113,7 @@ export function NeteaseSignIn() {
             />
           ) : (
             <div
-              className="flex h-[188px] w-[188px] items-center justify-center rounded-lg border border-dashed border-[var(--color-border-light)] text-[12px] text-[var(--color-text-dim)]"
+              className="flex aspect-square w-full max-w-[188px] items-center justify-center rounded-lg border border-dashed border-[var(--color-border-light)] text-[12px] text-[var(--color-text-dim)]"
               data-testid="netease-qr-loading"
             >
               {t("common.loading")}
@@ -146,8 +148,8 @@ export function NeteaseSignIn() {
             void submitPassword("phone");
           }}
         >
-          <div className="flex gap-2">
-            <label className="sr-only" htmlFor="netease-country-code">
+          <div className="space-y-1">
+            <label className={labelClassName} htmlFor="netease-country-code">
               {t("catalog.netease.countryCode")}
             </label>
             <input
@@ -156,9 +158,11 @@ export function NeteaseSignIn() {
               onChange={(event) => setCountryCode(event.target.value)}
               inputMode="tel"
               autoComplete="tel-country-code"
-              className={`${inputClassName} w-[72px] shrink-0`}
+              className={inputClassName}
             />
-            <label className="sr-only" htmlFor="netease-phone-number">
+          </div>
+          <div className="space-y-1">
+            <label className={labelClassName} htmlFor="netease-phone-number">
               {t("catalog.netease.phoneNumber")}
             </label>
             <input
@@ -171,18 +175,20 @@ export function NeteaseSignIn() {
               className={inputClassName}
             />
           </div>
-          <label className="sr-only" htmlFor="netease-phone-password">
-            {t("catalog.netease.password")}
-          </label>
-          <input
-            id="netease-phone-password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            placeholder={t("catalog.netease.password")}
-            className={inputClassName}
-          />
+          <div className="space-y-1">
+            <label className={labelClassName} htmlFor="netease-phone-password">
+              {t("catalog.netease.password")}
+            </label>
+            <input
+              id="netease-phone-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              placeholder={t("catalog.netease.password")}
+              className={inputClassName}
+            />
+          </div>
           <button
             type="submit"
             className={buttonClassName}
@@ -202,30 +208,34 @@ export function NeteaseSignIn() {
             void submitPassword("email");
           }}
         >
-          <label className="sr-only" htmlFor="netease-email">
-            {t("catalog.netease.email")}
-          </label>
-          <input
-            id="netease-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            autoComplete="username"
-            placeholder={t("catalog.netease.email")}
-            className={inputClassName}
-          />
-          <label className="sr-only" htmlFor="netease-email-password">
-            {t("catalog.netease.password")}
-          </label>
-          <input
-            id="netease-email-password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            placeholder={t("catalog.netease.password")}
-            className={inputClassName}
-          />
+          <div className="space-y-1">
+            <label className={labelClassName} htmlFor="netease-email">
+              {t("catalog.netease.email")}
+            </label>
+            <input
+              id="netease-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="username"
+              placeholder={t("catalog.netease.email")}
+              className={inputClassName}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className={labelClassName} htmlFor="netease-email-password">
+              {t("catalog.netease.password")}
+            </label>
+            <input
+              id="netease-email-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              placeholder={t("catalog.netease.password")}
+              className={inputClassName}
+            />
+          </div>
           <button
             type="submit"
             className={buttonClassName}
