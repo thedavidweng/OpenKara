@@ -516,7 +516,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.triage.outputs.run_workflow-lint == 'true'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     permissions:
