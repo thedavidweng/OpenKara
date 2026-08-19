@@ -16,7 +16,7 @@ concurrency:
 jobs:
   mirror:
     name: Mirror
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
 
     steps:
