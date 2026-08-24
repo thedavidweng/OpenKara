@@ -98,10 +98,8 @@ fn decode_peaks(blob: &[u8], buckets: usize) -> Option<Vec<f32>> {
     }
 
     let mut peaks = Vec::with_capacity(buckets);
-    for chunk in blob.chunks_exact(std::mem::size_of::<f32>()) {
-        let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(chunk);
-        let value = f32::from_le_bytes(bytes);
+    for chunk in blob.as_chunks::<{ std::mem::size_of::<f32>() }>().0 {
+        let value = f32::from_le_bytes(*chunk);
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return None;
         }
