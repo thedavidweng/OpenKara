@@ -152,6 +152,7 @@ const CATEGORY_PATTERNS = {
   ],
 
   other_workflow: [
+    ".github/workflows/dependabot-automerge.yml",
     ".github/workflows/dependabot-sync.yml",
     ".github/workflows/mirror.yml",
     ".github/workflows/pages.yml",

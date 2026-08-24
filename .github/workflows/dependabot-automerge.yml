@@ -1,0 +1,78 @@
+name: Dependabot auto-merge
+
+# Enables GitHub auto-merge on Dependabot PRs that only contain semver
+# minor/patch updates outside the native denylist. The merge itself still
+# waits for the required "CI Gate" check, so a red CI blocks the merge.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    name: Enable auto-merge for eligible updates
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'thedavidweng/OpenKara'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # enable auto-merge on the pull request
+      pull-requests: write # inspect PR auto-merge state
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Evaluate eligibility
+        id: eligibility
+        env:
+          UPDATES_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
+          # Semver-compatible bumps in this set ride native libraries or the
+          # windowing shell whose runtime behavior ci.yml cannot fully observe
+          # (installed-app smoke runs outside the gate), so their minors need
+          # human review even though they are semver-compatible.
+          DENYLIST: "^(ort|ort-sys|tauri|tauri-build|wry|tao|muda|tray-icon|cpal|rubato|audioadapter)"
+        run: |
+          set -euo pipefail
+          updates="${UPDATES_JSON:-[]}"
+          echo "$updates" | jq -r '.[] | "- \(.name): \(.["update-type"] // "unknown")"'
+          # Unknown update types (e.g. SHA-pinned action bumps) are ineligible.
+          if ! echo "$updates" | jq -e '
+            length > 0 and all(.[]; (.["update-type"] // "") as $type |
+              $type == "version-update:semver-patch" or
+              $type == "version-update:semver-minor")
+          ' >/dev/null; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! echo "$updates" | jq -e --arg re "$DENYLIST" \
+            'all(.[]; (.name | test($re)) | not)' >/dev/null; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge (squash)
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          enabled=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json autoMergeRequest --jq '.autoMergeRequest != null')
+          if [ "$enabled" = "true" ]; then
+            echo "Auto-merge already enabled"
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash

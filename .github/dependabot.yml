@@ -9,6 +9,13 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      # Semver-compatible bumps share one PR so the full Rust gate runs once;
+      # major bumps stay individual for manual migration review.
+      rust-dependencies:
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
     commit-message:
