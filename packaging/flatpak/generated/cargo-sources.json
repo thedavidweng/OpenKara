@@ -327,6 +327,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/audio-codec-algorithms/audio-codec-algorithms-0.8.1.crate",
+    "sha256": "1254ebf6529f3763c491acfb5ab6e960809e3c75a38584cc664f8c5667fb7107",
+    "dest": "cargo/vendor/audio-codec-algorithms-0.8.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"1254ebf6529f3763c491acfb5ab6e960809e3c75a38584cc664f8c5667fb7107\",\"files\":{}}",
+    "dest": "cargo/vendor/audio-codec-algorithms-0.8.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/audio-core/audio-core-0.2.1.crate",
     "sha256": "f93ebbf82d06013f4c41fe71303feb980cddd78496d904d06be627972de51a24",
     "dest": "cargo/vendor/audio-core-0.2.1"
@@ -353,6 +366,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/audioadapter/audioadapter-5.0.0.crate",
+    "sha256": "d1292ef9edf681b7426ed089004b021a42896492f58bd0c909ad44e5faec9ac4",
+    "dest": "cargo/vendor/audioadapter-5.0.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"d1292ef9edf681b7426ed089004b021a42896492f58bd0c909ad44e5faec9ac4\",\"files\":{}}",
+    "dest": "cargo/vendor/audioadapter-5.0.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/audioadapter-buffers/audioadapter-buffers-4.0.0.crate",
     "sha256": "ece3390b6eb40379094843a1da5aaccc34bc0d85a8cbf68d09fe092fee6de29e",
     "dest": "cargo/vendor/audioadapter-buffers-4.0.0"
@@ -366,6 +392,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/audioadapter-buffers/audioadapter-buffers-5.2.0.crate",
+    "sha256": "46289a81a3bfa26d0f8b2415f8ca9decde9a66308a150568af5c102381b3c8ce",
+    "dest": "cargo/vendor/audioadapter-buffers-5.2.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"46289a81a3bfa26d0f8b2415f8ca9decde9a66308a150568af5c102381b3c8ce\",\"files\":{}}",
+    "dest": "cargo/vendor/audioadapter-buffers-5.2.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/audioadapter-sample/audioadapter-sample-4.0.0.crate",
     "sha256": "1592f90413568e259413c21a41a3d571feb1774255c209e7966d98f9db708c90",
     "dest": "cargo/vendor/audioadapter-sample-4.0.0"
@@ -374,6 +413,19 @@
     "type": "inline",
     "contents": "{\"package\":\"1592f90413568e259413c21a41a3d571feb1774255c209e7966d98f9db708c90\",\"files\":{}}",
     "dest": "cargo/vendor/audioadapter-sample-4.0.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/audioadapter-sample/audioadapter-sample-5.2.0.crate",
+    "sha256": "5258faecf4edbe35ec483bda9b1f7438e6b391891819269c6b5461aeaa0e8d7d",
+    "dest": "cargo/vendor/audioadapter-sample-5.2.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"5258faecf4edbe35ec483bda9b1f7438e6b391891819269c6b5461aeaa0e8d7d\",\"files\":{}}",
+    "dest": "cargo/vendor/audioadapter-sample-5.2.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -4851,14 +4903,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/rubato/rubato-4.0.0.crate",
-    "sha256": "f57c655d11e929f05a8663b323ff553f8d9773be05dfdc087795955bedeb8d92",
-    "dest": "cargo/vendor/rubato-4.0.0"
+    "url": "https://static.crates.io/crates/rubato/rubato-5.0.0.crate",
+    "sha256": "a7cb1ffaf8738df50aab642a7f6465df81c6ba9e2818268053487165298114be",
+    "dest": "cargo/vendor/rubato-5.0.0"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"f57c655d11e929f05a8663b323ff553f8d9773be05dfdc087795955bedeb8d92\",\"files\":{}}",
-    "dest": "cargo/vendor/rubato-4.0.0",
+    "contents": "{\"package\":\"a7cb1ffaf8738df50aab642a7f6465df81c6ba9e2818268053487165298114be\",\"files\":{}}",
+    "dest": "cargo/vendor/rubato-5.0.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
