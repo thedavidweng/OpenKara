@@ -69,31 +69,43 @@ jobs:
           fi
 
       # RATIONALE: A push via GITHUB_TOKEN triggers a pull_request
-      # synchronize event, but GitHub marks the resulting CI workflow run
-      # as action_required (GITHUB_TOKEN-triggered events do not auto-run
-      # workflows). Without this approval step the CI run sits pending
-      # forever and the PR can never merge.
-      - name: Approve triggered CI run
+      # synchronize event, but GitHub marks EVERY resulting workflow run
+      # action_required (GITHUB_TOKEN-triggered events do not auto-run
+      # workflows). Any unapproved run — Packaging, this workflow's own
+      # rerun, CI — keeps the PR "unstable" and blocks auto-merge forever,
+      # so approve all of them, then confirm a clean sweep before exiting.
+      - name: Approve triggered workflow runs
         if: steps.commit.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          # The synchronize event takes a few seconds to register the CI run.
-          for attempt in $(seq 1 10); do
-            run_id=$(gh run list \
-              --workflow=ci.yml \
+          # The synchronize event takes a few seconds to register the runs.
+          approved=0
+          for attempt in $(seq 1 12); do
+            pending=$(gh run list \
               --branch="$BRANCH" \
               --status=action_required \
               --json databaseId \
-              --jq '.[0].databaseId // empty')
-            if [ -n "$run_id" ]; then
-              echo "Approving CI run $run_id"
-              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve"
-              exit 0
+              --jq '.[].databaseId')
+            if [ -z "$pending" ]; then
+              if [ "$approved" -gt 0 ]; then
+                echo "All triggered workflow runs approved"
+                exit 0
+              fi
+              echo "No action_required runs yet (attempt $attempt/12), retrying in 5s..."
+            else
+              for run_id in $pending; do
+                echo "Approving run $run_id"
+                gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve"
+                approved=$((approved + 1))
+              done
             fi
-            echo "No action_required CI run yet (attempt $attempt/10), retrying in 5s..."
             sleep 5
           done
-          echo "::warning::No action_required CI run found after 50s — CI may need manual approval."
+          if [ "$approved" -eq 0 ]; then
+            echo "::warning::No action_required runs found after 60s — workflows may need manual approval."
+          else
+            echo "::warning::Approved ${approved} run(s) but some action_required runs remain — check manually."
+          fi
