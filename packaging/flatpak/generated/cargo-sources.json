@@ -3122,14 +3122,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/libsqlite3-sys/libsqlite3-sys-0.38.1.crate",
-    "sha256": "f6c19a05435c21ac299d71b6a9c13db3e3f47c520517d58990a462a1397a61db",
-    "dest": "cargo/vendor/libsqlite3-sys-0.38.1"
+    "url": "https://static.crates.io/crates/libsqlite3-sys/libsqlite3-sys-0.38.2.crate",
+    "sha256": "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8",
+    "dest": "cargo/vendor/libsqlite3-sys-0.38.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"f6c19a05435c21ac299d71b6a9c13db3e3f47c520517d58990a462a1397a61db\",\"files\":{}}",
-    "dest": "cargo/vendor/libsqlite3-sys-0.38.1",
+    "contents": "{\"package\":\"f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8\",\"files\":{}}",
+    "dest": "cargo/vendor/libsqlite3-sys-0.38.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -4864,14 +4864,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/rusqlite/rusqlite-0.40.1.crate",
-    "sha256": "11438310b19e3109b6446c33d1ed5e889428cf2e278407bc7896bc4aaea43323",
-    "dest": "cargo/vendor/rusqlite-0.40.1"
+    "url": "https://static.crates.io/crates/rusqlite/rusqlite-0.40.2.crate",
+    "sha256": "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3",
+    "dest": "cargo/vendor/rusqlite-0.40.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"11438310b19e3109b6446c33d1ed5e889428cf2e278407bc7896bc4aaea43323\",\"files\":{}}",
-    "dest": "cargo/vendor/rusqlite-0.40.1",
+    "contents": "{\"package\":\"23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3\",\"files\":{}}",
+    "dest": "cargo/vendor/rusqlite-0.40.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
