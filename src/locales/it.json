@@ -760,6 +760,7 @@
     "remote_repository_unavailable": "Repository remoto non disponibile",
     "somethingWentWrong": "Qualcosa è andato storto",
     "online_source_disabled": "Questa origine online è disattivata.",
+    "streaming_auth_failed": "Accesso non riuscito",
     "streaming_session_expired": "La sessione dell’origine in streaming è scaduta. Accedi di nuovo.",
     "video_source_unavailable": "Questo video non può essere riprodotto come ospite."
   },

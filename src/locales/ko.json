@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",
     "somethingWentWrong": "문제가 발생했어요",
     "online_source_disabled": "이 온라인 소스가 꺼져 있습니다.",
+    "streaming_auth_failed": "로그인 실패",
     "streaming_session_expired": "스트리밍 소스 세션이 만료되었습니다. 다시 로그인하세요.",
     "video_source_unavailable": "이 동영상은 게스트로 재생할 수 없습니다."
   },

@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "リモートリポジトリを利用できません",
     "somethingWentWrong": "問題が発生しました",
     "online_source_disabled": "このオンラインソースはオフです。",
+    "streaming_auth_failed": "サインインに失敗しました",
     "streaming_session_expired": "配信ソースのセッションが期限切れです。もう一度サインインしてください。",
     "video_source_unavailable": "この動画はゲストとして再生できません。"
   },

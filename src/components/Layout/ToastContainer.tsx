@@ -51,6 +51,10 @@ function Toast({ notification }: { notification: Notification }) {
       await copyDebugInfo({
         fetchDebugInfo: settings.getDebugInfo,
         translate: t,
+        error: {
+          title: notification.title,
+          message: notification.message,
+        },
       });
       setDebugCopied(true);
       if (copiedTimeoutRef.current !== undefined) {
