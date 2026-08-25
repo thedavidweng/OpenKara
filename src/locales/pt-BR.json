@@ -760,6 +760,7 @@
     "remote_repository_unavailable": "Repositório remoto indisponível",
     "somethingWentWrong": "Algo deu errado",
     "online_source_disabled": "Esta fonte online está desligada.",
+    "streaming_auth_failed": "Falha ao entrar",
     "streaming_session_expired": "A sessão da fonte de streaming expirou. Entre novamente.",
     "video_source_unavailable": "Este vídeo não pode ser reproduzido como convidado."
   },

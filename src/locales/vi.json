@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "Kho lưu trữ từ xa không khả dụng",
     "somethingWentWrong": "Đã xảy ra lỗi",
     "online_source_disabled": "Nguồn trực tuyến này đang tắt.",
+    "streaming_auth_failed": "Đăng nhập thất bại",
     "streaming_session_expired": "Phiên nguồn streaming đã hết hạn. Đăng nhập lại.",
     "video_source_unavailable": "Không thể phát video này với tư cách khách."
   },

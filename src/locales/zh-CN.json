@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "远程仓库不可用",
     "somethingWentWrong": "出了点问题",
     "online_source_disabled": "此在线来源已关闭。",
+    "streaming_auth_failed": "登录失败",
     "streaming_session_expired": "流媒体源会话已过期，请重新登录。",
     "video_source_unavailable": "此视频无法以访客身份播放。"
   },

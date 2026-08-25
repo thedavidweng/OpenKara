@@ -267,6 +267,12 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
             )?,
         };
         let _ = password;
+        if let Some(detail) = login_error_detail(&response.json) {
+            return Err(CatalogError::AuthFailed {
+                source_id: "netease".to_owned(),
+                detail,
+            });
+        }
         let cookies = Self::merge_login_cookies(&response.cookies, &response.json);
         let credentials = self
             .credentials_from_cookies(&cookies, None)
@@ -548,6 +554,23 @@ impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
     }
 }
 
+fn login_error_detail(json: &Value) -> Option<String> {
+    let code = json.get("code").and_then(Value::as_i64)?;
+    if code == 200 {
+        return None;
+    }
+    let message = json
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| json.get("msg").and_then(Value::as_str))
+        .unwrap_or("");
+    if message.is_empty() {
+        Some(format!("code {code}"))
+    } else {
+        Some(format!("code {code}: {message}"))
+    }
+}
+
 fn track_from_json(song: &Value, privilege: Option<&Value>) -> Option<StreamingTrack> {
     let remote_track_id = song
         .get("id")
@@ -625,6 +648,11 @@ pub struct RecordingNeteaseHttp {
 }
 
 #[cfg(test)]
+struct StaticNeteaseHttp {
+    response: crate::catalog::netease::client::NeteaseHttpResponse,
+}
+
+#[cfg(test)]
 impl NeteaseHttp for RecordingNeteaseHttp {
     fn post_weapi(
         &self,
@@ -663,8 +691,154 @@ impl NeteaseHttp for RecordingNeteaseHttp {
 }
 
 #[cfg(test)]
+impl NeteaseHttp for StaticNeteaseHttp {
+    fn post_weapi(
+        &self,
+        _path: &str,
+        _payload: Value,
+        _credentials: Option<&StreamingCredentials>,
+    ) -> Result<crate::catalog::netease::client::NeteaseHttpResponse, CatalogError> {
+        Ok(self.response.clone())
+    }
+
+    fn download(
+        &self,
+        _url: &str,
+        _dest: &Path,
+        _credentials: Option<&StreamingCredentials>,
+    ) -> Result<(), CatalogError> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::error::ErrorCode;
+
+    fn source_with(json: Value) -> NeteaseStreamingSource<StaticNeteaseHttp> {
+        NeteaseStreamingSource {
+            http: StaticNeteaseHttp {
+                response: crate::catalog::netease::client::NeteaseHttpResponse {
+                    json,
+                    cookies: Default::default(),
+                },
+            },
+            app_data_dir: PathBuf::new(),
+            credentials: Mutex::new(None),
+            display_name: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn login_error_detail_reads_provider_code_and_message() {
+        assert_eq!(login_error_detail(&json!({ "code": 200 })), None);
+        assert_eq!(login_error_detail(&json!({})), None);
+        assert_eq!(
+            login_error_detail(&json!({ "code": 502, "message": "账号或密码错误" })),
+            Some("code 502: 账号或密码错误".to_owned())
+        );
+        assert_eq!(
+            login_error_detail(&json!({ "code": 520, "msg": "risk" })),
+            Some("code 520: risk".to_owned())
+        );
+        assert_eq!(
+            login_error_detail(&json!({ "code": 460 })),
+            Some("code 460".to_owned())
+        );
+    }
+
+    #[test]
+    fn password_sign_in_surfaces_provider_rejection() {
+        let source = source_with(json!({
+            "code": 502,
+            "message": "账号或密码错误"
+        }));
+        let error = source
+            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .expect_err("rejected sign-in");
+        match error {
+            CatalogError::AuthFailed { source_id, detail } => {
+                assert_eq!(source_id, "netease");
+                assert_eq!(detail, "code 502: 账号或密码错误");
+            }
+            other => panic!("expected AuthFailed, got {other:?}"),
+        }
+        let command_error = crate::commands::error::CommandError::from(CatalogError::AuthFailed {
+            source_id: "netease".to_owned(),
+            detail: "code 502: 账号或密码错误".to_owned(),
+        });
+        assert_eq!(command_error.code, ErrorCode::StreamingAuthFailed);
+        assert!(!command_error.retryable);
+        assert!(command_error.message.contains("账号或密码错误"));
+    }
+
+    fn live_source(api_base: &str, app_data_dir: &Path) -> NeteaseStreamingSource<LiveNeteaseHttp> {
+        NeteaseStreamingSource {
+            http: LiveNeteaseHttp::with_api_base(api_base).expect("live http"),
+            app_data_dir: app_data_dir.to_path_buf(),
+            credentials: Mutex::new(None),
+            display_name: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn password_sign_in_surfaces_provider_rejection_over_http() {
+        let mut server = mockito::Server::new();
+        let login = server
+            .mock("POST", "/weapi/login")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"code":502,"message":"账号或密码错误"}"#)
+            .create();
+        let dir = tempfile::tempdir().expect("tmp");
+        let source = live_source(&server.url(), dir.path());
+
+        let error = source
+            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .expect_err("rejected sign-in");
+
+        login.assert();
+        match error {
+            CatalogError::AuthFailed { detail, .. } => {
+                assert_eq!(detail, "code 502: 账号或密码错误");
+            }
+            other => panic!("expected AuthFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn password_sign_in_merges_header_and_body_cookies_over_http() {
+        let dir = tempfile::tempdir().expect("tmp");
+        std::env::set_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR", dir.path());
+        let mut server = mockito::Server::new();
+        server
+            .mock("POST", "/weapi/login")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("Set-Cookie", "MUSIC_U=header-music-u; Path=/; HttpOnly")
+            .with_body(r#"{"code":200,"cookie":"__csrf=body-csrf; Path=/;; ignored=1"}"#)
+            .create();
+        server
+            .mock("POST", "/weapi/w/nuser/account/get")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"code":200,"profile":{"nickname":"Ada"}}"#)
+            .create();
+        let source = live_source(&server.url(), dir.path());
+
+        let session = source
+            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .expect("signed in");
+
+        assert_eq!(session.display_name.as_deref(), Some("Ada"));
+        let stored = credentials::load_credentials(dir.path(), "netease")
+            .expect("load")
+            .expect("stored");
+        assert_eq!(stored.music_u, "header-music-u");
+        assert_eq!(stored.csrf, "body-csrf");
+        std::env::remove_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR");
+    }
 
     #[test]
     fn adapter_sends_china_client_address() {

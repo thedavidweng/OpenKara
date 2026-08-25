@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",
     "somethingWentWrong": "Terjadi kesalahan",
     "online_source_disabled": "Sumber daring ini nonaktif.",
+    "streaming_auth_failed": "Gagal masuk",
     "streaming_session_expired": "Sesi sumber streaming berakhir. Masuk lagi.",
     "video_source_unavailable": "Video ini tidak dapat diputar sebagai tamu."
   },

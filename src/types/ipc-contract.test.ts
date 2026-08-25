@@ -1185,11 +1185,12 @@ describe("CommandError shape matches Rust CommandError", () => {
       "execution_provider_unavailable",
       "separation_failed",
       "online_source_disabled",
+      "streaming_auth_failed",
       "streaming_session_expired",
       "video_source_unavailable",
       "internal",
     ];
-    expect(validCodes).toHaveLength(17);
+    expect(validCodes).toHaveLength(18);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }

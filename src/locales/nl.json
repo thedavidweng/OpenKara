@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "Externe opslagplaats niet beschikbaar",
     "somethingWentWrong": "Er is iets misgegaan",
     "online_source_disabled": "Deze online bron is uit.",
+    "streaming_auth_failed": "Aanmelden mislukt",
     "streaming_session_expired": "De sessie van de streamingbron is verlopen. Meld je opnieuw aan.",
     "video_source_unavailable": "Deze video kan niet als gast worden afgespeeld."
   },

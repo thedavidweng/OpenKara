@@ -1,6 +1,6 @@
 use crate::commands::error::{
-    internal_error, online_source_disabled, streaming_session_expired, video_source_unavailable,
-    CommandError,
+    internal_error, online_source_disabled, streaming_auth_failed, streaming_session_expired,
+    video_source_unavailable, CommandError,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -13,6 +13,7 @@ pub const YOUTUBE_QUEUE_PREFIX: &str = "yt:";
 pub enum CatalogError {
     UnknownSource { source_id: String },
     SourceDisabled { source_id: String },
+    AuthFailed { source_id: String, detail: String },
     SessionExpired { source_id: String },
     Network(String),
     VideoUnavailable { reason: VideoUnavailableReason },
@@ -27,6 +28,9 @@ impl From<CatalogError> for CommandError {
             }
             CatalogError::SourceDisabled { source_id } => {
                 online_source_disabled(format!("online source {source_id} is off"))
+            }
+            CatalogError::AuthFailed { source_id, detail } => {
+                streaming_auth_failed(format!("sign-in for {source_id} failed: {detail}"))
             }
             CatalogError::SessionExpired { source_id } => {
                 streaming_session_expired(format!("streaming session for {source_id} expired"))
