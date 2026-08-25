@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "遠端儲存庫無法使用",
     "somethingWentWrong": "發生錯誤",
     "online_source_disabled": "此線上來源已關閉。",
+    "streaming_auth_failed": "登入失敗",
     "streaming_session_expired": "串流來源工作階段已過期，請重新登入。",
     "video_source_unavailable": "此影片無法以訪客身分播放。"
   },

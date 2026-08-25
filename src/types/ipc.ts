@@ -14,6 +14,7 @@ export type ErrorCode =
   | "runtime_post_download_timeout"
   | "separation_failed"
   | "online_source_disabled"
+  | "streaming_auth_failed"
   | "streaming_session_expired"
   | "video_source_unavailable"
   | "internal";

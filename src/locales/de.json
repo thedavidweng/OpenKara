@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "Remote-Repository nicht verfügbar",
     "somethingWentWrong": "Etwas ist schiefgelaufen",
     "online_source_disabled": "Diese Online-Quelle ist aus.",
+    "streaming_auth_failed": "Anmeldung fehlgeschlagen",
     "streaming_session_expired": "Die Streaming-Quelle-Sitzung ist abgelaufen. Melde dich erneut an.",
     "video_source_unavailable": "Dieses Video kann nicht als Gast abgespielt werden."
   },

@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
     "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง",
     "online_source_disabled": "แหล่งออนไลน์นี้ปิดอยู่",
+    "streaming_auth_failed": "การลงชื่อเข้าใช้ล้มเหลว",
     "streaming_session_expired": "เซสชันแหล่งสตรีมมิงหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
     "video_source_unavailable": "เล่นวิดีโอนี้ในฐานะผู้เยี่ยมชมไม่ได้"
   },

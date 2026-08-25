@@ -67,17 +67,23 @@ pub trait NeteaseHttp: Send + Sync {
 
 pub struct LiveNeteaseHttp {
     client: Client,
+    api_base: String,
     last_address: Mutex<Option<String>>,
 }
 
 impl LiveNeteaseHttp {
     pub fn new() -> Result<Self, CatalogError> {
+        Self::with_api_base(API_BASE)
+    }
+
+    pub fn with_api_base(api_base: &str) -> Result<Self, CatalogError> {
         let client = Client::builder()
             .user_agent(USER_AGENT_VALUE)
             .build()
             .map_err(|error| CatalogError::Network(error.to_string()))?;
         Ok(Self {
             client,
+            api_base: api_base.to_owned(),
             last_address: Mutex::new(None),
         })
     }
@@ -116,7 +122,7 @@ impl NeteaseHttp for LiveNeteaseHttp {
             }
         }
         let form = weapi_encrypt(&payload.to_string());
-        let url = format!("{API_BASE}{path}");
+        let url = format!("{}{path}", self.api_base);
         let response = self
             .client
             .post(url)

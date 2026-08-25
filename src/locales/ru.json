@@ -761,6 +761,7 @@
     "remote_repository_unavailable": "Удалённый репозиторий недоступен",
     "somethingWentWrong": "Что-то пошло не так",
     "online_source_disabled": "Этот онлайн-источник выключен.",
+    "streaming_auth_failed": "Ошибка входа",
     "streaming_session_expired": "Сеанс источника стриминга истёк. Войдите снова.",
     "video_source_unavailable": "Это видео нельзя воспроизвести как гость."
   },

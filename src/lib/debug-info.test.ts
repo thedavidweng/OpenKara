@@ -72,6 +72,28 @@ describe("formatDebugInfo", () => {
     expect(lines[0]).toBe("OpenKara · About");
     expect(lines).toHaveLength(11);
   });
+
+  test("appends the surfaced error title and message when provided", () => {
+    const text = formatDebugInfo(sample, undefined, {
+      title: "Internal Error",
+      message: "password sign-in did not return Streaming Credentials",
+    });
+    const lines = text.split("\n");
+    expect(lines).toHaveLength(13);
+    expect(lines[11]).toBe("Error: Internal Error");
+    expect(lines[12]).toBe(
+      "password sign-in did not return Streaming Credentials",
+    );
+  });
+
+  test("omits the error message line when the message is empty", () => {
+    const lines = formatDebugInfo(sample, undefined, {
+      title: "Sign-in Failed",
+      message: "",
+    }).split("\n");
+    expect(lines).toHaveLength(12);
+    expect(lines[11]).toBe("Error: Sign-in Failed");
+  });
 });
 
 describe("copyDebugInfo", () => {
@@ -83,6 +105,24 @@ describe("copyDebugInfo", () => {
 
     expect(fetchDebugInfo).toHaveBeenCalledOnce();
     expect(writeText).toHaveBeenCalledWith(formatDebugInfo(sample));
+  });
+
+  test("forwards the error context into the formatted text", async () => {
+    const fetchDebugInfo = vi.fn(async () => sample);
+    const writeText = vi.fn(async () => {});
+
+    await copyDebugInfo({
+      fetchDebugInfo,
+      writeText,
+      error: { title: "Sign-in Failed", message: "code 502: wrong password" },
+    });
+
+    expect(writeText).toHaveBeenCalledWith(
+      formatDebugInfo(sample, undefined, {
+        title: "Sign-in Failed",
+        message: "code 502: wrong password",
+      }),
+    );
   });
 
   test("propagates a fetch failure to the caller", async () => {

@@ -20,6 +20,7 @@ pub enum ErrorCode {
     RuntimePostDownloadTimeout,
     SeparationFailed,
     OnlineSourceDisabled,
+    StreamingAuthFailed,
     StreamingSessionExpired,
     VideoSourceUnavailable,
     Internal,
@@ -102,6 +103,15 @@ pub fn internal_error(message: impl ToString) -> CommandError {
 pub fn online_source_disabled(message: impl ToString) -> CommandError {
     CommandError::new(
         ErrorCode::OnlineSourceDisabled,
+        message.to_string(),
+        false,
+        FallbackAction::KeepCurrentState,
+    )
+}
+
+pub fn streaming_auth_failed(message: impl ToString) -> CommandError {
+    CommandError::new(
+        ErrorCode::StreamingAuthFailed,
         message.to_string(),
         false,
         FallbackAction::KeepCurrentState,
