@@ -80,8 +80,10 @@ fn parse_npy(bytes: &[u8]) -> NpyArray {
     let raw = bytes[data_start..].to_vec();
     assert_eq!(raw.len() % 4, 0, "f32 payload length");
     let data = raw
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     NpyArray { shape, raw, data }
 }
