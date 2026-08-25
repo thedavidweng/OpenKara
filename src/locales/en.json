@@ -799,6 +799,7 @@
     "remote_repository_unavailable": "Remote Repository Unavailable",
     "somethingWentWrong": "Something went wrong",
     "online_source_disabled": "This Online Source is off.",
+    "streaming_auth_failed": "Sign-in Failed",
     "streaming_session_expired": "The Streaming Source session expired. Sign in again.",
     "video_source_unavailable": "This video cannot play as a guest."
   },

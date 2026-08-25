@@ -760,6 +760,7 @@
     "remote_repository_unavailable": "Repositorio remoto no disponible",
     "somethingWentWrong": "Algo salió mal",
     "online_source_disabled": "Este origen en línea está desactivado.",
+    "streaming_auth_failed": "Error al iniciar sesión",
     "streaming_session_expired": "La sesión del origen de streaming caducó. Vuelve a iniciar sesión.",
     "video_source_unavailable": "Este vídeo no se puede reproducir como invitado."
   },

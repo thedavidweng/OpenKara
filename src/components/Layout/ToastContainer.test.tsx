@@ -287,6 +287,11 @@ describe("ToastContainer", () => {
     });
 
     expect(mockCopyDebugInfo).toHaveBeenCalledOnce();
+    expect(mockCopyDebugInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: { title: "Fail", message: "details" },
+      }),
+    );
     expect(container.textContent).toContain("settings.about.copied");
 
     await act(async () => {

@@ -759,6 +759,7 @@
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",
     "somethingWentWrong": "Bir şeyler ters gitti",
     "online_source_disabled": "Bu çevrimiçi kaynak kapalı.",
+    "streaming_auth_failed": "Oturum açılamadı",
     "streaming_session_expired": "Yayın kaynağı oturumunun süresi doldu. Yeniden oturum açın.",
     "video_source_unavailable": "Bu video konuk olarak oynatılamaz."
   },

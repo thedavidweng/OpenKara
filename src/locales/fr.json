@@ -760,6 +760,7 @@
     "remote_repository_unavailable": "Dépôt distant indisponible",
     "somethingWentWrong": "Une erreur s'est produite",
     "online_source_disabled": "Cette source en ligne est désactivée.",
+    "streaming_auth_failed": "Échec de la connexion",
     "streaming_session_expired": "La session de la source de streaming a expiré. Reconnectez-vous.",
     "video_source_unavailable": "Cette vidéo ne peut pas être lue en tant qu’invité."
   },
