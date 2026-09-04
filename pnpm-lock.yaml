@@ -9,6 +9,7 @@ overrides:
   undici: '>=7.28.0 <8.0.0'
   nanoid: '>=3.3.17'
   postcss: '>=8.5.23'
+  toml: '>=4.1.2'
 
 patchedDependencies:
   '@romanize/korean@0.1.3': e739892a0b890a68cabb32d2ccd42e2576ba398d900b8d1a3f579bb8c3afa626
@@ -2078,8 +2079,9 @@ packages:
   to-jyutping@3.1.1:
     resolution: {integrity: sha512-8dqSOTbYC5pBs1DQtC9olmFLhf/pzKqxMfQLRUYu1BXXtWgqyS8dSFy9mHuF0cHjgjtX86pCBvGIvKzzlVM6lw==}
 
-  toml@2.3.6:
-    resolution: {integrity: sha512-gVweAectJU3ebq//Ferr2JUY4WKSDe5N+z0FvjDncLGyHmIDoxgY/2Ie4qfEIDm4IS7OA6Rmdm7pdEEdMcV/xQ==}
+  toml@5.0.0:
+    resolution: {integrity: sha512-bsqEd+g7fzlrw7LEynQ6W6aOK/lTOlepz5x1sJyIV9fTZVJS2Q76nuju6FK+gZhW5bUpvB7mCEqdR0u4WziMFw==}
+    engines: {node: '>=20'}
 
   tough-cookie@6.0.2:
     resolution: {integrity: sha512-exgYmnmL/sJpR3upZfXG5PoatXQii55xAiXGXzY+sROLZ/Y+SLcp9PgJNI9Vz37HpQ74WvDcLT8eqm+kV3FzrA==}
@@ -2465,7 +2467,7 @@ snapshots:
   '@indic-transliteration/sanscript@1.3.3':
     dependencies:
       '@indic-transliteration/common_maps': 1.0.6
-      toml: 2.3.6
+      toml: 5.0.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -3734,7 +3736,7 @@ snapshots:
 
   to-jyutping@3.1.1: {}
 
-  toml@2.3.6: {}
+  toml@5.0.0: {}
 
   tough-cookie@6.0.2:
     dependencies:
