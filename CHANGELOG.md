@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.15.0](https://github.com/thedavidweng/OpenKara/compare/v0.14.0...v0.15.0) (2026-09-04)
+
+
+### Features
+
+* **lyrics:** acquire word-timed AMLL lyrics and show supplied romanization ([c3a5383](https://github.com/thedavidweng/OpenKara/commit/c3a53830dda4c3880f8bae5658a7da2695b55f4a))
+* **lyrics:** acquire word-timed AMLL lyrics and show supplied romanization ([0eba178](https://github.com/thedavidweng/OpenKara/commit/0eba178113d039e6d0738ab9b524fec3b21f7738))
+* **lyrics:** in-house AMLL-like focus stage and One Last Kiss demo ([af24351](https://github.com/thedavidweng/OpenKara/commit/af243518bfff1ed6c5f10e950cc615322e7a910b))
+* **lyrics:** ship an in-house AMLL-like focus stage and One Last Kiss demo ([2309483](https://github.com/thedavidweng/OpenKara/commit/230948347b41cf5c69dd95ac11b6754cdcab1185))
+* **preview:** slim the landing mock and keep playback interactive ([2223a8e](https://github.com/thedavidweng/OpenKara/commit/2223a8e6453fddb0c7c7f5acfc994e35c27a5e2a))
+* snap lyric browse and slim the landing preview ([4aa2910](https://github.com/thedavidweng/OpenKara/commit/4aa291071ff05acb642a9b7db79758f1b33c7c5d))
+
+
+### Bug Fixes
+
+* **ci:** unblock rust gates for toolchain and advisory drift ([ce549bc](https://github.com/thedavidweng/OpenKara/commit/ce549bcd25eeea2684a2fab2499d55414359605f))
+* **ci:** update the nightly release in place instead of recreating it ([e095d68](https://github.com/thedavidweng/OpenKara/commit/e095d680a6324bf93ca4add61e0c76e91e9c82a3))
+* **hooks:** run knip on commit and drop the duplicate preview export ([8c9591c](https://github.com/thedavidweng/OpenKara/commit/8c9591c24f79e95ed70190be7ccc86fedeb70555))
+* **lyrics:** address CodeRabbit review on the focus stage ([48f0668](https://github.com/thedavidweng/OpenKara/commit/48f0668002f00e9db9ee1eafa43d5117536fd338))
+* **lyrics:** close review gaps in karaoke, blur, and preview ([5e9f099](https://github.com/thedavidweng/OpenKara/commit/5e9f099718de71428429199ff0a3648a763c3b6d))
+* **lyrics:** drop stale romanization after an AMLL upgrade ([6129a7f](https://github.com/thedavidweng/OpenKara/commit/6129a7f27f841be931ee59f024d7b6b6f81e2e42))
+* **lyrics:** drop stale snap velocity and close review gaps ([ae99fa1](https://github.com/thedavidweng/OpenKara/commit/ae99fa1bb5f3d9f4bafa90eb95a2fcc9132947ad))
+* **lyrics:** restore free browse and polish karaoke romanization ([89b37b0](https://github.com/thedavidweng/OpenKara/commit/89b37b045548ba99cc925c4c9e88133f03c7dd52))
+* **lyrics:** restore free scroll and polish karaoke display ([d0f502b](https://github.com/thedavidweng/OpenKara/commit/d0f502bb11ee481699e239ac42f688d4aad18544))
+* **lyrics:** snap browse scroll onto a line and tighten the focus stage ([ab07ee8](https://github.com/thedavidweng/OpenKara/commit/ab07ee8e8ed53c7a3dce747184a9523e45006f32))
+* **lyrics:** type the preview catalog and simplify TTML roman fallback ([da36ef9](https://github.com/thedavidweng/OpenKara/commit/da36ef94cd8d859eeca4b1b013993476782b9a3a))
+* **lyrics:** wait for karaoke wipe before visual assertions ([bfad50c](https://github.com/thedavidweng/OpenKara/commit/bfad50cd1ae939054359d61f6751e5826ed39482))
+* **lyrics:** wipe romanization in sync and lead with One Last Kiss ([0d15f83](https://github.com/thedavidweng/OpenKara/commit/0d15f83acd047072454126489895c158dc178436))
+* **packaging:** pin lyric-romanizer 0.3.1 so Flatpak sources match the lockfile ([0f0ef13](https://github.com/thedavidweng/OpenKara/commit/0f0ef133f80d3923eeb49fbc38be6461d7f1e566))
+* **preview:** escape unused-module alias paths for CodeQL ([784f745](https://github.com/thedavidweng/OpenKara/commit/784f7458172e1bdc9cd2de91847b366e61ce8d57))
+* **preview:** ignore preview double-clicks and honor loop start ([95937d2](https://github.com/thedavidweng/OpenKara/commit/95937d291edbc21563c5ba2302abca8f2f3ffca4))
+* **preview:** let landing demo song rows receive clicks ([699377f](https://github.com/thedavidweng/OpenKara/commit/699377f0d0ffef84d27c49352264ada97c2a445a))
+* **preview:** let landing demo song rows receive clicks ([1730c9d](https://github.com/thedavidweng/OpenKara/commit/1730c9dfe902f50e7c745c6705b0910c4a5f6ffb))
+* **preview:** let test lyric overrides win over catalog lyrics ([5a35f3a](https://github.com/thedavidweng/OpenKara/commit/5a35f3a74dc453f0e77cd2a5a5d4e5b1f8521661))
+* **preview:** start Earfquake at 00:23 and switch demo songs ([1083dfe](https://github.com/thedavidweng/OpenKara/commit/1083dfe9b1976c2078c28e3af52ce3de428029d6))
+* **preview:** start Earfquake at 00:23 and switch demo songs ([5c8e193](https://github.com/thedavidweng/OpenKara/commit/5c8e1932da0cb95f2811216cdd81cb52c7b728b3))
+* **settings:** serialize optimistic preference writes ([b153b65](https://github.com/thedavidweng/OpenKara/commit/b153b6549341d5ae88ca2de2eaa5da0b06aa6a6b))
+* **settings:** serialize optimistic preference writes ([4a4b0ec](https://github.com/thedavidweng/OpenKara/commit/4a4b0eca288087d9f2d2547e57cd4fbb111e081f))
+* **test:** stabilize WebKit alphabet Home/End and keep karaoke masks ([8c11582](https://github.com/thedavidweng/OpenKara/commit/8c1158284a8c26a6682afe50795b6b201b34228a))
+* **tests:** use as_chunks in phase7 spectral npy parsing ([dc43de4](https://github.com/thedavidweng/OpenKara/commit/dc43de44525da666635c761b7d79969196fc2240))
+
+
+### Performance Improvements
+
+* **lyrics:** load romanizer engines on demand ([588e386](https://github.com/thedavidweng/OpenKara/commit/588e38671fb370df1a6f25f0eb1e5130917b0637))
+* **lyrics:** load romanizer engines on demand ([af1c78d](https://github.com/thedavidweng/OpenKara/commit/af1c78dba04bd0f84c401a394f8fd8e9d2d93a61))
+
 ## [0.14.0](https://github.com/thedavidweng/OpenKara/compare/v0.13.2...v0.14.0) (2026-08-13)
 
 
