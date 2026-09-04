@@ -437,7 +437,7 @@ jobs:
 
       - name: Report coverage on PR
         if: always() && github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2.12.2
+        uses: davelosert/vitest-coverage-report-action@c4bbc33a89b7ace0e63d35f1f7d4bcee31155a73 # v2.13.0
         with:
           json-summary-path: ./coverage/coverage-summary.json
           vite-config-path: ./vite.config.ts
@@ -530,12 +530,12 @@ jobs:
           persist-credentials: false
 
       - name: actionlint
-        uses: reviewdog/action-actionlint@dbe5299849118fd6f099ba563d263d770955a64a # v1.73.2
+        uses: reviewdog/action-actionlint@d290e336d5a743810aef4404f757dc862276d2ae # v1.73.4
         with:
           actionlint_flags: ""
 
       - name: zizmor
-        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
         with:
           persona: pedantic
           min-severity: low
@@ -612,7 +612,7 @@ jobs:
       # Prebuilt binary rather than `cargo install`, which rebuilt cargo-shear
       # from source on every run of a job whose actual work takes seconds.
       - name: Install cargo-shear
-        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: cargo-shear@1.12.4
 
@@ -720,7 +720,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Install nextest
-        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: nextest
 
