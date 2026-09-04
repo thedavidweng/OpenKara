@@ -45,6 +45,10 @@
 - `execution_provider_unavailable`
 - `runtime_post_download_timeout`
 - `separation_failed`
+- `online_source_disabled`
+- `streaming_auth_failed`
+- `streaming_session_expired`
+- `video_source_unavailable`
 - `internal`
 
 ## Shared enum: `FallbackAction`
@@ -126,6 +130,25 @@
    - `code = runtime_post_download_timeout`
    - `fallback = retry`
    - UI 使用本地化错误正文，不解析 `message`
+
+### Catalog / Online Sources
+
+1. A disabled Online Source receives a browse, sign-in, import, or resolve command:
+   - `code = online_source_disabled`
+   - `fallback = keep_current_state`
+2. A NetEase password sign-in is rejected by the provider (non-200 API code in
+   the response body, e.g. wrong credentials or risk control):
+   - `code = streaming_auth_failed`
+   - `fallback = keep_current_state`
+   - `retryable = false`
+   - `message` carries the provider API code and message verbatim (e.g.
+     `sign-in for netease failed: code 502: 账号或密码错误`)
+3. A NetEase session is expired or under risk control (including 301):
+   - `code = streaming_session_expired`
+   - `fallback = retry`
+4. A YouTube watch or playlist item is age-restricted, private, unlisted, or otherwise unplayable as a guest:
+   - `code = video_source_unavailable`
+   - `fallback = keep_current_state`
 
 ## Important boundaries
 

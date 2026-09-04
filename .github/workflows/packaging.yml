@@ -143,7 +143,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 1 --json tagName --jq '.[0].tagName | sub("^v"; "")')"
+          version="$(gh release list --repo "${GITHUB_REPOSITORY}" --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName | sub("^v"; "")')"
+          if [ -z "${version}" ]; then
+            echo "Could not resolve the latest public GitHub release" >&2
+            exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Render WinGet manifests from current public release

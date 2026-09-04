@@ -338,6 +338,8 @@ mod tests {
             library_sort_mode: None,
             theme_preference: None,
             update_policy: None,
+            youtube_source_enabled: None,
+            netease_source_enabled: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,

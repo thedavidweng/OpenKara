@@ -19,6 +19,7 @@ import {
 } from "@/lib/rate-limit";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { shouldIgnoreYoutubeChrome } from "@/playback/youtube-transport";
 import type { StemName } from "@/types/ipc";
 import {
   getPlaybackBarLayoutTokens,
@@ -74,7 +75,9 @@ export function VolumeSliders({
       },
     [snapshot?.stem_volumes],
   );
-  const hasStems = snapshot?.has_stems ?? false;
+  const hasStems =
+    (snapshot?.has_stems ?? false) &&
+    !shouldIgnoreYoutubeChrome(snapshot?.song_id);
   const stemMode = snapshot?.stem_mode ?? null;
   const songId = snapshot?.song_id;
   const isSeparated =

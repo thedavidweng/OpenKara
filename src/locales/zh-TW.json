@@ -108,7 +108,8 @@
       "title": "將所有歌曲升級為 4軌",
       "message": "這會使用 4軌模式重新分離所有歌曲。音軌佔用的磁碟空間大約會加倍。",
       "confirm": "全部升級"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "匯入",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "正在準備分離模型…",
     "cancelSeparation": "取消分離",
-    "usingCachedSeparation": "使用快取的分離結果"
+    "usingCachedSeparation": "使用快取的分離結果",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "在 Finder 中顯示歌曲檔案",
+    "revealStems": "開啟分軌資料夾",
+    "decision": {
+      "title": "資料庫決定",
+      "importConflict": "資料庫中已有同一首串流曲目，但檔案不同。請選擇保留資料庫歌曲或取代。",
+      "keep": "保留資料庫歌曲",
+      "replace": "取代資料庫歌曲",
+      "applyToRemaining": "套用到剩餘衝突",
+      "librarySong": "資料庫歌曲",
+      "incoming": "匯入檔案"
+    }
   },
   "player": {
     "previous": "上一首",
@@ -675,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "模糊非目前歌詞",
       "description": "虛化目前句子以外的歌詞。卡拉OK需要提前看清楚後面幾行時請保持關閉。"
+    },
+    "onlineSources": {
+      "label": "線上來源",
+      "description": "開啟音樂或影片來源。未選擇前兩者都保持關閉。",
+      "youtube": "YouTube",
+      "youtubeDescription": "把公開影片或播放清單連結加入佇列。OpenKara 不會下載 YouTube 音訊。",
+      "netease": "網易雲音樂",
+      "neteaseDescription": "登入後瀏覽並匯入你能播放的歌曲。匯入後的檔案由 OpenKara 管理。"
     }
   },
   "bootstrap": {
@@ -736,7 +757,11 @@
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
     "remote_repository_unavailable": "遠端儲存庫無法使用",
-    "somethingWentWrong": "發生錯誤"
+    "somethingWentWrong": "發生錯誤",
+    "online_source_disabled": "此線上來源已關閉。",
+    "streaming_auth_failed": "登入失敗",
+    "streaming_session_expired": "串流來源工作階段已過期，請重新登入。",
+    "video_source_unavailable": "此影片無法以訪客身分播放。"
   },
   "updater": {
     "available": "{{version}} 版現已推出",
@@ -746,5 +771,45 @@
     "restartToApply": "更新已就緒——請重新啟動以套用",
     "restart": "重新啟動",
     "failed": "更新失敗——請手動下載最新版本"
+  },
+  "catalog": {
+    "netease": {
+      "title": "網易雲音樂",
+      "signIn": "登入",
+      "signOut": "登出",
+      "qr": "掃碼登入",
+      "phone": "手機號碼和密碼",
+      "email": "電子郵件和密碼",
+      "password": "密碼",
+      "phoneNumber": "手機號碼",
+      "countryCode": "國家區號",
+      "signedInAs": "已登入為 {{name}}",
+      "sessionExpired": "工作階段已過期，請重新登入。",
+      "liked": "我喜歡的音樂",
+      "playlists": "串流播放清單",
+      "search": "搜尋",
+      "searchPlaceholder": "搜尋網易雲音樂",
+      "importTrack": "匯入這首歌",
+      "importPlaylist": "匯入串流播放清單",
+      "importRefusal": "拒絕匯入",
+      "waitingForScan": "請用網易雲音樂掃描此 QR 碼。",
+      "scanned": "已掃碼，請在手機上確認。",
+      "qrExpired": "QR 碼已失效，請取得新的 QR 碼。",
+      "loginWithPhone": "手機號碼登入",
+      "loginWithEmail": "電子郵件登入",
+      "loginWithQr": "QR 碼登入",
+      "passwordNotice": "OpenKara 只會傳送一次密碼，不會儲存。",
+      "qrHint": "開啟網易雲音樂 App 並掃描此 QR 碼。",
+      "refreshQr": "取得新的 QR 碼"
+    }
+  },
+  "youtube": {
+    "pasteLink": "貼上 YouTube 連結",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "加入佇列",
+    "invalidUrl": "這不是可公開播放的 YouTube 影片或播放清單連結。",
+    "ageRestricted": "此影片有年齡限制。",
+    "private": "此影片是私人的。",
+    "unlisted": "此影片未公開列出。"
   }
 }

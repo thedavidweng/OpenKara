@@ -3,6 +3,7 @@ export { BackendContext, useBackend } from "./context";
 export { createTauriBackend, tauriBackend } from "./tauri-backend";
 export type {
   Backend,
+  CatalogBackend,
   CdgAvailability,
   CdgBackend,
   CdgErrorCode,

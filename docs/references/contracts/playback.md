@@ -6,7 +6,9 @@
 
 ## 接口
 
-1. `play(song_id: String) -> PlaybackStateSnapshot`
+1. `play(song_id: String) -> PlaybackStateSnapshot` — `song_id` is a library `songs.hash`, or a Video Source queue id with a `yt:` prefix. A `yt:` id is played by the frontend video transport (public watch page). The local audio command must not decode a `yt:` id.
+   1a. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>` — see [catalog.md](./catalog.md). Does not call YouTube `/player` stream URLs.
+   1b. `control_youtube_watch(action: YoutubeWatchAction) -> YoutubeWatchMediaState` — typed play, pause, seek, volume, query, and navigate for the single incognito YouTube watch WebView (`youtube-watch`). Navigate accepts only `https://www.youtube.com/watch?v=…` (and the `youtube.com` / `m.youtube.com` watch forms). It does not request `/player`, persist Google cookies, or sign in to Google. When the audience window is open, that window hosts this single WebView.
 2. `resume() -> PlaybackStateSnapshot`
 3. `pause() -> PlaybackStateSnapshot`
 4. `seek(ms: u64) -> PlaybackStateSnapshot`

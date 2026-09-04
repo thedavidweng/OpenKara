@@ -13,6 +13,10 @@ export type ErrorCode =
   | "execution_provider_unavailable"
   | "runtime_post_download_timeout"
   | "separation_failed"
+  | "online_source_disabled"
+  | "streaming_auth_failed"
+  | "streaming_session_expired"
+  | "video_source_unavailable"
   | "internal";
 
 export type FallbackAction =
@@ -36,6 +40,164 @@ export type CoverArtBytes = number[] | Uint8Array | ArrayBuffer | null;
 export type CoverArtSize = "thumb" | "preview" | "original";
 
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
+
+export type OnlineSourceId = "youtube" | "netease";
+
+export type OnlineSourceKind = "video" | "streaming";
+
+export interface OnlineSourceCapabilities {
+  sign_in: boolean;
+  browse: boolean;
+  import: boolean;
+  resolve_video: boolean;
+}
+
+export interface OnlineSourceSnapshot {
+  id: OnlineSourceId;
+  kind: OnlineSourceKind;
+  enabled: boolean;
+  capabilities: OnlineSourceCapabilities;
+}
+
+export interface StreamingSessionSnapshot {
+  source_id: OnlineSourceId;
+  signed_in: boolean;
+  display_name: string | null;
+  expired: boolean;
+}
+
+export interface StreamingQrChallenge {
+  key: string;
+  login_url: string;
+  qr_svg: string;
+}
+
+export type StreamingQrStatus = "waiting" | "scanned" | "confirmed" | "expired";
+
+export interface StreamingQrPoll {
+  status: StreamingQrStatus;
+  session: StreamingSessionSnapshot | null;
+}
+
+export type StreamingPasswordMethod = "phone" | "email";
+
+export type YoutubeWatchAction =
+  | { type: "play" }
+  | { type: "pause" }
+  | { type: "seek"; ms: number }
+  | { type: "set_volume"; level: number }
+  | { type: "query" }
+  | { type: "navigate"; url: string };
+
+export interface YoutubeWatchMediaState {
+  ended: boolean;
+  paused: boolean;
+  current_time_ms: number;
+  duration_ms: number | null;
+}
+
+export type ImportRefusalReason = "no_play_rights" | "trial_clip" | "empty_url";
+
+export interface ImportRefusal {
+  reason: ImportRefusalReason;
+  title: string;
+  artist: string;
+}
+
+export interface StreamingTrack {
+  source_id: OnlineSourceId;
+  remote_track_id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  duration_ms: number | null;
+  refusal: ImportRefusal | null;
+}
+
+export interface StreamingPlaylistSummary {
+  remote_id: string;
+  name: string;
+  track_count: number;
+}
+
+export interface StreamingPlaylistDetail {
+  remote_id: string;
+  name: string;
+  tracks: StreamingTrack[];
+}
+
+export interface LibraryDecisionMeta {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  format: string;
+  bit_rate_bps: number | null;
+  duration_ms: number | null;
+  file_size_bytes: number;
+}
+
+export interface ImportConflictPrompt {
+  source_id: OnlineSourceId;
+  remote_track_id: string;
+  library: LibraryDecisionMeta;
+  incoming: LibraryDecisionMeta;
+}
+
+export type LibraryDecisionAction =
+  | "keep"
+  | "replace"
+  | "apply_keep"
+  | "apply_replace"
+  | "cancel";
+
+export type StreamingImportFailureReason =
+  | "refusal"
+  | "cancelled"
+  | "import_failed";
+
+export interface StreamingImportFailure {
+  remote_track_id: string;
+  title: string;
+  artist: string;
+  reason: StreamingImportFailureReason;
+  refusal: ImportRefusal | null;
+}
+
+export type StreamingImportStatus = "awaiting_decision" | "completed";
+
+export interface StreamingImportProgress {
+  status: StreamingImportStatus;
+  imported_song_ids: string[];
+  failed: StreamingImportFailure[];
+  playlist_id: string | null;
+  conflict: ImportConflictPrompt | null;
+}
+
+export interface VideoQueueItem {
+  id: string;
+  title: string;
+  channel: string;
+  duration_ms: number | null;
+  thumbnail_url: string | null;
+  watch_url: string;
+}
+
+export type VideoUnavailableReason =
+  | "invalid_url"
+  | "age_restricted"
+  | "private"
+  | "unlisted"
+  | "unavailable";
+
+export interface RevealTarget {
+  available: boolean;
+  path: string | null;
+}
+
+export interface RevealTargets {
+  song_file: RevealTarget;
+  stems: RevealTarget;
+}
 
 export interface WebDavRemoteAuthPayload {
   type: "webdav";
@@ -232,6 +394,8 @@ export interface AppSettings {
   library_sort_mode: LibrarySortMode;
   theme_preference: ThemePreference;
   update_policy: UpdatePolicy;
+  youtube_source_enabled: boolean;
+  netease_source_enabled: boolean;
 }
 
 export interface DebugInfo {

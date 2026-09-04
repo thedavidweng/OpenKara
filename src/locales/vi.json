@@ -108,7 +108,8 @@
       "title": "Nâng tất cả bài hát lên 4 bè",
       "message": "Thao tác này sẽ tách lại toàn bộ bài hát bằng chế độ 4 bè. Dung lượng đĩa dùng cho các bè sẽ tăng khoảng gấp đôi.",
       "confirm": "Nâng tất cả"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Nhập",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "Đang chuẩn bị mô hình tách…",
     "cancelSeparation": "Hủy tách",
-    "usingCachedSeparation": "Đang dùng kết quả tách đã lưu"
+    "usingCachedSeparation": "Đang dùng kết quả tách đã lưu",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "Hiện tệp bài hát",
+    "revealStems": "Mở thư mục stem",
+    "decision": {
+      "title": "Quyết định thư viện",
+      "importConflict": "Bài này đã có trong thư viện nhưng tệp khác. Giữ bài trong thư viện hoặc thay thế.",
+      "keep": "Giữ bài trong thư viện",
+      "replace": "Thay bài trong thư viện",
+      "applyToRemaining": "Áp dụng cho các xung đột còn lại",
+      "librarySong": "Bài trong thư viện",
+      "incoming": "Tệp đang nhập"
+    }
   },
   "player": {
     "previous": "Trước",
@@ -675,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "Làm mờ lời chưa/đã hát",
       "description": "Làm mềm các dòng trước và sau. Hãy tắt nếu cần đọc trước khi hát."
+    },
+    "onlineSources": {
+      "label": "Nguồn trực tuyến",
+      "description": "Bật nguồn nhạc hoặc video. Cả hai đều tắt cho đến khi bạn chọn.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Đăng nhập để duyệt và nhập các bài bạn có thể phát. OpenKara sẽ quản lý các tệp đã nhập."
     }
   },
   "bootstrap": {
@@ -736,7 +757,11 @@
     "separation_failed": "Tách thất bại",
     "internal": "Lỗi nội bộ",
     "remote_repository_unavailable": "Kho lưu trữ từ xa không khả dụng",
-    "somethingWentWrong": "Đã xảy ra lỗi"
+    "somethingWentWrong": "Đã xảy ra lỗi",
+    "online_source_disabled": "Nguồn trực tuyến này đang tắt.",
+    "streaming_auth_failed": "Đăng nhập thất bại",
+    "streaming_session_expired": "Phiên nguồn streaming đã hết hạn. Đăng nhập lại.",
+    "video_source_unavailable": "Không thể phát video này với tư cách khách."
   },
   "updater": {
     "available": "Đã có phiên bản {{version}}",
@@ -746,5 +771,45 @@
     "restartToApply": "Bản cập nhật đã sẵn sàng — khởi động lại để áp dụng",
     "restart": "Khởi động lại",
     "failed": "Cập nhật thất bại — hãy tải bản phát hành mới nhất theo cách thủ công"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Đăng nhập",
+      "signOut": "Đăng xuất",
+      "qr": "Đăng nhập bằng QR",
+      "phone": "Điện thoại và mật khẩu",
+      "email": "Email và mật khẩu",
+      "password": "Mật khẩu",
+      "phoneNumber": "Số điện thoại",
+      "countryCode": "Mã quốc gia",
+      "signedInAs": "Đã đăng nhập là {{name}}",
+      "sessionExpired": "Phiên đã hết hạn. Đăng nhập lại.",
+      "liked": "Bài đã thích",
+      "playlists": "Danh sách phát streaming",
+      "search": "Tìm",
+      "searchPlaceholder": "Tìm trên NetEase",
+      "importTrack": "Nhập bài này",
+      "importPlaylist": "Nhập danh sách phát streaming",
+      "importRefusal": "Từ chối nhập",
+      "waitingForScan": "Quét mã QR này bằng ứng dụng NetEase.",
+      "scanned": "Đã quét. Xác nhận trên điện thoại.",
+      "qrExpired": "Mã QR này đã hết hạn. Lấy mã mới.",
+      "loginWithPhone": "Đăng nhập bằng điện thoại",
+      "loginWithEmail": "Đăng nhập bằng email",
+      "loginWithQr": "Đăng nhập bằng QR",
+      "passwordNotice": "OpenKara gửi mật khẩu một lần và không lưu.",
+      "qrHint": "Mở ứng dụng NetEase Cloud Music và quét mã này.",
+      "refreshQr": "Lấy mã QR mới"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Dán liên kết YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Thêm vào hàng đợi",
+    "invalidUrl": "Đó không phải liên kết xem hoặc danh sách phát YouTube công khai.",
+    "ageRestricted": "Video này bị giới hạn độ tuổi.",
+    "private": "Video này ở chế độ riêng tư.",
+    "unlisted": "Video này không được liệt kê."
   }
 }

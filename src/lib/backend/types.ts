@@ -21,6 +21,19 @@ import type {
   IntegrityReport,
   LibraryRegistrySnapshot,
   LibrarySortMode,
+  LibraryDecisionAction,
+  OnlineSourceId,
+  OnlineSourceSnapshot,
+  RevealTargets,
+  StreamingImportProgress,
+  StreamingPasswordMethod,
+  StreamingPlaylistDetail,
+  StreamingPlaylistSummary,
+  StreamingQrChallenge,
+  StreamingQrPoll,
+  StreamingSessionSnapshot,
+  StreamingTrack,
+  VideoQueueItem,
   LyricsOnlineFetchIntent,
   LyricsPayload,
   ModelBootstrapStatusSnapshot,
@@ -242,6 +255,11 @@ export interface SettingsBackend {
   setLibrarySortMode(mode: LibrarySortMode): Promise<AppSettings>;
   setThemePreference(preference: ThemePreference): Promise<AppSettings>;
   setUpdatePolicy(policy: UpdatePolicy): Promise<AppSettings>;
+  listOnlineSources(): Promise<OnlineSourceSnapshot[]>;
+  setOnlineSourceEnabled(
+    sourceId: OnlineSourceId,
+    enabled: boolean,
+  ): Promise<AppSettings>;
   getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot>;
   getModelStatus(variant: string): Promise<ModelStatusSnapshot>;
   downloadModel(variant: string): Promise<ModelBootstrapStatusSnapshot>;
@@ -312,6 +330,55 @@ export interface PlaylistBackend {
   ): Promise<void>;
 }
 
+export interface CatalogBackend {
+  getStreamingSession(
+    sourceId: OnlineSourceId,
+  ): Promise<StreamingSessionSnapshot>;
+  startStreamingQrSignin(
+    sourceId: OnlineSourceId,
+  ): Promise<StreamingQrChallenge>;
+  pollStreamingQrSignin(
+    sourceId: OnlineSourceId,
+    key: string,
+  ): Promise<StreamingQrPoll>;
+  signInStreamingSource(
+    sourceId: OnlineSourceId,
+    method: StreamingPasswordMethod,
+    identifier: string,
+    password: string,
+    countryCode?: string | null,
+  ): Promise<StreamingSessionSnapshot>;
+  signOutStreamingSource(
+    sourceId: OnlineSourceId,
+  ): Promise<StreamingSessionSnapshot>;
+  listStreamingLikedTracks(sourceId: OnlineSourceId): Promise<StreamingTrack[]>;
+  listStreamingPlaylists(
+    sourceId: OnlineSourceId,
+  ): Promise<StreamingPlaylistSummary[]>;
+  getStreamingPlaylist(
+    sourceId: OnlineSourceId,
+    remotePlaylistId: string,
+  ): Promise<StreamingPlaylistDetail>;
+  searchStreamingSource(
+    sourceId: OnlineSourceId,
+    query: string,
+  ): Promise<StreamingTrack[]>;
+  startStreamingImport(
+    sourceId: OnlineSourceId,
+    remoteTrackIds: string[],
+    remotePlaylistId?: string | null,
+  ): Promise<StreamingImportProgress>;
+  continueStreamingImport(
+    action: LibraryDecisionAction,
+  ): Promise<StreamingImportProgress>;
+  resolveVideoSourceUrl(
+    sourceId: OnlineSourceId,
+    url: string,
+  ): Promise<VideoQueueItem[]>;
+  getRevealTargets(songId: string): Promise<RevealTargets>;
+  revealInFolder(path: string): Promise<void>;
+}
+
 export interface CdgBackend {
   getCdgFrame(
     songId: string,
@@ -338,4 +405,5 @@ export interface Backend {
   maintenance: MaintenanceBackend;
   playlist: PlaylistBackend;
   cdg: CdgBackend;
+  catalog: CatalogBackend;
 }

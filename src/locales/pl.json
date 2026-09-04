@@ -108,7 +108,8 @@
       "title": "Ulepsz wszystkie utwory do 4 ścieżek",
       "message": "Spowoduje to ponowne rozdzielenie wszystkich utworów w trybie 4 ścieżek. Zajętość dysku przez ścieżki mniej więcej się podwoi.",
       "confirm": "Ulepsz wszystkie"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Importuj",
@@ -191,7 +192,18 @@
     },
     "modelPreparing": "Przygotowywanie modelu rozdzielania…",
     "cancelSeparation": "Anuluj rozdzielanie",
-    "usingCachedSeparation": "Używanie rozdzielenia z pamięci podręcznej"
+    "usingCachedSeparation": "Używanie rozdzielenia z pamięci podręcznej",
+    "revealSongFile": "Pokaż plik utworu",
+    "revealStems": "Otwórz folder stemów",
+    "decision": {
+      "title": "Decyzja biblioteki",
+      "importConflict": "Ten utwór jest już w bibliotece, ale plik jest inny. Zachowaj utwór z biblioteki albo go zastąp.",
+      "keep": "Zachowaj utwór z biblioteki",
+      "replace": "Zastąp utwór z biblioteki",
+      "applyToRemaining": "Zastosuj do pozostałych konfliktów",
+      "librarySong": "Utwór z biblioteki",
+      "incoming": "Przychodzący plik"
+    }
   },
   "player": {
     "previous": "Poprzedni",
@@ -678,6 +690,14 @@
     "lyricsBlurInactive": {
       "enable": "Rozmyj nieodtwarzane wersy",
       "description": "Zmiękcza minione i nadchodzące linie. Zostaw wyłączone, by czytać z wyprzedzeniem."
+    },
+    "onlineSources": {
+      "label": "Źródła online",
+      "description": "Włącz źródło muzyki lub wideo. Oba pozostają wyłączone, dopóki ich nie wybierzesz.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Wklej publiczny link do filmu lub playlisty do kolejki. OpenKara nie pobiera dźwięku z YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Zaloguj się, aby przeglądać i importować utwory, które możesz odtworzyć. OpenKara zarządza potem zaimportowanymi plikami."
     }
   },
   "bootstrap": {
@@ -739,7 +759,11 @@
     "separation_failed": "Rozdzielanie nie powiodło się",
     "internal": "Błąd wewnętrzny",
     "remote_repository_unavailable": "Zdalne repozytorium jest niedostępne",
-    "somethingWentWrong": "Coś poszło nie tak"
+    "somethingWentWrong": "Coś poszło nie tak",
+    "online_source_disabled": "To źródło online jest wyłączone.",
+    "streaming_auth_failed": "Nie udało się zalogować",
+    "streaming_session_expired": "Sesja źródła streamingowego wygasła. Zaloguj się ponownie.",
+    "video_source_unavailable": "Tego filmu nie można odtworzyć jako gość."
   },
   "updater": {
     "available": "Dostępna jest wersja {{version}}",
@@ -749,5 +773,45 @@
     "restartToApply": "Aktualizacja gotowa — uruchom ponownie, aby zastosować",
     "restart": "Uruchom ponownie",
     "failed": "Aktualizacja nie powiodła się — pobierz ręcznie najnowsze wydanie"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Zaloguj się",
+      "signOut": "Wyloguj się",
+      "qr": "Zaloguj się kodem QR",
+      "phone": "Telefon i hasło",
+      "email": "E-mail i hasło",
+      "password": "Hasło",
+      "phoneNumber": "Numer telefonu",
+      "countryCode": "Numer kierunkowy",
+      "signedInAs": "Zalogowano jako {{name}}",
+      "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
+      "liked": "Polubione utwory",
+      "playlists": "Playlisty streamingowe",
+      "search": "Szukaj",
+      "searchPlaceholder": "Szukaj w NetEase",
+      "importTrack": "Importuj utwór",
+      "importPlaylist": "Importuj playlistę streamingową",
+      "importRefusal": "Import odrzucony",
+      "waitingForScan": "Zeskanuj ten kod QR aplikacją NetEase.",
+      "scanned": "Zeskanowano. Potwierdź na telefonie.",
+      "qrExpired": "Ten kod QR wygasł. Pobierz nowy.",
+      "loginWithPhone": "Zaloguj się telefonem",
+      "loginWithEmail": "Zaloguj się e-mailem",
+      "loginWithQr": "Zaloguj się kodem QR",
+      "passwordNotice": "OpenKara wysyła hasło tylko raz i go nie zapisuje.",
+      "qrHint": "Otwórz aplikację NetEase Cloud Music i zeskanuj ten kod.",
+      "refreshQr": "Pobierz nowy kod QR"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Wklej link YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Dodaj do kolejki",
+    "invalidUrl": "To nie jest publiczny link do filmu ani playlisty YouTube.",
+    "ageRestricted": "Ten film ma ograniczenie wiekowe.",
+    "private": "Ten film jest prywatny.",
+    "unlisted": "Ten film nie jest na liście."
   }
 }

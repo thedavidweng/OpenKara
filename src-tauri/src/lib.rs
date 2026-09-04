@@ -13,6 +13,7 @@ pub mod automation_report;
 #[cfg(feature = "automation-smoke")]
 pub mod automation_smoke;
 pub mod cache;
+pub mod catalog;
 pub mod cdg;
 pub mod commands;
 pub mod config;
@@ -171,6 +172,7 @@ pub fn run() {
             commands::playback::get_audio_peaks,
             commands::playback::get_waveform,
             commands::playback::set_preload_candidate,
+            commands::youtube_watch::control_youtube_watch,
             commands::cdg::get_cdg_frame,
             commands::cdg::get_cdg_status,
             commands::airplay::sync_airplay_route_picker,
@@ -200,6 +202,22 @@ pub fn run() {
             commands::settings::set_stem_mode,
             commands::settings::set_model_variant,
             commands::settings::set_language,
+            commands::settings::list_online_sources,
+            commands::settings::set_online_source_enabled,
+            commands::catalog::get_streaming_session,
+            commands::catalog::start_streaming_qr_signin,
+            commands::catalog::poll_streaming_qr_signin,
+            commands::catalog::sign_in_streaming_source,
+            commands::catalog::sign_out_streaming_source,
+            commands::catalog::list_streaming_liked_tracks,
+            commands::catalog::list_streaming_playlists,
+            commands::catalog::get_streaming_playlist,
+            commands::catalog::search_streaming_source,
+            commands::catalog::start_streaming_import,
+            commands::catalog::continue_streaming_import,
+            commands::catalog::resolve_video_source_url,
+            commands::catalog::get_reveal_targets,
+            commands::catalog::reveal_in_folder,
             commands::settings::set_hide_batch_separate,
             commands::settings::set_cover_art_backdrop,
             commands::settings::set_lyrics_blur_inactive,

@@ -57,6 +57,10 @@ pub struct AppConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_policy: Option<UpdatePolicy>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub youtube_source_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub netease_source_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_cache_bytes_limit: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pending_mirror_restore: bool,

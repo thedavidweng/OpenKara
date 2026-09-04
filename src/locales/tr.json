@@ -108,7 +108,8 @@
       "title": "Tüm Şarkıları 4 Katmana Yükselt",
       "message": "Bu, tüm şarkıları 4 katman modunu kullanarak yeniden ayırır. Katmanlar için disk alanı kullanımı yaklaşık iki katına çıkar.",
       "confirm": "Tümünü Yükselt"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "İçe Aktar",
@@ -189,7 +190,18 @@
     },
     "modelPreparing": "Ayırma modeli hazırlanıyor…",
     "cancelSeparation": "Ayırmayı iptal et",
-    "usingCachedSeparation": "Önbellekteki ayırma kullanılıyor"
+    "usingCachedSeparation": "Önbellekteki ayırma kullanılıyor",
+    "revealSongFile": "Şarkı dosyasını göster",
+    "revealStems": "Stem klasörünü aç",
+    "decision": {
+      "title": "Kitaplık kararı",
+      "importConflict": "Bu parça kitaplıkta farklı bir dosyayla zaten var. Kitaplıktaki şarkıyı tutun veya değiştirin.",
+      "keep": "Kitaplıktaki şarkıyı tut",
+      "replace": "Kitaplıktaki şarkıyı değiştir",
+      "applyToRemaining": "Kalan çakışmalara uygula",
+      "librarySong": "Kitaplıktaki şarkı",
+      "incoming": "Gelen dosya"
+    }
   },
   "player": {
     "previous": "Önceki",
@@ -676,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "Çalmayan dizeleri bulanıklaştır",
       "description": "Geçmiş ve gelecek dizeleri yumuşatır. Önceden okumak için kapalı bırakın."
+    },
+    "onlineSources": {
+      "label": "Çevrimiçi kaynaklar",
+      "description": "Bir müzik veya video kaynağını açın. Siz seçene kadar ikisi de kapalı kalır.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Herkese açık bir video veya oynatma listesi bağlantısını kuyruğa yapıştırın. OpenKara YouTube sesini indirmez.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Çalabileceğiniz şarkıları içe aktarmak için oturum açın. OpenKara sonra içe aktarılan dosyaları yönetir."
     }
   },
   "bootstrap": {
@@ -737,7 +757,11 @@
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",
-    "somethingWentWrong": "Bir şeyler ters gitti"
+    "somethingWentWrong": "Bir şeyler ters gitti",
+    "online_source_disabled": "Bu çevrimiçi kaynak kapalı.",
+    "streaming_auth_failed": "Oturum açılamadı",
+    "streaming_session_expired": "Yayın kaynağı oturumunun süresi doldu. Yeniden oturum açın.",
+    "video_source_unavailable": "Bu video konuk olarak oynatılamaz."
   },
   "updater": {
     "available": "Sürüm {{version}} mevcut",
@@ -747,5 +771,45 @@
     "restartToApply": "Güncelleme hazır — uygulamak için yeniden başlatın",
     "restart": "Yeniden Başlat",
     "failed": "Güncelleme başarısız — en son sürümü elle indirin"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Oturum aç",
+      "signOut": "Oturumu kapat",
+      "qr": "QR ile oturum aç",
+      "phone": "Telefon ve parola",
+      "email": "E-posta ve parola",
+      "password": "Parola",
+      "phoneNumber": "Telefon numarası",
+      "countryCode": "Ülke kodu",
+      "signedInAs": "{{name}} olarak oturum açık",
+      "sessionExpired": "Oturumun süresi doldu. Yeniden oturum açın.",
+      "liked": "Beğenilen parçalar",
+      "playlists": "Yayın oynatma listeleri",
+      "search": "Ara",
+      "searchPlaceholder": "NetEase’de ara",
+      "importTrack": "Parçayı içe aktar",
+      "importPlaylist": "Yayın oynatma listesini içe aktar",
+      "importRefusal": "İçe aktarma reddedildi",
+      "waitingForScan": "Bu QR kodunu NetEase uygulamasıyla tarayın.",
+      "scanned": "Tarandı. Telefonda onaylayın.",
+      "qrExpired": "Bu QR kodunun süresi doldu. Yenisini alın.",
+      "loginWithPhone": "Telefonla oturum aç",
+      "loginWithEmail": "E-postayla oturum aç",
+      "loginWithQr": "QR ile oturum aç",
+      "passwordNotice": "OpenKara parolayı bir kez gönderir ve saklamaz.",
+      "qrHint": "NetEase Cloud Music uygulamasını açın ve bu kodu tarayın.",
+      "refreshQr": "Yeni QR kodu al"
+    }
+  },
+  "youtube": {
+    "pasteLink": "YouTube bağlantısı yapıştır",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Kuyruğa ekle",
+    "invalidUrl": "Bu herkese açık bir YouTube izleme veya oynatma listesi bağlantısı değil.",
+    "ageRestricted": "Bu videoda yaş sınırı var.",
+    "private": "Bu video özel.",
+    "unlisted": "Bu video listede yok."
   }
 }
