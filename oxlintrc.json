@@ -4,6 +4,10 @@
   "rules": {
     "react/react-in-jsx-scope": "off",
     "react/only-export-components": "warn",
+    "react/refs": "off",
+    "react/globals": "off",
+    "react/set-state-in-effect": "off",
+    "react/incompatible-library": "off",
     "jsx-a11y/prefer-tag-over-role": "off"
   },
   "ignorePatterns": [
