@@ -756,14 +756,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/cc/cc-1.4.4.crate",
-    "sha256": "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273",
-    "dest": "cargo/vendor/cc-1.4.4"
+    "url": "https://static.crates.io/crates/cc/cc-1.4.5.crate",
+    "sha256": "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80",
+    "dest": "cargo/vendor/cc-1.4.5"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273\",\"files\":{}}",
-    "dest": "cargo/vendor/cc-1.4.4",
+    "contents": "{\"package\":\"005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80\",\"files\":{}}",
+    "dest": "cargo/vendor/cc-1.4.5",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -1822,14 +1822,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.11.crate",
-    "sha256": "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890",
-    "dest": "cargo/vendor/find-msvc-tools-0.1.11"
+    "url": "https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.12.crate",
+    "sha256": "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d",
+    "dest": "cargo/vendor/find-msvc-tools-0.1.12"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890\",\"files\":{}}",
-    "dest": "cargo/vendor/find-msvc-tools-0.1.11",
+    "contents": "{\"package\":\"3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d\",\"files\":{}}",
+    "dest": "cargo/vendor/find-msvc-tools-0.1.12",
     "dest-filename": ".cargo-checksum.json"
   },
   {
