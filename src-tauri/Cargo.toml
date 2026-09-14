@@ -73,7 +73,7 @@ tiny_http = "0.12.0"
 tracing = "0.1"
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-quick-xml = "0.41"
+quick-xml = "0.42"
 regex-lite = "0.1"
 unicode-normalization = "0.1"
 flate2 = "1.1.9"
