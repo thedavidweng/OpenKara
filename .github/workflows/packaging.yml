@@ -166,7 +166,22 @@ jobs:
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope CurrentUser | Out-Null
           Import-Module Microsoft.WinGet.Client
-          Repair-WinGetPackageManager -Force -Latest
+          # Repair-WinGetPackageManager resolves the latest winget release through
+          # the anonymous GitHub API (60 req/h per IP); shared runner IPs regularly
+          # exhaust that quota, which is infra flake, not a packaging regression.
+          # Retry rides out transient failures; when repair still fails, fall
+          # through to the image's preinstalled winget. The trailing
+          # `winget --version` fails the job when no usable client remains, so the
+          # fallback cannot silently green the gate.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Repair-WinGetPackageManager -Force -Latest
+              break
+            } catch {
+              Write-Warning "Repair-WinGetPackageManager attempt ${attempt} failed: $_"
+              if ($attempt -lt 3) { Start-Sleep -Seconds 15 }
+            }
+          }
           winget --version
 
       - name: Validate WinGet manifests
