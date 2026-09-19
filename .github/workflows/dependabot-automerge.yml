@@ -45,10 +45,9 @@ jobs:
         run: |
           set -euo pipefail
           updates="${UPDATES_JSON:-[]}"
-          echo "$updates" | jq -r '.[] | "- \(.name): \(.["update-type"] // "unknown")"'
-          # Unknown update types (e.g. SHA-pinned action bumps) are ineligible.
+          echo "$updates" | jq -r '.[] | "- \(.dependencyName): \(.updateType // "unknown")"'
           if ! echo "$updates" | jq -e '
-            length > 0 and all(.[]; (.["update-type"] // "") as $type |
+            length > 0 and all(.[]; (.updateType // "") as $type |
               $type == "version-update:semver-patch" or
               $type == "version-update:semver-minor")
           ' >/dev/null; then
@@ -56,7 +55,7 @@ jobs:
             exit 0
           fi
           if ! echo "$updates" | jq -e --arg re "$DENYLIST" \
-            'all(.[]; (.name | test($re)) | not)' >/dev/null; then
+            'all(.[]; (.dependencyName | test($re)) | not)' >/dev/null; then
             echo "eligible=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
