@@ -103,9 +103,9 @@ impl TransliterationSidecar {
                 self.in_track = true;
                 self.track_is_latn = false;
                 for attr in start.attributes().flatten() {
-                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    let key = attr.key.as_ref();
                     if attr_key_matches(key, "lang") {
-                        self.track_is_latn = lang_is_latn(&String::from_utf8_lossy(&attr.value));
+                        self.track_is_latn = lang_is_latn(&attr.value);
                     }
                 }
             }
@@ -118,9 +118,9 @@ impl TransliterationSidecar {
                 self.text_buf.clear();
                 self.text_parts.clear();
                 for attr in start.attributes().flatten() {
-                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    let key = attr.key.as_ref();
                     if attr_key_matches(key, "for") {
-                        self.text_for = String::from_utf8_lossy(&attr.value).into_owned();
+                        self.text_for = attr.value.into_owned();
                     }
                 }
             }
@@ -255,8 +255,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
-                let tag_name = e.name();
-                let tag_str = std::str::from_utf8(tag_name.as_ref()).unwrap_or("");
+                let tag_str = e.name().into_inner();
 
                 match tag_str {
                     "body" => {
@@ -268,13 +267,12 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         let mut next_section = current_section.clone();
                         let mut next_div_line_timing_mode = div_line_timing_mode;
                         for attr in e.attributes().flatten() {
-                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                            let key = attr.key.as_ref();
                             if key == "song-part" || key.ends_with(":song-part") {
-                                next_section =
-                                    Some(String::from_utf8_lossy(&attr.value).into_owned());
+                                next_section = Some(attr.value.clone().into_owned());
                             }
                             if attr_key_matches(key, "timing") {
-                                let val = String::from_utf8_lossy(&attr.value);
+                                let val = attr.value.clone();
                                 if val.as_ref() == "Line" {
                                     next_div_line_timing_mode = true;
                                 } else if val.as_ref() == "Word" {
@@ -299,8 +297,8 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         line_timing_mode = div_line_timing_mode;
 
                         for attr in e.attributes().flatten() {
-                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                            let val = String::from_utf8_lossy(&attr.value);
+                            let key = attr.key.as_ref();
+                            let val = attr.value.clone();
                             if key == "begin" {
                                 p_begin = parse_ttml_timestamp(&val);
                             }
@@ -325,8 +323,8 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         let mut end_ms: Option<u64> = None;
                         let mut is_ruby_text = false;
                         for attr in e.attributes().flatten() {
-                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                            let val = String::from_utf8_lossy(&attr.value);
+                            let key = attr.key.as_ref();
+                            let val = attr.value.clone();
                             if key == "role" || key.ends_with(":role") {
                                 role = val.to_string();
                             }
@@ -366,7 +364,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                 }
             }
             Ok(Event::Text(e)) => {
-                let text = e.decode().unwrap_or_default();
+                let text = e.into_inner();
                 if text.is_empty() {
                     continue;
                 }
@@ -427,8 +425,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                 }
             }
             Ok(Event::End(e)) => {
-                let tag_name = e.name();
-                let tag_str = std::str::from_utf8(tag_name.as_ref()).unwrap_or("");
+                let tag_str = e.name().into_inner();
 
                 match tag_str {
                     "p" => {
@@ -527,13 +524,12 @@ pub fn parse_ttml_declared_offset_ms(raw: &str) -> Option<i64> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(e) | Event::Empty(e)) => {
-                let tag_name = e.name();
-                let tag_str = std::str::from_utf8(tag_name.as_ref()).unwrap_or("");
+                let tag_str = e.name().into_inner();
                 let mut meta_key = None;
                 let mut meta_value = None;
                 for attr in e.attributes().flatten() {
-                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                    let val = String::from_utf8_lossy(&attr.value);
+                    let key = attr.key.as_ref();
+                    let val = attr.value.clone();
                     if attr_key_matches(key, "timingOffset") {
                         if let Ok(offset) = val.trim().parse::<i64>() {
                             return Some(offset);
