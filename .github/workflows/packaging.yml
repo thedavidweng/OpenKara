@@ -162,26 +162,41 @@ jobs:
         shell: pwsh
         run: |
           $progressPreference = 'silentlyContinue'
-          # GitHub Windows images no longer resolve the legacy NuGet PackageProvider bootstrap reliably.
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope CurrentUser | Out-Null
-          Import-Module Microsoft.WinGet.Client
-          # Repair-WinGetPackageManager resolves the latest winget release through
-          # the anonymous GitHub API (60 req/h per IP); shared runner IPs regularly
-          # exhaust that quota, which is infra flake, not a packaging regression.
-          # Retry rides out transient failures; when repair still fails, fall
-          # through to the image's preinstalled winget. The trailing
-          # `winget --version` fails the job when no usable client remains, so the
-          # fallback cannot silently green the gate.
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            try {
-              Repair-WinGetPackageManager -Force -Latest
-              break
-            } catch {
-              Write-Warning "Repair-WinGetPackageManager attempt ${attempt} failed: $_"
-              if ($attempt -lt 3) { Start-Sleep -Seconds 15 }
+          # GitHub Windows images normally include a usable winget client.
+          # Prefer it so the normal path does not call the GitHub API through
+          # Repair-WinGetPackageManager, which is prone to shared-runner rate
+          # limits. Only repair missing or unusable installations.
+          $wingetReady = $false
+          try {
+            & winget --version
+            $wingetReady = $LASTEXITCODE -eq 0
+          } catch {
+            Write-Warning "The preinstalled WinGet client is unavailable: $_"
+          }
+
+          if (-not $wingetReady) {
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+            Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope CurrentUser | Out-Null
+            Import-Module Microsoft.WinGet.Client
+
+            # Repair-WinGetPackageManager may hit the anonymous GitHub API
+            # (60 req/h per IP). Keep recovery bounded at three attempts.
+            for ($attempt = 1; $attempt -le 3 -and -not $wingetReady; $attempt++) {
+              try {
+                Repair-WinGetPackageManager -Force -Latest
+                & winget --version
+                $wingetReady = $LASTEXITCODE -eq 0
+              } catch {
+                Write-Warning "Repair-WinGetPackageManager attempt ${attempt} failed: $_"
+              }
+              if (-not $wingetReady -and $attempt -lt 3) {
+                Start-Sleep -Seconds 15
+              }
             }
           }
+
+          # Keep this as a hard gate: a failed repair must not silently green
+          # the validation job.
           winget --version
 
       - name: Validate WinGet manifests
