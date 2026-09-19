@@ -45,7 +45,7 @@ jobs:
   # truth shared with the main CI workflow.
   triage:
     name: Triage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     outputs:
       packaging_inputs: ${{ steps.classify.outputs.packaging_inputs }}
@@ -162,16 +162,18 @@ jobs:
         shell: pwsh
         run: |
           $progressPreference = 'silentlyContinue'
-          # GitHub Windows images normally include a usable winget client.
-          # Prefer it so the normal path does not call the GitHub API through
-          # Repair-WinGetPackageManager, which is prone to shared-runner rate
-          # limits. Only repair missing or unusable installations.
+          # GitHub Windows images normally include a preinstalled winget client.
+          # OpenKara manifests use schema v1.12.0; the client must be >= 1.12.0.
+          # Only call Repair-WinGetPackageManager when missing or older than 1.12.0,
+          # avoiding unnecessary GitHub API calls (subject to shared runner IP limits).
           $wingetReady = $false
           try {
-            & winget --version
-            $wingetReady = $LASTEXITCODE -eq 0
+            $raw = (& winget --version | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $raw -match '(\d+\.\d+(?:\.\d+)?)' -and [version]$Matches[1] -ge [version]'1.12.0') {
+              $wingetReady = $true
+            }
           } catch {
-            Write-Warning "The preinstalled WinGet client is unavailable: $_"
+            Write-Warning "The preinstalled WinGet client is unavailable or unsupported: $_"
           }
 
           if (-not $wingetReady) {
@@ -184,8 +186,10 @@ jobs:
             for ($attempt = 1; $attempt -le 3 -and -not $wingetReady; $attempt++) {
               try {
                 Repair-WinGetPackageManager -Force -Latest
-                & winget --version
-                $wingetReady = $LASTEXITCODE -eq 0
+                $raw = (& winget --version | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0 -and $raw -match '(\d+\.\d+(?:\.\d+)?)' -and [version]$Matches[1] -ge [version]'1.12.0') {
+                  $wingetReady = $true
+                }
               } catch {
                 Write-Warning "Repair-WinGetPackageManager attempt ${attempt} failed: $_"
               }
@@ -197,6 +201,9 @@ jobs:
 
           # Keep this as a hard gate: a failed repair must not silently green
           # the validation job.
+          if (-not $wingetReady) {
+            throw "A WinGet client >= 1.12.0 is required to validate manifests, but none could be configured."
+          }
           winget --version
 
       - name: Validate WinGet manifests
