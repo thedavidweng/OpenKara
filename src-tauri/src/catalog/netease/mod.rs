@@ -827,7 +827,6 @@ mod tests {
     #[test]
     fn password_sign_in_merges_header_and_body_cookies_over_http() {
         let dir = tempfile::tempdir().expect("tmp");
-        std::env::set_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR", dir.path());
         let mut server = mockito::Server::new();
         server
             .mock("POST", "/weapi/login")
@@ -859,17 +858,14 @@ mod tests {
             .expect("stored");
         assert_eq!(stored.music_u, "header-music-u");
         assert_eq!(stored.csrf, "body-csrf");
-        std::env::remove_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR");
     }
 
     #[test]
     fn adapter_sends_china_client_address() {
         let http = recording_http_with_china_ip();
         let dir = tempfile::tempdir().expect("tmp");
-        std::env::set_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR", dir.path());
         let source = NeteaseStreamingSource::open(http, dir.path()).expect("open");
         let _ = source.start_qr();
         assert!(source.http.last_china_address().is_some());
-        std::env::remove_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR");
     }
 }

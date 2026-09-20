@@ -118,11 +118,11 @@ pub struct StreamingCredentials {
 }
 
 impl StreamingCredentials {
-    pub fn contains_password_material(&self, password: &str) -> bool {
-        !password.is_empty()
-            && (self.music_u.contains(password)
-                || self.csrf.contains(password)
-                || serde_json::to_string(self).is_ok_and(|payload| payload.contains(password)))
+    pub fn contains_password_material(&self, material: &str) -> bool {
+        !material.is_empty()
+            && (self.music_u.contains(material)
+                || self.csrf.contains(material)
+                || serde_json::to_string(self).is_ok_and(|payload| payload.contains(material)))
     }
 }
 
@@ -326,7 +326,8 @@ mod tests {
             music_u: "token".to_owned(),
             csrf: "csrf".to_owned(),
         };
-        assert!(!credentials.contains_password_material(&String::new()));
+        let empty = String::new();
+        assert!(!credentials.contains_password_material(&empty));
         assert!(!credentials.contains_password_material(&fixture_password()));
     }
 
