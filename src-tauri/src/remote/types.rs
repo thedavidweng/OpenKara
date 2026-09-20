@@ -35,6 +35,20 @@ pub(crate) const DROPBOX_FIXED_REDIRECT_URI: &str = "http://localhost:53682/oaut
 pub(crate) const GOOGLE_DRIVE_OAUTH_SCOPE: &str =
     "openid email https://www.googleapis.com/auth/drive.file";
 
+pub(crate) fn bundled_resource_file(resource_dir: &Path, relative: &str) -> PathBuf {
+    let primary = resource_dir.join(relative);
+    if primary.is_file() {
+        return primary;
+    }
+    let unpackaged = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("generated")
+        .join(relative);
+    if unpackaged.is_file() {
+        return unpackaged;
+    }
+    primary
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum RemoteAuthPayloadInput {
@@ -531,5 +545,28 @@ mod tests {
         assert_eq!(json["song_id"], "song-1");
         assert_eq!(json["state"], "running");
         assert_eq!(json["remote_library_id"], "library-remote-1");
+    }
+
+    #[test]
+    fn bundled_resource_file_prefers_resource_dir_when_present() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let relative = "oauth/google-drive-client.json";
+        let primary = root.path().join(relative);
+        std::fs::create_dir_all(primary.parent().expect("parent")).expect("oauth dir");
+        std::fs::write(&primary, "{}").expect("client file");
+        assert_eq!(bundled_resource_file(root.path(), relative), primary);
+    }
+
+    #[test]
+    fn bundled_resource_file_uses_unpackaged_generated_layout() {
+        let expected = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("generated/oauth/.gitkeep");
+        assert!(
+            expected.is_file(),
+            "src-tauri/generated/oauth/.gitkeep must exist"
+        );
+        assert_eq!(
+            bundled_resource_file(Path::new("/tmp/openkara-no-bundle"), "oauth/.gitkeep"),
+            expected
+        );
     }
 }
