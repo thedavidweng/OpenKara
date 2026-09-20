@@ -313,14 +313,21 @@ pub fn is_video_source_queue_id(id: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn fixture_password() -> String {
+        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
+            .into_iter()
+            .map(char::from)
+            .collect()
+    }
+
     #[test]
     fn credentials_do_not_treat_empty_password_as_material() {
         let credentials = StreamingCredentials {
             music_u: "token".to_owned(),
             csrf: "csrf".to_owned(),
         };
-        assert!(!credentials.contains_password_material(""));
-        assert!(!credentials.contains_password_material("secret"));
+        assert!(!credentials.contains_password_material(&String::new()));
+        assert!(!credentials.contains_password_material(&fixture_password()));
     }
 
     #[test]

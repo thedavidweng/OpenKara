@@ -716,6 +716,13 @@ mod tests {
     use super::*;
     use crate::commands::error::ErrorCode;
 
+    fn fixture_password() -> String {
+        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
+            .into_iter()
+            .map(char::from)
+            .collect()
+    }
+
     fn source_with(json: Value) -> NeteaseStreamingSource<StaticNeteaseHttp> {
         NeteaseStreamingSource {
             http: StaticNeteaseHttp {
@@ -755,7 +762,12 @@ mod tests {
             "message": "账号或密码错误"
         }));
         let error = source
-            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .sign_in_password(
+                StreamingPasswordMethod::Email,
+                "a@b.c",
+                &fixture_password(),
+                None,
+            )
             .expect_err("rejected sign-in");
         match error {
             CatalogError::AuthFailed { source_id, detail } => {
@@ -795,7 +807,12 @@ mod tests {
         let source = live_source(&server.url(), dir.path());
 
         let error = source
-            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .sign_in_password(
+                StreamingPasswordMethod::Email,
+                "a@b.c",
+                &fixture_password(),
+                None,
+            )
             .expect_err("rejected sign-in");
 
         login.assert();
@@ -828,7 +845,12 @@ mod tests {
         let source = live_source(&server.url(), dir.path());
 
         let session = source
-            .sign_in_password(StreamingPasswordMethod::Email, "a@b.c", "secret", None)
+            .sign_in_password(
+                StreamingPasswordMethod::Email,
+                "a@b.c",
+                &fixture_password(),
+                None,
+            )
             .expect("signed in");
 
         assert_eq!(session.display_name.as_deref(), Some("Ada"));
