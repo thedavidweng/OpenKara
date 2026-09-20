@@ -44,8 +44,8 @@ pub fn load_json_in<T: DeserializeOwned>(
     Ok(Some(value))
 }
 
-pub fn delete_in(service: &str, _app_data_dir: &Path, account: &str) -> Result<()> {
-    if let Some(dir) = test_store_dir() {
+pub fn delete_in(service: &str, app_data_dir: &Path, account: &str) -> Result<()> {
+    if let Some(dir) = test_store_dir(app_data_dir) {
         let path = test_store_path(&dir, service, account);
         if path.exists() {
             fs::remove_file(&path)
@@ -58,11 +58,10 @@ pub fn delete_in(service: &str, _app_data_dir: &Path, account: &str) -> Result<(
 }
 
 fn store_string(service: &str, app_data_dir: &Path, account: &str, payload: &str) -> Result<()> {
-    if let Some(dir) = test_store_dir() {
+    if let Some(dir) = test_store_dir(app_data_dir) {
         fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
         let path = test_store_path(&dir, service, account);
         fs::write(&path, payload).with_context(|| format!("failed to write {}", path.display()))?;
-        let _ = app_data_dir;
         return Ok(());
     }
 
@@ -70,14 +69,13 @@ fn store_string(service: &str, app_data_dir: &Path, account: &str, payload: &str
 }
 
 fn load_string(service: &str, app_data_dir: &Path, account: &str) -> Result<Option<String>> {
-    if let Some(dir) = test_store_dir() {
+    if let Some(dir) = test_store_dir(app_data_dir) {
         let path = test_store_path(&dir, service, account);
         if !path.exists() {
             return Ok(None);
         }
         let payload = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let _ = app_data_dir;
         return Ok(Some(payload));
     }
 
@@ -88,15 +86,21 @@ fn target_name(service: &str, account: &str) -> String {
     format!("{service}:{account}")
 }
 
-fn test_store_dir() -> Option<PathBuf> {
+fn test_store_dir(app_data_dir: &Path) -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        if !app_data_dir.as_os_str().is_empty() {
+            return Some(app_data_dir.to_path_buf());
+        }
+    }
     #[cfg(debug_assertions)]
     {
-        std::env::var_os("OPENKARA_TEST_CREDENTIAL_STORE_DIR").map(PathBuf::from)
+        if let Some(dir) = std::env::var_os("OPENKARA_TEST_CREDENTIAL_STORE_DIR") {
+            return Some(PathBuf::from(dir));
+        }
     }
-    #[cfg(not(debug_assertions))]
-    {
-        None
-    }
+    let _ = app_data_dir;
+    None
 }
 
 fn test_store_path(directory: &Path, service: &str, account: &str) -> PathBuf {
