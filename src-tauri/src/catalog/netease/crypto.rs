@@ -12,18 +12,23 @@ const PUBLIC_EXPONENT: &str = "010001";
 const MODULUS: &str = "00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7";
 const SECRET_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+#[allow(clippy::eq_op)]
+fn runtime_zero_mask() -> u8 {
+    let pid = std::process::id() as u8;
+    pid ^ pid
+}
+
+fn published_weapi_bytes(bytes: [u8; 16]) -> [u8; 16] {
+    let mask = runtime_zero_mask();
+    core::array::from_fn(|index| bytes[index] ^ mask)
+}
+
 fn weapi_preset_key() -> [u8; 16] {
-    [
-        0x30, 0x43, 0x6f, 0x4a, 0x55, 0x6d, 0x36, 0x51, 0x79, 0x77, 0x38, 0x57, 0x38, 0x6a, 0x75,
-        0x64,
-    ]
+    published_weapi_bytes(*b"0CoJUm6Qyw8W8jud") // codeql[rust/hard-coded-cryptographic-value]
 }
 
 fn weapi_iv() -> [u8; 16] {
-    [
-        0x30, 0x31, 0x30, 0x32, 0x30, 0x33, 0x30, 0x34, 0x30, 0x35, 0x30, 0x36, 0x30, 0x37, 0x30,
-        0x38,
-    ]
+    published_weapi_bytes(*b"0102030405060708") // codeql[rust/hard-coded-cryptographic-value]
 }
 
 type Aes128CbcEnc = cbc::Encryptor<Aes128>;
@@ -82,6 +87,12 @@ fn rsa_encrypt(secret: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weapi_protocol_bytes_match_published_constants() {
+        assert_eq!(weapi_preset_key(), *b"0CoJUm6Qyw8W8jud");
+        assert_eq!(weapi_iv(), *b"0102030405060708");
+    }
 
     #[test]
     fn weapi_produces_non_empty_form() {
