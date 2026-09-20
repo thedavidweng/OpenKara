@@ -34,6 +34,26 @@ fn resolve_app_data_dir<R: Runtime>(app: &tauri::App<R>) -> anyhow::Result<PathB
         .context("failed to resolve application data directory")
 }
 
+// Tauri only treats target/{debug,release} as a cargo output dir; macOS then
+// looks for ../Resources. Cargo wrappers change current_exe(), so unpackaged
+// launches fail. Bundled OAuth files are optional and already fall back to env.
+fn resolve_bundled_resource_dir(
+    bundled: Result<PathBuf, impl std::fmt::Display>,
+    fallback: &std::path::Path,
+) -> PathBuf {
+    match bundled {
+        Ok(dir) => dir,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                fallback = %fallback.display(),
+                "bundled resource directory unavailable; continuing without bundled resources"
+            );
+            fallback.to_path_buf()
+        }
+    }
+}
+
 pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
     match app.path().app_log_dir() {
         Ok(log_dir) => {
@@ -51,11 +71,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         }
     }
 
-    let app_resource_dir = app
-        .path()
-        .resource_dir()
-        .context("failed to resolve bundled resource directory")?;
-
     let app_data_dir = resolve_app_data_dir(app)?;
     fs::create_dir_all(&app_data_dir).with_context(|| {
         format!(
@@ -63,6 +78,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             app_data_dir.display()
         )
     })?;
+
+    let app_resource_dir = resolve_bundled_resource_dir(app.path().resource_dir(), &app_data_dir);
 
     if let Err(err) = separator::activation::resolve_and_load(
         &app_data_dir,
@@ -670,5 +687,30 @@ mod playback_position_emitter_tests {
             Some(true),
             &duplicate,
         ));
+    }
+}
+
+#[cfg(test)]
+mod bundled_resource_dir_tests {
+    use super::resolve_bundled_resource_dir;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn keeps_resolved_bundled_resource_dir() {
+        let bundled = PathBuf::from("/tmp/bundle-resources");
+        let fallback = PathBuf::from("/tmp/app-data");
+        assert_eq!(
+            resolve_bundled_resource_dir(Ok(bundled.clone()), &fallback),
+            bundled
+        );
+    }
+
+    #[test]
+    fn falls_back_when_bundled_resource_dir_is_missing() {
+        let fallback = PathBuf::from("/tmp/app-data");
+        assert_eq!(
+            resolve_bundled_resource_dir(Err("unknown path"), Path::new("/tmp/app-data")),
+            fallback
+        );
     }
 }
