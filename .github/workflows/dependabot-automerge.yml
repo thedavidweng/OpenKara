@@ -1,77 +1,79 @@
 name: Dependabot auto-merge
 
-# Enables GitHub auto-merge on Dependabot PRs that only contain semver
-# minor/patch updates outside the native denylist. The merge itself still
-# waits for the required "CI Gate" check, so a red CI blocks the merge.
+# Official pattern: pull_request_target so GITHUB_TOKEN has write access on
+# Dependabot PRs. Never checkout or execute PR code in this workflow.
 on:
-  pull_request:
-    branches: [main]
+  pull_request_target:
+
+permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-
-permissions:
-  contents: read
 
 jobs:
   automerge:
-    name: Enable auto-merge for eligible updates
-    if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.repository == 'thedavidweng/OpenKara'
-    runs-on: ubuntu-24.04
+    name: Enable auto-merge
+    if: >
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write # enable auto-merge on the pull request
-      pull-requests: write # inspect PR auto-merge state
-
+      contents: write
+      pull-requests: write
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Evaluate eligibility
-        id: eligibility
+      - name: Enable auto-merge for safe updates
         env:
-          UPDATES_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
-          # Semver-compatible bumps in this set ride native libraries or the
-          # windowing shell whose runtime behavior ci.yml cannot fully observe
-          # (installed-app smoke runs outside the gate), so their minors need
-          # human review even though they are semver-compatible.
-          DENYLIST: "^(ort|ort-sys|tauri|tauri-build|wry|tao|muda|tray-icon|cpal|rubato|audioadapter)"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
+          PKG_ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          DEP_TYPE: ${{ steps.meta.outputs.dependency-type }}
         run: |
           set -euo pipefail
-          updates="${UPDATES_JSON:-[]}"
-          echo "$updates" | jq -r '.[] | "- \(.dependencyName): \(.updateType // "unknown")"'
-          if ! echo "$updates" | jq -e '
-            length > 0 and all(.[]; (.updateType // "") as $type |
-              $type == "version-update:semver-patch" or
-              $type == "version-update:semver-minor")
-          ' >/dev/null; then
-            echo "eligible=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if ! echo "$updates" | jq -e --arg re "$DENYLIST" \
-            'all(.[]; (.dependencyName | test($re)) | not)' >/dev/null; then
-            echo "eligible=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "eligible=true" >> "$GITHUB_OUTPUT"
+          # Release/review tooling stays manual.
+          deny='googleapis/release-please-action dependabot/fetch-metadata'
+          for blocked in $deny; do
+            case ",${DEP_NAMES}," in
+              *",${blocked},"*)
+                echo "skip auto-merge (denylist): $blocked"
+                exit 0
+                ;;
+            esac
+          done
 
-      - name: Enable auto-merge (squash)
-        if: steps.eligibility.outputs.eligible == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          enabled=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --json autoMergeRequest --jq '.autoMergeRequest != null')
-          if [ "$enabled" = "true" ]; then
-            echo "Auto-merge already enabled"
+          eco="${PKG_ECOSYSTEM}"
+          ut="${UPDATE_TYPE}"
+          dt="${DEP_TYPE}"
+
+          eligible=false
+          # patch always (after denylist)
+          if [ "$ut" = "version-update:semver-patch" ]; then
+            eligible=true
+          fi
+          # github-actions non-major: auto (covers SHA pin bumps with empty update-type)
+          if [ "$eco" = "github-actions" ] || [ "$eco" = "github_actions" ]; then
+            if [ "$ut" != "version-update:semver-major" ]; then
+              eligible=true
+            fi
+          fi
+          # minor of non-production / indirect / dev deps
+          if [ "$ut" = "version-update:semver-minor" ] && [ "$dt" != "direct:production" ]; then
+            eligible=true
+          fi
+
+          if [ "$eligible" != true ]; then
+            echo "skip auto-merge: ecosystem=$eco update-type=$ut dependency-type=$dt names=$DEP_NAMES"
             exit 0
           fi
-          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash
+
+          echo "enable auto-merge: ecosystem=$eco update-type=$ut dependency-type=$dt names=$DEP_NAMES"
+          gh pr merge --auto --squash "$PR_URL"
