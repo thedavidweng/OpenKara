@@ -700,7 +700,7 @@ mod bundled_resource_dir_tests {
         let bundled = PathBuf::from("/tmp/bundle-resources");
         let fallback = PathBuf::from("/tmp/app-data");
         assert_eq!(
-            resolve_bundled_resource_dir(Ok(bundled.clone()), &fallback),
+            resolve_bundled_resource_dir(Ok::<_, &str>(bundled.clone()), &fallback),
             bundled
         );
     }
