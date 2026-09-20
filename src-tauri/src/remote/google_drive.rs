@@ -33,8 +33,8 @@ use super::{
         random_token, remote_auth_session_exists, update_remote_auth_session,
     },
     types::{
-        current_unix_time_ms, load_remote_credential, store_remote_credential,
-        stored_google_drive_client_id, BundledGoogleDriveOAuthClientFile,
+        bundled_resource_file, current_unix_time_ms, load_remote_credential,
+        store_remote_credential, stored_google_drive_client_id, BundledGoogleDriveOAuthClientFile,
         GoogleDriveFileListResponse, GoogleDriveFileMetadata, GoogleDriveProviderCredentials,
         GoogleDriveSecret, GoogleDriveSessionData, GoogleDriveTokenResponse,
         GoogleDriveUserInfoResponse, RemoteAuthSession, RemoteAuthState, StoredGoogleDriveSecret,
@@ -89,7 +89,7 @@ pub(crate) fn google_drive_provider_credentials_from_env(
 fn load_google_drive_provider_credentials_from_resource_dir(
     resource_dir: &Path,
 ) -> CommandResult<Option<GoogleDriveProviderCredentials>> {
-    let path = resource_dir.join(GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH);
+    let path = bundled_resource_file(resource_dir, GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH);
     if !path.exists() {
         return Ok(None);
     }

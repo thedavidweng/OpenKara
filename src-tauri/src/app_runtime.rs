@@ -8,8 +8,9 @@ use crate::{
 };
 use anyhow::Context;
 use std::{
+    ffi::OsString,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64},
         Arc, Mutex,
@@ -34,24 +35,132 @@ fn resolve_app_data_dir<R: Runtime>(app: &tauri::App<R>) -> anyhow::Result<PathB
         .context("failed to resolve application data directory")
 }
 
-// Tauri only treats target/{debug,release} as a cargo output dir; macOS then
-// looks for ../Resources. Cargo wrappers change current_exe(), so unpackaged
-// launches fail. Bundled OAuth files are optional and already fall back to env.
-fn resolve_bundled_resource_dir(
-    bundled: Result<PathBuf, impl std::fmt::Display>,
-    fallback: &std::path::Path,
-) -> PathBuf {
-    match bundled {
-        Ok(dir) => dir,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                fallback = %fallback.display(),
-                "bundled resource directory unavailable; continuing without bundled resources"
-            );
-            fallback.to_path_buf()
+fn unpackaged_generated_resource_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("generated")
+}
+
+fn is_openkara_binary_path(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("openkara"))
+}
+
+/// `target/{profile}` or `target/{triple}/{profile}`. Does not require
+/// `.cargo-lock`, which Tauri's heuristic needs and cargo wrappers often omit.
+fn cargo_artifact_dir(exe: &Path) -> Option<PathBuf> {
+    let exe_dir = exe.parent()?;
+    let names = exe_dir
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let len = names.len();
+    if len >= 2 && names[len - 2] == "target" {
+        return Some(exe_dir.to_path_buf());
+    }
+    if len >= 3 && names[len - 3] == "target" {
+        return Some(exe_dir.to_path_buf());
+    }
+    None
+}
+
+fn bundle_resources_dir(exe: &Path) -> Option<PathBuf> {
+    exe.parent().map(|dir| dir.join("..").join("Resources"))
+}
+
+fn executable_path_candidates() -> Vec<PathBuf> {
+    executable_path_candidates_from(
+        std::env::current_exe().ok(),
+        std::env::current_dir().ok(),
+        std::env::args_os(),
+        |path| path.is_file(),
+    )
+}
+
+fn executable_path_candidates_from(
+    current_exe: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+    args: impl IntoIterator<Item = OsString>,
+    is_file: impl Fn(&Path) -> bool,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(exe) = current_exe {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("openkara");
+            if is_file(&sibling) {
+                candidates.push(sibling);
+            }
+        }
+        candidates.push(exe);
+    }
+    for arg in args {
+        let path = PathBuf::from(arg);
+        if !is_openkara_binary_path(&path) {
+            continue;
+        }
+        if is_file(&path) {
+            candidates.push(path);
+            continue;
+        }
+        if let Some(cwd) = cwd.as_ref() {
+            let joined = cwd.join(&path);
+            if is_file(&joined) {
+                candidates.push(joined);
+            }
         }
     }
+    candidates
+}
+
+fn resolve_bundled_resource_dir(
+    bundled: Result<PathBuf, impl std::fmt::Display>,
+    executables: &[PathBuf],
+    generated: PathBuf,
+    is_present: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    let mut ordered = Vec::new();
+
+    for exe in executables {
+        if let Some(resources) = bundle_resources_dir(exe) {
+            if is_present(&resources) {
+                ordered.push(resources);
+            }
+        }
+    }
+
+    match bundled {
+        Ok(dir) => ordered.push(dir),
+        Err(err) => {
+            tracing::debug!(
+                error = %err,
+                "Tauri resource_dir() failed; reconstructing from executable layout"
+            );
+        }
+    }
+
+    for exe in executables {
+        if let Some(dir) = cargo_artifact_dir(exe) {
+            ordered.push(dir);
+        }
+    }
+
+    ordered.push(generated);
+
+    for dir in &ordered {
+        if is_present(&dir.join("oauth")) {
+            return dir.clone();
+        }
+    }
+    for dir in &ordered {
+        if is_present(dir) {
+            return dir.clone();
+        }
+    }
+    ordered
+        .pop()
+        .expect("generated unpackaged resource dir is always a candidate")
 }
 
 pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
@@ -79,7 +188,12 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    let app_resource_dir = resolve_bundled_resource_dir(app.path().resource_dir(), &app_data_dir);
+    let app_resource_dir = resolve_bundled_resource_dir(
+        app.path().resource_dir(),
+        &executable_path_candidates(),
+        unpackaged_generated_resource_dir(),
+        |path| path.exists(),
+    );
 
     if let Err(err) = separator::activation::resolve_and_load(
         &app_data_dir,
@@ -692,25 +806,151 @@ mod playback_position_emitter_tests {
 
 #[cfg(test)]
 mod bundled_resource_dir_tests {
-    use super::resolve_bundled_resource_dir;
+    use super::{
+        cargo_artifact_dir, executable_path_candidates_from, resolve_bundled_resource_dir,
+    };
+    use std::ffi::OsString;
+    use std::fs;
     use std::path::{Path, PathBuf};
 
+    fn present(path: &Path) -> bool {
+        path.exists()
+    }
+
     #[test]
-    fn keeps_resolved_bundled_resource_dir() {
-        let bundled = PathBuf::from("/tmp/bundle-resources");
-        let fallback = PathBuf::from("/tmp/app-data");
+    fn cargo_artifact_dir_recognizes_host_profile() {
+        let exe = PathBuf::from("/repo/src-tauri/target/debug/openkara");
         assert_eq!(
-            resolve_bundled_resource_dir(Ok::<_, &str>(bundled.clone()), &fallback),
-            bundled
+            cargo_artifact_dir(&exe),
+            Some(PathBuf::from("/repo/src-tauri/target/debug"))
         );
     }
 
     #[test]
-    fn falls_back_when_bundled_resource_dir_is_missing() {
-        let fallback = PathBuf::from("/tmp/app-data");
+    fn cargo_artifact_dir_recognizes_target_triple() {
+        let exe = PathBuf::from("/repo/src-tauri/target/aarch64-apple-darwin/release/openkara");
         assert_eq!(
-            resolve_bundled_resource_dir(Err("unknown path"), Path::new("/tmp/app-data")),
-            fallback
+            cargo_artifact_dir(&exe),
+            Some(PathBuf::from(
+                "/repo/src-tauri/target/aarch64-apple-darwin/release"
+            ))
+        );
+    }
+
+    #[test]
+    fn cargo_artifact_dir_ignores_packaged_macos_bundle() {
+        let exe = PathBuf::from(
+            "/repo/src-tauri/target/release/bundle/macos/OpenKara.app/Contents/MacOS/openkara",
+        );
+        assert_eq!(cargo_artifact_dir(&exe), None);
+    }
+
+    #[test]
+    fn reconstructs_macos_bundle_resources_when_tauri_fails() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let macos = root.path().join("OpenKara.app/Contents/MacOS");
+        let resources = root.path().join("OpenKara.app/Contents/Resources");
+        fs::create_dir_all(&macos).expect("macos dir");
+        fs::create_dir_all(resources.join("oauth")).expect("oauth dir");
+        let exe = macos.join("openkara");
+        fs::write(&exe, []).expect("exe");
+
+        let resolved = resolve_bundled_resource_dir(
+            Err("unknown path"),
+            &[exe],
+            root.path().join("generated"),
+            present,
+        );
+        assert_eq!(
+            resolved.canonicalize().expect("resolved"),
+            resources.canonicalize().expect("resources")
+        );
+    }
+
+    #[test]
+    fn prefers_generated_oauth_layout_over_cargo_artifact_dir() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let artifact = root.path().join("src-tauri/target/debug");
+        let generated = root.path().join("src-tauri/generated");
+        fs::create_dir_all(&artifact).expect("artifact dir");
+        fs::create_dir_all(generated.join("oauth")).expect("generated oauth");
+        let exe = artifact.join("openkara");
+        fs::write(&exe, []).expect("exe");
+
+        let resolved =
+            resolve_bundled_resource_dir(Err("unknown path"), &[exe], generated.clone(), present);
+        assert_eq!(
+            resolved.canonicalize().expect("resolved"),
+            generated.canonicalize().expect("generated")
+        );
+    }
+
+    #[test]
+    fn uses_cargo_artifact_dir_when_generated_is_absent() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let artifact = root.path().join("src-tauri/target/debug");
+        fs::create_dir_all(&artifact).expect("artifact dir");
+        let exe = artifact.join("openkara");
+        fs::write(&exe, []).expect("exe");
+
+        let resolved = resolve_bundled_resource_dir(
+            Err("unknown path"),
+            &[exe],
+            root.path().join("missing-generated"),
+            present,
+        );
+        assert_eq!(
+            resolved.canonicalize().expect("resolved"),
+            artifact.canonicalize().expect("artifact")
+        );
+    }
+
+    #[test]
+    fn launcher_argv_recovers_the_real_binary() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let artifact = root.path().join("src-tauri/target/debug");
+        fs::create_dir_all(&artifact).expect("artifact dir");
+        let exe = artifact.join("openkara");
+        fs::write(&exe, []).expect("exe");
+        let launcher = root.path().join("mbx-launch");
+        fs::write(&launcher, []).expect("launcher");
+
+        let candidates = executable_path_candidates_from(
+            Some(launcher),
+            Some(root.path().join("src-tauri")),
+            [
+                OsString::from("mbx-launch"),
+                OsString::from("target/debug/openkara"),
+            ],
+            |path| path.starts_with(root.path()) && path.is_file(),
+        );
+        let resolved = resolve_bundled_resource_dir(
+            Err("unknown path"),
+            &candidates,
+            root.path().join("generated"),
+            present,
+        );
+        assert_eq!(
+            resolved.canonicalize().expect("resolved"),
+            artifact.canonicalize().expect("artifact")
+        );
+    }
+
+    #[test]
+    fn keeps_tauri_resource_dir_when_it_already_has_oauth() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let tauri_dir = root.path().join("Contents/Resources");
+        fs::create_dir_all(tauri_dir.join("oauth")).expect("tauri oauth");
+
+        let resolved = resolve_bundled_resource_dir(
+            Ok::<_, &str>(tauri_dir.clone()),
+            &[],
+            root.path().join("generated"),
+            present,
+        );
+        assert_eq!(
+            resolved.canonicalize().expect("resolved"),
+            tauri_dir.canonicalize().expect("tauri")
         );
     }
 }
