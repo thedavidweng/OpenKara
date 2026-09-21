@@ -99,7 +99,7 @@ describe("default YouTube watch surface", () => {
     });
 
     const { createDefaultYoutubeWatchNativeSurface } =
-      await import("./youtube-watch-host");
+      await import("./youtube-watch-native");
     const surface = await createDefaultYoutubeWatchNativeSurface();
     expect(surface).not.toBeNull();
     await surface!.create("main", "youtube-watch", {

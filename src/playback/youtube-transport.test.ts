@@ -35,6 +35,11 @@ function snapshot(
 }
 
 describe("youtube transport helpers", () => {
+  test("lazy-loads the YouTube native Tauri surface", async () => {
+    const { default: source } = await import("./youtube-transport.ts?raw");
+    expect(source).toContain('import("./youtube-watch-native")');
+    expect(source).not.toMatch(/from ["']\.\/youtube-watch-native["']/);
+  });
   test("watch url never points at /player", () => {
     expect(youtubeWatchUrl("yt:dQw4w9WgXcQ")).toBe(
       "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
