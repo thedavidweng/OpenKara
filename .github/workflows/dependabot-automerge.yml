@@ -2,6 +2,10 @@ name: Dependabot auto-merge
 
 # Official pattern: pull_request_target so GITHUB_TOKEN has write access on
 # Dependabot PRs. Never checkout or execute PR code in this workflow.
+# Safety model:
+# - Dependabot cooldown delays version-update PRs (supply-chain window)
+# - Security updates bypass cooldown and auto-merge ASAP
+# - CI/required checks still gate the actual merge when configured
 on:
   pull_request_target:
 
@@ -25,9 +29,10 @@ jobs:
     steps:
       - name: Dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          alert-lookup: true
 
       - name: Enable auto-merge for safe updates
         env:
@@ -37,9 +42,10 @@ jobs:
           PKG_ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           DEP_TYPE: ${{ steps.meta.outputs.dependency-type }}
+          ALERT_STATE: ${{ steps.meta.outputs.alert-state }}
         run: |
           set -euo pipefail
-          # Release/review tooling stays manual.
+          # Release/review tooling stays manual even when patch/minor.
           deny='googleapis/release-please-action dependabot/fetch-metadata'
           for blocked in $deny; do
             case ",${DEP_NAMES}," in
@@ -53,27 +59,42 @@ jobs:
           eco="${PKG_ECOSYSTEM}"
           ut="${UPDATE_TYPE}"
           dt="${DEP_TYPE}"
+          alert="${ALERT_STATE}"
 
           eligible=false
-          # patch always (after denylist)
+          reason=""
+
+          # Security updates: always auto-merge (cooldown does not apply to them).
+          if [ "$alert" = "OPEN" ] || [ "$alert" = "FIXED" ]; then
+            eligible=true
+            reason="security-update"
+          fi
+
+          # Patch updates after cooldown window.
           if [ "$ut" = "version-update:semver-patch" ]; then
             eligible=true
+            reason="semver-patch"
           fi
-          # github-actions non-major: auto (covers SHA pin bumps with empty update-type)
+
+          # github-actions non-major (covers SHA pin bumps with empty update-type).
           if [ "$eco" = "github-actions" ] || [ "$eco" = "github_actions" ]; then
             if [ "$ut" != "version-update:semver-major" ]; then
               eligible=true
+              reason="github-actions-non-major"
             fi
           fi
-          # minor of non-production / indirect / dev deps
+
+          # Minor of non-production / indirect / development deps.
+          # Production minors stay manual (primary npm supply-chain surface).
           if [ "$ut" = "version-update:semver-minor" ] && [ "$dt" != "direct:production" ]; then
             eligible=true
+            reason="minor-non-production"
           fi
 
           if [ "$eligible" != true ]; then
-            echo "skip auto-merge: ecosystem=$eco update-type=$ut dependency-type=$dt names=$DEP_NAMES"
+            echo "skip auto-merge: ecosystem=$eco update-type=$ut dependency-type=$dt alert=$alert names=$DEP_NAMES"
             exit 0
           fi
 
-          echo "enable auto-merge: ecosystem=$eco update-type=$ut dependency-type=$dt names=$DEP_NAMES"
+          echo "enable auto-merge ($reason): ecosystem=$eco update-type=$ut dependency-type=$dt alert=$alert names=$DEP_NAMES"
           gh pr merge --auto --squash "$PR_URL"
