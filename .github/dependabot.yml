@@ -1,14 +1,14 @@
 version: 2
 updates:
-  # Rust binding updates (including the `ort` crate). Native ONNX Runtime
-  # library versions are owned by openkara-models through the catalog — the
-  # Rust `ort` binding and the native runtime update independently, and CI's
-  # dependency-surface check verifies their C API levels stay compatible.
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
       day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps):"
     groups:
       # Semver-compatible bumps share one PR so the full Rust gate runs once;
       # major bumps stay individual for manual migration review.
@@ -16,21 +16,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(deps):"
     cooldown:
-      default-days: 7
-
+      default-days: 5
+      semver-major-days: 7
+      semver-minor-days: 5
+      semver-patch-days: 3
   - package-ecosystem: "github-actions"
-    groups:
-      github-actions:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -39,14 +30,27 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "ci(deps):"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     cooldown:
-      default-days: 7
-
+      default-days: 5
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 3
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps):"
     groups:
       dev-dependencies:
         dependency-type: "development"
@@ -57,9 +61,8 @@ updates:
         dependency-type: "production"
         update-types:
           - "patch"
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(deps):"
     cooldown:
       default-days: 7
+      semver-major-days: 10
+      semver-minor-days: 7
+      semver-patch-days: 3
