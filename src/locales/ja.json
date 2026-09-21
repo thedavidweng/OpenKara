@@ -108,7 +108,8 @@
       "title": "すべての楽曲を4ステムにアップグレード",
       "message": "すべての楽曲を4ステムモードで再分離します。ステムのディスク使用量は約2倍になります。",
       "confirm": "すべてアップグレード"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "インポート",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "分離モデルを準備しています…",
     "cancelSeparation": "分離をキャンセル",
-    "usingCachedSeparation": "キャッシュされた分離結果を使用"
+    "usingCachedSeparation": "キャッシュされた分離結果を使用",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "曲ファイルを表示",
+    "revealStems": "ステムフォルダを開く",
+    "decision": {
+      "title": "ライブラリの決定",
+      "importConflict": "同じ配信曲はすでにライブラリにありますが、ファイルが異なります。ライブラリの曲を残すか置き換えてください。",
+      "keep": "ライブラリの曲を残す",
+      "replace": "ライブラリの曲を置き換える",
+      "applyToRemaining": "残りの衝突に適用",
+      "librarySong": "ライブラリの曲",
+      "incoming": "取り込むファイル"
+    }
   },
   "player": {
     "previous": "前へ",
@@ -675,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "現在の行以外の歌詞をぼかす",
       "description": "今の行以外をぼかします。先の歌詞を読むときはオフのままにしてください。"
+    },
+    "onlineSources": {
+      "label": "オンラインソース",
+      "description": "音楽または動画の提供元をオンにします。選ぶまでどちらもオフのままです。",
+      "youtube": "YouTube",
+      "youtubeDescription": "公開動画またはプレイリストのリンクをキューに貼り付けます。OpenKara は YouTube 音声をダウンロードしません。",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "サインインして再生できる曲を取り込みます。取り込んだファイルは OpenKara が管理します。"
     }
   },
   "bootstrap": {
@@ -736,7 +757,11 @@
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
     "remote_repository_unavailable": "リモートリポジトリを利用できません",
-    "somethingWentWrong": "問題が発生しました"
+    "somethingWentWrong": "問題が発生しました",
+    "online_source_disabled": "このオンラインソースはオフです。",
+    "streaming_auth_failed": "サインインに失敗しました",
+    "streaming_session_expired": "配信ソースのセッションが期限切れです。もう一度サインインしてください。",
+    "video_source_unavailable": "この動画はゲストとして再生できません。"
   },
   "updater": {
     "available": "バージョン {{version}} が利用可能です",
@@ -746,5 +771,45 @@
     "restartToApply": "更新の準備ができました — 再起動して適用してください",
     "restart": "再起動",
     "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "サインイン",
+      "signOut": "サインアウト",
+      "qr": "QR でサインイン",
+      "phone": "電話番号とパスワード",
+      "email": "メールとパスワード",
+      "password": "パスワード",
+      "phoneNumber": "電話番号",
+      "countryCode": "国番号",
+      "signedInAs": "{{name}} としてサインイン中",
+      "sessionExpired": "セッションの期限が切れました。もう一度サインインしてください。",
+      "liked": "お気に入り",
+      "playlists": "配信プレイリスト",
+      "search": "検索",
+      "searchPlaceholder": "NetEase を検索",
+      "importTrack": "この曲を取り込む",
+      "importPlaylist": "配信プレイリストを取り込む",
+      "importRefusal": "取り込み拒否",
+      "waitingForScan": "NetEase アプリでこの QR コードをスキャンしてください。",
+      "scanned": "スキャンしました。スマートフォンで確認してください。",
+      "qrExpired": "QRコードの期限が切れました。新しいコードを取得してください。",
+      "loginWithPhone": "電話番号でログイン",
+      "loginWithEmail": "メールでログイン",
+      "loginWithQr": "QRコードでログイン",
+      "passwordNotice": "OpenKara はパスワードを一度だけ送信し、保存しません。",
+      "qrHint": "NetEase Cloud Music アプリでこのコードをスキャンしてください。",
+      "refreshQr": "新しいQRコードを取得"
+    }
+  },
+  "youtube": {
+    "pasteLink": "YouTube リンクを貼り付ける",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "キューに追加",
+    "invalidUrl": "公開されている YouTube の視聴またはプレイリストのリンクではありません。",
+    "ageRestricted": "この動画には年齢制限があります。",
+    "private": "この動画は非公開です。",
+    "unlisted": "この動画は限定公開です。"
   }
 }

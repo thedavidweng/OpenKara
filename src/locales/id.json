@@ -108,7 +108,8 @@
       "title": "Tingkatkan Semua Lagu ke 4-Stem",
       "message": "Ini akan memisahkan ulang semua lagu menggunakan mode 4-stem. Penggunaan ruang disk untuk stem akan kira-kira dua kali lipat.",
       "confirm": "Tingkatkan Semua"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Impor",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "Menyiapkan model pemisahan…",
     "cancelSeparation": "Batalkan pemisahan",
-    "usingCachedSeparation": "Menggunakan pemisahan dari cache"
+    "usingCachedSeparation": "Menggunakan pemisahan dari cache",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "Tampilkan berkas lagu",
+    "revealStems": "Buka folder stem",
+    "decision": {
+      "title": "Keputusan pustaka",
+      "importConflict": "Daftar ini sudah ada di pustaka dengan berkas berbeda. Pertahankan lagu pustaka atau ganti.",
+      "keep": "Pertahankan lagu pustaka",
+      "replace": "Ganti lagu pustaka",
+      "applyToRemaining": "Terapkan ke konflik sisanya",
+      "librarySong": "Lagu pustaka",
+      "incoming": "Berkas masuk"
+    }
   },
   "player": {
     "previous": "Sebelumnya",
@@ -675,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "Buramkan lirik yang tidak sedang diputar",
       "description": "Melembutkan baris lalu dan berikutnya. Biarkan mati agar bisa membaca ke depan."
+    },
+    "onlineSources": {
+      "label": "Sumber daring",
+      "description": "Nyalakan sumber musik atau video. Keduanya tetap mati sampai Anda memilihnya.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Tempel tautan video atau daftar putar publik ke antrean. OpenKara tidak mengunduh audio YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Masuk untuk menelusuri dan mengimpor lagu yang dapat diputar. OpenKara lalu mengelola berkas yang diimpor."
     }
   },
   "bootstrap": {
@@ -736,7 +757,11 @@
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
     "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",
-    "somethingWentWrong": "Terjadi kesalahan"
+    "somethingWentWrong": "Terjadi kesalahan",
+    "online_source_disabled": "Sumber daring ini nonaktif.",
+    "streaming_auth_failed": "Gagal masuk",
+    "streaming_session_expired": "Sesi sumber streaming berakhir. Masuk lagi.",
+    "video_source_unavailable": "Video ini tidak dapat diputar sebagai tamu."
   },
   "updater": {
     "available": "Versi {{version}} tersedia",
@@ -746,5 +771,45 @@
     "restartToApply": "Pembaruan siap — mulai ulang untuk menerapkan",
     "restart": "Mulai ulang",
     "failed": "Pembaruan gagal — unduh rilis terbaru secara manual"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Masuk",
+      "signOut": "Keluar",
+      "qr": "Masuk dengan QR",
+      "phone": "Telepon dan kata sandi",
+      "email": "Email dan kata sandi",
+      "password": "Kata sandi",
+      "phoneNumber": "Nomor telepon",
+      "countryCode": "Kode negara",
+      "signedInAs": "Masuk sebagai {{name}}",
+      "sessionExpired": "Sesi berakhir. Masuk lagi.",
+      "liked": "Lagu disukai",
+      "playlists": "Daftar putar streaming",
+      "search": "Cari",
+      "searchPlaceholder": "Cari NetEase",
+      "importTrack": "Impor lagu",
+      "importPlaylist": "Impor daftar putar streaming",
+      "importRefusal": "Impor ditolak",
+      "waitingForScan": "Pindai QR ini dengan aplikasi NetEase.",
+      "scanned": "Dipindai. Konfirmasikan di ponsel.",
+      "qrExpired": "QR ini kedaluwarsa. Dapatkan yang baru.",
+      "loginWithPhone": "Masuk dengan telepon",
+      "loginWithEmail": "Masuk dengan email",
+      "loginWithQr": "Masuk dengan QR",
+      "passwordNotice": "OpenKara mengirim kata sandi sekali dan tidak menyimpannya.",
+      "qrHint": "Buka aplikasi NetEase Cloud Music dan pindai kode ini.",
+      "refreshQr": "Dapatkan QR baru"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Tempel tautan YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Tambah ke antrean",
+    "invalidUrl": "Itu bukan tautan tonton atau daftar putar YouTube yang publik.",
+    "ageRestricted": "Video ini dibatasi usia.",
+    "private": "Video ini pribadi.",
+    "unlisted": "Video ini tidak terdaftar."
   }
 }

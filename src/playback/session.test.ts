@@ -700,3 +700,159 @@ describe("F6: guards against stale loadStems after song change", () => {
     expect(onClockChange).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("YouTube video transport", () => {
+  test("play of yt: id does not invoke local play", async () => {
+    const videoPlay = vi.fn().mockResolvedValue(
+      snapshot({
+        song_id: "yt:abc",
+        is_playing: true,
+        transport_generation: 1,
+      }),
+    );
+    const stopLocal = vi.fn().mockResolvedValue(undefined);
+    const deps = mockDeps({
+      transport: {
+        play: vi.fn().mockRejectedValue(new Error("local play must not run")),
+      },
+    });
+    deps.videoTransport = {
+      play: videoPlay,
+      pause: vi.fn(),
+      resume: vi.fn(),
+      seek: vi.fn(),
+      setVolume: vi.fn(),
+      teardown: vi.fn(),
+      isActive: () => true,
+    };
+    deps.stopLocalAndCancelPreload = stopLocal;
+    const session = createPlaybackSession(deps);
+    await session.playNow("yt:abc");
+    expect(deps.transport.play).not.toHaveBeenCalled();
+    expect(stopLocal).toHaveBeenCalled();
+    expect(videoPlay).toHaveBeenCalledWith("yt:abc");
+  });
+
+  test("play of a library hash after YouTube tears down the video transport", async () => {
+    const teardown = vi.fn().mockResolvedValue(undefined);
+    const localPlay = vi
+      .fn()
+      .mockResolvedValue(snapshot({ song_id: "hash-1", is_playing: true }));
+    const deps = mockDeps({ transport: { play: localPlay } });
+    deps.videoTransport = {
+      play: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      seek: vi.fn(),
+      setVolume: vi.fn(),
+      teardown,
+      isActive: () => true,
+    };
+    const session = createPlaybackSession(deps);
+    await session.playNow("hash-1");
+    expect(teardown).toHaveBeenCalled();
+    expect(localPlay).toHaveBeenCalledWith("hash-1");
+  });
+
+  test("YouTube ended dequeues and plays the next id", async () => {
+    const videoPlay = vi.fn().mockImplementation(async (id: string) =>
+      snapshot({
+        song_id: id,
+        is_playing: true,
+        transport_generation: 2,
+      }),
+    );
+    const deps = mockDeps({
+      queue: { dequeue: vi.fn().mockReturnValue("yt:next") },
+    });
+    deps.videoTransport = {
+      play: videoPlay,
+      pause: vi.fn(),
+      resume: vi.fn(),
+      seek: vi.fn(),
+      setVolume: vi.fn(),
+      teardown: vi.fn(),
+      isActive: () => true,
+    };
+    const session = createPlaybackSession(deps);
+    session.applySnapshot(
+      snapshot({
+        song_id: "yt:abc",
+        is_playing: true,
+        transport_generation: 1,
+      }),
+    );
+    await session.onEnded("yt:abc");
+    expect(videoPlay).toHaveBeenCalledWith("yt:next");
+    expect(deps.transport.play).not.toHaveBeenCalled();
+  });
+
+  test("pause, resume, seek, and volume drive the video transport", async () => {
+    const video = {
+      play: vi.fn().mockResolvedValue(
+        snapshot({
+          song_id: "yt:abc",
+          is_playing: true,
+          transport_generation: 1,
+        }),
+      ),
+      pause: vi.fn().mockResolvedValue(
+        snapshot({
+          song_id: "yt:abc",
+          is_playing: false,
+          transport_generation: 1,
+        }),
+      ),
+      resume: vi.fn().mockResolvedValue(
+        snapshot({
+          song_id: "yt:abc",
+          is_playing: true,
+          transport_generation: 1,
+        }),
+      ),
+      seek: vi.fn().mockResolvedValue(
+        snapshot({
+          song_id: "yt:abc",
+          transport_generation: 2,
+          position_ms: 1500,
+        }),
+      ),
+      setVolume: vi.fn().mockResolvedValue(
+        snapshot({
+          song_id: "yt:abc",
+          transport_generation: 1,
+          volume: 0.4,
+        }),
+      ),
+      teardown: vi.fn(),
+      isActive: () => true,
+    };
+    const deps = mockDeps();
+    deps.videoTransport = video;
+    deps.stopLocalAndCancelPreload = vi.fn().mockResolvedValue(undefined);
+    const session = createPlaybackSession(deps);
+    await session.playNow("yt:abc");
+    await session.pause();
+    await session.resume();
+    await session.seek(1500);
+    await session.setVolume(0.4);
+    await session.setStemVolume("vocals", 0.2);
+    await session.loadStems();
+    expect(video.pause).toHaveBeenCalled();
+    expect(video.resume).toHaveBeenCalled();
+    expect(video.seek).toHaveBeenCalledWith(1500);
+    expect(video.setVolume).toHaveBeenCalledWith(0.4);
+    expect(deps.transport.pause).not.toHaveBeenCalled();
+    expect(deps.transport.setStemVolume).not.toHaveBeenCalled();
+    expect(deps.transport.loadStems).not.toHaveBeenCalled();
+  });
+
+  test("play of yt: without a video transport throws", async () => {
+    const deps = mockDeps();
+    const session = createPlaybackSession(deps);
+    await expect(session.playNow("yt:abc")).rejects.toThrow(
+      "video transport is not available",
+    );
+    expect(deps.transport.play).not.toHaveBeenCalled();
+  });
+});

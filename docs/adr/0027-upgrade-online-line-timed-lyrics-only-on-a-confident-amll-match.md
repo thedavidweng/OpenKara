@@ -1,4 +1,4 @@
-# ADR 0027 — Upgrade online Line-timed Lyrics only on a confident AMLL match
+# ADR 0027 — Upgrade Line-timed Lyrics from an Online Lyrics Source only on a confident AMLL match
 
 Date: 2026-08-13
 Status: accepted
@@ -30,10 +30,10 @@ automatic_upgrade.
 ## Consequences
 
 - shouldAutoUpgrade must no longer skip lrc_lib.
-- automatic_upgrade must not write an absent row over online Line-timed
-  Lyrics.
+- automatic_upgrade must not write an absent row over Line-timed Lyrics
+  from an Online Lyrics Source.
 - Offset resets when the winning source changes.
-- Future online Line-timed sources must declare whether they allow a
-  Word-timed Upgrade.
+- Future Line-timed Online Lyrics Sources must declare whether they
+  allow a Word-timed Upgrade.
 - Unsynced lrc_lib uses the AMLL-only upgrade path. It does not use
   the embedded full-chain path.

@@ -108,7 +108,8 @@
       "title": "Actualizar todas las canciones a 4 pistas",
       "message": "Se volverán a separar todas las canciones en modo de 4 pistas. El espacio en disco usado por las pistas se duplicará aproximadamente.",
       "confirm": "Actualizar todo"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Importar",
@@ -190,7 +191,18 @@
     },
     "modelPreparing": "Preparando el modelo de separación…",
     "cancelSeparation": "Cancelar separación",
-    "usingCachedSeparation": "Usando separación en caché"
+    "usingCachedSeparation": "Usando separación en caché",
+    "revealSongFile": "Mostrar archivo de la canción",
+    "revealStems": "Abrir carpeta de stems",
+    "decision": {
+      "title": "Decisión de biblioteca",
+      "importConflict": "Esta pista ya está en la biblioteca con un archivo distinto. Conserva la canción o reemplázala.",
+      "keep": "Conservar canción de la biblioteca",
+      "replace": "Reemplazar canción de la biblioteca",
+      "applyToRemaining": "Aplicar a los conflictos restantes",
+      "librarySong": "Canción de la biblioteca",
+      "incoming": "Archivo entrante"
+    }
   },
   "player": {
     "previous": "Anterior",
@@ -677,6 +689,14 @@
     "lyricsBlurInactive": {
       "enable": "Desenfocar las letras que no suenan",
       "description": "Suaviza las líneas pasadas y siguientes. Déjalo apagado para leer con antelación."
+    },
+    "onlineSources": {
+      "label": "Orígenes en línea",
+      "description": "Activa un origen de música o vídeo. Ambos siguen apagados hasta que los elijas.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Pega un enlace público de vídeo o lista en la cola. OpenKara no descarga audio de YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Inicia sesión para explorar e importar canciones que puedes reproducir. OpenKara gestiona después los archivos importados."
     }
   },
   "bootstrap": {
@@ -738,7 +758,11 @@
     "separation_failed": "La separación falló",
     "internal": "Error interno",
     "remote_repository_unavailable": "Repositorio remoto no disponible",
-    "somethingWentWrong": "Algo salió mal"
+    "somethingWentWrong": "Algo salió mal",
+    "online_source_disabled": "Este origen en línea está desactivado.",
+    "streaming_auth_failed": "Error al iniciar sesión",
+    "streaming_session_expired": "La sesión del origen de streaming caducó. Vuelve a iniciar sesión.",
+    "video_source_unavailable": "Este vídeo no se puede reproducir como invitado."
   },
   "updater": {
     "available": "La versión {{version}} está disponible",
@@ -748,5 +772,45 @@
     "restartToApply": "Actualización lista: reinicia para aplicarla",
     "restart": "Reiniciar",
     "failed": "La actualización falló: descarga la última versión manualmente"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Iniciar sesión",
+      "signOut": "Cerrar sesión",
+      "qr": "Iniciar sesión con QR",
+      "phone": "Teléfono y contraseña",
+      "email": "Correo y contraseña",
+      "password": "Contraseña",
+      "phoneNumber": "Número de teléfono",
+      "countryCode": "Código de país",
+      "signedInAs": "Sesión iniciada como {{name}}",
+      "sessionExpired": "La sesión caducó. Vuelve a iniciar sesión.",
+      "liked": "Canciones que te gustan",
+      "playlists": "Listas de streaming",
+      "search": "Buscar",
+      "searchPlaceholder": "Buscar en NetEase",
+      "importTrack": "Importar canción",
+      "importPlaylist": "Importar lista de streaming",
+      "importRefusal": "Importación rechazada",
+      "waitingForScan": "Escanea este QR con la app de NetEase.",
+      "scanned": "Escaneado. Confirma en el teléfono.",
+      "qrExpired": "Este QR caducó. Obtén uno nuevo.",
+      "loginWithPhone": "Usar teléfono",
+      "loginWithEmail": "Usar correo",
+      "loginWithQr": "Usar código QR",
+      "passwordNotice": "OpenKara envía la contraseña una vez y no la guarda.",
+      "qrHint": "Abre la app de NetEase Cloud Music y escanea este código.",
+      "refreshQr": "Obtener un QR nuevo"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Pegar un enlace de YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Añadir a la cola",
+    "invalidUrl": "Eso no es un enlace público de YouTube de reproducción o lista.",
+    "ageRestricted": "Este vídeo tiene restricción de edad.",
+    "private": "Este vídeo es privado.",
+    "unlisted": "Este vídeo no está en la lista."
   }
 }

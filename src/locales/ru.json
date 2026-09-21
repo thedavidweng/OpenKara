@@ -108,7 +108,8 @@
       "title": "Повысить все песни до 4 дорожек",
       "message": "Все песни будут разделены заново в режиме 4 дорожек. Занимаемое дорожками место на диске примерно удвоится.",
       "confirm": "Повысить все"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Импорт",
@@ -191,7 +192,18 @@
     },
     "modelPreparing": "Подготовка модели разделения…",
     "cancelSeparation": "Отменить разделение",
-    "usingCachedSeparation": "Используется кэшированное разделение"
+    "usingCachedSeparation": "Используется кэшированное разделение",
+    "revealSongFile": "Показать файл песни",
+    "revealStems": "Открыть папку стемов",
+    "decision": {
+      "title": "Решение библиотеки",
+      "importConflict": "Эта композиция уже есть в библиотеке, но файл другой. Оставьте песню библиотеки или замените её.",
+      "keep": "Оставить песню библиотеки",
+      "replace": "Заменить песню библиотеки",
+      "applyToRemaining": "Применить к остальным конфликтам",
+      "librarySong": "Песня библиотеки",
+      "incoming": "Входящий файл"
+    }
   },
   "player": {
     "previous": "Предыдущий",
@@ -678,6 +690,14 @@
     "lyricsBlurInactive": {
       "enable": "Размывать строки, которые не звучат",
       "description": "Смягчает прошедшие и следующие строки. Оставьте выключенным, чтобы читать заранее."
+    },
+    "onlineSources": {
+      "label": "Онлайн-источники",
+      "description": "Включите музыкальный или видеоисточник. Оба остаются выключенными, пока вы их не выберете.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Вставьте публичную ссылку на видео или плейлист в очередь. OpenKara не скачивает звук с YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Войдите, чтобы просматривать и импортировать песни, которые можно воспроизвести. Дальше файлами управляет OpenKara."
     }
   },
   "bootstrap": {
@@ -739,7 +759,11 @@
     "separation_failed": "Ошибка разделения",
     "internal": "Внутренняя ошибка",
     "remote_repository_unavailable": "Удалённый репозиторий недоступен",
-    "somethingWentWrong": "Что-то пошло не так"
+    "somethingWentWrong": "Что-то пошло не так",
+    "online_source_disabled": "Этот онлайн-источник выключен.",
+    "streaming_auth_failed": "Ошибка входа",
+    "streaming_session_expired": "Сеанс источника стриминга истёк. Войдите снова.",
+    "video_source_unavailable": "Это видео нельзя воспроизвести как гость."
   },
   "updater": {
     "available": "Доступна версия {{version}}",
@@ -749,5 +773,45 @@
     "restartToApply": "Обновление готово — перезапустите для применения",
     "restart": "Перезапустить",
     "failed": "Не удалось обновить — загрузите последний выпуск вручную"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Войти",
+      "signOut": "Выйти",
+      "qr": "Войти по QR",
+      "phone": "Телефон и пароль",
+      "email": "Почта и пароль",
+      "password": "Пароль",
+      "phoneNumber": "Номер телефона",
+      "countryCode": "Код страны",
+      "signedInAs": "Вход выполнен как {{name}}",
+      "sessionExpired": "Сеанс истёк. Войдите снова.",
+      "liked": "Любимые треки",
+      "playlists": "Стриминговые плейлисты",
+      "search": "Поиск",
+      "searchPlaceholder": "Искать в NetEase",
+      "importTrack": "Импортировать трек",
+      "importPlaylist": "Импортировать стриминговый плейлист",
+      "importRefusal": "Импорт отклонён",
+      "waitingForScan": "Отсканируйте этот QR в приложении NetEase.",
+      "scanned": "Отсканировано. Подтвердите на телефоне.",
+      "qrExpired": "Этот QR истёк. Получите новый.",
+      "loginWithPhone": "Войти по телефону",
+      "loginWithEmail": "Войти по почте",
+      "loginWithQr": "Войти по QR",
+      "passwordNotice": "OpenKara отправляет пароль один раз и не сохраняет его.",
+      "qrHint": "Откройте приложение NetEase Cloud Music и отсканируйте этот код.",
+      "refreshQr": "Получить новый QR"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Вставить ссылку YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Добавить в очередь",
+    "invalidUrl": "Это не публичная ссылка на просмотр или плейлист YouTube.",
+    "ageRestricted": "Это видео имеет возрастное ограничение.",
+    "private": "Это видео закрытое.",
+    "unlisted": "Это видео не в списке."
   }
 }

@@ -108,7 +108,8 @@
       "title": "อัปเกรดทุกเพลงเป็น 4สเต็ม",
       "message": "การดำเนินการนี้จะแยกเสียงทุกเพลงใหม่โดยใช้โหมด 4สเต็ม การใช้พื้นที่ดิสก์สำหรับสเต็มจะเพิ่มขึ้นราวสองเท่า",
       "confirm": "อัปเกรดทั้งหมด"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "นำเข้า",
@@ -188,7 +189,19 @@
     },
     "modelPreparing": "กำลังเตรียมโมเดลแยกเสียง…",
     "cancelSeparation": "ยกเลิกการแยกเสียง",
-    "usingCachedSeparation": "กำลังใช้ผลการแยกเสียงจากแคช"
+    "usingCachedSeparation": "กำลังใช้ผลการแยกเสียงจากแคช",
+    "confirmDeleteTitle_one": "Delete {{count}} Track",
+    "revealSongFile": "แสดงไฟล์เพลง",
+    "revealStems": "เปิดโฟลเดอร์สเต็ม",
+    "decision": {
+      "title": "การตัดสินใจของคลัง",
+      "importConflict": "รายการนี้อยู่ในคลังแล้วแต่ไฟล์ต่างกัน เก็บเพลงในคลังหรือแทนที่",
+      "keep": "เก็บเพลงในคลัง",
+      "replace": "แทนที่เพลงในคลัง",
+      "applyToRemaining": "ใช้กับความขัดแย้งที่เหลือ",
+      "librarySong": "เพลงในคลัง",
+      "incoming": "ไฟล์ที่นำเข้า"
+    }
   },
   "player": {
     "previous": "ก่อนหน้า",
@@ -675,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "เบลอท่อนที่ไม่ใช่ท่อนปัจจุบัน",
       "description": "ทำให้นุ่มทั้งท่อนที่ผ่านไปแล้วและท่อนถัดไป ปิดตัวเลือกนี้ถ้าต้องการอ่านล่วงหน้า"
+    },
+    "onlineSources": {
+      "label": "แหล่งออนไลน์",
+      "description": "เปิดแหล่งเพลงหรือวิดีโอ ทั้งสองจะปิดอยู่จนกว่าคุณจะเลือก",
+      "youtube": "YouTube",
+      "youtubeDescription": "วางลิงก์วิดีโอหรือเพลย์ลิสต์สาธารณะลงในคิว OpenKara ไม่ดาวน์โหลดเสียง YouTube",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "ลงชื่อเข้าใช้เพื่อเรียกดูและนำเข้าเพลงที่เล่นได้ จากนั้น OpenKara จะจัดการไฟล์ที่นำเข้า"
     }
   },
   "bootstrap": {
@@ -736,7 +757,11 @@
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",
     "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
-    "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง"
+    "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง",
+    "online_source_disabled": "แหล่งออนไลน์นี้ปิดอยู่",
+    "streaming_auth_failed": "การลงชื่อเข้าใช้ล้มเหลว",
+    "streaming_session_expired": "เซสชันแหล่งสตรีมมิงหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
+    "video_source_unavailable": "เล่นวิดีโอนี้ในฐานะผู้เยี่ยมชมไม่ได้"
   },
   "updater": {
     "available": "มีเวอร์ชัน {{version}} ให้ใช้งาน",
@@ -746,5 +771,45 @@
     "restartToApply": "การอัปเดตพร้อมแล้ว — รีสตาร์ทเพื่อใช้งาน",
     "restart": "รีสตาร์ท",
     "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "ลงชื่อเข้าใช้",
+      "signOut": "ออกจากระบบ",
+      "qr": "ลงชื่อเข้าใช้ด้วย QR",
+      "phone": "โทรศัพท์และรหัสผ่าน",
+      "email": "อีเมลและรหัสผ่าน",
+      "password": "รหัสผ่าน",
+      "phoneNumber": "หมายเลขโทรศัพท์",
+      "countryCode": "รหัสประเทศ",
+      "signedInAs": "ลงชื่อเข้าใช้เป็น {{name}}",
+      "sessionExpired": "เซสชันหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
+      "liked": "เพลงที่ถูกใจ",
+      "playlists": "เพลย์ลิสต์สตรีมมิง",
+      "search": "ค้นหา",
+      "searchPlaceholder": "ค้นหา NetEase",
+      "importTrack": "นำเข้าเพลงนี้",
+      "importPlaylist": "นำเข้าเพลย์ลิสต์สตรีมมิง",
+      "importRefusal": "ปฏิเสธการนำเข้า",
+      "waitingForScan": "สแกน QR นี้ด้วยแอป NetEase",
+      "scanned": "สแกนแล้ว ยืนยันบนโทรศัพท์",
+      "qrExpired": "QR นี้หมดอายุแล้ว ขออันใหม่",
+      "loginWithPhone": "เข้าสู่ระบบด้วยโทรศัพท์",
+      "loginWithEmail": "เข้าสู่ระบบด้วยอีเมล",
+      "loginWithQr": "เข้าสู่ระบบด้วย QR",
+      "passwordNotice": "OpenKara ส่งรหัสผ่านครั้งเดียวและไม่จัดเก็บ",
+      "qrHint": "เปิดแอป NetEase Cloud Music แล้วสแกนรหัสนี้",
+      "refreshQr": "ขอ QR ใหม่"
+    }
+  },
+  "youtube": {
+    "pasteLink": "วางลิงก์ YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "เพิ่มในคิว",
+    "invalidUrl": "นั่นไม่ใช่ลิงก์รับชมหรือเพลย์ลิสต์ YouTube สาธารณะ",
+    "ageRestricted": "วิดีโอนี้มีข้อจำกัดด้านอายุ",
+    "private": "วิดีโอนี้เป็นส่วนตัว",
+    "unlisted": "วิดีโอนี้ไม่อยู่ในรายการ"
   }
 }

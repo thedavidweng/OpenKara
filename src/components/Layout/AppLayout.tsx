@@ -5,6 +5,7 @@ import { WindowChrome } from "./WindowChrome";
 import { ToastContainer } from "@/components/Layout/ToastContainer";
 import { MainContentView } from "./MainContentView";
 import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialog";
+import { LibraryDecisionDialog } from "@/components/Library/LibraryDecisionDialog";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
   createWindowShellStyle,
@@ -150,6 +151,7 @@ export function AppLayout({
 
       {!previewMode && <ToastContainer />}
       {!previewMode && <ImportCdgChoiceDialog />}
+      {!previewMode && <LibraryDecisionDialog />}
     </div>
   );
 }

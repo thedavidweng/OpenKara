@@ -18,6 +18,7 @@ const {
     snapshot: {
       song_id: "song-1" as string | null,
     },
+    localAudienceOutputActive: false,
   },
   mockLibraryState: {
     songs: [
@@ -87,6 +88,14 @@ const backend = createMockBackend({
 vi.mock("@/stores/settings-store", () => ({
   useSettingsStore: (selector: (s: { coverArtBackdrop: boolean }) => unknown) =>
     selector({ coverArtBackdrop: true }),
+}));
+
+vi.mock("@/stores/catalog-store", () => ({
+  useCatalogStore: (
+    selector: (state: {
+      videoItems: Record<string, { title: string }>;
+    }) => unknown,
+  ) => selector({ videoItems: { "yt:abc": { title: "Karaoke" } } }),
 }));
 
 afterEach(() => {
@@ -254,6 +263,59 @@ describe("PlaybackStage", () => {
     expect(viewportAfter).toBe(viewportBefore);
     expect(viewportAfter.scrollTop).toBe(240);
 
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("hosts a YouTube watch slot for a yt: queue id", async () => {
+    mockCdgState.hasCdg = false;
+    mockLibraryState.songs = [];
+    mockPlayerState.snapshot = { song_id: "yt:abc" };
+    mockPlayerState.localAudienceOutputActive = false;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const observed: Element[] = [];
+    class FakeResizeObserver {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        observed.push(target);
+        Object.defineProperty(target, "getBoundingClientRect", {
+          value: () =>
+            ({
+              left: 10,
+              top: 20,
+              width: 640,
+              height: 360,
+              right: 650,
+              bottom: 380,
+              x: 10,
+              y: 20,
+              toJSON() {
+                return {};
+              },
+            }) as DOMRect,
+        });
+        this.callback([], this);
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    const previous = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      FakeResizeObserver as unknown as typeof ResizeObserver;
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<PlaybackStage />);
+    });
+    expect(
+      container.querySelector("[data-youtube-watch-host='true']"),
+    ).toBeTruthy();
+    expect(container.textContent).toContain("Karaoke");
+    expect(observed.length).toBeGreaterThan(0);
+    globalThis.ResizeObserver = previous;
     await act(async () => {
       root.unmount();
     });

@@ -66,6 +66,8 @@ const BASE_SETTINGS: AppSettings = {
   library_sort_mode: "recently_imported",
   theme_preference: "dark",
   update_policy: "notify",
+  youtube_source_enabled: false,
+  netease_source_enabled: false,
 };
 
 function appSettings(patch: Partial<AppSettings> = {}): AppSettings {
@@ -743,6 +745,18 @@ describe("preferences", () => {
       stored = { ...stored, lyrics_blur_inactive: value };
       return stored;
     });
+    const setOnlineSourceEnabled = vi.fn(
+      async (sourceId: "youtube" | "netease", enabled: boolean) => {
+        stored = {
+          ...stored,
+          youtube_source_enabled:
+            sourceId === "youtube" ? enabled : stored.youtube_source_enabled,
+          netease_source_enabled:
+            sourceId === "netease" ? enabled : stored.netease_source_enabled,
+        };
+        return stored;
+      },
+    );
     const harness = createSettingsHarness({
       overrides: {
         settings: {
@@ -750,6 +764,7 @@ describe("preferences", () => {
           setHideUpgradeAll,
           setCoverArtBackdrop,
           setLyricsBlurInactive,
+          setOnlineSourceEnabled,
         },
       },
     });
@@ -758,6 +773,7 @@ describe("preferences", () => {
     await harness.controller.preferences.set({ hideUpgradeAll: true });
     await harness.controller.preferences.set({ coverArtBackdrop: false });
     await harness.controller.preferences.set({ lyricsBlurInactive: true });
+    await harness.controller.preferences.set({ neteaseSourceEnabled: true });
 
     expect(setHideBatchSeparate).toHaveBeenCalledWith(true);
     expect(setHideUpgradeAll).toHaveBeenCalledWith(true);
@@ -767,6 +783,8 @@ describe("preferences", () => {
     expect(harness.view().preferences.hideUpgradeAll).toBe(true);
     expect(harness.view().preferences.coverArtBackdrop).toBe(false);
     expect(harness.view().preferences.lyricsBlurInactive).toBe(true);
+    expect(setOnlineSourceEnabled).toHaveBeenCalledWith("netease", true);
+    expect(harness.view().preferences.neteaseSourceEnabled).toBe(true);
   });
 
   test("a rejected lyrics blur write restores the previous preference", async () => {

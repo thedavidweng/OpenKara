@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LyricsPanel } from "@/components/Lyrics/LyricsPanel";
 import { CdgCanvas } from "@/components/Cdg/CdgCanvas";
 import { useCoverArtUrl } from "@/lib/cover-art";
@@ -8,6 +10,13 @@ import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { songHasCdgMedia } from "@/lib/song-media";
+import { isVideoSourceQueueId } from "@/playback";
+import { useCatalogStore } from "@/stores/catalog-store";
+import {
+  YOUTUBE_WATCH_BOUNDS_EVENT,
+  YOUTUBE_WATCH_HOST_ELEMENT_ID,
+  measureYoutubeWatchHostElement,
+} from "@/playback/youtube-watch-host";
 import type { CoverArtBytes } from "@/types/ipc";
 
 interface PlaybackStageProps {
@@ -23,6 +32,10 @@ export function PlaybackStage({
   const songs = useLibraryStore((s) => s.songs);
   const currentSong = songs.find((song) => song.hash === songId) ?? null;
   const currentSongHasCdg = songHasCdgMedia(currentSong);
+  const videoItem = useCatalogStore((s) =>
+    songId ? s.videoItems[songId] : undefined,
+  );
+  const isYoutube = isVideoSourceQueueId(songId ?? "");
   const coverArtBackdrop = useSettingsStore((s) => s.coverArtBackdrop);
 
   const [fetchedCoverArt, setFetchedCoverArt] = useState<CoverArtBytes | null>(
@@ -62,13 +75,69 @@ export function PlaybackStage({
     !currentSongHasCdg &&
     nativeBackdropUrl != null;
   const showCdg = hasCdg || currentSongHasCdg;
+  const audienceActive = usePlayerStore((s) => s.localAudienceOutputActive);
+  const showYoutube =
+    isYoutube && (presentation === "audience" || !audienceActive);
+
+  useEffect(() => {
+    if (!showYoutube) {
+      return;
+    }
+    const host = document.getElementById(YOUTUBE_WATCH_HOST_ELEMENT_ID);
+    if (!host) {
+      return;
+    }
+
+    let cancelled = false;
+    const report = () => {
+      const bounds = measureYoutubeWatchHostElement(host);
+      if (!bounds) {
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+      void Promise.resolve()
+        .then(() =>
+          emit(YOUTUBE_WATCH_BOUNDS_EVENT, {
+            windowLabel: getCurrentWindow().label,
+            bounds,
+          }),
+        )
+        .catch(() => {});
+    };
+
+    report();
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const observer = new ResizeObserver(report);
+    observer.observe(host);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [showYoutube, songId]);
 
   return (
     <div
       className="relative flex h-full w-full flex-1 overflow-hidden"
       data-stage-visual-variant={stageAmbience ? "ambience" : "default"}
     >
-      {showCdg ? (
+      {showYoutube ? (
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          <div
+            id={YOUTUBE_WATCH_HOST_ELEMENT_ID}
+            data-youtube-watch-host="true"
+            className="min-h-0 flex-1"
+          />
+          <div className="px-4 py-2 text-[13px] text-[var(--color-text)]">
+            {videoItem?.title ?? songId}
+          </div>
+        </div>
+      ) : showCdg ? (
         <CdgCanvas />
       ) : (
         <>

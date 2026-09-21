@@ -2,6 +2,46 @@
   "app": {
     "name": "OpenKara"
   },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "qr": "Sign in with QR",
+      "phone": "Phone and password",
+      "email": "Email and password",
+      "password": "Password",
+      "phoneNumber": "Phone number",
+      "countryCode": "Country code",
+      "signedInAs": "Signed in as {{name}}",
+      "sessionExpired": "This session expired. Sign in again.",
+      "liked": "Liked tracks",
+      "playlists": "Streaming Playlists",
+      "search": "Search",
+      "searchPlaceholder": "Search NetEase",
+      "importTrack": "Import track",
+      "importPlaylist": "Import Streaming Playlist",
+      "importRefusal": "Import Refusal",
+      "waitingForScan": "Waiting for the NetEase app to scan this QR code.",
+      "scanned": "Scanned. Confirm on your phone.",
+      "qrExpired": "This QR code expired. Get a new one.",
+      "loginWithPhone": "Use phone",
+      "loginWithEmail": "Use email",
+      "loginWithQr": "Use QR code",
+      "passwordNotice": "OpenKara sends the password once and does not store it.",
+      "qrHint": "Open the NetEase Cloud Music app and scan this code.",
+      "refreshQr": "Get a new QR code"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Paste a YouTube link",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Add to Queue",
+    "invalidUrl": "That is not a public YouTube watch or playlist link.",
+    "ageRestricted": "This video is age-restricted.",
+    "private": "This video is private.",
+    "unlisted": "This video is unlisted."
+  },
   "languageNames": {
     "en": "English",
     "zh-CN": "简体中文",
@@ -82,6 +122,7 @@
     "library": "LIBRARY",
     "allTracks": "All Tracks",
     "separated": "Separated",
+    "netease": "NetEase Cloud Music",
     "localMusic": "LOCAL MUSIC",
     "resize": "Resize sidebar",
     "widthValue": "{{width}} px",
@@ -173,6 +214,8 @@
     "language_tamil": "Tamil",
     "editInfo": "Edit Info",
     "properties": "Properties",
+    "revealSongFile": "Reveal Song File",
+    "revealStems": "Reveal Stems",
     "queueAllSelected": "Queue All Selected ({{count}})",
     "markInstrumentalSelected": "Mark as Instrumental ({{count}})",
     "separateAllSelected": "Separate All Selected ({{count}})",
@@ -180,6 +223,15 @@
       "title": "Choose a CD+G audio file",
       "message": "{{cdgName}} matches multiple selected audio files. Pick which track should use this graphics file.",
       "skip": "Skip CD+G pairing"
+    },
+    "decision": {
+      "title": "Library Decision",
+      "importConflict": "This listing is already in the library with a different file. Keep the library song or replace it.",
+      "keep": "Keep Library Song",
+      "replace": "Replace Library Song",
+      "applyToRemaining": "Apply to Remaining",
+      "librarySong": "Library song",
+      "incoming": "Incoming file"
     },
     "importPrompt": {
       "confirmTitle": "Confirm import",
@@ -476,6 +528,14 @@
         "message": "OpenKara uses the CPU-only ONNX Runtime. The GPU runtime did not respond. Stem separation still works. It runs slower."
       }
     },
+    "onlineSources": {
+      "label": "Online Sources",
+      "description": "Turn on a music or video origin. Both stay off until you choose them.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Paste a public video or playlist link into the queue. OpenKara does not download YouTube audio.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Sign in to browse and import songs you can play. OpenKara then owns the imported files."
+    },
     "hideBatchSeparate": {
       "hide": "Hide “Separate All”",
       "description": "Hide the sidebar button that separates all songs."
@@ -737,7 +797,11 @@
     "separation_failed": "Separation Failed",
     "internal": "Internal Error",
     "remote_repository_unavailable": "Remote Repository Unavailable",
-    "somethingWentWrong": "Something went wrong"
+    "somethingWentWrong": "Something went wrong",
+    "online_source_disabled": "This Online Source is off.",
+    "streaming_auth_failed": "Sign-in Failed",
+    "streaming_session_expired": "The Streaming Source session expired. Sign in again.",
+    "video_source_unavailable": "This video cannot play as a guest."
   },
   "updater": {
     "available": "Version {{version}} is available",

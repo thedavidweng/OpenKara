@@ -53,7 +53,7 @@ So my no-compromise solution was born: OpenKara uses open-source AI to separate 
 - **Streaming Playback** — Ring-buffer streaming decode with chunked cache, bandwidth-aware proxy mode for slow networks, and automatic retry with exponential backoff.
 - **Remote Repositories** — Connect Google Drive, Dropbox, or WebDAV libraries. Refresh, publish, and reauthorize without losing local state.
 - **Saved Playlists & Singer Rotation** — Create playlists, assign singers with round-robin queue rotation, and filter the queue by singer.
-- **Synced Lyrics** — Load timed lyrics from online sources, embedded tags, or sidecar `.lrc` files.
+- **Synced Lyrics** — Load timed lyrics from Online Lyrics Sources, embedded tags, or sidecar `.lrc` files.
 - **Lyrics Romanization** — Automatic romanization for 13 languages including Mandarin, Cantonese, Japanese, Korean, and more. Per-song language override.
 - **CD+G Sidecars** — Render same-name `.cdg` graphics during fullscreen playback when a track includes them.
 - **AirPlay Casting** — Cast karaoke playback to AirPlay-compatible devices with audience streaming.
@@ -363,6 +363,8 @@ Contributions are welcome! Please open an issue before starting major changes so
 - [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration reference
 - [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) — Community-maintained word-by-word lyrics database (CC0)
 - [AMLL (Apple Music-like Lyrics)](https://github.com/amll-dev/applemusic-like-lyrics) — Lyrics rendering techniques (karaoke fill, spring physics, glow effects)
+- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) — NetEase Cloud Music sign-in, cookie session, and China Client Address
+- [Kaset](https://github.com/sozercan/kaset) — Public YouTube watch-page WebView playback without guest `/player` stream URLs
 
 ## License
 

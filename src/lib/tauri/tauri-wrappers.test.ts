@@ -445,6 +445,9 @@ describe("settings", () => {
     crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported" as const,
     theme_preference: "dark" as const,
+    update_policy: "notify" as const,
+    youtube_source_enabled: false,
+    netease_source_enabled: false,
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -661,6 +664,79 @@ describe("settings", () => {
     const returned = await settings.setThemePreference("light");
     expect(mockInvoke).toHaveBeenCalledWith("set_theme_preference", {
       preference: "light",
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("listOnlineSources invokes list_online_sources", async () => {
+    const sources = [
+      { id: "youtube" as const, kind: "video" as const, enabled: false },
+      { id: "netease" as const, kind: "streaming" as const, enabled: true },
+    ];
+    mockInvoke.mockResolvedValueOnce(sources);
+    const returned = await settings.listOnlineSources();
+    expect(mockInvoke).toHaveBeenCalledWith("list_online_sources");
+    expect(returned).toBe(sources);
+  });
+
+  test("getStreamingSession invokes get_streaming_session", async () => {
+    const session = {
+      source_id: "netease" as const,
+      signed_in: false,
+      display_name: null,
+      expired: false,
+    };
+    mockInvoke.mockResolvedValueOnce(session);
+    const { createCatalogCommands } = await import("./catalog");
+    const catalog = createCatalogCommands(mockInvoke);
+    const returned = await catalog.getStreamingSession("netease");
+    expect(mockInvoke).toHaveBeenCalledWith("get_streaming_session", {
+      sourceId: "netease",
+    });
+    expect(returned).toBe(session);
+  });
+
+  test("controlYoutubeWatch invokes control_youtube_watch", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ended: false,
+      paused: true,
+      current_time_ms: 0,
+      duration_ms: null,
+    });
+    const { createYoutubeWatchCommands } = await import("./youtube-watch");
+    const youtubeWatch = createYoutubeWatchCommands(mockInvoke);
+    await youtubeWatch.controlYoutubeWatch({
+      type: "navigate",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("control_youtube_watch", {
+      action: {
+        type: "navigate",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      },
+    });
+  });
+
+  test("resolveVideoSourceUrl invokes resolve_video_source_url", async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    const { createCatalogCommands } = await import("./catalog");
+    const catalog = createCatalogCommands(mockInvoke);
+    await catalog.resolveVideoSourceUrl(
+      "youtube",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("resolve_video_source_url", {
+      sourceId: "youtube",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
+  });
+
+  test("setOnlineSourceEnabled invokes set_online_source_enabled", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setOnlineSourceEnabled("netease", true);
+    expect(mockInvoke).toHaveBeenCalledWith("set_online_source_enabled", {
+      sourceId: "netease",
+      enabled: true,
     });
     expect(returned).toBe(appSettings);
   });

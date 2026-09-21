@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, X } from "lucide-react";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
@@ -24,7 +24,7 @@ import { InputDialog } from "../Settings/InputDialog";
 import { SongEditDialog } from "./SongEditDialog";
 import { SongPropertiesDialog } from "./SongPropertiesDialog";
 import { songDisplayTitle } from "@/lib/song-display";
-import type { Song } from "@/types/ipc";
+import type { RevealTargets, Song } from "@/types/ipc";
 
 interface SongListItemProps {
   song: Song;
@@ -57,6 +57,9 @@ export function SongListItem({
   const [deleteSongIds, setDeleteSongIds] = useState<string[] | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
+  const [revealTargets, setRevealTargets] = useState<RevealTargets | undefined>(
+    undefined,
+  );
 
   const songCommands = useMemo(
     () =>
@@ -71,9 +74,29 @@ export function SongListItem({
       }),
     [backend],
   );
+  useEffect(() => {
+    let cancelled = false;
+    void backend.catalog
+      .getRevealTargets(song.hash)
+      .then((targets) => {
+        if (!cancelled) {
+          setRevealTargets(targets);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRevealTargets(undefined);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backend.catalog, song.hash]);
+
   const commandContext: SongCommandContext = {
     song,
     t: (key, options) => String(t(key as never, options as never)),
+    revealTargets,
   };
 
   const isCurrentPlaying = usePlayerStore(

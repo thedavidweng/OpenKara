@@ -108,7 +108,8 @@
       "title": "Alle nummers upgraden naar 4 sporen",
       "message": "Hiermee worden alle nummers opnieuw gescheiden met de 4-sporenmodus. Het schijfruimtegebruik voor sporen wordt ongeveer verdubbeld.",
       "confirm": "Alles upgraden"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Importeren",
@@ -189,7 +190,18 @@
     },
     "modelPreparing": "Scheidingsmodel voorbereiden…",
     "cancelSeparation": "Scheiding annuleren",
-    "usingCachedSeparation": "Scheiding uit cache gebruiken"
+    "usingCachedSeparation": "Scheiding uit cache gebruiken",
+    "revealSongFile": "Nummerbestand tonen",
+    "revealStems": "Stemmap openen",
+    "decision": {
+      "title": "Bibliotheekbeslissing",
+      "importConflict": "Dit nummer staat al in de bibliotheek met een ander bestand. Behoud het bibliotheeknummer of vervang het.",
+      "keep": "Bibliotheeknummer behouden",
+      "replace": "Bibliotheeknummer vervangen",
+      "applyToRemaining": "Toepassen op resterende conflicten",
+      "librarySong": "Bibliotheeknummer",
+      "incoming": "Inkomend bestand"
+    }
   },
   "player": {
     "previous": "Vorige",
@@ -676,6 +688,14 @@
     "lyricsBlurInactive": {
       "enable": "Niet-spelende regels vervagen",
       "description": "Maakt vorige en volgende regels zachter. Laat uit om vooruit te lezen."
+    },
+    "onlineSources": {
+      "label": "Online bronnen",
+      "description": "Zet een muziek- of videobron aan. Beide blijven uit tot je ze kiest.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Plak een openbare video- of afspeellijstlink in de wachtrij. OpenKara downloadt geen YouTube-audio.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Meld je aan om nummers te importeren die je kunt afspelen. OpenKara beheert daarna de geïmporteerde bestanden."
     }
   },
   "bootstrap": {
@@ -737,7 +757,11 @@
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",
     "remote_repository_unavailable": "Externe opslagplaats niet beschikbaar",
-    "somethingWentWrong": "Er is iets misgegaan"
+    "somethingWentWrong": "Er is iets misgegaan",
+    "online_source_disabled": "Deze online bron is uit.",
+    "streaming_auth_failed": "Aanmelden mislukt",
+    "streaming_session_expired": "De sessie van de streamingbron is verlopen. Meld je opnieuw aan.",
+    "video_source_unavailable": "Deze video kan niet als gast worden afgespeeld."
   },
   "updater": {
     "available": "Versie {{version}} is beschikbaar",
@@ -747,5 +771,45 @@
     "restartToApply": "Update klaar — start opnieuw op om toe te passen",
     "restart": "Opnieuw opstarten",
     "failed": "Update mislukt — download de nieuwste release handmatig"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Aanmelden",
+      "signOut": "Afmelden",
+      "qr": "Aanmelden met QR",
+      "phone": "Telefoon en wachtwoord",
+      "email": "E-mail en wachtwoord",
+      "password": "Wachtwoord",
+      "phoneNumber": "Telefoonnummer",
+      "countryCode": "Landcode",
+      "signedInAs": "Aangemeld als {{name}}",
+      "sessionExpired": "De sessie is verlopen. Meld je opnieuw aan.",
+      "liked": "Favorieten",
+      "playlists": "Streaming-afspeellijsten",
+      "search": "Zoeken",
+      "searchPlaceholder": "Zoek in NetEase",
+      "importTrack": "Nummer importeren",
+      "importPlaylist": "Streaming-afspeellijst importeren",
+      "importRefusal": "Import geweigerd",
+      "waitingForScan": "Scan deze QR-code met de NetEase-app.",
+      "scanned": "Gescand. Bevestig op je telefoon.",
+      "qrExpired": "Deze QR-code is verlopen. Haal een nieuwe op.",
+      "loginWithPhone": "Aanmelden met telefoon",
+      "loginWithEmail": "Aanmelden met e-mail",
+      "loginWithQr": "Aanmelden met QR",
+      "passwordNotice": "OpenKara verstuurt het wachtwoord één keer en slaat het niet op.",
+      "qrHint": "Open de NetEase Cloud Music-app en scan deze code.",
+      "refreshQr": "Nieuwe QR-code ophalen"
+    }
+  },
+  "youtube": {
+    "pasteLink": "YouTube-link plakken",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Aan wachtrij toevoegen",
+    "invalidUrl": "Dat is geen openbare YouTube-kijk- of afspeellijstlink.",
+    "ageRestricted": "Deze video heeft een leeftijdsbeperking.",
+    "private": "Deze video is privé.",
+    "unlisted": "Deze video staat niet in de lijst."
   }
 }

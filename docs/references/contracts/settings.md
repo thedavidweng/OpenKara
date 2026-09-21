@@ -25,6 +25,8 @@ Field or command semantic changes must update this document before changing UI c
 | `crossfade_duration_ms` | `u32` | Crossfade duration in ms, clamped to `[500, 10000]` |
 | `library_sort_mode` | `string` | Active sidebar song-list sort mode (see below) |
 | `theme_preference` | `string` | Appearance preference (see below) |
+| `youtube_source_enabled` | `bool` | Whether the YouTube Video Source is on. Default `false`. |
+| `netease_source_enabled` | `bool` | Whether the NetEase Streaming Source is on. Default `false`. |
 
 ## Library sort mode
 
@@ -86,6 +88,9 @@ stays explicitly dark regardless of the primary preference.
 - `set_crossfade_enabled(enabled: bool) -> AppSettings`
 - `set_crossfade_duration_ms(duration_ms: u32) -> AppSettings`
 - `set_update_policy(policy: UpdatePolicy) -> AppSettings`
+- `list_online_sources() -> Vec<OnlineSourceSnapshot>` — see [catalog.md](./catalog.md)
+- `set_online_source_enabled(source_id: OnlineSourceId, enabled: bool) -> AppSettings`
+- Session, browse, import, YouTube resolve, and reveal commands — see [catalog.md](./catalog.md)
 - `restart_app() -> ()`
 
 ## Update policy
