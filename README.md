@@ -303,7 +303,7 @@ filter such as `OPENKARA_LOG=openkara_lib=trace,warn`).
 ### Prerequisites
 
 - Node.js 24 (`nvm use` or `fnm use` reads `.nvmrc` / `.node-version`)
-- pnpm 11
+- pnpm 12
 - Rust stable via [rustup](https://rustup.rs/)
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
 

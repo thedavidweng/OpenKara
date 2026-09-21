@@ -176,20 +176,16 @@ Regenerates Flatpak offline pnpm dependency sources from `pnpm-lock.yaml`.
 - **When to run:** after changing JavaScript dependencies or lockfile entries
   used by Flatpak packaging
 
-## `flatpak/populate_pnpm_store.mjs`
+## Flatpak offline pnpm store
 
-Seeds the Flatpak offline pnpm 11 store from downloaded tarballs. Canonical
-copy also lives inline in `node-sources.0.json` as
-`flatpak-node/populate_pnpm_store.mjs` and is invoked from the Flatpak
-manifest **after** the pnpm tarball is installed.
+The Flatpak build installs the `packageManager` pnpm tarball and the matching
+`@pnpm/exe.linux-x64` or `@pnpm/exe.linux-arm64` native binary.
 
-- **Why:** pnpm 11 indexes packages in `store-dir/v11/index.db` (SQLite +
-  msgpackr). Legacy JSON `index/` entries are ignored, which previously
-  produced `ERR_PNPM_NO_OFFLINE_TARBALL` despite intact CAFS blobs.
-- **How:** replays each lockfile tarball through pnpm's own
-  `dist/worker.js` extract path so the store matches a normal install.
-- **Run (inside Flatpak build):**
-  `node flatpak-node/populate_pnpm_store.mjs <manifest.json> <tarball-dir> <store-dir>`
+- **Why:** pnpm 12 is a Rust binary. It has no `dist/worker.js`. The optional
+  `@pnpm/exe.*` packages are not reachable in the sandbox.
+- **How:** rewrite lockfile resolutions to `file:` tarballs. Run
+  `pnpm fetch --offline` to fill `store-dir/v11`. Run
+  `pnpm install --offline --frozen-lockfile --trust-lockfile`.
 
 ## `flatpak/rewrite_lockfile_local_tarballs.mjs`
 
