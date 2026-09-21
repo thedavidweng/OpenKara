@@ -1,7 +1,6 @@
 import type { PlaybackStateSnapshot } from "@/types/ipc";
 import type { VideoPlaybackTransport } from "./session";
 import {
-  createDefaultYoutubeWatchNativeSurface,
   createTauriYoutubeWatchHost,
   type YoutubeWatchHost,
 } from "./youtube-watch-host";
@@ -57,18 +56,23 @@ function createLazyTauriHost(
       return inner;
     }
     if (!starting) {
-      starting = createDefaultYoutubeWatchNativeSurface().then((surface) => {
-        if (!surface) {
-          return null;
-        }
-        inner = createTauriYoutubeWatchHost({
-          surface,
-          audienceActive,
-          onEnded,
-          onTime,
-        });
-        return inner;
-      });
+      starting = import("./youtube-watch-native")
+        .then(({ createDefaultYoutubeWatchNativeSurface }) =>
+          createDefaultYoutubeWatchNativeSurface(),
+        )
+        .then((surface) => {
+          if (!surface) {
+            return null;
+          }
+          inner = createTauriYoutubeWatchHost({
+            surface,
+            audienceActive,
+            onEnded,
+            onTime,
+          });
+          return inner;
+        })
+        .catch(() => null);
     }
     return starting;
   };
