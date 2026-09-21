@@ -18,3 +18,8 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - lyric-romanizer@0.3.1
+
+# Keep pnpm-lock.yaml as a single YAML document. pnpm 12 otherwise records
+# packageManagerDependencies in a leading env document, which GitHub's
+# dependency graph and other single-document consumers cannot read.
+pmOnFail: ignore

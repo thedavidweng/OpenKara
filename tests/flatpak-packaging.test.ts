@@ -43,12 +43,18 @@ function tarballFilename(name: string, version: string) {
   return `${name.replace("/", "__")}-${version}.tgz`;
 }
 
+function projectLockfileDocument(lockfile: string) {
+  const body = lockfile.startsWith("---\n") ? lockfile.slice(4) : lockfile;
+  const documents = body.split(/\n---\n/);
+  return documents[documents.length - 1] ?? lockfile;
+}
+
 function parsePnpmLockfilePackages(lockfile: string): LockfilePackage[] {
   const packages: LockfilePackage[] = [];
   let inPackagesSection = false;
   let currentKey: string | null = null;
 
-  for (const line of lockfile.split(/\r?\n/)) {
+  for (const line of projectLockfileDocument(lockfile).split(/\r?\n/)) {
     if (line === "packages:") {
       inPackagesSection = true;
       continue;
@@ -169,47 +175,53 @@ describe("Flatpak packaging", () => {
   });
 
   test("offline pnpm install trusts the integrity-pinned lockfile", () => {
-    // pnpm 11 re-applies supply-chain policy by fetching registry metadata even
+    // pnpm re-applies supply-chain policy by fetching registry metadata even
     // with --offline; that requires network and fails inside the Flatpak
     // sandbox. The lockfile is already integrity-pinned by flatpak-node sources.
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
 
+    expect(manifestTemplate).toContain("pnpm fetch --offline --trust-lockfile");
     expect(manifestTemplate).toContain(
       "pnpm install --offline --frozen-lockfile --trust-lockfile",
     );
   });
 
-  test("populates the offline pnpm 11 store and rewrites lockfile tarballs to file:", () => {
-    // pnpm 11 indexes packages in store-dir/v11/index.db (SQLite + msgpackr).
-    // Populate must run *after* the pnpm tarball is installed so dist/worker.js
-    // is available. Independently, lockfile resolutions are rewritten to
-    // file:flatpak-node/pnpm-tarballs/… so install uses the localTarball fetcher
-    // when the sandbox cannot reach registry.npmjs.org.
+  test("rewrites lockfile tarballs to file: then fetches the offline pnpm store", () => {
+    // pnpm 12 is a native binary without dist/worker.js. The vendored wrapper
+    // tarball is installed with --ignore-scripts --no-optional, then the
+    // matching linux exe overwrites the placeholder bin. Lockfile resolutions
+    // are rewritten to file:flatpak-node/pnpm-tarballs/… so fetch/install use
+    // the localTarball fetcher when the sandbox cannot reach registry.npmjs.org.
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
-    const populateIdx = manifestTemplate.indexOf(
-      "node flatpak-node/populate_pnpm_store.mjs",
-    );
     const rewriteIdx = manifestTemplate.indexOf(
       "node flatpak-node/rewrite_lockfile_local_tarballs.mjs",
+    );
+    const fetchIdx = manifestTemplate.indexOf(
+      "pnpm fetch --offline --trust-lockfile",
     );
     const installIdx = manifestTemplate.indexOf(
       "pnpm install --offline --frozen-lockfile --trust-lockfile",
     );
     const pnpmInstallIdx = manifestTemplate.indexOf(
-      "npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package",
+      "npm install -g --prefix /run/build/openkara/pnpm-install --ignore-scripts --no-optional ./pnpm-package",
+    );
+    const exeInstallIdx = manifestTemplate.indexOf(
+      "install -Dm0755 pnpm-exe/pnpm /run/build/openkara/pnpm-install/lib/node_modules/pnpm/pnpm",
     );
 
-    expect(populateIdx).toBeGreaterThan(-1);
     expect(rewriteIdx).toBeGreaterThan(-1);
+    expect(fetchIdx).toBeGreaterThan(-1);
     expect(installIdx).toBeGreaterThan(-1);
     expect(pnpmInstallIdx).toBeGreaterThan(-1);
-    expect(pnpmInstallIdx).toBeLessThan(populateIdx);
-    expect(populateIdx).toBeLessThan(rewriteIdx);
-    expect(rewriteIdx).toBeLessThan(installIdx);
+    expect(exeInstallIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeLessThan(exeInstallIdx);
+    expect(exeInstallIdx).toBeLessThan(rewriteIdx);
+    expect(rewriteIdx).toBeLessThan(fetchIdx);
+    expect(fetchIdx).toBeLessThan(installIdx);
 
     const nodeSources = JSON.parse(
       readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
@@ -219,21 +231,21 @@ describe("Flatpak packaging", () => {
       contents?: string;
       commands?: string[];
     }>;
-    const populate = nodeSources.find(
-      (s) => s["dest-filename"] === "populate_pnpm_store.mjs",
-    );
-    expect(populate?.contents).toContain("worker_threads");
-    expect(populate?.contents).toContain("index.db");
-    expect(populate?.contents).toContain('type: "extract"');
+    expect(
+      nodeSources.find((s) => s["dest-filename"] === "populate_pnpm_store.mjs"),
+    ).toBeUndefined();
 
     const rewrite = nodeSources.find(
       (s) => s["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs",
     );
     expect(rewrite?.contents).toContain("tarball: file:");
     expect(rewrite?.contents).toContain("pnpm-tarballs");
+    expect(rewrite?.contents).toBe(
+      readProjectFile("scripts/flatpak/rewrite_lockfile_local_tarballs.mjs"),
+    );
 
     // Shell source only wires store-dir / headers; it must not run the old
-    // Python JSON-index populate (pnpm 11 cannot read that layout).
+    // Python JSON-index populate (pnpm cannot read that layout).
     // store-dir MUST be relative: absolute $PWD paths from shell sources point
     // at the host build tree, which is invisible under --nofilesystem=host:reset.
     const shell = nodeSources.find((s) => s.type === "shell");
@@ -244,8 +256,8 @@ describe("Flatpak packaging", () => {
     expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
   });
 
-  test("flatpak-node offline store targets pnpm 11 store version directory", () => {
-    // pnpm 11 looks under store-dir/v11. Populate writing v10 makes every
+  test("flatpak-node offline store targets pnpm store version directory v11", () => {
+    // pnpm 12 still looks under store-dir/v11. Writing v10 makes every
     // offline install fail with ERR_PNPM_NO_OFFLINE_TARBALL.
     const nodeSources = JSON.parse(
       readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
@@ -277,6 +289,12 @@ describe("Flatpak packaging", () => {
     const pinnedVersion = packageJson.packageManager.replace(/^pnpm@/, "");
 
     expect(manifestTemplate).toContain(`pnpm/-/pnpm-${pinnedVersion}.tgz`);
+    expect(manifestTemplate).toContain(
+      `@pnpm/exe.linux-x64/-/exe.linux-x64-${pinnedVersion}.tgz`,
+    );
+    expect(manifestTemplate).toContain(
+      `@pnpm/exe.linux-arm64/-/exe.linux-arm64-${pinnedVersion}.tgz`,
+    );
   });
 
   test("uses the Flathub container image and official flatpak-builder action for Flatpak builds", () => {
@@ -392,6 +410,42 @@ describe("Flatpak packaging", () => {
     );
   });
 
+  test("reads project packages from the last YAML document in a pnpm lockfile", () => {
+    const lockfile = `---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.5.1
+        version: 12.5.1
+
+packages:
+
+  pnpm@12.5.1:
+    resolution: {integrity: sha512-QUJD}
+
+---
+lockfileVersion: '9.0'
+
+packages:
+
+  react@19.3.0:
+    resolution: {integrity: sha512-ABCD}
+`;
+    const pkgs = parsePnpmLockfilePackages(lockfile);
+    expect(pkgs).toEqual([
+      {
+        filename: "react-19.3.0.tgz",
+        integrityHex: Buffer.from("ABCD", "base64").toString("hex"),
+        name: "react",
+        version: "19.3.0",
+      },
+    ]);
+  });
+
   test("keeps pnpm dependency sources in sync with the lockfile packages used by the app", () => {
     const lockfilePackages = parsePnpmLockfilePackages(
       readProjectFile("pnpm-lock.yaml"),
@@ -429,7 +483,7 @@ describe("Flatpak packaging", () => {
         .map((source) => [source["dest-filename"], source.sha512]),
     );
 
-    // pnpm 11 resolves from store-dir/v11; v10 left offline installs blind.
+    // pnpm 12 still resolves from store-dir/v11; v10 left offline installs blind.
     expect(manifest.store_version).toBe("v11");
     expect(
       nodeSources.filter(
