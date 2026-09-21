@@ -756,14 +756,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/cc/cc-1.4.5.crate",
-    "sha256": "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80",
-    "dest": "cargo/vendor/cc-1.4.5"
+    "url": "https://static.crates.io/crates/cc/cc-1.4.6.crate",
+    "sha256": "a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4",
+    "dest": "cargo/vendor/cc-1.4.6"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80\",\"files\":{}}",
-    "dest": "cargo/vendor/cc-1.4.5",
+    "contents": "{\"package\":\"a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4\",\"files\":{}}",
+    "dest": "cargo/vendor/cc-1.4.6",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -3291,14 +3291,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/lofty/lofty-0.25.1.crate",
-    "sha256": "e0f052e8f93a76f4b2cd551c38a77d3025c7be1dc473f7acbac0ef1663c9f33b",
-    "dest": "cargo/vendor/lofty-0.25.1"
+    "url": "https://static.crates.io/crates/lofty/lofty-0.25.2.crate",
+    "sha256": "615d6334c1196e2f23f2708455bf8d71c374818cad7c34adaa0f8f885abf5d7c",
+    "dest": "cargo/vendor/lofty-0.25.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"e0f052e8f93a76f4b2cd551c38a77d3025c7be1dc473f7acbac0ef1663c9f33b\",\"files\":{}}",
-    "dest": "cargo/vendor/lofty-0.25.1",
+    "contents": "{\"package\":\"615d6334c1196e2f23f2708455bf8d71c374818cad7c34adaa0f8f885abf5d7c\",\"files\":{}}",
+    "dest": "cargo/vendor/lofty-0.25.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -4929,14 +4929,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/reqwest/reqwest-0.13.4.crate",
-    "sha256": "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3",
-    "dest": "cargo/vendor/reqwest-0.13.4"
+    "url": "https://static.crates.io/crates/reqwest/reqwest-0.13.5.crate",
+    "sha256": "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029",
+    "dest": "cargo/vendor/reqwest-0.13.5"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3\",\"files\":{}}",
-    "dest": "cargo/vendor/reqwest-0.13.4",
+    "contents": "{\"package\":\"16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029\",\"files\":{}}",
+    "dest": "cargo/vendor/reqwest-0.13.5",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -4968,14 +4968,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ringbuf/ringbuf-0.5.1.crate",
-    "sha256": "a158e09ede21a14b172ca6cdd6208386c6ae2cb6acef58d774368ef8c450dfa7",
-    "dest": "cargo/vendor/ringbuf-0.5.1"
+    "url": "https://static.crates.io/crates/ringbuf/ringbuf-0.5.2.crate",
+    "sha256": "0b123165531e325df9079f56c036f2da4103a5d5abfef9e2fda4b9c34d1ef7aa",
+    "dest": "cargo/vendor/ringbuf-0.5.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"a158e09ede21a14b172ca6cdd6208386c6ae2cb6acef58d774368ef8c450dfa7\",\"files\":{}}",
-    "dest": "cargo/vendor/ringbuf-0.5.1",
+    "contents": "{\"package\":\"0b123165531e325df9079f56c036f2da4103a5d5abfef9e2fda4b9c34d1ef7aa\",\"files\":{}}",
+    "dest": "cargo/vendor/ringbuf-0.5.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -7178,14 +7178,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/uuid/uuid-1.26.0.crate",
-    "sha256": "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812",
-    "dest": "cargo/vendor/uuid-1.26.0"
+    "url": "https://static.crates.io/crates/uuid/uuid-1.26.1.crate",
+    "sha256": "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce",
+    "dest": "cargo/vendor/uuid-1.26.1"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812\",\"files\":{}}",
-    "dest": "cargo/vendor/uuid-1.26.0",
+    "contents": "{\"package\":\"2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce\",\"files\":{}}",
+    "dest": "cargo/vendor/uuid-1.26.1",
     "dest-filename": ".cargo-checksum.json"
   },
   {
