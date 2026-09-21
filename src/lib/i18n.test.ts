@@ -127,6 +127,34 @@ describe("detectSystemLanguage", () => {
     );
   });
 
+  it("loads a non-English locale on demand", async () => {
+    await i18next.changeLanguage("ja");
+    expect(i18next.hasResourceBundle("ja", "translation")).toBe(true);
+    expect(i18next.t("bootstrap.installingRuntime")).not.toBe(
+      "Installing ONNX Runtime…",
+    );
+  });
+
+  it("skips resource loading when the language code is empty", async () => {
+    await i18next.changeLanguage("");
+    await i18next.changeLanguage();
+    expect(document.documentElement.lang).toBe("en");
+  });
+
+  it("keeps English when a locale has no JSON loader", async () => {
+    await i18next.changeLanguage("xx-YY");
+    expect(i18next.hasResourceBundle("xx-YY", "translation")).toBe(false);
+    expect(i18next.t("bootstrap.installingRuntime")).toBe(
+      "Installing ONNX Runtime…",
+    );
+  });
+
+  it("does not eagerly embed every locale JSON in the i18n module", async () => {
+    const { default: source } = await import("./i18n.ts?raw");
+    expect(source).not.toContain("eager: true");
+    expect(source).toContain("import.meta.glob");
+  });
+
   it("ships all runtime post-download keys used by the UI", () => {
     for (const key of [
       "bootstrap.installingRuntime",

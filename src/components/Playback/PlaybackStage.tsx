@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LyricsPanel } from "@/components/Lyrics/LyricsPanel";
 import { CdgCanvas } from "@/components/Cdg/CdgCanvas";
 import { useCoverArtUrl } from "@/lib/cover-art";
@@ -92,17 +94,16 @@ export function PlaybackStage({
       if (!bounds) {
         return;
       }
-      void import("@tauri-apps/api/event")
-        .then(async ({ emit }) => {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          if (cancelled) {
-            return;
-          }
-          await emit(YOUTUBE_WATCH_BOUNDS_EVENT, {
+      if (cancelled) {
+        return;
+      }
+      void Promise.resolve()
+        .then(() =>
+          emit(YOUTUBE_WATCH_BOUNDS_EVENT, {
             windowLabel: getCurrentWindow().label,
             bounds,
-          });
-        })
+          }),
+        )
         .catch(() => {});
     };
 
