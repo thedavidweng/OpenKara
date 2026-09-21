@@ -24,6 +24,13 @@ updates:
       default-days: 7
 
   - package-ecosystem: "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     directory: "/"
     schedule:
       interval: "weekly"
