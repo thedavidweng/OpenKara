@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createPlaybackSession } from "./session";
 import {
   createYoutubeVideoTransport,
@@ -14,6 +14,14 @@ import {
   type YoutubeWatchNativeSurface,
 } from "./youtube-watch-host";
 import type { PlaybackStateSnapshot } from "@/types/ipc";
+
+const { mockCreateNativeSurface } = vi.hoisted(() => ({
+  mockCreateNativeSurface: vi.fn(),
+}));
+
+vi.mock("./youtube-watch-native", () => ({
+  createDefaultYoutubeWatchNativeSurface: mockCreateNativeSurface,
+}));
 
 function snapshot(
   overrides: Partial<PlaybackStateSnapshot> = {},
@@ -34,11 +42,68 @@ function snapshot(
   };
 }
 
+function idleNativeSurface(): YoutubeWatchNativeSurface {
+  return {
+    async getByLabel() {
+      return null;
+    },
+    async create() {},
+    async currentWindowLabel() {
+      return "main";
+    },
+    async audienceFillBounds() {
+      return null;
+    },
+    async control() {
+      return {
+        ended: false,
+        paused: true,
+        current_time_ms: 0,
+        duration_ms: null,
+      };
+    },
+    async listenBounds() {
+      return () => {};
+    },
+  };
+}
+
 describe("youtube transport helpers", () => {
+  afterEach(() => {
+    mockCreateNativeSurface.mockReset();
+  });
+
   test("lazy-loads the YouTube native Tauri surface", async () => {
     const { default: source } = await import("./youtube-transport.ts?raw");
     expect(source).toContain('import("./youtube-watch-native")');
     expect(source).not.toMatch(/from ["']\.\/youtube-watch-native["']/);
+  });
+
+  test("creates the native host on first play and reuses it", async () => {
+    mockCreateNativeSurface.mockResolvedValue(idleNativeSurface());
+    const transport = createYoutubeVideoTransport();
+    await transport.play("yt:abc");
+    await transport.pause();
+    await transport.resume();
+    expect(mockCreateNativeSurface).toHaveBeenCalledTimes(1);
+    expect(transport.isActive()).toBe(true);
+  });
+
+  test("keeps playing when the native surface is unavailable", async () => {
+    mockCreateNativeSurface.mockResolvedValue(null);
+    const transport = createYoutubeVideoTransport();
+    const next = await transport.play("yt:abc");
+    expect(next.song_id).toBe("yt:abc");
+    expect(next.is_playing).toBe(true);
+    await transport.teardown();
+  });
+
+  test("keeps playing when native surface creation throws", async () => {
+    mockCreateNativeSurface.mockRejectedValue(new Error("no tauri"));
+    const transport = createYoutubeVideoTransport();
+    const next = await transport.play("yt:abc");
+    expect(next.song_id).toBe("yt:abc");
+    expect(next.is_playing).toBe(true);
   });
   test("watch url never points at /player", () => {
     expect(youtubeWatchUrl("yt:dQw4w9WgXcQ")).toBe(
