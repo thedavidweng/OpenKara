@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "ลงชื่อเข้าใช้",
       "signOut": "ออกจากระบบ",
-      "qr": "ลงชื่อเข้าใช้ด้วย QR",
-      "phone": "โทรศัพท์และรหัสผ่าน",
-      "email": "อีเมลและรหัสผ่าน",
-      "password": "รหัสผ่าน",
-      "phoneNumber": "หมายเลขโทรศัพท์",
-      "countryCode": "รหัสประเทศ",
       "signedInAs": "ลงชื่อเข้าใช้เป็น {{name}}",
       "sessionExpired": "เซสชันหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
       "liked": "เพลงที่ถูกใจ",
@@ -792,15 +785,9 @@
       "importTrack": "นำเข้าเพลงนี้",
       "importPlaylist": "นำเข้าเพลย์ลิสต์สตรีมมิง",
       "importRefusal": "ปฏิเสธการนำเข้า",
-      "waitingForScan": "สแกน QR นี้ด้วยแอป NetEase",
-      "scanned": "สแกนแล้ว ยืนยันบนโทรศัพท์",
-      "qrExpired": "QR นี้หมดอายุแล้ว ขออันใหม่",
-      "loginWithPhone": "เข้าสู่ระบบด้วยโทรศัพท์",
-      "loginWithEmail": "เข้าสู่ระบบด้วยอีเมล",
-      "loginWithQr": "เข้าสู่ระบบด้วย QR",
-      "passwordNotice": "OpenKara ส่งรหัสผ่านครั้งเดียวและไม่จัดเก็บ",
-      "qrHint": "เปิดแอป NetEase Cloud Music แล้วสแกนรหัสนี้",
-      "refreshQr": "ขอ QR ใหม่"
+      "connect": "เชื่อมต่อ NetEase",
+      "checkSignIn": "ตรวจสอบการเข้าสู่ระบบ",
+      "webSignInHint": "เข้าสู่ระบบบนหน้า NetEase อย่างเป็นทางการ แล้วกลับมาที่นี่เพื่อตรวจสอบการเข้าสู่ระบบ"
     }
   },
   "youtube": {

@@ -100,6 +100,7 @@ const CATEGORY_PATTERNS = {
   ],
 
   rust: [
+    "src-tauri/build.rs",
     "src-tauri/src/**",
     "src-tauri/tests/**",
     // Source-tree smoke binaries compile against the production crate and
@@ -119,7 +120,7 @@ const CATEGORY_PATTERNS = {
     "src-tauri/catalog/**",
   ],
 
-  deps_js: ["package.json", "pnpm-lock.yaml"],
+  deps_js: ["package.json", "pnpm-lock.yaml", "sidecars/netease/**"],
 
   deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
 
@@ -163,6 +164,9 @@ const CATEGORY_PATTERNS = {
 
   packaging_inputs: [
     "packaging/**",
+    "sidecars/netease/**",
+    "scripts/prepare-netease-sidecar.mjs",
+    "src-tauri/build.rs",
     "src-tauri/tauri.conf.json",
     "src-tauri/tauri.linux.conf.json",
     "src-tauri/tauri.macos.conf.json",
@@ -172,6 +176,7 @@ const CATEGORY_PATTERNS = {
     "scripts/render-winget-manifests.mjs",
     "scripts/generate-flatpak-cargo-sources.mjs",
     "scripts/generate-flatpak-node-sources.mjs",
+    "scripts/generate-flatpak-netease-sources.mjs",
     "scripts/clean-macos-bundle.mjs",
     "tests/flatpak-packaging.test.ts",
     "tests/onnx-runtime-packaging.test.ts",

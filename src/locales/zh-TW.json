@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "網易雲音樂",
-      "signIn": "登入",
       "signOut": "登出",
-      "qr": "掃碼登入",
-      "phone": "手機號碼和密碼",
-      "email": "電子郵件和密碼",
-      "password": "密碼",
-      "phoneNumber": "手機號碼",
-      "countryCode": "國家區號",
       "signedInAs": "已登入為 {{name}}",
       "sessionExpired": "工作階段已過期，請重新登入。",
       "liked": "我喜歡的音樂",
@@ -792,15 +785,9 @@
       "importTrack": "匯入這首歌",
       "importPlaylist": "匯入串流播放清單",
       "importRefusal": "拒絕匯入",
-      "waitingForScan": "請用網易雲音樂掃描此 QR 碼。",
-      "scanned": "已掃碼，請在手機上確認。",
-      "qrExpired": "QR 碼已失效，請取得新的 QR 碼。",
-      "loginWithPhone": "手機號碼登入",
-      "loginWithEmail": "電子郵件登入",
-      "loginWithQr": "QR 碼登入",
-      "passwordNotice": "OpenKara 只會傳送一次密碼，不會儲存。",
-      "qrHint": "開啟網易雲音樂 App 並掃描此 QR 碼。",
-      "refreshQr": "取得新的 QR 碼"
+      "connect": "連接網易雲音樂",
+      "checkSignIn": "檢查登入",
+      "webSignInHint": "在網易雲音樂官方網頁完成登入，然後返回這裡檢查登入狀態。"
     }
   },
   "youtube": {

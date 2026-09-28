@@ -105,3 +105,6 @@ src-tauri/icons/OpenKara.icns
 # .NET build output
 tools/windows-accessibility/**/bin/
 tools/windows-accessibility/**/obj/
+
+src-tauri/generated/netease/
+src-tauri/generated/bin/

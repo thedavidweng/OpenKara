@@ -6,44 +6,26 @@ vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
 }));
 
-describe("catalog store QR status", () => {
-  test("startQr records waiting and pollQr can move to scanned then signed in", async () => {
+describe("catalog store sessions", () => {
+  test("web sign-in stores only the verified session snapshot", async () => {
     const backend = createMockBackend({
       overrides: {
         catalog: {
-          startStreamingQrSignin: async () => ({
-            key: "unikey",
-            login_url: "https://music.163.com/login?codekey=unikey",
-            qr_svg: "<svg></svg>",
+          openStreamingSignIn: async () => {},
+          completeStreamingSignIn: async () => ({
+            source_id: "netease",
+            signed_in: true,
+            display_name: "Ada",
+            expired: false,
           }),
-          pollStreamingQrSignin: vi
-            .fn()
-            .mockResolvedValueOnce({ status: "scanned", session: null })
-            .mockResolvedValueOnce({
-              status: "confirmed",
-              session: {
-                source_id: "netease",
-                signed_in: true,
-                display_name: "Ada",
-                expired: false,
-              },
-            }),
         },
       },
     });
     const store = createCatalogStore(backend);
-    await store.getState().startQr();
-    expect(store.getState().qr?.key).toBe("unikey");
-    expect(store.getState().qrStatus).toBe("waiting");
-
-    await store.getState().pollQr();
-    expect(store.getState().qrStatus).toBe("scanned");
+    await store.getState().openSignIn();
     expect(store.getState().session).toBeNull();
-
-    await store.getState().pollQr();
+    await store.getState().completeSignIn();
     expect(store.getState().session?.display_name).toBe("Ada");
-    expect(store.getState().qr).toBeNull();
-    expect(store.getState().qrStatus).toBeNull();
   });
 
   test("browse, import, and conflict helpers write store fields", async () => {
@@ -186,33 +168,6 @@ describe("catalog store QR status", () => {
     expect(store.getState().liked).toEqual([]);
   });
 
-  test("password sign-in is forgotten by the store after the command returns", async () => {
-    const signIn = vi.fn().mockResolvedValue({
-      source_id: "netease",
-      signed_in: true,
-      display_name: "Ada",
-      expired: false,
-    });
-    const backend = createMockBackend({
-      overrides: {
-        catalog: {
-          signInStreamingSource: signIn,
-        },
-      },
-    });
-    const store = createCatalogStore(backend);
-    await store.getState().signInPassword("email", "a@b.c", "once-only");
-    expect(signIn).toHaveBeenCalledWith(
-      "netease",
-      "email",
-      "a@b.c",
-      "once-only",
-      undefined,
-    );
-    expect(store.getState().session?.signed_in).toBe(true);
-    expect(JSON.stringify(store.getState())).not.toContain("once-only");
-  });
-
   test("catalog helpers notify when the backend rejects", async () => {
     const boom = new Error("offline");
     const reject = async () => {
@@ -222,9 +177,8 @@ describe("catalog store QR status", () => {
       overrides: {
         catalog: {
           getStreamingSession: reject,
-          startStreamingQrSignin: reject,
-          pollStreamingQrSignin: reject,
-          signInStreamingSource: reject,
+          openStreamingSignIn: reject,
+          completeStreamingSignIn: reject,
           signOutStreamingSource: reject,
           listStreamingLikedTracks: reject,
           listStreamingPlaylists: reject,
@@ -236,18 +190,10 @@ describe("catalog store QR status", () => {
       },
     });
     const store = createCatalogStore(backend);
-    store.setState({
-      qr: {
-        key: "unikey",
-        login_url: "https://music.163.com/login?codekey=unikey",
-        qr_svg: "<svg></svg>",
-      },
-    });
     const { notifyError } = await import("@/lib/errors");
     await store.getState().loadSession();
-    await store.getState().startQr();
-    await store.getState().pollQr();
-    await store.getState().signInPassword("email", "a@b.c", "x");
+    await store.getState().openSignIn();
+    await store.getState().completeSignIn();
     await store.getState().signOut();
     await store.getState().loadLiked();
     await store.getState().loadPlaylists();
@@ -256,6 +202,6 @@ describe("catalog store QR status", () => {
     await store.getState().importTracks(["1"]);
     await store.getState().resolveConflict("keep");
     expect(notifyError).toHaveBeenCalled();
-    expect(vi.mocked(notifyError).mock.calls.length).toBeGreaterThanOrEqual(11);
+    expect(vi.mocked(notifyError).mock.calls.length).toBeGreaterThanOrEqual(10);
   });
 });

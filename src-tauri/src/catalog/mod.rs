@@ -15,7 +15,7 @@ pub use import::{
     advance_import_session, items_from_tracks, run_streaming_import, StreamingImportItem,
     StreamingImportRequest, StreamingImportSession, StreamingPlaylistOrigin,
 };
-pub use netease::{china_client_address, LiveNeteaseHttp, NeteaseStreamingSource};
+pub use netease::{LiveNeteaseApi, NeteaseSidecar, NeteaseStreamingSource};
 pub use registry::{
     list_online_sources, require_enabled, set_online_source_enabled, OnlineSourceKind,
     OnlineSourceSnapshot, UnknownOnlineSource,
@@ -27,10 +27,9 @@ pub use streaming::{
 pub use types::{
     is_video_source_queue_id, youtube_queue_id, CatalogError, ImportConflictPrompt,
     ImportRefusalReason, LibraryDecisionAction, OnlineSourceCapabilities, RevealTargets,
-    StreamingImportProgress, StreamingImportStatus, StreamingPasswordMethod,
-    StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingQrChallenge, StreamingQrPoll,
-    StreamingSessionSnapshot, StreamingTrack, VideoQueueItem, VideoUnavailableReason,
-    NETEASE_SOURCE_ID, YOUTUBE_SOURCE_ID,
+    StreamingImportProgress, StreamingImportStatus, StreamingPlaylistDetail,
+    StreamingPlaylistSummary, StreamingSessionSnapshot, StreamingTrack, VideoQueueItem,
+    VideoUnavailableReason, NETEASE_SOURCE_ID, YOUTUBE_SOURCE_ID,
 };
 pub use video::{FakeVideoPage, FakeVideoSource, GatedVideoSource, VideoSource};
 pub use youtube::{parse_youtube_url, LiveYoutubeFetcher, YoutubeVideoSource};

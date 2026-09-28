@@ -1,7 +1,6 @@
 use super::types::{
     CatalogError, ImportRefusal, ImportRefusalReason, ResolvedStreamingFile, StreamingCredentials,
-    StreamingPasswordMethod, StreamingPlaylistDetail, StreamingPlaylistSummary,
-    StreamingQrChallenge, StreamingQrPoll, StreamingQrStatus, StreamingResolveOutcome,
+    StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingResolveOutcome,
     StreamingSessionSnapshot, StreamingTrack,
 };
 use std::collections::HashMap;
@@ -11,15 +10,6 @@ use std::sync::Mutex;
 pub trait StreamingSource: Send + Sync {
     fn source_id(&self) -> &str;
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
-    fn start_qr(&self) -> Result<StreamingQrChallenge, CatalogError>;
-    fn poll_qr(&self, key: &str) -> Result<StreamingQrPoll, CatalogError>;
-    fn sign_in_password(
-        &self,
-        method: StreamingPasswordMethod,
-        identifier: &str,
-        password: &str,
-        country_code: Option<&str>,
-    ) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn liked_tracks(&self) -> Result<Vec<StreamingTrack>, CatalogError>;
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError>;
@@ -56,28 +46,6 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
 
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
         self.inner.session()
-    }
-
-    fn start_qr(&self) -> Result<StreamingQrChallenge, CatalogError> {
-        self.require_enabled()?;
-        self.inner.start_qr()
-    }
-
-    fn poll_qr(&self, key: &str) -> Result<StreamingQrPoll, CatalogError> {
-        self.require_enabled()?;
-        self.inner.poll_qr(key)
-    }
-
-    fn sign_in_password(
-        &self,
-        method: StreamingPasswordMethod,
-        identifier: &str,
-        password: &str,
-        country_code: Option<&str>,
-    ) -> Result<StreamingSessionSnapshot, CatalogError> {
-        self.require_enabled()?;
-        self.inner
-            .sign_in_password(method, identifier, password, country_code)
     }
 
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
@@ -130,9 +98,6 @@ pub enum FakeResolveSpec {
 struct FakeInner {
     credentials: Option<StreamingCredentials>,
     display_name: Option<String>,
-    last_password: Option<String>,
-    qr_key: Option<String>,
-    qr_polls: u32,
     expired: bool,
     tracks: HashMap<String, FakeTrackSpec>,
     playlists: Vec<StreamingPlaylistSummary>,
@@ -151,9 +116,6 @@ impl FakeStreamingSource {
             inner: Mutex::new(FakeInner {
                 credentials: None,
                 display_name: None,
-                last_password: None,
-                qr_key: None,
-                qr_polls: 0,
                 expired: false,
                 tracks: HashMap::new(),
                 playlists: Vec::new(),
@@ -183,12 +145,14 @@ impl FakeStreamingSource {
             .clone()
     }
 
-    pub fn last_password(&self) -> Option<String> {
-        self.inner
-            .lock()
-            .expect("fake source lock")
-            .last_password
-            .clone()
+    pub fn authenticate(&self) {
+        let mut inner = self.inner.lock().expect("fake source lock");
+        inner.credentials = Some(StreamingCredentials {
+            music_u: "fixture-session".to_owned(),
+            csrf: "fixture-csrf".to_owned(),
+        });
+        inner.display_name = Some("Ada".to_owned());
+        inner.expired = false;
     }
 
     pub fn mark_expired(&self) {
@@ -238,84 +202,6 @@ impl StreamingSource for FakeStreamingSource {
             signed_in: inner.credentials.is_some() && !inner.expired,
             display_name: inner.display_name.clone(),
             expired: inner.expired,
-        })
-    }
-
-    fn start_qr(&self) -> Result<StreamingQrChallenge, CatalogError> {
-        let mut inner = self.inner.lock().expect("fake source lock");
-        inner.qr_key = Some("fake-qr-key".to_owned());
-        inner.qr_polls = 0;
-        Ok(StreamingQrChallenge {
-            key: "fake-qr-key".to_owned(),
-            login_url: "https://music.163.com/login?codekey=fake-qr-key".to_owned(),
-            qr_svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_owned(),
-        })
-    }
-
-    fn poll_qr(&self, key: &str) -> Result<StreamingQrPoll, CatalogError> {
-        let mut inner = self.inner.lock().expect("fake source lock");
-        if inner.qr_key.as_deref() != Some(key) {
-            return Ok(StreamingQrPoll {
-                status: StreamingQrStatus::Expired,
-                session: None,
-            });
-        }
-        inner.qr_polls += 1;
-        if inner.qr_polls < 2 {
-            return Ok(StreamingQrPoll {
-                status: StreamingQrStatus::Waiting,
-                session: None,
-            });
-        }
-        inner.credentials = Some(StreamingCredentials {
-            music_u: "MUSIC_U_FAKE".to_owned(),
-            csrf: "CSRF_FAKE".to_owned(),
-        });
-        inner.display_name = Some("QR User".to_owned());
-        inner.expired = false;
-        inner.last_password = None;
-        Ok(StreamingQrPoll {
-            status: StreamingQrStatus::Confirmed,
-            session: Some(StreamingSessionSnapshot {
-                source_id: self.source_id.clone(),
-                signed_in: true,
-                display_name: Some("QR User".to_owned()),
-                expired: false,
-            }),
-        })
-    }
-
-    fn sign_in_password(
-        &self,
-        _method: StreamingPasswordMethod,
-        identifier: &str,
-        password: &str,
-        _country_code: Option<&str>,
-    ) -> Result<StreamingSessionSnapshot, CatalogError> {
-        let mut inner = self.inner.lock().expect("fake source lock");
-        inner.last_password = Some(password.to_owned());
-        inner.credentials = Some(StreamingCredentials {
-            music_u: format!("MUSIC_U_{identifier}"),
-            csrf: "CSRF_FAKE".to_owned(),
-        });
-        if inner
-            .credentials
-            .as_ref()
-            .is_some_and(|credentials| credentials.contains_password_material(password))
-        {
-            inner.credentials = Some(StreamingCredentials {
-                music_u: "MUSIC_U_SANITIZED".to_owned(),
-                csrf: "CSRF_FAKE".to_owned(),
-            });
-        }
-        inner.display_name = Some(identifier.to_owned());
-        inner.expired = false;
-        inner.last_password = None;
-        Ok(StreamingSessionSnapshot {
-            source_id: self.source_id.clone(),
-            signed_in: true,
-            display_name: Some(identifier.to_owned()),
-            expired: false,
         })
     }
 
@@ -443,21 +329,6 @@ impl StreamingSource for &FakeStreamingSource {
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
         (*self).session()
     }
-    fn start_qr(&self) -> Result<StreamingQrChallenge, CatalogError> {
-        (*self).start_qr()
-    }
-    fn poll_qr(&self, key: &str) -> Result<StreamingQrPoll, CatalogError> {
-        (*self).poll_qr(key)
-    }
-    fn sign_in_password(
-        &self,
-        method: StreamingPasswordMethod,
-        identifier: &str,
-        password: &str,
-        country_code: Option<&str>,
-    ) -> Result<StreamingSessionSnapshot, CatalogError> {
-        (*self).sign_in_password(method, identifier, password, country_code)
-    }
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
         (*self).sign_out()
     }
@@ -482,55 +353,10 @@ impl StreamingSource for &FakeStreamingSource {
 mod tests {
     use super::*;
 
-    fn fixture_password() -> String {
-        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
-            .into_iter()
-            .map(char::from)
-            .collect()
-    }
-
-    #[test]
-    fn qr_and_password_store_credentials_not_password() {
-        let source = FakeStreamingSource::new("netease");
-        let challenge = source.start_qr().expect("qr");
-        let first = source.poll_qr(&challenge.key).expect("poll 1");
-        assert_eq!(first.status, StreamingQrStatus::Waiting);
-        let confirmed = source.poll_qr(&challenge.key).expect("poll 2");
-        assert_eq!(confirmed.status, StreamingQrStatus::Confirmed);
-        let credentials = source.stored_credentials().expect("stored");
-        assert_eq!(credentials.music_u, "MUSIC_U_FAKE");
-        assert_eq!(credentials.csrf, "CSRF_FAKE");
-        assert!(source.last_password().is_none());
-
-        let password = fixture_password();
-        source
-            .sign_in_password(
-                StreamingPasswordMethod::Phone,
-                "13800000000",
-                &password,
-                Some("86"),
-            )
-            .expect("password");
-        let credentials = source.stored_credentials().expect("stored");
-        assert!(!credentials.contains_password_material(&password));
-        assert!(source.last_password().is_none());
-        assert_eq!(
-            source.session().expect("session").display_name.as_deref(),
-            Some("13800000000")
-        );
-    }
-
     #[test]
     fn sign_out_clears_credentials_disable_does_not() {
         let source = FakeStreamingSource::new("netease");
-        source
-            .sign_in_password(
-                StreamingPasswordMethod::Email,
-                "a@b.c",
-                &fixture_password(),
-                None,
-            )
-            .expect("sign in");
+        source.authenticate();
         assert!(source.stored_credentials().is_some());
         let gated = GatedStreamingSource::new(false, &source);
         assert!(matches!(
@@ -548,14 +374,7 @@ mod tests {
         let path = dir.path().join("track.mp3");
         std::fs::write(&path, b"audio").expect("write");
         let source = FakeStreamingSource::new("netease");
-        source
-            .sign_in_password(
-                StreamingPasswordMethod::Email,
-                "a@b.c",
-                &fixture_password(),
-                None,
-            )
-            .expect("sign in");
+        source.authenticate();
         source.insert_track(FakeTrackSpec {
             remote_track_id: "playable".to_owned(),
             title: "Playable".to_owned(),

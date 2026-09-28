@@ -91,6 +91,7 @@ pub fn derive_startup_model_bootstrap(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .manage(catalog::NeteaseSidecar::default())
         // First plugin: short-circuit a second launch before any state init
         // (single SQLite writer + remote outbox assume one process).
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -205,9 +206,8 @@ pub fn run() {
             commands::settings::list_online_sources,
             commands::settings::set_online_source_enabled,
             commands::catalog::get_streaming_session,
-            commands::catalog::start_streaming_qr_signin,
-            commands::catalog::poll_streaming_qr_signin,
-            commands::catalog::sign_in_streaming_source,
+            commands::catalog::open_streaming_sign_in,
+            commands::catalog::complete_streaming_sign_in,
             commands::catalog::sign_out_streaming_source,
             commands::catalog::list_streaming_liked_tracks,
             commands::catalog::list_streaming_playlists,

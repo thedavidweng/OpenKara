@@ -777,14 +777,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Войти",
       "signOut": "Выйти",
-      "qr": "Войти по QR",
-      "phone": "Телефон и пароль",
-      "email": "Почта и пароль",
-      "password": "Пароль",
-      "phoneNumber": "Номер телефона",
-      "countryCode": "Код страны",
       "signedInAs": "Вход выполнен как {{name}}",
       "sessionExpired": "Сеанс истёк. Войдите снова.",
       "liked": "Любимые треки",
@@ -794,15 +787,9 @@
       "importTrack": "Импортировать трек",
       "importPlaylist": "Импортировать стриминговый плейлист",
       "importRefusal": "Импорт отклонён",
-      "waitingForScan": "Отсканируйте этот QR в приложении NetEase.",
-      "scanned": "Отсканировано. Подтвердите на телефоне.",
-      "qrExpired": "Этот QR истёк. Получите новый.",
-      "loginWithPhone": "Войти по телефону",
-      "loginWithEmail": "Войти по почте",
-      "loginWithQr": "Войти по QR",
-      "passwordNotice": "OpenKara отправляет пароль один раз и не сохраняет его.",
-      "qrHint": "Откройте приложение NetEase Cloud Music и отсканируйте этот код.",
-      "refreshQr": "Получить новый QR"
+      "connect": "Подключить NetEase",
+      "checkSignIn": "Проверить вход",
+      "webSignInHint": "Войдите на официальной странице NetEase, затем вернитесь сюда, чтобы проверить вход."
     }
   },
   "youtube": {

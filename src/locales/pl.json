@@ -777,14 +777,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Zaloguj się",
       "signOut": "Wyloguj się",
-      "qr": "Zaloguj się kodem QR",
-      "phone": "Telefon i hasło",
-      "email": "E-mail i hasło",
-      "password": "Hasło",
-      "phoneNumber": "Numer telefonu",
-      "countryCode": "Numer kierunkowy",
       "signedInAs": "Zalogowano jako {{name}}",
       "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
       "liked": "Polubione utwory",
@@ -794,15 +787,9 @@
       "importTrack": "Importuj utwór",
       "importPlaylist": "Importuj playlistę streamingową",
       "importRefusal": "Import odrzucony",
-      "waitingForScan": "Zeskanuj ten kod QR aplikacją NetEase.",
-      "scanned": "Zeskanowano. Potwierdź na telefonie.",
-      "qrExpired": "Ten kod QR wygasł. Pobierz nowy.",
-      "loginWithPhone": "Zaloguj się telefonem",
-      "loginWithEmail": "Zaloguj się e-mailem",
-      "loginWithQr": "Zaloguj się kodem QR",
-      "passwordNotice": "OpenKara wysyła hasło tylko raz i go nie zapisuje.",
-      "qrHint": "Otwórz aplikację NetEase Cloud Music i zeskanuj ten kod.",
-      "refreshQr": "Pobierz nowy kod QR"
+      "connect": "Połącz z NetEase",
+      "checkSignIn": "Sprawdź logowanie",
+      "webSignInHint": "Zaloguj się na oficjalnej stronie NetEase, a następnie wróć tutaj, aby sprawdzić logowanie."
     }
   },
   "youtube": {

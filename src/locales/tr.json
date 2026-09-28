@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Oturum aç",
       "signOut": "Oturumu kapat",
-      "qr": "QR ile oturum aç",
-      "phone": "Telefon ve parola",
-      "email": "E-posta ve parola",
-      "password": "Parola",
-      "phoneNumber": "Telefon numarası",
-      "countryCode": "Ülke kodu",
       "signedInAs": "{{name}} olarak oturum açık",
       "sessionExpired": "Oturumun süresi doldu. Yeniden oturum açın.",
       "liked": "Beğenilen parçalar",
@@ -792,15 +785,9 @@
       "importTrack": "Parçayı içe aktar",
       "importPlaylist": "Yayın oynatma listesini içe aktar",
       "importRefusal": "İçe aktarma reddedildi",
-      "waitingForScan": "Bu QR kodunu NetEase uygulamasıyla tarayın.",
-      "scanned": "Tarandı. Telefonda onaylayın.",
-      "qrExpired": "Bu QR kodunun süresi doldu. Yenisini alın.",
-      "loginWithPhone": "Telefonla oturum aç",
-      "loginWithEmail": "E-postayla oturum aç",
-      "loginWithQr": "QR ile oturum aç",
-      "passwordNotice": "OpenKara parolayı bir kez gönderir ve saklamaz.",
-      "qrHint": "NetEase Cloud Music uygulamasını açın ve bu kodu tarayın.",
-      "refreshQr": "Yeni QR kodu al"
+      "connect": "NetEase’e bağlan",
+      "checkSignIn": "Oturumu kontrol et",
+      "webSignInHint": "Resmî NetEase sayfasında oturum açın, ardından oturumunuzu kontrol etmek için buraya dönün."
     }
   },
   "youtube": {

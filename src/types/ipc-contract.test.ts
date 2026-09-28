@@ -335,31 +335,18 @@ const CATALOG_COMMANDS: CommandContract[] = [
     rustParams: ["source_id"],
   },
   {
-    command: "start_streaming_qr_signin",
+    command: "open_streaming_sign_in",
     frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "startStreamingQrSignin",
+    frontendFn: "openStreamingSignIn",
     hasArgs: true,
     rustParams: ["source_id"],
   },
   {
-    command: "poll_streaming_qr_signin",
+    command: "complete_streaming_sign_in",
     frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "pollStreamingQrSignin",
+    frontendFn: "completeStreamingSignIn",
     hasArgs: true,
-    rustParams: ["source_id", "key"],
-  },
-  {
-    command: "sign_in_streaming_source",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "signInStreamingSource",
-    hasArgs: true,
-    rustParams: [
-      "source_id",
-      "method",
-      "identifier",
-      "password",
-      "country_code",
-    ],
+    rustParams: ["source_id"],
   },
   {
     command: "sign_out_streaming_source",
@@ -565,9 +552,8 @@ describe("IPC command registry", () => {
   test("catalog commands match contract documentation", () => {
     const expectedCatalogCommands = [
       "get_streaming_session",
-      "start_streaming_qr_signin",
-      "poll_streaming_qr_signin",
-      "sign_in_streaming_source",
+      "open_streaming_sign_in",
+      "complete_streaming_sign_in",
       "sign_out_streaming_source",
       "list_streaming_liked_tracks",
       "list_streaming_playlists",

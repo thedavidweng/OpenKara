@@ -1,0 +1,8 @@
+{
+  "name": "openkara-netease-sidecar",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@neteasecloudmusicapienhanced/api": "4.40.1"
+  }
+}

@@ -117,50 +117,12 @@ pub struct StreamingCredentials {
     pub csrf: String,
 }
 
-impl StreamingCredentials {
-    pub fn contains_password_material(&self, material: &str) -> bool {
-        !material.is_empty()
-            && (self.music_u.contains(material)
-                || self.csrf.contains(material)
-                || serde_json::to_string(self).is_ok_and(|payload| payload.contains(material)))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingSessionSnapshot {
     pub source_id: String,
     pub signed_in: bool,
     pub display_name: Option<String>,
     pub expired: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StreamingQrChallenge {
-    pub key: String,
-    pub login_url: String,
-    pub qr_svg: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamingQrStatus {
-    Waiting,
-    Scanned,
-    Confirmed,
-    Expired,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StreamingQrPoll {
-    pub status: StreamingQrStatus,
-    pub session: Option<StreamingSessionSnapshot>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamingPasswordMethod {
-    Phone,
-    Email,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -312,24 +274,6 @@ pub fn is_video_source_queue_id(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture_password() -> String {
-        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
-            .into_iter()
-            .map(char::from)
-            .collect()
-    }
-
-    #[test]
-    fn credentials_do_not_treat_empty_password_as_material() {
-        let credentials = StreamingCredentials {
-            music_u: "token".to_owned(),
-            csrf: "csrf".to_owned(),
-        };
-        let empty = String::new();
-        assert!(!credentials.contains_password_material(&empty));
-        assert!(!credentials.contains_password_material(&fixture_password()));
-    }
 
     #[test]
     fn video_queue_ids_use_prefix() {

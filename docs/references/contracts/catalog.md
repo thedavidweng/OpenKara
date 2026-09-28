@@ -1,7 +1,7 @@
 # Catalog Contract
 
 Field or command semantic changes must update this document before changing UI
-code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0034.
+code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0035.
 
 ## Types
 
@@ -46,29 +46,6 @@ code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0034.
   "expired": false
 }
 ```
-
-`StreamingQrChallenge`
-
-```json
-{
-  "key": "unikey",
-  "login_url": "https://music.163.com/login?codekey=unikey",
-  "qr_svg": "<svg></svg>"
-}
-```
-
-`StreamingQrStatus`: `"waiting"` | `"scanned"` | `"confirmed"` | `"expired"`
-
-`StreamingQrPoll`
-
-```json
-{
-  "status": "waiting",
-  "session": null
-}
-```
-
-`StreamingPasswordMethod`: `"phone"` | `"email"`
 
 `ImportRefusalReason`: `"no_play_rights"` | `"trial_clip"` | `"empty_url"`
 
@@ -213,19 +190,18 @@ code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0034.
 1. `list_online_sources() -> Vec<OnlineSourceSnapshot>`
 2. `set_online_source_enabled(source_id: OnlineSourceId, enabled: bool) -> AppSettings`
 3. `get_streaming_session(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-4. `start_streaming_qr_signin(source_id: OnlineSourceId) -> StreamingQrChallenge`
-5. `poll_streaming_qr_signin(source_id: OnlineSourceId, key: String) -> StreamingQrPoll`
-6. `sign_in_streaming_source(source_id: OnlineSourceId, method: StreamingPasswordMethod, identifier: String, password: String, country_code: Option<String>) -> StreamingSessionSnapshot`
-7. `sign_out_streaming_source(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-8. `list_streaming_liked_tracks(source_id: OnlineSourceId) -> Vec<StreamingTrack>`
-9. `list_streaming_playlists(source_id: OnlineSourceId) -> Vec<StreamingPlaylistSummary>`
-10. `get_streaming_playlist(source_id: OnlineSourceId, remote_playlist_id: String) -> StreamingPlaylistDetail`
-11. `search_streaming_source(source_id: OnlineSourceId, query: String) -> Vec<StreamingTrack>`
-12. `start_streaming_import(source_id: OnlineSourceId, remote_track_ids: Vec<String>, remote_playlist_id: Option<String>) -> StreamingImportProgress`
-13. `continue_streaming_import(action: LibraryDecisionAction) -> StreamingImportProgress`
-14. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>`
-15. `get_reveal_targets(song_id: String) -> RevealTargets`
-16. `reveal_in_folder(path: String) -> ()`
+4. `open_streaming_sign_in(source_id: OnlineSourceId) -> ()`
+5. `complete_streaming_sign_in(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
+6. `sign_out_streaming_source(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
+7. `list_streaming_liked_tracks(source_id: OnlineSourceId) -> Vec<StreamingTrack>`
+8. `list_streaming_playlists(source_id: OnlineSourceId) -> Vec<StreamingPlaylistSummary>`
+9. `get_streaming_playlist(source_id: OnlineSourceId, remote_playlist_id: String) -> StreamingPlaylistDetail`
+10. `search_streaming_source(source_id: OnlineSourceId, query: String) -> Vec<StreamingTrack>`
+11. `start_streaming_import(source_id: OnlineSourceId, remote_track_ids: Vec<String>, remote_playlist_id: Option<String>) -> StreamingImportProgress`
+12. `continue_streaming_import(action: LibraryDecisionAction) -> StreamingImportProgress`
+13. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>`
+14. `get_reveal_targets(song_id: String) -> RevealTargets`
+15. `reveal_in_folder(path: String) -> ()`
 
 ## Semantics
 
@@ -242,17 +218,27 @@ code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0034.
    only `resolve_video` is true. When NetEase is on, `sign_in`, `browse`, and
    `import` are true.
 8. Streaming Credentials are `MUSIC_U` and `__csrf` only. They live under the
-   keychain service `org.openkara.streaming-source`. They never share storage
-   with Repository Credentials. The password and its hash are not stored.
+   keychain service `org.openkara.streaming-source`, separate from Repository
+   Credentials. OpenKara never receives a password or SMS code. The official
+   `music.163.com` page runs as the top-level document in a dedicated incognito
+   window without Tauri capabilities. `complete_streaming_sign_in` reads only
+   the two session cookies, verifies the account, then stores the credentials
+   and display name. Failed verification stores nothing and leaves the window
+   open.
 9. Sign-out clears Streaming Credentials. Turning NetEase off does not.
-10. An expired or risk-control NetEase session, including HTTP 301, returns
-    `code: streaming_session_expired` and `expired: true` on the session
-    snapshot. The UI returns to sign-in. That is not an Import Refusal.
-11. NetEase requests always send a China Client Address as `X-Real-IP`. There
-    is no Real-IP setting.
+10. `get_streaming_session` verifies stored credentials against the account
+    operation. An expired session returns `signed_in: false` and `expired: true`.
+    A code 301 from any NetEase operation returns
+    `code: streaming_session_expired` and returns the UI to sign-in.
+11. NetEase operations run through the pinned Enhanced API sidecar. The sidecar
+    owns endpoint paths, encryption, and China Client Address headers. It has
+    line-delimited JSON over standard input/output and no listening socket.
+    A missing sidecar reports an integration error. Other provider rejections,
+    including code 8860, remain `code: streaming_auth_failed` with the
+    provider code; they do not trigger an alternative identity or source.
 12. Resolve of a Streaming Track returns an importable temp file or an
-    Import Refusal. A grey song, trial clip, or empty stream URL is an
-    Import Refusal. An Import Refusal does not download and does not fetch a
+    Import Refusal. A no-play-rights song, trial clip, or empty stream URL is an
+    Import Refusal. A pricing flag alone does not refuse an available full URL. An Import Refusal does not download and does not fetch a
     replacement from another platform.
 13. Streaming Import writes a temp file, then calls the existing song import.
     A successful import is a normal library song.

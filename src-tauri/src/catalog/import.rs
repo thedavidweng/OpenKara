@@ -560,17 +560,7 @@ mod tests {
         let connection = Connection::open_in_memory().expect("db");
         cache::apply_migrations(&connection).expect("migrations");
         let source = FakeStreamingSource::new("netease");
-        source
-            .sign_in_password(
-                crate::catalog::types::StreamingPasswordMethod::Email,
-                "user@example.com",
-                &[0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
-                    .into_iter()
-                    .map(char::from)
-                    .collect::<String>(),
-                None,
-            )
-            .expect("sign in");
+        source.authenticate();
         (tmp, library, connection, source, copies)
     }
 

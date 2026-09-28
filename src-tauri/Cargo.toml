@@ -1,6 +1,6 @@
 [package]
 name = "openkara"
-version = "0.14.0"
+version = "0.15.0"
 description = "OpenKara desktop shell"
 authors = ["OpenKara contributors"]
 license = "Apache-2.0"
@@ -42,12 +42,6 @@ cc = "1.2.61"
 tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
-aes = "0.8"
-cbc = "0.1"
-md-5 = "0.10"
-num-bigint = "0.4"
-num-traits = "0.2"
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 anyhow = "1.0.104"
 biquad = "0.6"
 thiserror = "2"

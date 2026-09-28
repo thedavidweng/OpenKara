@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "로그인",
       "signOut": "로그아웃",
-      "qr": "QR로 로그인",
-      "phone": "전화번호와 비밀번호",
-      "email": "이메일과 비밀번호",
-      "password": "비밀번호",
-      "phoneNumber": "전화번호",
-      "countryCode": "국가 번호",
       "signedInAs": "{{name}}(으)로 로그인됨",
       "sessionExpired": "세션이 만료되었습니다. 다시 로그인하세요.",
       "liked": "좋아요한 곡",
@@ -792,15 +785,9 @@
       "importTrack": "이 곡 가져오기",
       "importPlaylist": "스트리밍 재생목록 가져오기",
       "importRefusal": "가져오기 거부",
-      "waitingForScan": "NetEase 앱으로 이 QR 코드를 스캔하세요.",
-      "scanned": "스캔했습니다. 휴대폰에서 확인하세요.",
-      "qrExpired": "QR 코드가 만료되었습니다. 새 코드를 받으세요.",
-      "loginWithPhone": "전화번호로 로그인",
-      "loginWithEmail": "이메일로 로그인",
-      "loginWithQr": "QR로 로그인",
-      "passwordNotice": "OpenKara는 비밀번호를 한 번만 보내며 저장하지 않습니다.",
-      "qrHint": "NetEase Cloud Music 앱에서 이 코드를 스캔하세요.",
-      "refreshQr": "새 QR 코드 받기"
+      "connect": "NetEase 연결",
+      "checkSignIn": "로그인 확인",
+      "webSignInHint": "NetEase 공식 페이지에서 로그인한 다음 여기로 돌아와 로그인 상태를 확인하세요."
     }
   },
   "youtube": {

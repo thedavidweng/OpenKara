@@ -1,24 +1,17 @@
 mod client;
-mod crypto;
 
-pub use client::{china_client_address, hashed_password, LiveNeteaseHttp, NeteaseHttp};
+pub use client::{LiveNeteaseApi, NeteaseApi, NeteaseSidecar};
 
 use super::streaming::StreamingSource;
 use super::types::{
     CatalogError, ImportRefusal, ImportRefusalReason, ResolvedStreamingFile, StreamingCredentials,
-    StreamingPasswordMethod, StreamingPlaylistDetail, StreamingPlaylistSummary,
-    StreamingQrChallenge, StreamingQrPoll, StreamingQrStatus, StreamingResolveOutcome,
+    StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingResolveOutcome,
     StreamingSessionSnapshot, StreamingTrack,
 };
 use crate::catalog::credentials;
-use qrcode::render::svg;
-use qrcode::QrCode;
 use serde_json::{json, Value};
-#[cfg(test)]
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct NeteaseStreamingSource<H> {
     pub(crate) http: H,
@@ -27,7 +20,7 @@ pub struct NeteaseStreamingSource<H> {
     display_name: Mutex<Option<String>>,
 }
 
-impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
+impl<H: NeteaseApi> NeteaseStreamingSource<H> {
     pub fn open(http: H, app_data_dir: impl Into<PathBuf>) -> Result<Self, CatalogError> {
         let app_data_dir = app_data_dir.into();
         let stored = credentials::load_credentials(&app_data_dir, "netease")
@@ -79,78 +72,82 @@ impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
         Ok(())
     }
 
-    fn credentials_from_cookies(
-        &self,
-        cookies: &std::collections::HashMap<String, String>,
-        fallback: Option<StreamingCredentials>,
-    ) -> Option<StreamingCredentials> {
-        let music_u = cookies
-            .get("MUSIC_U")
-            .cloned()
-            .or_else(|| fallback.as_ref().map(|value| value.music_u.clone()))?;
-        let csrf = cookies
-            .get("__csrf")
-            .cloned()
-            .or_else(|| fallback.as_ref().map(|value| value.csrf.clone()))
-            .unwrap_or_default();
-        Some(StreamingCredentials { music_u, csrf })
-    }
-
-    fn merge_login_cookies(
-        cookies: &std::collections::HashMap<String, String>,
-        json: &Value,
-    ) -> std::collections::HashMap<String, String> {
-        let mut merged = cookies.clone();
-        if let Some(cookie) = json.get("cookie").and_then(Value::as_str) {
-            for part in cookie.split(";;") {
-                let pair = part.split(';').next().unwrap_or(part);
-                if let Some((name, value)) = pair.split_once('=') {
-                    let name = name.trim();
-                    if name == "MUSIC_U" || name == "__csrf" {
-                        merged.insert(name.to_owned(), value.trim().to_owned());
-                    }
-                }
-            }
-        }
-        merged
-    }
-
-    fn load_account_name(
-        &self,
-        credentials: &StreamingCredentials,
-    ) -> Result<Option<String>, CatalogError> {
-        let response =
-            self.http
-                .post_weapi("/weapi/w/nuser/account/get", json!({}), Some(credentials))?;
-        let name = response
-            .json
-            .pointer("/profile/nickname")
-            .and_then(Value::as_str)
-            .or_else(|| {
-                response
-                    .json
-                    .pointer("/account/userName")
-                    .and_then(Value::as_str)
-            })
-            .map(ToOwned::to_owned);
-        Ok(name)
-    }
-
     fn require_credentials(&self) -> Result<StreamingCredentials, CatalogError> {
         self.credentials()
             .ok_or_else(|| CatalogError::SessionExpired {
                 source_id: "netease".to_owned(),
             })
     }
+
+    pub fn complete_web_sign_in(
+        &self,
+        cookies: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<StreamingSessionSnapshot, CatalogError> {
+        let mut music_u = None;
+        let mut csrf = String::new();
+        for (name, value) in cookies {
+            match name.as_str() {
+                "MUSIC_U" if !value.is_empty() => music_u = Some(value),
+                "__csrf" => csrf = value,
+                _ => {}
+            }
+        }
+        if csrf.is_empty() {
+            return Err(CatalogError::AuthFailed {
+                source_id: "netease".to_owned(),
+                detail: "Complete sign-in on the NetEase page, then check again.".to_owned(),
+            });
+        }
+        let credentials = StreamingCredentials {
+            music_u: music_u.ok_or_else(|| CatalogError::AuthFailed {
+                source_id: "netease".to_owned(),
+                detail: "Complete sign-in on the NetEase page, then check again.".to_owned(),
+            })?,
+            csrf,
+        };
+        let account = self.http.request("user_account", json!({}), &credentials)?;
+        if account
+            .pointer("/account/id")
+            .and_then(Value::as_i64)
+            .filter(|id| *id > 0)
+            .is_none()
+        {
+            return Err(CatalogError::SessionExpired {
+                source_id: "netease".to_owned(),
+            });
+        }
+        let name = account
+            .pointer("/profile/nickname")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        self.persist(credentials, name.clone())?;
+        Ok(StreamingSessionSnapshot {
+            source_id: "netease".to_owned(),
+            signed_in: true,
+            display_name: name,
+            expired: false,
+        })
+    }
 }
 
-impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
+impl<H: NeteaseApi> StreamingSource for NeteaseStreamingSource<H> {
     fn source_id(&self) -> &str {
         "netease"
     }
 
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
         let credentials = self.credentials();
+        let expired = match credentials.as_ref() {
+            Some(credentials) => match self.http.request("user_account", json!({}), credentials) {
+                Ok(account) => account
+                    .pointer("/account/id")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|id| id <= 0),
+                Err(CatalogError::SessionExpired { .. }) => true,
+                Err(error) => return Err(error),
+            },
+            None => false,
+        };
         let display_name = self
             .display_name
             .lock()
@@ -158,154 +155,13 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
             .and_then(|guard| guard.clone());
         Ok(StreamingSessionSnapshot {
             source_id: "netease".to_owned(),
-            signed_in: credentials.is_some(),
+            signed_in: credentials.is_some() && !expired,
             display_name,
-            expired: false,
-        })
-    }
-
-    fn start_qr(&self) -> Result<StreamingQrChallenge, CatalogError> {
-        let response =
-            self.http
-                .post_weapi("/weapi/login/qrcode/unikey", json!({ "type": 1 }), None)?;
-        let key = response
-            .json
-            .get("unikey")
-            .and_then(Value::as_str)
-            .ok_or_else(|| CatalogError::Internal("NetEase QR key was missing".to_owned()))?
-            .to_owned();
-        let login_url = format!("https://music.163.com/login?codekey={key}");
-        let qr_svg = QrCode::new(login_url.as_bytes())
-            .map(|code| {
-                code.render::<svg::Color<'_>>()
-                    .min_dimensions(160, 160)
-                    .build()
-            })
-            .unwrap_or_else(|_| "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_owned());
-        Ok(StreamingQrChallenge {
-            key,
-            login_url,
-            qr_svg,
-        })
-    }
-
-    fn poll_qr(&self, key: &str) -> Result<StreamingQrPoll, CatalogError> {
-        let response = self.http.post_weapi(
-            "/weapi/login/qrcode/client/login",
-            json!({ "key": key, "type": 1 }),
-            None,
-        )?;
-        let code = response
-            .json
-            .get("code")
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        match code {
-            801 => Ok(StreamingQrPoll {
-                status: StreamingQrStatus::Waiting,
-                session: None,
-            }),
-            802 => Ok(StreamingQrPoll {
-                status: StreamingQrStatus::Scanned,
-                session: None,
-            }),
-            803 => {
-                let cookies = Self::merge_login_cookies(&response.cookies, &response.json);
-                let credentials =
-                    self.credentials_from_cookies(&cookies, None)
-                        .ok_or_else(|| {
-                            CatalogError::Internal(
-                                "QR login did not return Streaming Credentials".to_owned(),
-                            )
-                        })?;
-                let display_name = self.load_account_name(&credentials)?;
-                self.persist(credentials, display_name.clone())?;
-                Ok(StreamingQrPoll {
-                    status: StreamingQrStatus::Confirmed,
-                    session: Some(StreamingSessionSnapshot {
-                        source_id: "netease".to_owned(),
-                        signed_in: true,
-                        display_name,
-                        expired: false,
-                    }),
-                })
-            }
-            _ => Ok(StreamingQrPoll {
-                status: StreamingQrStatus::Expired,
-                session: None,
-            }),
-        }
-    }
-
-    fn sign_in_password(
-        &self,
-        method: StreamingPasswordMethod,
-        identifier: &str,
-        password: &str,
-        country_code: Option<&str>,
-    ) -> Result<StreamingSessionSnapshot, CatalogError> {
-        let hashed = hashed_password(password);
-        let response = match method {
-            StreamingPasswordMethod::Phone => self.http.post_weapi(
-                "/weapi/login/cellphone",
-                json!({
-                    "phone": identifier,
-                    "countrycode": country_code.unwrap_or("86"),
-                    "password": hashed,
-                    "rememberLogin": "true"
-                }),
-                None,
-            )?,
-            StreamingPasswordMethod::Email => self.http.post_weapi(
-                "/weapi/login",
-                json!({
-                    "username": identifier,
-                    "password": hashed,
-                    "rememberLogin": "true"
-                }),
-                None,
-            )?,
-        };
-        let _ = password;
-        if let Some(detail) = login_error_detail(&response.json) {
-            return Err(CatalogError::AuthFailed {
-                source_id: "netease".to_owned(),
-                detail,
-            });
-        }
-        let cookies = Self::merge_login_cookies(&response.cookies, &response.json);
-        let credentials = self
-            .credentials_from_cookies(&cookies, None)
-            .ok_or_else(|| {
-                CatalogError::Internal(
-                    "password sign-in did not return Streaming Credentials".to_owned(),
-                )
-            })?;
-        if credentials.contains_password_material(password)
-            || credentials.contains_password_material(&hashed)
-        {
-            return Err(CatalogError::Internal(
-                "refusing to store a password as Streaming Credentials".to_owned(),
-            ));
-        }
-        let display_name = self
-            .load_account_name(&credentials)?
-            .or_else(|| Some(identifier.to_owned()));
-        self.persist(credentials, display_name.clone())?;
-        Ok(StreamingSessionSnapshot {
-            source_id: "netease".to_owned(),
-            signed_in: true,
-            display_name,
-            expired: false,
+            expired,
         })
     }
 
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
-        if let Some(credentials) = self.credentials() {
-            let _ = self
-                .http
-                .post_weapi("/weapi/logout", json!({}), Some(&credentials));
-        }
         self.clear()?;
         Ok(StreamingSessionSnapshot {
             source_id: "netease".to_owned(),
@@ -317,21 +173,18 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
 
     fn liked_tracks(&self) -> Result<Vec<StreamingTrack>, CatalogError> {
         let credentials = self.require_credentials()?;
-        let account =
-            self.http
-                .post_weapi("/weapi/w/nuser/account/get", json!({}), Some(&credentials))?;
+        let account = self.http.request("user_account", json!({}), &credentials)?;
         let uid = account
-            .json
             .pointer("/account/id")
             .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let liked = self.http.post_weapi(
-            "/weapi/song/like/get",
-            json!({ "uid": uid }),
-            Some(&credentials),
-        )?;
+            .filter(|id| *id > 0)
+            .ok_or_else(|| CatalogError::SessionExpired {
+                source_id: "netease".to_owned(),
+            })?;
+        let liked = self
+            .http
+            .request("likelist", json!({ "uid": uid }), &credentials)?;
         let ids = liked
-            .json
             .get("ids")
             .and_then(Value::as_array)
             .cloned()
@@ -350,21 +203,20 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
 
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError> {
         let credentials = self.require_credentials()?;
-        let account =
-            self.http
-                .post_weapi("/weapi/w/nuser/account/get", json!({}), Some(&credentials))?;
+        let account = self.http.request("user_account", json!({}), &credentials)?;
         let uid = account
-            .json
             .pointer("/account/id")
             .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let response = self.http.post_weapi(
-            "/weapi/user/playlist",
+            .filter(|id| *id > 0)
+            .ok_or_else(|| CatalogError::SessionExpired {
+                source_id: "netease".to_owned(),
+            })?;
+        let response = self.http.request(
+            "user_playlist",
             json!({ "uid": uid, "limit": 200, "offset": 0 }),
-            Some(&credentials),
+            &credentials,
         )?;
         let playlists = response
-            .json
             .get("playlist")
             .and_then(Value::as_array)
             .cloned()
@@ -390,25 +242,22 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
 
     fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
         let credentials = self.require_credentials()?;
-        let response = self.http.post_weapi(
-            "/weapi/v6/playlist/detail",
+        let response = self.http.request(
+            "playlist_detail",
             json!({ "id": remote_id, "n": 1000, "s": 0 }),
-            Some(&credentials),
+            &credentials,
         )?;
         let name = response
-            .json
             .pointer("/playlist/name")
             .and_then(Value::as_str)
             .unwrap_or("Streaming Playlist")
             .to_owned();
         let tracks = response
-            .json
             .pointer("/playlist/tracks")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
         let privileges = response
-            .json
             .get("privileges")
             .and_then(Value::as_array)
             .cloned()
@@ -426,18 +275,17 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
 
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError> {
         let credentials = self.require_credentials()?;
-        let response = self.http.post_weapi(
-            "/weapi/cloudsearch/get/web",
+        let response = self.http.request(
+            "cloudsearch",
             json!({
-                "s": query,
+                "keywords": query,
                 "type": 1,
                 "limit": 30,
                 "offset": 0
             }),
-            Some(&credentials),
+            &credentials,
         )?;
         let songs = response
-            .json
             .pointer("/result/songs")
             .and_then(Value::as_array)
             .cloned()
@@ -449,18 +297,19 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
     }
 
     fn resolve(&self, remote_track_id: &str) -> Result<StreamingResolveOutcome, CatalogError> {
+        if remote_track_id.parse::<u64>().is_err() {
+            return Err(CatalogError::Internal(
+                "Invalid NetEase track ID".to_owned(),
+            ));
+        }
         let credentials = self.require_credentials()?;
-        let detail = self.http.post_weapi(
-            "/weapi/v3/song/detail",
-            json!({ "c": format!("[{{\"id\":{remote_track_id}}}]") }),
-            Some(&credentials),
+        let detail = self.http.request(
+            "song_detail",
+            json!({ "ids": remote_track_id }),
+            &credentials,
         )?;
-        let song = detail
-            .json
-            .pointer("/songs/0")
-            .cloned()
-            .unwrap_or(Value::Null);
-        let privilege = detail.json.pointer("/privileges/0");
+        let song = detail.pointer("/songs/0").cloned().unwrap_or(Value::Null);
+        let privilege = detail.pointer("/privileges/0");
         let track = track_from_json(&song, privilege).unwrap_or(StreamingTrack {
             source_id: "netease".to_owned(),
             remote_track_id: remote_track_id.to_owned(),
@@ -474,21 +323,22 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
             return Ok(StreamingResolveOutcome::Refusal(refusal));
         }
 
-        let url_response = self.http.post_weapi(
-            "/weapi/song/enhance/player/url/v1",
+        let url_response = self.http.request(
+            "song_url",
             json!({
-                "ids": [remote_track_id],
-                "level": "exhigh",
-                "encodeType": "mp3"
+                "id": remote_track_id,
+                "br": 320000
             }),
-            Some(&credentials),
+            &credentials,
         )?;
         let data = url_response
-            .json
             .pointer("/data/0")
             .cloned()
             .unwrap_or(Value::Null);
-        if data.get("freeTrialInfo").is_some() && !data.get("freeTrialInfo").unwrap().is_null() {
+        if data
+            .get("freeTrialInfo")
+            .is_some_and(|value| !value.is_null())
+        {
             return Ok(StreamingResolveOutcome::Refusal(ImportRefusal {
                 reason: ImportRefusalReason::TrialClip,
                 title: track.title,
@@ -504,8 +354,16 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
             }));
         }
 
-        let dest = temp_download_path(remote_track_id);
-        self.http.download(url, &dest, Some(&credentials))?;
+        let extension = match data.get("type").and_then(Value::as_str) {
+            Some(extension @ ("mp3" | "flac" | "wav" | "ogg" | "aac" | "m4a")) => extension,
+            _ => {
+                return Err(CatalogError::Internal(
+                    "NetEase returned an unsupported audio format".to_owned(),
+                ))
+            }
+        };
+        let dest = temp_download_path(extension);
+        self.http.download(url, &dest)?;
         Ok(StreamingResolveOutcome::File(ResolvedStreamingFile {
             path: dest,
             title: Some(track.title),
@@ -515,7 +373,7 @@ impl<H: NeteaseHttp> StreamingSource for NeteaseStreamingSource<H> {
     }
 }
 
-impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
+impl<H: NeteaseApi> NeteaseStreamingSource<H> {
     fn tracks_by_ids(
         &self,
         credentials: &StreamingCredentials,
@@ -524,24 +382,20 @@ impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let c = ids
-            .iter()
-            .map(|id| format!("{{\"id\":{id}}}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let detail = self.http.post_weapi(
-            "/weapi/v3/song/detail",
-            json!({ "c": format!("[{c}]") }),
-            Some(credentials),
-        )?;
+        if ids.iter().any(|id| id.parse::<u64>().is_err()) {
+            return Err(CatalogError::Internal(
+                "Invalid NetEase track ID".to_owned(),
+            ));
+        }
+        let detail =
+            self.http
+                .request("song_detail", json!({ "ids": ids.join(",") }), credentials)?;
         let songs = detail
-            .json
             .get("songs")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
         let privileges = detail
-            .json
             .get("privileges")
             .and_then(Value::as_array)
             .cloned()
@@ -551,23 +405,6 @@ impl<H: NeteaseHttp> NeteaseStreamingSource<H> {
             .enumerate()
             .filter_map(|(index, song)| track_from_json(&song, privileges.get(index)))
             .collect())
-    }
-}
-
-fn login_error_detail(json: &Value) -> Option<String> {
-    let code = json.get("code").and_then(Value::as_i64)?;
-    if code == 200 {
-        return None;
-    }
-    let message = json
-        .get("message")
-        .and_then(Value::as_str)
-        .or_else(|| json.get("msg").and_then(Value::as_str))
-        .unwrap_or("");
-    if message.is_empty() {
-        Some(format!("code {code}"))
-    } else {
-        Some(format!("code {code}: {message}"))
     }
 }
 
@@ -617,255 +454,134 @@ fn refusal_from_privilege(privilege: &Value) -> Option<ImportRefusalReason> {
     if st < 0 {
         return Some(ImportRefusalReason::NoPlayRights);
     }
-    let fee = privilege.get("fee").and_then(Value::as_i64).unwrap_or(0);
-    match fee {
-        1 => Some(ImportRefusalReason::TrialClip),
-        4 => Some(ImportRefusalReason::NoPlayRights),
-        _ => None,
-    }
+    None
 }
 
-fn temp_download_path(remote_track_id: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    std::env::temp_dir().join(format!("openkara-netease-{remote_track_id}-{nanos}.mp3"))
-}
-
-#[cfg(test)]
-pub fn recording_http_with_china_ip() -> RecordingNeteaseHttp {
-    RecordingNeteaseHttp {
-        last_address: Mutex::new(None),
-        last_path: Mutex::new(None),
-    }
-}
-
-#[cfg(test)]
-pub struct RecordingNeteaseHttp {
-    last_address: Mutex<Option<String>>,
-    last_path: Mutex<Option<String>>,
-}
-
-#[cfg(test)]
-struct StaticNeteaseHttp {
-    response: crate::catalog::netease::client::NeteaseHttpResponse,
-}
-
-#[cfg(test)]
-impl NeteaseHttp for RecordingNeteaseHttp {
-    fn post_weapi(
-        &self,
-        path: &str,
-        _payload: Value,
-        _credentials: Option<&StreamingCredentials>,
-    ) -> Result<crate::catalog::netease::client::NeteaseHttpResponse, CatalogError> {
-        let address = china_client_address();
-        if let Ok(mut last) = self.last_address.lock() {
-            *last = Some(address);
-        }
-        if let Ok(mut last) = self.last_path.lock() {
-            *last = Some(path.to_owned());
-        }
-        Ok(crate::catalog::netease::client::NeteaseHttpResponse {
-            json: json!({ "code": 200, "unikey": "recorded" }),
-            cookies: Default::default(),
-        })
-    }
-
-    fn download(
-        &self,
-        _url: &str,
-        _dest: &Path,
-        _credentials: Option<&StreamingCredentials>,
-    ) -> Result<(), CatalogError> {
-        Ok(())
-    }
-
-    fn last_china_address(&self) -> Option<String> {
-        self.last_address
-            .lock()
-            .ok()
-            .and_then(|value| value.clone())
-    }
-}
-
-#[cfg(test)]
-impl NeteaseHttp for StaticNeteaseHttp {
-    fn post_weapi(
-        &self,
-        _path: &str,
-        _payload: Value,
-        _credentials: Option<&StreamingCredentials>,
-    ) -> Result<crate::catalog::netease::client::NeteaseHttpResponse, CatalogError> {
-        Ok(self.response.clone())
-    }
-
-    fn download(
-        &self,
-        _url: &str,
-        _dest: &Path,
-        _credentials: Option<&StreamingCredentials>,
-    ) -> Result<(), CatalogError> {
-        Ok(())
-    }
+fn temp_download_path(extension: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "openkara-netease-{}.{extension}",
+        uuid::Uuid::new_v4()
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::error::ErrorCode;
-
-    fn fixture_password() -> String {
-        [0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65]
-            .into_iter()
-            .map(char::from)
-            .collect()
+    use std::path::Path;
+    struct FixtureApi {
+        account: Value,
+        url: Value,
     }
-
-    fn source_with(json: Value) -> NeteaseStreamingSource<StaticNeteaseHttp> {
-        NeteaseStreamingSource {
-            http: StaticNeteaseHttp {
-                response: crate::catalog::netease::client::NeteaseHttpResponse {
-                    json,
-                    cookies: Default::default(),
-                },
-            },
-            app_data_dir: PathBuf::new(),
-            credentials: Mutex::new(None),
-            display_name: Mutex::new(None),
+    impl NeteaseApi for FixtureApi {
+        fn request(
+            &self,
+            operation: &str,
+            _: Value,
+            _: &StreamingCredentials,
+        ) -> Result<Value, CatalogError> {
+            let body = match operation {
+                "user_account" => self.account.clone(),
+                "song_detail" => {
+                    json!({"code":200,"songs":[{"id":1,"name":"Song","ar":[{"name":"Artist"}]}],"privileges":[{"fee":1,"st":0}]})
+                }
+                "song_url" => json!({"code":200,"data":[self.url.clone()]}),
+                _ => panic!("unexpected operation"),
+            };
+            client::provider_response(body)
+        }
+        fn download(&self, _: &str, dest: &Path) -> Result<(), CatalogError> {
+            std::fs::write(dest, b"complete audio").unwrap();
+            Ok(())
         }
     }
-
-    #[test]
-    fn login_error_detail_reads_provider_code_and_message() {
-        assert_eq!(login_error_detail(&json!({ "code": 200 })), None);
-        assert_eq!(login_error_detail(&json!({})), None);
-        assert_eq!(
-            login_error_detail(&json!({ "code": 502, "message": "账号或密码错误" })),
-            Some("code 502: 账号或密码错误".to_owned())
-        );
-        assert_eq!(
-            login_error_detail(&json!({ "code": 520, "msg": "risk" })),
-            Some("code 520: risk".to_owned())
-        );
-        assert_eq!(
-            login_error_detail(&json!({ "code": 460 })),
-            Some("code 460".to_owned())
-        );
+    fn api(account: Value, url: Value) -> FixtureApi {
+        FixtureApi { account, url }
     }
-
-    #[test]
-    fn password_sign_in_surfaces_provider_rejection() {
-        let source = source_with(json!({
-            "code": 502,
-            "message": "账号或密码错误"
-        }));
-        let error = source
-            .sign_in_password(
-                StreamingPasswordMethod::Email,
-                "a@b.c",
-                &fixture_password(),
-                None,
-            )
-            .expect_err("rejected sign-in");
-        match error {
-            CatalogError::AuthFailed { source_id, detail } => {
-                assert_eq!(source_id, "netease");
-                assert_eq!(detail, "code 502: 账号或密码错误");
-            }
-            other => panic!("expected AuthFailed, got {other:?}"),
-        }
-        let command_error = crate::commands::error::CommandError::from(CatalogError::AuthFailed {
-            source_id: "netease".to_owned(),
-            detail: "code 502: 账号或密码错误".to_owned(),
-        });
-        assert_eq!(command_error.code, ErrorCode::StreamingAuthFailed);
-        assert!(!command_error.retryable);
-        assert!(command_error.message.contains("账号或密码错误"));
+    fn account() -> Value {
+        json!({"code":200,"account":{"id":42},"profile":{"nickname":"Ada"}})
     }
-
-    fn live_source(api_base: &str, app_data_dir: &Path) -> NeteaseStreamingSource<LiveNeteaseHttp> {
-        NeteaseStreamingSource {
-            http: LiveNeteaseHttp::with_api_base(api_base).expect("live http"),
-            app_data_dir: app_data_dir.to_path_buf(),
-            credentials: Mutex::new(None),
-            display_name: Mutex::new(None),
-        }
+    fn cookies() -> Vec<(String, String)> {
+        vec![
+            ("MUSIC_U".into(), "fixture-session".into()),
+            ("__csrf".into(), "fixture-csrf".into()),
+            ("ignored".into(), "not-stored".into()),
+        ]
     }
-
     #[test]
-    fn password_sign_in_surfaces_provider_rejection_over_http() {
-        let mut server = mockito::Server::new();
-        let login = server
-            .mock("POST", "/weapi/login")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"code":502,"message":"账号或密码错误"}"#)
-            .create();
-        let dir = tempfile::tempdir().expect("tmp");
-        let source = live_source(&server.url(), dir.path());
-
-        let error = source
-            .sign_in_password(
-                StreamingPasswordMethod::Email,
-                "a@b.c",
-                &fixture_password(),
-                None,
-            )
-            .expect_err("rejected sign-in");
-
-        login.assert();
-        match error {
-            CatalogError::AuthFailed { detail, .. } => {
-                assert_eq!(detail, "code 502: 账号或密码错误");
-            }
-            other => panic!("expected AuthFailed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn password_sign_in_merges_header_and_body_cookies_over_http() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let mut server = mockito::Server::new();
-        server
-            .mock("POST", "/weapi/login")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_header("Set-Cookie", "MUSIC_U=header-music-u; Path=/; HttpOnly")
-            .with_body(r#"{"code":200,"cookie":"__csrf=body-csrf; Path=/;; ignored=1"}"#)
-            .create();
-        server
-            .mock("POST", "/weapi/w/nuser/account/get")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"code":200,"profile":{"nickname":"Ada"}}"#)
-            .create();
-        let source = live_source(&server.url(), dir.path());
-
-        let session = source
-            .sign_in_password(
-                StreamingPasswordMethod::Email,
-                "a@b.c",
-                &fixture_password(),
-                None,
-            )
-            .expect("signed in");
-
+    fn web_sign_in_persists_verified_session_and_sign_out_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = NeteaseStreamingSource::open(api(account(), Value::Null), dir.path()).unwrap();
+        assert!(source.complete_web_sign_in(Vec::new()).is_err());
+        assert!(source
+            .complete_web_sign_in(vec![("MUSIC_U".into(), "fixture-session".into())])
+            .is_err());
+        let session = source.complete_web_sign_in(cookies()).unwrap();
         assert_eq!(session.display_name.as_deref(), Some("Ada"));
-        let stored = credentials::load_credentials(dir.path(), "netease")
-            .expect("load")
-            .expect("stored");
-        assert_eq!(stored.music_u, "header-music-u");
-        assert_eq!(stored.csrf, "body-csrf");
+        let reopened =
+            NeteaseStreamingSource::open(api(account(), Value::Null), dir.path()).unwrap();
+        assert!(reopened.session().unwrap().signed_in);
+        reopened.sign_out().unwrap();
+        assert!(
+            !NeteaseStreamingSource::open(api(account(), Value::Null), dir.path())
+                .unwrap()
+                .session()
+                .unwrap()
+                .signed_in
+        );
     }
-
     #[test]
-    fn adapter_sends_china_client_address() {
-        let http = recording_http_with_china_ip();
-        let dir = tempfile::tempdir().expect("tmp");
-        let source = NeteaseStreamingSource::open(http, dir.path()).expect("open");
-        let _ = source.start_qr();
-        assert!(source.http.last_china_address().is_some());
+    fn rejected_and_expired_sessions_are_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let source =
+            NeteaseStreamingSource::open(api(json!({"code":8860}), Value::Null), dir.path())
+                .unwrap();
+        assert!(
+            matches!(source.complete_web_sign_in(cookies()), Err(CatalogError::AuthFailed { detail, .. }) if detail.contains("8860"))
+        );
+        assert!(!source.session().unwrap().signed_in);
+        let valid = NeteaseStreamingSource::open(api(account(), Value::Null), dir.path()).unwrap();
+        valid.complete_web_sign_in(cookies()).unwrap();
+        let expired =
+            NeteaseStreamingSource::open(api(json!({"code":301}), Value::Null), dir.path())
+                .unwrap();
+        let session = expired.session().unwrap();
+        assert!(!session.signed_in);
+        assert!(session.expired);
+    }
+    #[test]
+    fn full_audio_import_is_allowed_but_trial_and_empty_urls_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = NeteaseStreamingSource::open(
+            api(
+                account(),
+                json!({"url":"https://audio.example/full.flac","type":"flac","freeTrialInfo":null}),
+            ),
+            dir.path(),
+        )
+        .unwrap();
+        source.complete_web_sign_in(cookies()).unwrap();
+        match source.resolve("1").unwrap() {
+            StreamingResolveOutcome::File(file) => {
+                assert_eq!(
+                    file.path.extension().and_then(|value| value.to_str()),
+                    Some("flac")
+                );
+                assert_eq!(std::fs::read(&file.path).unwrap(), b"complete audio");
+                std::fs::remove_file(file.path).unwrap();
+            }
+            _ => panic!("full song refused"),
+        }
+        for (url, reason) in [
+            (
+                json!({"url":"https://audio.example/trial.mp3","freeTrialInfo":{"end":30}}),
+                ImportRefusalReason::TrialClip,
+            ),
+            (json!({"url":null}), ImportRefusalReason::EmptyUrl),
+        ] {
+            let source = NeteaseStreamingSource::open(api(account(), url), dir.path()).unwrap();
+            assert!(
+                matches!(source.resolve("1").unwrap(), StreamingResolveOutcome::Refusal(refusal) if refusal.reason == reason)
+            );
+        }
     }
 }

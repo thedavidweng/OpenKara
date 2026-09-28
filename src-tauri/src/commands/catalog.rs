@@ -1,9 +1,8 @@
 use crate::cache;
 use crate::catalog::{
-    self, items_from_tracks, load_session_snapshot, LiveNeteaseHttp, LiveYoutubeFetcher,
-    NeteaseStreamingSource, StreamingImportRequest, StreamingImportSession, StreamingImportStatus,
-    StreamingPasswordMethod, StreamingPlaylistOrigin, StreamingSource, VideoSource,
-    YoutubeVideoSource, NETEASE_SOURCE_ID, YOUTUBE_SOURCE_ID,
+    self, items_from_tracks, LiveNeteaseApi, LiveYoutubeFetcher, NeteaseStreamingSource,
+    StreamingImportRequest, StreamingImportSession, StreamingImportStatus, StreamingPlaylistOrigin,
+    StreamingSource, VideoSource, YoutubeVideoSource, NETEASE_SOURCE_ID, YOUTUBE_SOURCE_ID,
 };
 use crate::commands::error::{database_error, internal_error, state_lock_error, CommandResult};
 use crate::config;
@@ -32,17 +31,15 @@ fn require_source(
     catalog::require_enabled(&config, source_id).map_err(Into::into)
 }
 
-fn netease_source(
-    app_handle: &AppHandle,
-) -> CommandResult<NeteaseStreamingSource<LiveNeteaseHttp>> {
+fn netease_source(app_handle: &AppHandle) -> CommandResult<NeteaseStreamingSource<LiveNeteaseApi>> {
     require_source(app_handle, NETEASE_SOURCE_ID)?;
-    let http =
-        LiveNeteaseHttp::new().map_err(Into::<crate::commands::error::CommandError>::into)?;
+    let http = LiveNeteaseApi::new(app_handle)
+        .map_err(Into::<crate::commands::error::CommandError>::into)?;
     NeteaseStreamingSource::open(http, app_data_dir(app_handle)?).map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn get_streaming_session(
+pub async fn get_streaming_session(
     app_handle: AppHandle,
     source_id: String,
 ) -> CommandResult<catalog::StreamingSessionSnapshot> {
@@ -52,49 +49,82 @@ pub fn get_streaming_session(
             "unknown streaming source: {source_id}"
         )));
     }
-    load_session_snapshot(&app_data_dir(&app_handle)?, &source_id)
-        .map_err(|error| internal_error(error.to_string()))
+    tauri::async_runtime::spawn_blocking(
+        move || -> CommandResult<catalog::StreamingSessionSnapshot> {
+            netease_source(&app_handle)?.session().map_err(Into::into)
+        },
+    )
+    .await
+    .map_err(|_| internal_error("NetEase session check failed"))?
 }
 
+const NETEASE_SIGN_IN_WINDOW: &str = "netease-sign-in";
+const NETEASE_SIGN_IN_URL: &str = "https://music.163.com/#/login";
+
 #[tauri::command]
-pub fn start_streaming_qr_signin(
-    app_handle: AppHandle,
-    source_id: String,
-) -> CommandResult<catalog::StreamingQrChallenge> {
+pub async fn open_streaming_sign_in(app_handle: AppHandle, source_id: String) -> CommandResult<()> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?.start_qr().map_err(Into::into)
+    if source_id != NETEASE_SOURCE_ID {
+        return Err(internal_error("unknown streaming source"));
+    }
+    if let Some(window) = app_handle.get_webview_window(NETEASE_SIGN_IN_WINDOW) {
+        window
+            .set_focus()
+            .map_err(|error| internal_error(error.to_string()))?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        NETEASE_SIGN_IN_WINDOW,
+        tauri::WebviewUrl::External(NETEASE_SIGN_IN_URL.parse().expect("NetEase URL")),
+    )
+    .title("NetEase Music")
+    .inner_size(1100.0, 780.0)
+    .incognito(true)
+    .on_navigation(|url| {
+        url.scheme() == "https"
+            && url
+                .host_str()
+                .is_some_and(|host| host == "163.com" || host.ends_with(".163.com"))
+    })
+    .build()
+    .map_err(|error| internal_error(error.to_string()))?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn poll_streaming_qr_signin(
+pub async fn complete_streaming_sign_in(
     app_handle: AppHandle,
     source_id: String,
-    key: String,
-) -> CommandResult<catalog::StreamingQrPoll> {
-    require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?
-        .poll_qr(&key)
-        .map_err(Into::into)
-}
-
-#[tauri::command]
-pub fn sign_in_streaming_source(
-    app_handle: AppHandle,
-    source_id: String,
-    method: StreamingPasswordMethod,
-    identifier: String,
-    password: String,
-    country_code: Option<String>,
 ) -> CommandResult<catalog::StreamingSessionSnapshot> {
     require_source(&app_handle, &source_id)?;
-    let session = netease_source(&app_handle)?.sign_in_password(
-        method,
-        &identifier,
-        &password,
-        country_code.as_deref(),
-    );
-    drop(password);
-    session.map_err(Into::into)
+    if source_id != NETEASE_SOURCE_ID {
+        return Err(internal_error("unknown streaming source"));
+    }
+    let window = app_handle
+        .get_webview_window(NETEASE_SIGN_IN_WINDOW)
+        .ok_or_else(|| internal_error("Open the NetEase sign-in page first."))?;
+    let cookies = window
+        .cookies_for_url("https://music.163.com/".parse().expect("NetEase URL"))
+        .map_err(|_| internal_error("Could not read the NetEase session."))?
+        .into_iter()
+        .filter(|cookie| matches!(cookie.name(), "MUSIC_U" | "__csrf"))
+        .map(|cookie| (cookie.name().to_owned(), cookie.value().to_owned()))
+        .collect::<Vec<_>>();
+    let handle = app_handle.clone();
+    let session = tauri::async_runtime::spawn_blocking(
+        move || -> CommandResult<catalog::StreamingSessionSnapshot> {
+            netease_source(&handle)?
+                .complete_web_sign_in(cookies)
+                .map_err(Into::into)
+        },
+    )
+    .await
+    .map_err(|_| internal_error("NetEase sign-in check failed"))??;
+    window
+        .close()
+        .map_err(|error| internal_error(error.to_string()))?;
+    Ok(session)
 }
 
 #[tauri::command]
@@ -103,7 +133,13 @@ pub fn sign_out_streaming_source(
     source_id: String,
 ) -> CommandResult<catalog::StreamingSessionSnapshot> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?.sign_out().map_err(Into::into)
+    let session = netease_source(&app_handle)?.sign_out()?;
+    if let Some(window) = app_handle.get_webview_window(NETEASE_SIGN_IN_WINDOW) {
+        window
+            .close()
+            .map_err(|error| internal_error(error.to_string()))?;
+    }
+    Ok(session)
 }
 
 #[tauri::command]

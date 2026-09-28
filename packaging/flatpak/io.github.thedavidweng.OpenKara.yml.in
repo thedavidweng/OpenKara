@@ -41,9 +41,12 @@ modules:
       # network and fails inside the Flatpak sandbox (EAI_AGAIN). The lockfile is
       # already integrity-pinned via flatpak-node sources — safe to trust here.
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm install --offline --frozen-lockfile --trust-lockfile
+      - OPENKARA_NETEASE_FLATPAK=1 node scripts/prepare-netease-sidecar.mjs
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --no-bundle
       - install -Dm0755 src-tauri/target/release/openkara ${FLATPAK_DEST}/bin/openkara
+      - install -Dm0755 src-tauri/generated/bin/netease-node-* ${FLATPAK_DEST}/bin/netease-node
       - install -Dm0644 src-tauri/generated/onnxruntime/libonnxruntime.so ${FLATPAK_DEST}/lib/openkara/onnxruntime/libonnxruntime.so
+      - cp -a src-tauri/generated/netease ${FLATPAK_DEST}/lib/openkara/netease
       - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE.onnxruntime ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
       - install -Dm0644 LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/LICENSE
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.desktop ${FLATPAK_DEST}/share/applications/io.github.thedavidweng.OpenKara.desktop
@@ -78,3 +81,4 @@ modules:
         only-arches:
           - aarch64
 @@NODE_SOURCES@@
+      - netease-sources.0.json

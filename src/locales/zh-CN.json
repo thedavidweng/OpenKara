@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "网易云音乐",
-      "signIn": "登录",
       "signOut": "退出登录",
-      "qr": "扫码登录",
-      "phone": "手机号和密码",
-      "email": "邮箱和密码",
-      "password": "密码",
-      "phoneNumber": "手机号",
-      "countryCode": "国家区号",
       "signedInAs": "已登录为 {{name}}",
       "sessionExpired": "会话已过期，请重新登录。",
       "liked": "我喜欢的音乐",
@@ -792,15 +785,9 @@
       "importTrack": "导入这首歌",
       "importPlaylist": "导入流媒体歌单",
       "importRefusal": "拒绝导入",
-      "waitingForScan": "请用网易云音乐扫描此二维码。",
-      "scanned": "已扫码，请在手机上确认。",
-      "qrExpired": "二维码已失效，请获取新的二维码。",
-      "loginWithPhone": "手机号登录",
-      "loginWithEmail": "邮箱登录",
-      "loginWithQr": "二维码登录",
-      "passwordNotice": "OpenKara 只会发送一次密码，不会保存。",
-      "qrHint": "打开网易云音乐 App 扫码登录。",
-      "refreshQr": "获取新的二维码"
+      "connect": "连接网易云音乐",
+      "checkSignIn": "检查登录",
+      "webSignInHint": "在网易云音乐官方网页完成登录，然后返回这里检查登录状态。"
     }
   },
   "youtube": {

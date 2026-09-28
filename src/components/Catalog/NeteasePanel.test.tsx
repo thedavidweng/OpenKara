@@ -4,23 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NeteasePanel } from "./NeteasePanel";
-import type {
-  StreamingQrChallenge,
-  StreamingQrStatus,
-  StreamingSessionSnapshot,
-} from "@/types/ipc";
-
-const qrChallenge: StreamingQrChallenge = {
-  key: "unikey",
-  login_url: "https://music.163.com/login?codekey=unikey",
-  qr_svg: '<svg data-testid="netease-qr-svg"></svg>',
-};
+import type { StreamingSessionSnapshot } from "@/types/ipc";
 
 const { mockState } = vi.hoisted(() => ({
   mockState: {
     session: null as StreamingSessionSnapshot | null,
-    qr: null as StreamingQrChallenge | null,
-    qrStatus: null as StreamingQrStatus | null,
     liked: [] as Array<{
       source_id: "netease";
       remote_track_id: string;
@@ -64,9 +52,8 @@ const { mockState } = vi.hoisted(() => ({
       reason: "refusal";
     }>,
     loadSession: vi.fn(),
-    startQr: vi.fn(),
-    pollQr: vi.fn(),
-    signInPassword: vi.fn(),
+    openSignIn: vi.fn(),
+    completeSignIn: vi.fn(),
     signOut: vi.fn(),
     loadLiked: vi.fn(),
     loadPlaylists: vi.fn(),
@@ -104,15 +91,10 @@ describe("NeteasePanel sign-in", () => {
     root = createRoot(container);
     user = userEvent.setup();
     mockState.session = null;
-    mockState.qr = qrChallenge;
-    mockState.qrStatus = "waiting";
     mockState.liked = [];
     mockState.playlists = [];
     mockState.playlistDetail = null;
     mockState.importFailures = [];
-    mockState.startQr.mockReset();
-    mockState.pollQr.mockReset();
-    mockState.signInPassword.mockReset();
     mockState.signOut.mockReset();
     mockState.loadSession.mockReset();
   });
@@ -122,100 +104,24 @@ describe("NeteasePanel sign-in", () => {
     container.remove();
   });
 
-  test("QR is the default path and shows waiting, scanned, and expired states", async () => {
+  test("opens official sign-in and checks completion with keyboard controls", async () => {
     await act(async () => {
       root.render(<NeteasePanel />);
     });
-
-    const signIn = container.querySelector("[data-testid='netease-signin']");
-    expect(signIn?.getAttribute("data-mode")).toBe("qr");
-    expect(
-      container.querySelector("[data-testid='netease-qr']"),
-    ).not.toBeNull();
-    expect(
-      container
-        .querySelector("[data-testid='netease-qr']")
-        ?.getAttribute("data-login-url"),
-    ).toBe("https://music.163.com/login?codekey=unikey");
-    expect(
-      container.querySelector("[data-testid='netease-phone-form']"),
-    ).toBeNull();
-    expect(
-      container.querySelector("[data-testid='netease-email-form']"),
-    ).toBeNull();
-
-    const status = container.querySelector("[data-testid='netease-qr-status']");
-    expect(status?.getAttribute("data-status")).toBe("waiting");
-    expect(status?.textContent).toBe("catalog.netease.qrHint");
-
-    mockState.qrStatus = "scanned";
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    expect(
-      container
-        .querySelector("[data-testid='netease-qr-status']")
-        ?.getAttribute("data-status"),
-    ).toBe("scanned");
-    expect(
-      container.querySelector("[data-testid='netease-qr-status']")?.textContent,
-    ).toBe("catalog.netease.scanned");
-
-    mockState.qrStatus = "expired";
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    expect(
-      container
-        .querySelector("[data-testid='netease-qr-status']")
-        ?.getAttribute("data-status"),
-    ).toBe("expired");
-    expect(
-      container.querySelector("[data-testid='netease-qr-status']")?.textContent,
-    ).toBe("catalog.netease.qrExpired");
-    expect(container.textContent).toContain("catalog.netease.refreshQr");
-  });
-
-  test("phone and email modes are switchable and the password field is a password input", async () => {
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-
-    await user.click(
-      container.querySelector("[data-testid='netease-use-phone']")!,
-    );
-
-    const phoneForm = container.querySelector(
-      "[data-testid='netease-phone-form']",
-    );
-    expect(phoneForm).not.toBeNull();
-    expect(container.querySelector("[data-testid='netease-qr']")).toBeNull();
-    const phonePassword = container.querySelector<HTMLInputElement>(
-      "#netease-phone-password",
-    );
-    expect(phonePassword?.type).toBe("password");
-    expect(
-      container.querySelector('label[for="netease-country-code"]')?.textContent,
-    ).toBe("catalog.netease.countryCode");
-    expect(
-      container.querySelector('label[for="netease-phone-number"]')?.textContent,
-    ).toBe("catalog.netease.phoneNumber");
-    expect(container.querySelector("#netease-phone-number")).not.toBeNull();
-    expect(container.textContent).toContain("catalog.netease.passwordNotice");
-
-    await user.click(
-      container.querySelector("[data-testid='netease-use-email']")!,
-    );
-    expect(
-      container.querySelector("[data-testid='netease-email-form']"),
-    ).not.toBeNull();
-    expect(
-      container.querySelector<HTMLInputElement>("#netease-email-password")
-        ?.type,
-    ).toBe("password");
-    expect(
-      container.querySelector("[data-testid='netease-use-qr']"),
-    ).not.toBeNull();
+    expect(container.querySelector("input")).toBeNull();
+    const connect = container.querySelector<HTMLButtonElement>(
+      "[data-testid=netease-connect]",
+    )!;
+    const check = container.querySelector<HTMLButtonElement>(
+      "[data-testid=netease-check-signin]",
+    )!;
+    connect.focus();
+    await user.keyboard("{Enter}");
+    expect(mockState.openSignIn).toHaveBeenCalled();
+    await user.tab();
+    expect(document.activeElement).toBe(check);
+    await user.keyboard("{Enter}");
+    expect(mockState.completeSignIn).toHaveBeenCalled();
   });
 
   test("signed-in name and Sign out are visible; expired sessions return to sign-in", async () => {
@@ -358,131 +264,5 @@ describe("NeteasePanel sign-in", () => {
     );
     expect(mockState.importTracks).toHaveBeenCalledWith(["1"]);
     expect(container.textContent).toContain("Grey");
-  });
-
-  test("QR starts itself, refreshes when expired, and password forms sign in once", async () => {
-    mockState.qr = null;
-    mockState.qrStatus = null;
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    expect(mockState.startQr).toHaveBeenCalled();
-
-    mockState.qr = qrChallenge;
-    mockState.qrStatus = "expired";
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    await user.click(
-      Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes("catalog.netease.refreshQr"),
-      )!,
-    );
-    expect(mockState.startQr).toHaveBeenCalled();
-
-    await user.click(
-      container.querySelector("[data-testid='netease-use-phone']")!,
-    );
-    const phone = container.querySelector(
-      "#netease-phone-number",
-    ) as HTMLInputElement;
-    const phonePassword = container.querySelector(
-      "#netease-phone-password",
-    ) as HTMLInputElement;
-    await user.type(phone, "138 0013 8000");
-    await user.type(phonePassword, "secret");
-    await user.click(
-      container.querySelector(
-        "[data-testid='netease-phone-form'] button[type='submit']",
-      )!,
-    );
-    expect(mockState.signInPassword).toHaveBeenCalledWith(
-      "phone",
-      "13800138000",
-      "secret",
-      "86",
-    );
-
-    await user.click(
-      container.querySelector("[data-testid='netease-use-email']")!,
-    );
-    await user.type(
-      container.querySelector("#netease-email") as HTMLInputElement,
-      "ada@example.com",
-    );
-    await user.type(
-      container.querySelector("#netease-email-password") as HTMLInputElement,
-      "secret",
-    );
-    await user.click(
-      container.querySelector(
-        "[data-testid='netease-email-form'] button[type='submit']",
-      )!,
-    );
-    expect(mockState.signInPassword).toHaveBeenCalledWith(
-      "email",
-      "ada@example.com",
-      "secret",
-    );
-
-    mockState.qr = null;
-    await user.click(
-      container.querySelector("[data-testid='netease-use-qr']")!,
-    );
-    expect(mockState.startQr).toHaveBeenCalled();
-  });
-
-  test("QR poll interval fires and phone country code is stripped", async () => {
-    vi.useFakeTimers();
-    mockState.qr = qrChallenge;
-    mockState.qrStatus = "waiting";
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1500);
-    });
-    expect(mockState.pollQr).toHaveBeenCalled();
-    vi.useRealTimers();
-
-    mockState.qr = null;
-    await act(async () => {
-      root.render(<NeteasePanel />);
-    });
-    await user.click(
-      container.querySelector("[data-testid='netease-use-phone']")!,
-    );
-    await user.click(
-      container.querySelector("[data-testid='netease-use-qr']")!,
-    );
-    expect(mockState.startQr).toHaveBeenCalled();
-
-    await user.click(
-      container.querySelector("[data-testid='netease-use-phone']")!,
-    );
-    const country = container.querySelector(
-      "#netease-country-code",
-    ) as HTMLInputElement;
-    await user.clear(country);
-    await user.type(country, "+1");
-    await user.type(
-      container.querySelector("#netease-phone-number") as HTMLInputElement,
-      "5551234567",
-    );
-    await user.type(
-      container.querySelector("#netease-phone-password") as HTMLInputElement,
-      "secret",
-    );
-    await user.click(
-      container.querySelector(
-        "[data-testid='netease-phone-form'] button[type='submit']",
-      )!,
-    );
-    expect(mockState.signInPassword).toHaveBeenCalledWith(
-      "phone",
-      "5551234567",
-      "secret",
-      "1",
-    );
   });
 });

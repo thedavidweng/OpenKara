@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Đăng nhập",
       "signOut": "Đăng xuất",
-      "qr": "Đăng nhập bằng QR",
-      "phone": "Điện thoại và mật khẩu",
-      "email": "Email và mật khẩu",
-      "password": "Mật khẩu",
-      "phoneNumber": "Số điện thoại",
-      "countryCode": "Mã quốc gia",
       "signedInAs": "Đã đăng nhập là {{name}}",
       "sessionExpired": "Phiên đã hết hạn. Đăng nhập lại.",
       "liked": "Bài đã thích",
@@ -792,15 +785,9 @@
       "importTrack": "Nhập bài này",
       "importPlaylist": "Nhập danh sách phát streaming",
       "importRefusal": "Từ chối nhập",
-      "waitingForScan": "Quét mã QR này bằng ứng dụng NetEase.",
-      "scanned": "Đã quét. Xác nhận trên điện thoại.",
-      "qrExpired": "Mã QR này đã hết hạn. Lấy mã mới.",
-      "loginWithPhone": "Đăng nhập bằng điện thoại",
-      "loginWithEmail": "Đăng nhập bằng email",
-      "loginWithQr": "Đăng nhập bằng QR",
-      "passwordNotice": "OpenKara gửi mật khẩu một lần và không lưu.",
-      "qrHint": "Mở ứng dụng NetEase Cloud Music và quét mã này.",
-      "refreshQr": "Lấy mã QR mới"
+      "connect": "Kết nối NetEase",
+      "checkSignIn": "Kiểm tra đăng nhập",
+      "webSignInHint": "Đăng nhập trên trang NetEase chính thức, rồi quay lại đây để kiểm tra trạng thái đăng nhập."
     }
   },
   "youtube": {

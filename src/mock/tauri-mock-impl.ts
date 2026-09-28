@@ -808,38 +808,13 @@ export function createTauriMock(data: any): TauriMockResult {
       display_name: null,
       expired: false,
     }),
-    start_streaming_qr_signin: () => ({
-      key: "mock-qr",
-      login_url: "https://music.163.com/login?codekey=mock-qr",
-      qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    open_streaming_sign_in: () => null,
+    complete_streaming_sign_in: () => ({
+      source_id: "netease",
+      signed_in: true,
+      display_name: "Ada",
+      expired: false,
     }),
-    poll_streaming_qr_signin: () => ({
-      status: "waiting",
-      session: null,
-    }),
-    sign_in_streaming_source: (args: {
-      sourceId?: string;
-      method?: string;
-      identifier?: string;
-      password?: string;
-      countryCode?: string;
-    }) => {
-      void args.password;
-      if (args.sourceId && args.sourceId !== "netease") {
-        throw new Error("mock streaming source is netease");
-      }
-      const identifier = (args.identifier ?? "User").replace(/\s/g, "");
-      const country = (args.countryCode ?? "").replace(/[+\s]/g, "");
-      return {
-        source_id: "netease",
-        signed_in: true,
-        display_name:
-          args.method === "phone" && country
-            ? `${country}${identifier}`
-            : identifier,
-        expired: false,
-      };
-    },
     sign_out_streaming_source: () => ({
       source_id: "netease",
       signed_in: false,
@@ -903,9 +878,12 @@ export function createTauriMock(data: any): TauriMockResult {
       stems: { available: false, path: null },
     }),
     reveal_in_folder: () => {},
-    set_online_source_enabled: (args: any) => {
-      const sourceId = args && args.source_id;
-      const enabled = !!(args && args.enabled);
+    set_online_source_enabled: (args: {
+      sourceId?: string;
+      enabled?: boolean;
+    }) => {
+      const sourceId = args.sourceId;
+      const enabled = !!args.enabled;
       settingsSnapshot = {
         ...settingsSnapshot,
         youtube_source_enabled:

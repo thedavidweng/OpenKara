@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Masuk",
       "signOut": "Keluar",
-      "qr": "Masuk dengan QR",
-      "phone": "Telepon dan kata sandi",
-      "email": "Email dan kata sandi",
-      "password": "Kata sandi",
-      "phoneNumber": "Nomor telepon",
-      "countryCode": "Kode negara",
       "signedInAs": "Masuk sebagai {{name}}",
       "sessionExpired": "Sesi berakhir. Masuk lagi.",
       "liked": "Lagu disukai",
@@ -792,15 +785,9 @@
       "importTrack": "Impor lagu",
       "importPlaylist": "Impor daftar putar streaming",
       "importRefusal": "Impor ditolak",
-      "waitingForScan": "Pindai QR ini dengan aplikasi NetEase.",
-      "scanned": "Dipindai. Konfirmasikan di ponsel.",
-      "qrExpired": "QR ini kedaluwarsa. Dapatkan yang baru.",
-      "loginWithPhone": "Masuk dengan telepon",
-      "loginWithEmail": "Masuk dengan email",
-      "loginWithQr": "Masuk dengan QR",
-      "passwordNotice": "OpenKara mengirim kata sandi sekali dan tidak menyimpannya.",
-      "qrHint": "Buka aplikasi NetEase Cloud Music dan pindai kode ini.",
-      "refreshQr": "Dapatkan QR baru"
+      "connect": "Hubungkan NetEase",
+      "checkSignIn": "Periksa masuk",
+      "webSignInHint": "Masuk di halaman resmi NetEase, lalu kembali ke sini untuk memeriksa status masuk."
     }
   },
   "youtube": {

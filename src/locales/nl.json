@@ -775,14 +775,7 @@
   "catalog": {
     "netease": {
       "title": "NetEase Cloud Music",
-      "signIn": "Aanmelden",
       "signOut": "Afmelden",
-      "qr": "Aanmelden met QR",
-      "phone": "Telefoon en wachtwoord",
-      "email": "E-mail en wachtwoord",
-      "password": "Wachtwoord",
-      "phoneNumber": "Telefoonnummer",
-      "countryCode": "Landcode",
       "signedInAs": "Aangemeld als {{name}}",
       "sessionExpired": "De sessie is verlopen. Meld je opnieuw aan.",
       "liked": "Favorieten",
@@ -792,15 +785,9 @@
       "importTrack": "Nummer importeren",
       "importPlaylist": "Streaming-afspeellijst importeren",
       "importRefusal": "Import geweigerd",
-      "waitingForScan": "Scan deze QR-code met de NetEase-app.",
-      "scanned": "Gescand. Bevestig op je telefoon.",
-      "qrExpired": "Deze QR-code is verlopen. Haal een nieuwe op.",
-      "loginWithPhone": "Aanmelden met telefoon",
-      "loginWithEmail": "Aanmelden met e-mail",
-      "loginWithQr": "Aanmelden met QR",
-      "passwordNotice": "OpenKara verstuurt het wachtwoord één keer en slaat het niet op.",
-      "qrHint": "Open de NetEase Cloud Music-app en scan deze code.",
-      "refreshQr": "Nieuwe QR-code ophalen"
+      "connect": "NetEase verbinden",
+      "checkSignIn": "Aanmelding controleren",
+      "webSignInHint": "Meld je aan op de officiële NetEase-pagina en keer terug om je aanmelding te controleren."
     }
   },
   "youtube": {

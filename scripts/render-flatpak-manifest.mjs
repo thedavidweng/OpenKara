@@ -92,5 +92,12 @@ for (const file of nodeSourceFiles) {
     readFileSync(join(templateRoot, "generated", file), "utf8"),
   );
 }
+writeFileSync(
+  join(outputRoot, "netease-sources.0.json"),
+  readFileSync(
+    join(templateRoot, "generated", "netease-sources.0.json"),
+    "utf8",
+  ),
+);
 
 process.stdout.write(`${outputRoot}\n`);

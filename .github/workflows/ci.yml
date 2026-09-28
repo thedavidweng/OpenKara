@@ -331,7 +331,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high
+        run: |
+          pnpm audit --audit-level=high
+          npm audit --prefix sidecars/netease --omit=dev --audit-level=high
 
       - name: Verify formatting
         run: node --run format

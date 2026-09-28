@@ -5,24 +5,10 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
   return {
     getStreamingSession: (sourceId) =>
       invoke("get_streaming_session", { sourceId }),
-    startStreamingQrSignin: (sourceId) =>
-      invoke("start_streaming_qr_signin", { sourceId }),
-    pollStreamingQrSignin: (sourceId, key) =>
-      invoke("poll_streaming_qr_signin", { sourceId, key }),
-    signInStreamingSource: (
-      sourceId,
-      method,
-      identifier,
-      password,
-      countryCode,
-    ) =>
-      invoke("sign_in_streaming_source", {
-        sourceId,
-        method,
-        identifier,
-        password,
-        countryCode: countryCode ?? null,
-      }),
+    openStreamingSignIn: (sourceId) =>
+      invoke("open_streaming_sign_in", { sourceId }),
+    completeStreamingSignIn: (sourceId) =>
+      invoke("complete_streaming_sign_in", { sourceId }),
     signOutStreamingSource: (sourceId) =>
       invoke("sign_out_streaming_source", { sourceId }),
     listStreamingLikedTracks: (sourceId) =>

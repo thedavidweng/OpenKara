@@ -7,8 +7,6 @@ import type {
   StreamingImportFailure,
   StreamingPlaylistDetail,
   StreamingPlaylistSummary,
-  StreamingQrChallenge,
-  StreamingQrStatus,
   StreamingSessionSnapshot,
   StreamingTrack,
   VideoQueueItem,
@@ -19,8 +17,6 @@ type CatalogView = "library" | "netease";
 interface CatalogState {
   activeView: CatalogView;
   session: StreamingSessionSnapshot | null;
-  qr: StreamingQrChallenge | null;
-  qrStatus: StreamingQrStatus | null;
   liked: StreamingTrack[];
   playlists: StreamingPlaylistSummary[];
   playlistDetail: StreamingPlaylistDetail | null;
@@ -32,14 +28,8 @@ interface CatalogState {
   rememberVideoItems: (items: VideoQueueItem[]) => void;
   getVideoItem: (id: string) => VideoQueueItem | undefined;
   loadSession: () => Promise<void>;
-  startQr: () => Promise<void>;
-  pollQr: () => Promise<void>;
-  signInPassword: (
-    method: "phone" | "email",
-    identifier: string,
-    password: string,
-    countryCode?: string,
-  ) => Promise<void>;
+  openSignIn: () => Promise<void>;
+  completeSignIn: () => Promise<void>;
   signOut: () => Promise<void>;
   loadLiked: () => Promise<void>;
   loadPlaylists: () => Promise<void>;
@@ -53,11 +43,31 @@ interface CatalogState {
 }
 
 export function createCatalogStore(backend: Backend = tauriBackend) {
+  const reportError = (error: unknown) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "streaming_session_expired"
+    ) {
+      store.setState({
+        session: {
+          source_id: "netease",
+          signed_in: false,
+          display_name: null,
+          expired: true,
+        },
+        liked: [],
+        playlists: [],
+        playlistDetail: null,
+        searchResults: [],
+      });
+    }
+    notifyError(error);
+  };
   const store = create<CatalogState>((set, get) => ({
     activeView: "library",
     session: null,
-    qr: null,
-    qrStatus: null,
     liked: [],
     playlists: [],
     playlistDetail: null,
@@ -83,65 +93,30 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         const session = await backend.catalog.getStreamingSession("netease");
         set({ session });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
-    startQr: async () => {
+    openSignIn: async () => {
       try {
-        const qr = await backend.catalog.startStreamingQrSignin("netease");
-        set({ qr, qrStatus: "waiting" });
+        await backend.catalog.openStreamingSignIn("netease");
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
-
-    pollQr: async () => {
-      const key = get().qr?.key;
-      if (!key) return;
+    completeSignIn: async () => {
       try {
-        const poll = await backend.catalog.pollStreamingQrSignin(
-          "netease",
-          key,
-        );
-        if (poll.session) {
-          set({
-            session: poll.session,
-            qr: null,
-            qrStatus: null,
-            liked: [],
-            playlists: [],
-            playlistDetail: null,
-            searchResults: [],
-          });
-          return;
-        }
-        set({ qrStatus: poll.status });
-      } catch (error) {
-        notifyError(error);
-      }
-    },
-
-    signInPassword: async (method, identifier, password, countryCode) => {
-      try {
-        const session = await backend.catalog.signInStreamingSource(
-          "netease",
-          method,
-          identifier,
-          password,
-          countryCode,
-        );
+        const session =
+          await backend.catalog.completeStreamingSignIn("netease");
         set({
           session,
-          qr: null,
-          qrStatus: null,
           liked: [],
           playlists: [],
           playlistDetail: null,
           searchResults: [],
         });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -150,15 +125,13 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         const session = await backend.catalog.signOutStreamingSource("netease");
         set({
           session,
-          qr: null,
-          qrStatus: null,
           liked: [],
           playlists: [],
           playlistDetail: null,
           searchResults: [],
         });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -167,7 +140,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         const liked = await backend.catalog.listStreamingLikedTracks("netease");
         set({ liked, playlistDetail: null });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -177,7 +150,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
           await backend.catalog.listStreamingPlaylists("netease");
         set({ playlists });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -189,7 +162,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         );
         set({ playlistDetail });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -201,7 +174,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         );
         set({ searchResults, playlistDetail: null });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -217,7 +190,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
           pendingConflict: progress.conflict,
         });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
 
@@ -229,7 +202,7 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
           pendingConflict: progress.conflict,
         });
       } catch (error) {
-        notifyError(error);
+        reportError(error);
       }
     },
   }));

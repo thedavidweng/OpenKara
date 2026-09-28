@@ -168,6 +168,49 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
+  test("ships the NetEase sidecar from offline, integrity-pinned sources", () => {
+    const manifest = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const sources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/netease-sources.0.json"),
+    ) as Array<{ url: string; sha256?: string; sha512?: string }>;
+    const lock = JSON.parse(
+      readProjectFile("sidecars/netease/package-lock.json"),
+    ) as {
+      packages: Record<string, { resolved: string; integrity: string }>;
+    };
+    const runtime = JSON.parse(
+      readProjectFile("sidecars/netease/runtime.json"),
+    ) as {
+      targets: Record<string, [string, string]>;
+    };
+
+    expect(manifest).toContain("OPENKARA_NETEASE_FLATPAK=1");
+    expect(manifest).toContain("- netease-sources.0.json");
+    expect(manifest).toContain("${FLATPAK_DEST}/bin/netease-node");
+    expect(manifest).toContain("${FLATPAK_DEST}/lib/openkara/netease");
+    for (const entry of Object.values(lock.packages)) {
+      if (!entry.resolved) continue;
+      expect(sources).toContainEqual({
+        type: "file",
+        url: entry.resolved,
+        sha512: Buffer.from(entry.integrity.slice(7), "base64").toString("hex"),
+        dest: "flatpak-netease/tarballs",
+        "dest-filename": expect.any(String),
+      });
+    }
+    for (const [target, [suffix, sha256]] of Object.entries(runtime.targets)) {
+      if (!target.endsWith("unknown-linux-gnu")) continue;
+      expect(sources).toContainEqual(
+        expect.objectContaining({
+          url: expect.stringContaining(suffix),
+          sha256,
+        }),
+      );
+    }
+  });
+
   test("offline pnpm install trusts the integrity-pinned lockfile", () => {
     // pnpm 11 re-applies supply-chain policy by fetching registry metadata even
     // with --offline; that requires network and fails inside the Flatpak

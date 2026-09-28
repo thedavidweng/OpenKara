@@ -66,21 +66,6 @@ export interface StreamingSessionSnapshot {
   expired: boolean;
 }
 
-export interface StreamingQrChallenge {
-  key: string;
-  login_url: string;
-  qr_svg: string;
-}
-
-export type StreamingQrStatus = "waiting" | "scanned" | "confirmed" | "expired";
-
-export interface StreamingQrPoll {
-  status: StreamingQrStatus;
-  session: StreamingSessionSnapshot | null;
-}
-
-export type StreamingPasswordMethod = "phone" | "email";
-
 export type YoutubeWatchAction =
   | { type: "play" }
   | { type: "pause" }

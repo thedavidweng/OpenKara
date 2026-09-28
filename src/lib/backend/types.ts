@@ -26,11 +26,8 @@ import type {
   OnlineSourceSnapshot,
   RevealTargets,
   StreamingImportProgress,
-  StreamingPasswordMethod,
   StreamingPlaylistDetail,
   StreamingPlaylistSummary,
-  StreamingQrChallenge,
-  StreamingQrPoll,
   StreamingSessionSnapshot,
   StreamingTrack,
   VideoQueueItem,
@@ -334,19 +331,9 @@ export interface CatalogBackend {
   getStreamingSession(
     sourceId: OnlineSourceId,
   ): Promise<StreamingSessionSnapshot>;
-  startStreamingQrSignin(
+  openStreamingSignIn(sourceId: OnlineSourceId): Promise<void>;
+  completeStreamingSignIn(
     sourceId: OnlineSourceId,
-  ): Promise<StreamingQrChallenge>;
-  pollStreamingQrSignin(
-    sourceId: OnlineSourceId,
-    key: string,
-  ): Promise<StreamingQrPoll>;
-  signInStreamingSource(
-    sourceId: OnlineSourceId,
-    method: StreamingPasswordMethod,
-    identifier: string,
-    password: string,
-    countryCode?: string | null,
   ): Promise<StreamingSessionSnapshot>;
   signOutStreamingSource(
     sourceId: OnlineSourceId,
