@@ -809,12 +809,6 @@ export function createTauriMock(data: any): TauriMockResult {
       expired: false,
     }),
     open_streaming_sign_in: () => null,
-    complete_streaming_sign_in: () => ({
-      source_id: "netease",
-      signed_in: true,
-      display_name: "Ada",
-      expired: false,
-    }),
     sign_out_streaming_source: () => ({
       source_id: "netease",
       signed_in: false,

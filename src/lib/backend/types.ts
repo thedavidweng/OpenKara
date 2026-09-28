@@ -332,9 +332,6 @@ export interface CatalogBackend {
     sourceId: OnlineSourceId,
   ): Promise<StreamingSessionSnapshot>;
   openStreamingSignIn(sourceId: OnlineSourceId): Promise<void>;
-  completeStreamingSignIn(
-    sourceId: OnlineSourceId,
-  ): Promise<StreamingSessionSnapshot>;
   signOutStreamingSource(
     sourceId: OnlineSourceId,
   ): Promise<StreamingSessionSnapshot>;

@@ -15,9 +15,7 @@
       "importTrack": "Import track",
       "importPlaylist": "Import Streaming Playlist",
       "importRefusal": "Import Refusal",
-      "connect": "Connect NetEase",
-      "checkSignIn": "Check sign-in",
-      "webSignInHint": "Sign in on the official NetEase page, then return here to check your sign-in."
+      "connect": "Connect NetEase"
     }
   },
   "youtube": {

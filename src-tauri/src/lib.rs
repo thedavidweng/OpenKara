@@ -207,7 +207,6 @@ pub fn run() {
             commands::settings::set_online_source_enabled,
             commands::catalog::get_streaming_session,
             commands::catalog::open_streaming_sign_in,
-            commands::catalog::complete_streaming_sign_in,
             commands::catalog::sign_out_streaming_source,
             commands::catalog::list_streaming_liked_tracks,
             commands::catalog::list_streaming_playlists,

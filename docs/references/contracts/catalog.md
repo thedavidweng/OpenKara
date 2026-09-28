@@ -191,17 +191,21 @@ code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0035.
 2. `set_online_source_enabled(source_id: OnlineSourceId, enabled: bool) -> AppSettings`
 3. `get_streaming_session(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
 4. `open_streaming_sign_in(source_id: OnlineSourceId) -> ()`
-5. `complete_streaming_sign_in(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-6. `sign_out_streaming_source(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-7. `list_streaming_liked_tracks(source_id: OnlineSourceId) -> Vec<StreamingTrack>`
-8. `list_streaming_playlists(source_id: OnlineSourceId) -> Vec<StreamingPlaylistSummary>`
-9. `get_streaming_playlist(source_id: OnlineSourceId, remote_playlist_id: String) -> StreamingPlaylistDetail`
-10. `search_streaming_source(source_id: OnlineSourceId, query: String) -> Vec<StreamingTrack>`
-11. `start_streaming_import(source_id: OnlineSourceId, remote_track_ids: Vec<String>, remote_playlist_id: Option<String>) -> StreamingImportProgress`
-12. `continue_streaming_import(action: LibraryDecisionAction) -> StreamingImportProgress`
-13. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>`
-14. `get_reveal_targets(song_id: String) -> RevealTargets`
-15. `reveal_in_folder(path: String) -> ()`
+5. `sign_out_streaming_source(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
+6. `list_streaming_liked_tracks(source_id: OnlineSourceId) -> Vec<StreamingTrack>`
+7. `list_streaming_playlists(source_id: OnlineSourceId) -> Vec<StreamingPlaylistSummary>`
+8. `get_streaming_playlist(source_id: OnlineSourceId, remote_playlist_id: String) -> StreamingPlaylistDetail`
+9. `search_streaming_source(source_id: OnlineSourceId, query: String) -> Vec<StreamingTrack>`
+10. `start_streaming_import(source_id: OnlineSourceId, remote_track_ids: Vec<String>, remote_playlist_id: Option<String>) -> StreamingImportProgress`
+11. `continue_streaming_import(action: LibraryDecisionAction) -> StreamingImportProgress`
+12. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>`
+13. `get_reveal_targets(song_id: String) -> RevealTargets`
+14. `reveal_in_folder(path: String) -> ()`
+
+## Events
+
+- `netease-sign-in-complete` targets `main` with a verified `StreamingSessionSnapshot`.
+- `netease-sign-in-error` targets `main` with a `CommandError` and no credentials.
 
 ## Semantics
 
@@ -221,10 +225,10 @@ code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0035.
    keychain service `org.openkara.streaming-source`, separate from Repository
    Credentials. OpenKara never receives a password or SMS code. The official
    `music.163.com` page runs as the top-level document in a dedicated incognito
-   window without Tauri capabilities. `complete_streaming_sign_in` reads only
-   the two session cookies, verifies the account, then stores the credentials
-   and display name. Failed verification stores nothing and leaves the window
-   open.
+   window without Tauri capabilities. While it is open, the host checks only
+   the two session cookies. When both appear, it verifies the account, stores
+   the credentials and display name, closes the window, and emits the result.
+   Failed verification stores nothing, closes the window, and emits an error.
 9. Sign-out clears Streaming Credentials. Turning NetEase off does not.
 10. `get_streaming_session` verifies stored credentials against the account
     operation. An expired session returns `signed_in: false` and `expired: true`.

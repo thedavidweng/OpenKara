@@ -785,9 +785,7 @@
       "importTrack": "이 곡 가져오기",
       "importPlaylist": "스트리밍 재생목록 가져오기",
       "importRefusal": "가져오기 거부",
-      "connect": "NetEase 연결",
-      "checkSignIn": "로그인 확인",
-      "webSignInHint": "NetEase 공식 페이지에서 로그인한 다음 여기로 돌아와 로그인 상태를 확인하세요."
+      "connect": "NetEase 연결"
     }
   },
   "youtube": {

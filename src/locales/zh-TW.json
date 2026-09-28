@@ -785,9 +785,7 @@
       "importTrack": "匯入這首歌",
       "importPlaylist": "匯入串流播放清單",
       "importRefusal": "拒絕匯入",
-      "connect": "連接網易雲音樂",
-      "checkSignIn": "檢查登入",
-      "webSignInHint": "在網易雲音樂官方網頁完成登入，然後返回這裡檢查登入狀態。"
+      "connect": "連接網易雲音樂"
     }
   },
   "youtube": {

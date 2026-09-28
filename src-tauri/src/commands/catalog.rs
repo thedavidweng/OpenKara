@@ -7,7 +7,7 @@ use crate::catalog::{
 use crate::commands::error::{database_error, internal_error, state_lock_error, CommandResult};
 use crate::config;
 use crate::AppState;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent};
 
 fn app_data_dir(app_handle: &AppHandle) -> CommandResult<std::path::PathBuf> {
     app_handle
@@ -60,6 +60,101 @@ pub async fn get_streaming_session(
 
 const NETEASE_SIGN_IN_WINDOW: &str = "netease-sign-in";
 const NETEASE_SIGN_IN_URL: &str = "https://music.163.com/#/login";
+const NETEASE_SIGN_IN_COMPLETE_EVENT: &str = "netease-sign-in-complete";
+const NETEASE_SIGN_IN_ERROR_EVENT: &str = "netease-sign-in-error";
+
+fn session_cookies(
+    cookies: impl IntoIterator<Item = (String, String)>,
+) -> Option<Vec<(String, String)>> {
+    let mut music_u = None;
+    let mut csrf = None;
+    for (name, value) in cookies {
+        match name.as_str() {
+            "MUSIC_U" if !value.is_empty() => music_u = Some(value),
+            "__csrf" if !value.is_empty() => csrf = Some(value),
+            _ => {}
+        }
+    }
+    Some(vec![
+        ("MUSIC_U".to_owned(), music_u?),
+        ("__csrf".to_owned(), csrf?),
+    ])
+}
+
+#[cfg(test)]
+mod sign_in_tests {
+    use super::session_cookies;
+
+    #[test]
+    fn waits_for_both_session_cookies_and_discards_the_rest() {
+        assert!(session_cookies([("MUSIC_U".to_owned(), "session".to_owned())]).is_none());
+        assert_eq!(
+            session_cookies([
+                ("tracking".to_owned(), "private".to_owned()),
+                ("MUSIC_U".to_owned(), "session".to_owned()),
+                ("__csrf".to_owned(), "csrf".to_owned()),
+            ]),
+            Some(vec![
+                ("MUSIC_U".to_owned(), "session".to_owned()),
+                ("__csrf".to_owned(), "csrf".to_owned()),
+            ])
+        );
+    }
+}
+
+fn read_session_cookies(window: &WebviewWindow) -> CommandResult<Option<Vec<(String, String)>>> {
+    let cookies = window
+        .cookies_for_url("https://music.163.com/".parse().expect("NetEase URL"))
+        .map_err(|_| internal_error("Could not read the NetEase session."))?
+        .into_iter()
+        .map(|cookie| (cookie.name().to_owned(), cookie.value().to_owned()));
+    Ok(session_cookies(cookies))
+}
+
+async fn watch_netease_sign_in(app_handle: AppHandle, window: WebviewWindow) {
+    let closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let on_destroyed = closed.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            on_destroyed.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        if closed.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let cookies = match read_session_cookies(&window) {
+            Ok(Some(cookies)) => cookies,
+            Ok(None) => continue,
+            Err(error) => {
+                let _ = window.close();
+                let _ = app_handle.emit_to("main", NETEASE_SIGN_IN_ERROR_EVENT, error);
+                break;
+            }
+        };
+        let handle = app_handle.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || -> CommandResult<_> {
+            netease_source(&handle)?
+                .complete_web_sign_in(cookies)
+                .map_err(Into::into)
+        })
+        .await
+        .map_err(|_| internal_error("NetEase sign-in check failed"))
+        .and_then(std::convert::identity);
+        let _ = window.close();
+        match result {
+            Ok(session) => {
+                let _ = app_handle.emit_to("main", NETEASE_SIGN_IN_COMPLETE_EVENT, session);
+            }
+            Err(error) => {
+                let _ = app_handle.emit_to("main", NETEASE_SIGN_IN_ERROR_EVENT, error);
+            }
+        }
+        break;
+    }
+}
 
 #[tauri::command]
 pub async fn open_streaming_sign_in(app_handle: AppHandle, source_id: String) -> CommandResult<()> {
@@ -73,7 +168,7 @@ pub async fn open_streaming_sign_in(app_handle: AppHandle, source_id: String) ->
             .map_err(|error| internal_error(error.to_string()))?;
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(
+    let window = tauri::WebviewWindowBuilder::new(
         &app_handle,
         NETEASE_SIGN_IN_WINDOW,
         tauri::WebviewUrl::External(NETEASE_SIGN_IN_URL.parse().expect("NetEase URL")),
@@ -89,42 +184,8 @@ pub async fn open_streaming_sign_in(app_handle: AppHandle, source_id: String) ->
     })
     .build()
     .map_err(|error| internal_error(error.to_string()))?;
+    tauri::async_runtime::spawn(watch_netease_sign_in(app_handle, window));
     Ok(())
-}
-
-#[tauri::command]
-pub async fn complete_streaming_sign_in(
-    app_handle: AppHandle,
-    source_id: String,
-) -> CommandResult<catalog::StreamingSessionSnapshot> {
-    require_source(&app_handle, &source_id)?;
-    if source_id != NETEASE_SOURCE_ID {
-        return Err(internal_error("unknown streaming source"));
-    }
-    let window = app_handle
-        .get_webview_window(NETEASE_SIGN_IN_WINDOW)
-        .ok_or_else(|| internal_error("Open the NetEase sign-in page first."))?;
-    let cookies = window
-        .cookies_for_url("https://music.163.com/".parse().expect("NetEase URL"))
-        .map_err(|_| internal_error("Could not read the NetEase session."))?
-        .into_iter()
-        .filter(|cookie| matches!(cookie.name(), "MUSIC_U" | "__csrf"))
-        .map(|cookie| (cookie.name().to_owned(), cookie.value().to_owned()))
-        .collect::<Vec<_>>();
-    let handle = app_handle.clone();
-    let session = tauri::async_runtime::spawn_blocking(
-        move || -> CommandResult<catalog::StreamingSessionSnapshot> {
-            netease_source(&handle)?
-                .complete_web_sign_in(cookies)
-                .map_err(Into::into)
-        },
-    )
-    .await
-    .map_err(|_| internal_error("NetEase sign-in check failed"))??;
-    window
-        .close()
-        .map_err(|error| internal_error(error.to_string()))?;
-    Ok(session)
 }
 
 #[tauri::command]

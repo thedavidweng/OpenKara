@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NeteaseSignIn } from "@/components/Catalog/NeteaseSignIn";
+import { notifyError } from "@/lib/errors";
+import { createRuntimeEventRuntime } from "@/runtime/event-runtime";
+import { eventSubscription } from "@/runtime/event-source";
 import { useCatalogStore } from "@/stores/catalog-store";
 import type { StreamingTrack } from "@/types/ipc";
 
@@ -13,6 +16,7 @@ export function NeteasePanel() {
   const searchResults = useCatalogStore((s) => s.searchResults);
   const importFailures = useCatalogStore((s) => s.importFailures);
   const loadSession = useCatalogStore((s) => s.loadSession);
+  const acceptSignIn = useCatalogStore((s) => s.acceptSignIn);
   const signOut = useCatalogStore((s) => s.signOut);
   const loadLiked = useCatalogStore((s) => s.loadLiked);
   const loadPlaylists = useCatalogStore((s) => s.loadPlaylists);
@@ -27,6 +31,15 @@ export function NeteasePanel() {
     void loadSession();
   }, [loadSession]);
 
+  useEffect(() => {
+    const runtime = createRuntimeEventRuntime([
+      eventSubscription("netease-sign-in-complete", acceptSignIn),
+      eventSubscription("netease-sign-in-error", notifyError),
+    ]);
+    void runtime.start().catch(notifyError);
+    return () => runtime.stop();
+  }, [acceptSignIn]);
+
   const tracks: StreamingTrack[] =
     playlistDetail?.tracks ??
     (searchResults.length > 0 ? searchResults : liked);
@@ -39,6 +52,7 @@ export function NeteasePanel() {
       {showBrowse ? (
         <div className="space-y-2 px-2">
           <p
+            role="status"
             className="text-[12px] text-[var(--color-text)]"
             data-testid="netease-signed-in"
           >

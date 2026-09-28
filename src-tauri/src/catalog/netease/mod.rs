@@ -95,13 +95,15 @@ impl<H: NeteaseApi> NeteaseStreamingSource<H> {
         if csrf.is_empty() {
             return Err(CatalogError::AuthFailed {
                 source_id: "netease".to_owned(),
-                detail: "Complete sign-in on the NetEase page, then check again.".to_owned(),
+                detail: "NetEase sign-in did not provide a complete session. Try signing in again."
+                    .to_owned(),
             });
         }
         let credentials = StreamingCredentials {
             music_u: music_u.ok_or_else(|| CatalogError::AuthFailed {
                 source_id: "netease".to_owned(),
-                detail: "Complete sign-in on the NetEase page, then check again.".to_owned(),
+                detail: "NetEase sign-in did not provide a complete session. Try signing in again."
+                    .to_owned(),
             })?,
             csrf,
         };

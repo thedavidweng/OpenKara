@@ -787,9 +787,7 @@
       "importTrack": "Импортировать трек",
       "importPlaylist": "Импортировать стриминговый плейлист",
       "importRefusal": "Импорт отклонён",
-      "connect": "Подключить NetEase",
-      "checkSignIn": "Проверить вход",
-      "webSignInHint": "Войдите на официальной странице NetEase, затем вернитесь сюда, чтобы проверить вход."
+      "connect": "Подключить NetEase"
     }
   },
   "youtube": {

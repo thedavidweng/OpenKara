@@ -785,9 +785,7 @@
       "importTrack": "Titel importieren",
       "importPlaylist": "Streaming-Playlist importieren",
       "importRefusal": "Import verweigert",
-      "connect": "NetEase verbinden",
-      "checkSignIn": "Anmeldung prüfen",
-      "webSignInHint": "Melde dich auf der offiziellen NetEase-Seite an und kehre dann hierher zurück, um die Anmeldung zu prüfen."
+      "connect": "NetEase verbinden"
     }
   },
   "youtube": {

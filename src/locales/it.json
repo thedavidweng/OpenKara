@@ -786,9 +786,7 @@
       "importTrack": "Importa brano",
       "importPlaylist": "Importa playlist in streaming",
       "importRefusal": "Importazione rifiutata",
-      "connect": "Connetti NetEase",
-      "checkSignIn": "Verifica accesso",
-      "webSignInHint": "Accedi alla pagina ufficiale di NetEase, poi torna qui per verificare l’accesso."
+      "connect": "Connetti NetEase"
     }
   },
   "youtube": {

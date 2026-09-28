@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NeteasePanel } from "./NeteasePanel";
 import type { StreamingSessionSnapshot } from "@/types/ipc";
 
-const { mockState } = vi.hoisted(() => ({
+const { mockState, listeners } = vi.hoisted(() => ({
+  listeners: new Map<string, (event: { payload: unknown }) => void>(),
   mockState: {
     session: null as StreamingSessionSnapshot | null,
     liked: [] as Array<{
@@ -53,7 +54,7 @@ const { mockState } = vi.hoisted(() => ({
     }>,
     loadSession: vi.fn(),
     openSignIn: vi.fn(),
-    completeSignIn: vi.fn(),
+    acceptSignIn: vi.fn(),
     signOut: vi.fn(),
     loadLiked: vi.fn(),
     loadPlaylists: vi.fn(),
@@ -62,6 +63,18 @@ const { mockState } = vi.hoisted(() => ({
     importTracks: vi.fn(),
   },
 }));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: async (
+    name: string,
+    handler: (event: { payload: unknown }) => void,
+  ) => {
+    listeners.set(name, handler);
+    return () => listeners.delete(name);
+  },
+}));
+
+vi.mock("@/lib/errors", () => ({ notifyError: vi.fn() }));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -97,6 +110,8 @@ describe("NeteasePanel sign-in", () => {
     mockState.importFailures = [];
     mockState.signOut.mockReset();
     mockState.loadSession.mockReset();
+    mockState.acceptSignIn.mockReset();
+    listeners.clear();
   });
 
   afterEach(() => {
@@ -104,7 +119,7 @@ describe("NeteasePanel sign-in", () => {
     container.remove();
   });
 
-  test("opens official sign-in and checks completion with keyboard controls", async () => {
+  test("opens official sign-in and accepts the verified session event", async () => {
     await act(async () => {
       root.render(<NeteasePanel />);
     });
@@ -112,16 +127,24 @@ describe("NeteasePanel sign-in", () => {
     const connect = container.querySelector<HTMLButtonElement>(
       "[data-testid=netease-connect]",
     )!;
-    const check = container.querySelector<HTMLButtonElement>(
-      "[data-testid=netease-check-signin]",
-    )!;
     connect.focus();
     await user.keyboard("{Enter}");
     expect(mockState.openSignIn).toHaveBeenCalled();
-    await user.tab();
-    expect(document.activeElement).toBe(check);
-    await user.keyboard("{Enter}");
-    expect(mockState.completeSignIn).toHaveBeenCalled();
+    expect(
+      container.querySelector("[data-testid=netease-check-signin]"),
+    ).toBeNull();
+    const session: StreamingSessionSnapshot = {
+      source_id: "netease",
+      signed_in: true,
+      display_name: "Ada",
+      expired: false,
+    };
+    listeners.get("netease-sign-in-complete")?.({ payload: session });
+    expect(mockState.acceptSignIn).toHaveBeenCalledWith(session);
+    const error = { code: "streaming_auth_failed", message: "Rejected" };
+    listeners.get("netease-sign-in-error")?.({ payload: error });
+    const { notifyError } = await import("@/lib/errors");
+    expect(notifyError).toHaveBeenCalledWith(error);
   });
 
   test("signed-in name and Sign out are visible; expired sessions return to sign-in", async () => {

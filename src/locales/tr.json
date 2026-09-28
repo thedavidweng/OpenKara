@@ -785,9 +785,7 @@
       "importTrack": "Parçayı içe aktar",
       "importPlaylist": "Yayın oynatma listesini içe aktar",
       "importRefusal": "İçe aktarma reddedildi",
-      "connect": "NetEase’e bağlan",
-      "checkSignIn": "Oturumu kontrol et",
-      "webSignInHint": "Resmî NetEase sayfasında oturum açın, ardından oturumunuzu kontrol etmek için buraya dönün."
+      "connect": "NetEase’e bağlan"
     }
   },
   "youtube": {

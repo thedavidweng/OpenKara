@@ -342,13 +342,6 @@ const CATALOG_COMMANDS: CommandContract[] = [
     rustParams: ["source_id"],
   },
   {
-    command: "complete_streaming_sign_in",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "completeStreamingSignIn",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
     command: "sign_out_streaming_source",
     frontendFile: "src/lib/tauri/catalog.ts",
     frontendFn: "signOutStreamingSource",
@@ -553,7 +546,6 @@ describe("IPC command registry", () => {
     const expectedCatalogCommands = [
       "get_streaming_session",
       "open_streaming_sign_in",
-      "complete_streaming_sign_in",
       "sign_out_streaming_source",
       "list_streaming_liked_tracks",
       "list_streaming_playlists",

@@ -696,15 +696,11 @@ describe("settings", () => {
     expect(returned).toBe(session);
   });
 
-  test("web sign-in commands pass only the source identifier", async () => {
+  test("web sign-in command passes only the source identifier", async () => {
     const { createCatalogCommands } = await import("./catalog");
     const catalog = createCatalogCommands(mockInvoke);
     await catalog.openStreamingSignIn("netease");
     expect(mockInvoke).toHaveBeenCalledWith("open_streaming_sign_in", {
-      sourceId: "netease",
-    });
-    await catalog.completeStreamingSignIn("netease");
-    expect(mockInvoke).toHaveBeenCalledWith("complete_streaming_sign_in", {
       sourceId: "netease",
     });
   });

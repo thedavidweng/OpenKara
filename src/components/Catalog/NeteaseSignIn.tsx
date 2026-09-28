@@ -6,7 +6,6 @@ export function NeteaseSignIn() {
   const { t } = useTranslation();
   const session = useCatalogStore((s) => s.session);
   const openSignIn = useCatalogStore((s) => s.openSignIn);
-  const completeSignIn = useCatalogStore((s) => s.completeSignIn);
   const [busy, setBusy] = useState(false);
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -29,9 +28,6 @@ export function NeteaseSignIn() {
           {t("catalog.netease.sessionExpired")}
         </p>
       )}
-      <p className="text-[13px] text-[var(--color-text-dim)]">
-        {t("catalog.netease.webSignInHint")}
-      </p>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -41,15 +37,6 @@ export function NeteaseSignIn() {
           onClick={() => void run(openSignIn)}
         >
           {t("catalog.netease.connect")}
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={busy}
-          data-testid="netease-check-signin"
-          onClick={() => void run(completeSignIn)}
-        >
-          {t("catalog.netease.checkSignIn")}
         </button>
       </div>
     </section>

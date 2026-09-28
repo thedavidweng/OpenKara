@@ -7,8 +7,6 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
       invoke("get_streaming_session", { sourceId }),
     openStreamingSignIn: (sourceId) =>
       invoke("open_streaming_sign_in", { sourceId }),
-    completeStreamingSignIn: (sourceId) =>
-      invoke("complete_streaming_sign_in", { sourceId }),
     signOutStreamingSource: (sourceId) =>
       invoke("sign_out_streaming_source", { sourceId }),
     listStreamingLikedTracks: (sourceId) =>

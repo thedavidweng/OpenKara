@@ -785,9 +785,7 @@
       "importTrack": "导入这首歌",
       "importPlaylist": "导入流媒体歌单",
       "importRefusal": "拒绝导入",
-      "connect": "连接网易云音乐",
-      "checkSignIn": "检查登录",
-      "webSignInHint": "在网易云音乐官方网页完成登录，然后返回这里检查登录状态。"
+      "connect": "连接网易云音乐"
     }
   },
   "youtube": {

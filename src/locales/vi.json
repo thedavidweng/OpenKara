@@ -785,9 +785,7 @@
       "importTrack": "Nhập bài này",
       "importPlaylist": "Nhập danh sách phát streaming",
       "importRefusal": "Từ chối nhập",
-      "connect": "Kết nối NetEase",
-      "checkSignIn": "Kiểm tra đăng nhập",
-      "webSignInHint": "Đăng nhập trên trang NetEase chính thức, rồi quay lại đây để kiểm tra trạng thái đăng nhập."
+      "connect": "Kết nối NetEase"
     }
   },
   "youtube": {

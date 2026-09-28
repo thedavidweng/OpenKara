@@ -785,9 +785,7 @@
       "importTrack": "Impor lagu",
       "importPlaylist": "Impor daftar putar streaming",
       "importRefusal": "Impor ditolak",
-      "connect": "Hubungkan NetEase",
-      "checkSignIn": "Periksa masuk",
-      "webSignInHint": "Masuk di halaman resmi NetEase, lalu kembali ke sini untuk memeriksa status masuk."
+      "connect": "Hubungkan NetEase"
     }
   },
   "youtube": {

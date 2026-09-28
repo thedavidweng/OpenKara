@@ -15,9 +15,8 @@ test("NetEase sign-in controls work from the keyboard", async ({
   await page.getByRole("button", { name: "NetEase Cloud Music" }).click();
 
   const connect = page.getByTestId("netease-connect");
-  const check = page.getByTestId("netease-check-signin");
   await expect(connect).toBeVisible();
-  await expect(check).toBeVisible();
+  await expect(page.getByTestId("netease-check-signin")).toHaveCount(0);
   await expect(page.getByTestId("netease-signin").locator("input")).toHaveCount(
     0,
   );
@@ -29,15 +28,6 @@ test("NetEase sign-in controls work from the keyboard", async ({
     .poll(async () =>
       (await tauriMock.getInvokeCalls()).some(
         (call) => call.cmd === "open_streaming_sign_in",
-      ),
-    )
-    .toBe(true);
-  await check.focus();
-  await page.keyboard.press("Enter");
-  await expect
-    .poll(async () =>
-      (await tauriMock.getInvokeCalls()).some(
-        (call) => call.cmd === "complete_streaming_sign_in",
       ),
     )
     .toBe(true);

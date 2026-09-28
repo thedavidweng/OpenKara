@@ -12,19 +12,18 @@ describe("catalog store sessions", () => {
       overrides: {
         catalog: {
           openStreamingSignIn: async () => {},
-          completeStreamingSignIn: async () => ({
-            source_id: "netease",
-            signed_in: true,
-            display_name: "Ada",
-            expired: false,
-          }),
         },
       },
     });
     const store = createCatalogStore(backend);
     await store.getState().openSignIn();
     expect(store.getState().session).toBeNull();
-    await store.getState().completeSignIn();
+    store.getState().acceptSignIn({
+      source_id: "netease",
+      signed_in: true,
+      display_name: "Ada",
+      expired: false,
+    });
     expect(store.getState().session?.display_name).toBe("Ada");
   });
 
@@ -178,7 +177,6 @@ describe("catalog store sessions", () => {
         catalog: {
           getStreamingSession: reject,
           openStreamingSignIn: reject,
-          completeStreamingSignIn: reject,
           signOutStreamingSource: reject,
           listStreamingLikedTracks: reject,
           listStreamingPlaylists: reject,
@@ -193,7 +191,6 @@ describe("catalog store sessions", () => {
     const { notifyError } = await import("@/lib/errors");
     await store.getState().loadSession();
     await store.getState().openSignIn();
-    await store.getState().completeSignIn();
     await store.getState().signOut();
     await store.getState().loadLiked();
     await store.getState().loadPlaylists();
@@ -202,6 +199,6 @@ describe("catalog store sessions", () => {
     await store.getState().importTracks(["1"]);
     await store.getState().resolveConflict("keep");
     expect(notifyError).toHaveBeenCalled();
-    expect(vi.mocked(notifyError).mock.calls.length).toBeGreaterThanOrEqual(10);
+    expect(vi.mocked(notifyError).mock.calls.length).toBeGreaterThanOrEqual(9);
   });
 });

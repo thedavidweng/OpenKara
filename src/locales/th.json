@@ -785,9 +785,7 @@
       "importTrack": "นำเข้าเพลงนี้",
       "importPlaylist": "นำเข้าเพลย์ลิสต์สตรีมมิง",
       "importRefusal": "ปฏิเสธการนำเข้า",
-      "connect": "เชื่อมต่อ NetEase",
-      "checkSignIn": "ตรวจสอบการเข้าสู่ระบบ",
-      "webSignInHint": "เข้าสู่ระบบบนหน้า NetEase อย่างเป็นทางการ แล้วกลับมาที่นี่เพื่อตรวจสอบการเข้าสู่ระบบ"
+      "connect": "เชื่อมต่อ NetEase"
     }
   },
   "youtube": {

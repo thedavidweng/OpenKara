@@ -29,7 +29,7 @@ interface CatalogState {
   getVideoItem: (id: string) => VideoQueueItem | undefined;
   loadSession: () => Promise<void>;
   openSignIn: () => Promise<void>;
-  completeSignIn: () => Promise<void>;
+  acceptSignIn: (session: StreamingSessionSnapshot) => void;
   signOut: () => Promise<void>;
   loadLiked: () => Promise<void>;
   loadPlaylists: () => Promise<void>;
@@ -104,21 +104,14 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
         reportError(error);
       }
     },
-    completeSignIn: async () => {
-      try {
-        const session =
-          await backend.catalog.completeStreamingSignIn("netease");
-        set({
-          session,
-          liked: [],
-          playlists: [],
-          playlistDetail: null,
-          searchResults: [],
-        });
-      } catch (error) {
-        reportError(error);
-      }
-    },
+    acceptSignIn: (session) =>
+      set({
+        session,
+        liked: [],
+        playlists: [],
+        playlistDetail: null,
+        searchResults: [],
+      }),
 
     signOut: async () => {
       try {

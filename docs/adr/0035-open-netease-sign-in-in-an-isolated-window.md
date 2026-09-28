@@ -14,10 +14,10 @@ accepted full song as a local library file.
 ## Decision
 
 OpenKara opens the official NetEase page in a dedicated incognito Tauri window
-with no application capability. Rust reads only `MUSIC_U` and `__csrf` when the
-user selects Check sign-in. It verifies the account before saving those cookies
-and the display name in the existing system credential store. The window closes
-on success or sign-out.
+with no application capability. Rust watches only `MUSIC_U` and `__csrf` while
+the window is open. It verifies the account before saving those cookies and the
+display name in the existing system credential store. The window closes after
+verification succeeds or fails, and sign-out closes any open login window.
 
 NetEase account, playlist, search, detail, and URL operations use a pinned
 release of `@neteasecloudmusicapienhanced/api` in one app-owned Node process.
