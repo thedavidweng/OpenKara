@@ -1256,12 +1256,16 @@ describe("library-setup", () => {
   });
 
   test("deleteLibrary invokes delete_library", async () => {
-    mockInvoke.mockResolvedValueOnce(registrySnapshot);
+    const deleteResult = {
+      registry: registrySnapshot,
+      remote_repository_deleted: null,
+    };
+    mockInvoke.mockResolvedValueOnce(deleteResult);
     const returned = await librarySetup.deleteLibrary("lib-1");
     expect(mockInvoke).toHaveBeenCalledWith("delete_library", {
       libraryId: "lib-1",
     });
-    expect(returned).toBe(registrySnapshot);
+    expect(returned).toBe(deleteResult);
   });
 });
 

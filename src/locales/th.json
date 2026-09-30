@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "ที่เก็บระยะไกลที่มีอยู่",
       "connectRemoteGoogleDrive": "เชื่อมต่อกับ Google Drive",
       "connectRemoteDropbox": "เชื่อมต่อกับ Dropbox",
-      "connectRemoteWebdav": "เชื่อมต่อ"
+      "connectRemoteWebdav": "เชื่อมต่อ",
+      "deleteRemoteRepositoryWarning": "การดำเนินการนี้จะลบที่เก็บระยะไกลจาก {{provider}} ที่ {{path}} อย่างถาวร หากต้องการลบเฉพาะการเชื่อมต่อของอุปกรณ์นี้ ให้เลือก {{disconnectAction}}",
+      "remoteDeletionSkipped": "ลบการเชื่อมต่อในเครื่องแล้ว แต่ที่เก็บระยะไกลยังอยู่ใน {{provider}} เพราะ OpenKara ไม่สามารถเข้าถึงได้ด้วยการเชื่อมต่อหรือข้อมูลรับรองปัจจุบัน หากจำเป็น ให้เชื่อมต่ออีกครั้งแล้วลบจาก {{provider}}"
     },
     "stemMode": {
       "label": "โหมดการแยกสเต็ม",

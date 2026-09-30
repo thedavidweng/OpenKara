@@ -403,7 +403,9 @@
       "existingRemoteLibraries": "Istniejące zdalne repozytoria",
       "connectRemoteGoogleDrive": "Połącz z Google Drive",
       "connectRemoteDropbox": "Połącz z Dropbox",
-      "connectRemoteWebdav": "Połącz"
+      "connectRemoteWebdav": "Połącz",
+      "deleteRemoteRepositoryWarning": "Ta operacja trwale usunie zdalne repozytorium z {{provider}} w lokalizacji {{path}}. Aby usunąć tylko połączenie tego urządzenia, wybierz {{disconnectAction}}.",
+      "remoteDeletionSkipped": "Połączenie lokalne zostało usunięte, ale zdalne repozytorium pozostaje w {{provider}}, ponieważ OpenKara nie mogła uzyskać do niego dostępu przy użyciu bieżącego połączenia lub poświadczeń. W razie potrzeby połącz się ponownie i usuń je z {{provider}}."
     },
     "stemMode": {
       "label": "Tryb rozdzielania ścieżek",

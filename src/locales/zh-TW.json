@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "現有的遠端儲存庫",
       "connectRemoteGoogleDrive": "連接到 Google Drive",
       "connectRemoteDropbox": "連接到 Dropbox",
-      "connectRemoteWebdav": "連接"
+      "connectRemoteWebdav": "連接",
+      "deleteRemoteRepositoryWarning": "這會從 {{provider}} 的 {{path}} 永久刪除遠端儲存庫。若只想移除此裝置的連線，請選擇「{{disconnectAction}}」。",
+      "remoteDeletionSkipped": "本機連線記錄已移除，但因目前的連線或憑證無法存取遠端，{{provider}} 中的遠端儲存庫仍保留。如有需要，請重新連線後從 {{provider}} 刪除它。"
     },
     "stemMode": {
       "label": "音軌分離模式",

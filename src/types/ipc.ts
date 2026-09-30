@@ -263,6 +263,11 @@ export interface LibraryRegistrySnapshot {
   libraries: RegisteredLibrary[];
 }
 
+export interface DeleteLibraryResult {
+  registry: LibraryRegistrySnapshot;
+  remote_repository_deleted: boolean | null;
+}
+
 export interface Song {
   hash: string;
   file_path: string | null;

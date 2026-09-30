@@ -19,6 +19,12 @@ pub struct LibraryRegistrySnapshot {
     pub libraries: Vec<RegisteredLibrary>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DeleteLibraryResult {
+    pub registry: LibraryRegistrySnapshot,
+    pub remote_repository_deleted: Option<bool>,
+}
+
 fn canonical_path_string(path: &Path) -> String {
     fs::canonicalize(path)
         .unwrap_or_else(|_| path.to_path_buf())
@@ -71,7 +77,10 @@ fn update_library_display_name(
     })
 }
 
-fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> CommandResult<()> {
+fn delete_library_data(
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+) -> CommandResult<Option<bool>> {
     match library {
         RegisteredLibrary::Local { root_path, .. } => {
             if Path::new(root_path).exists() {
@@ -81,9 +90,20 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
                     )))
                 })?;
             }
+            Ok(None)
         }
         RegisteredLibrary::Remote { .. } => {
-            crate::remote::delete_remote_library_root(app_data_dir, library)?;
+            let remote_repository_deleted =
+                match crate::remote::delete_remote_library_root(app_data_dir, library) {
+                    Ok(deleted) => deleted,
+                    Err(_) => {
+                        tracing::warn!(
+                            library_id = library.id(),
+                            "remote repository deletion failed; continuing with local cleanup"
+                        );
+                        false
+                    }
+                };
             if let Some(working_copy_root) = library.working_copy_root() {
                 if working_copy_root.exists() {
                     fs::remove_dir_all(&working_copy_root).map_err(|error| {
@@ -94,10 +114,9 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
                     })?;
                 }
             }
+            Ok(Some(remote_repository_deleted))
         }
     }
-
-    Ok(())
 }
 
 fn upsert_library(config: &mut AppConfig, library: RegisteredLibrary) {
@@ -371,7 +390,7 @@ pub fn rename_library(
 pub fn delete_library(
     state: State<'_, AppState>,
     library_id: String,
-) -> CommandResult<LibraryRegistrySnapshot> {
+) -> CommandResult<DeleteLibraryResult> {
     let app_data_dir = state.shell.app_data_dir.clone();
     let config = load_app_config(&app_data_dir)?;
     let Some(library) = config
@@ -385,13 +404,18 @@ pub fn delete_library(
         ))));
     };
 
-    delete_library_data(&app_data_dir, &library)?;
-    remove_library(state, library_id)
+    let remote_repository_deleted = delete_library_data(&app_data_dir, &library)?;
+    let registry = remove_library(state, library_id)?;
+    Ok(DeleteLibraryResult {
+        registry,
+        remote_repository_deleted,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::RemoteLibraryProvider;
 
     #[test]
     fn register_local_library_sets_active_library() {
@@ -412,5 +436,37 @@ mod tests {
         upsert_library(&mut config, second.clone());
         assert_eq!(config.libraries.len(), 1);
         assert_eq!(config.libraries[0].display_name(), second.display_name());
+    }
+
+    #[test]
+    fn remote_delete_failure_still_removes_local_working_copy() {
+        let app_data_dir = tempfile::tempdir().expect("temporary app data directory");
+        let working_copy = app_data_dir.path().join("working-copy");
+        fs::create_dir_all(&working_copy).expect("working copy directory");
+        let cached_db_path = working_copy.join("openkara.db");
+        fs::write(&cached_db_path, []).expect("cached database");
+        let library = RegisteredLibrary::remote(
+            "remote-library".to_owned(),
+            "Remote Library".to_owned(),
+            RemoteLibraryProvider::Dropbox,
+            "account".to_owned(),
+            "/openkara".to_owned(),
+            "/openkara".to_owned(),
+            None,
+            Some(cached_db_path.display().to_string()),
+            None,
+        );
+        crate::system_credentials::store_json(
+            app_data_dir.path(),
+            library.id(),
+            &serde_json::json!({ "invalid": true }),
+        )
+        .expect("invalid provider credential fixture");
+
+        let remote_repository_deleted =
+            delete_library_data(app_data_dir.path(), &library).expect("local cleanup succeeds");
+
+        assert_eq!(remote_repository_deleted, Some(false));
+        assert!(!working_copy.exists());
     }
 }

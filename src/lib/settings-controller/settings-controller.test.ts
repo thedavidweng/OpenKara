@@ -81,6 +81,16 @@ function registryOf(
   return { active_library_id: activeLibraryId, libraries };
 }
 
+function deleteResult(
+  registry: LibraryRegistrySnapshot,
+  remoteRepositoryDeleted: boolean | null = null,
+) {
+  return {
+    registry,
+    remote_repository_deleted: remoteRepositoryDeleted,
+  };
+}
+
 function modelStatus(patch: Partial<ModelStatusSnapshot> = {}) {
   return {
     variant: "htdemucs",
@@ -596,7 +606,7 @@ describe("library commands", () => {
   });
 
   test("Delete Repository names the provider-hosted content it removes", async () => {
-    const deleteLibrary = vi.fn(async () => registryOf(null, []));
+    const deleteLibrary = vi.fn(async () => deleteResult(registryOf(null, [])));
     const harness = createSettingsHarness({
       overrides: {
         librarySetup: {
@@ -622,8 +632,37 @@ describe("library commands", () => {
     expect(deleteLibrary).toHaveBeenCalledWith(driveRepository.id);
   });
 
+  test("Delete Repository reports when it only removes the local connection", async () => {
+    const deleteLibrary = vi.fn(async () =>
+      deleteResult(registryOf(null, []), false),
+    );
+    const harness = createSettingsHarness({
+      overrides: {
+        librarySetup: {
+          deleteLibrary,
+          getLibraryRegistry: async () =>
+            registryOf(driveRepository.id, [driveRepository]),
+        },
+      },
+    });
+    await harness.controller.initialize();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    await harness.controller.library.delete(driveRepository.id, "Drive");
+
+    expect(harness.librarySession.calls).toEqual([
+      { entry: "adoptRegistry", registry: registryOf(null, []) },
+    ]);
+    expect(alert).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "The local connection was removed, but the remote repository remains",
+      ),
+    );
+  });
+
   test("a mismatched name stops the delete before the native prompt", async () => {
-    const deleteLibrary = vi.fn(async () => registryOf(null, []));
+    const deleteLibrary = vi.fn(async () => deleteResult(registryOf(null, [])));
     const harness = createSettingsHarness({
       overrides: {
         librarySetup: {

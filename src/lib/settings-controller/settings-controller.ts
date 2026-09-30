@@ -43,8 +43,10 @@ export function describeLibrary(library: RegisteredLibrary): string {
   }`;
 }
 
-function remoteProviderDisplayName(library: RegisteredLibrary): string {
-  if (library.kind !== "remote") {
+function remoteProviderDisplayName(
+  library: RegisteredLibrary | undefined,
+): string {
+  if (library?.kind !== "remote") {
     return i18next.t("settings.library.thisLibrary");
   }
 
@@ -833,9 +835,16 @@ export function createSettingsController({
             return;
           }
 
-          await librarySession.adoptRegistry(
-            await backend.librarySetup.deleteLibrary(libraryId),
-          );
+          const result = await backend.librarySetup.deleteLibrary(libraryId);
+          await librarySession.adoptRegistry(result.registry);
+          if (result.remote_repository_deleted === false) {
+            window.alert(
+              i18next.t("settings.library.remoteDeletionSkipped", {
+                provider: remoteProviderDisplayName(library),
+                disconnectAction: i18next.t("settings.library.removeLibrary"),
+              }),
+            );
+          }
         }),
 
       checkIntegrity: async () => {

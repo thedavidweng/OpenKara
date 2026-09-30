@@ -7,6 +7,7 @@ import type {
   CoverArtBytes,
   CoverArtSize,
   DebugInfo,
+  DeleteLibraryResult,
   DeleteSongsResult,
   DeleteStemsResult,
   DowngradeResult,
@@ -175,7 +176,7 @@ export interface LibrarySetupBackend {
     libraryId: string,
     displayName: string,
   ): Promise<LibraryRegistrySnapshot>;
-  deleteLibrary(libraryId: string): Promise<LibraryRegistrySnapshot>;
+  deleteLibrary(libraryId: string): Promise<DeleteLibraryResult>;
 }
 
 export interface RemoteRepositoryBackend {

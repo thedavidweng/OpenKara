@@ -403,7 +403,9 @@
       "existingRemoteLibraries": "Существующие удалённые репозитории",
       "connectRemoteGoogleDrive": "Подключиться к Google Drive",
       "connectRemoteDropbox": "Подключиться к Dropbox",
-      "connectRemoteWebdav": "Подключиться"
+      "connectRemoteWebdav": "Подключиться",
+      "deleteRemoteRepositoryWarning": "Это навсегда удалит удалённый репозиторий из {{provider}} по адресу {{path}}. Чтобы удалить только подключение этого устройства, выберите {{disconnectAction}}.",
+      "remoteDeletionSkipped": "Локальное подключение удалено, но удалённый репозиторий остался в {{provider}}, так как OpenKara не смогла получить к нему доступ с текущим подключением или учётными данными. При необходимости подключитесь снова и удалите его из {{provider}}."
     },
     "stemMode": {
       "label": "Режим разделения на дорожки",

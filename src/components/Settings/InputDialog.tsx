@@ -6,6 +6,7 @@ import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 
 interface InputDialogProps {
   title: string;
+  description?: string;
   placeholder?: string;
   initialValue?: string;
   confirmLabel?: string;
@@ -22,6 +23,7 @@ interface InputDialogProps {
 
 export function InputDialog({
   title,
+  description,
   placeholder,
   initialValue = "",
   confirmLabel,
@@ -49,6 +51,13 @@ export function InputDialog({
   const showMismatchHint =
     !matchesExpected && trimmedValue.length > 0 && mismatchHint !== undefined;
   const mismatchHintId = "input-dialog-mismatch-hint";
+  const descriptionId = "input-dialog-description";
+  const inputDescribedBy = [
+    description ? descriptionId : undefined,
+    showMismatchHint ? mismatchHintId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const dialogContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -73,6 +82,15 @@ export function InputDialog({
           {title}
         </h3>
 
+        {description && (
+          <p
+            id={descriptionId}
+            className="mt-2 break-words text-[13px] text-[var(--color-text-dim)]"
+          >
+            {description}
+          </p>
+        )}
+
         <input
           ref={inputRef}
           type="text"
@@ -87,7 +105,7 @@ export function InputDialog({
           placeholder={placeholder}
           aria-label={title}
           aria-invalid={showMismatchHint || undefined}
-          aria-describedby={showMismatchHint ? mismatchHintId : undefined}
+          aria-describedby={inputDescribedBy || undefined}
           className="mt-3 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder-[var(--color-text-dimmer)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/30"
         />
 

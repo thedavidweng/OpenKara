@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "Repositori Jarak Jauh yang Ada",
       "connectRemoteGoogleDrive": "Hubungkan ke Google Drive",
       "connectRemoteDropbox": "Hubungkan ke Dropbox",
-      "connectRemoteWebdav": "Hubungkan"
+      "connectRemoteWebdav": "Hubungkan",
+      "deleteRemoteRepositoryWarning": "Tindakan ini menghapus repositori jarak jauh secara permanen dari {{provider}} di {{path}}. Untuk hanya menghapus sambungan perangkat ini, pilih {{disconnectAction}}.",
+      "remoteDeletionSkipped": "Sambungan lokal telah dihapus, tetapi repositori jarak jauh tetap ada di {{provider}} karena OpenKara tidak dapat mengaksesnya dengan sambungan atau kredensial saat ini. Jika perlu, sambungkan kembali lalu hapus dari {{provider}}."
     },
     "stemMode": {
       "label": "Mode Pemisahan Stem",

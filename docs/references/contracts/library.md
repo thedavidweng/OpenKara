@@ -835,15 +835,16 @@ Pass `null` for `language` to clear the language tag.
 }
 ```
 
-**Output:** `LibraryRegistrySnapshot`
+**Output:** `DeleteLibraryResult`
 
 **Semantics**
 
 1. Permanently deletes the library data, then calls `remove_library`
 2. For local libraries, deletes the entire library directory from disk
-3. For remote libraries, deletes the provider-hosted content and the local working copy
-4. The UI must present this as a permanent destructive action
-5. If the library ID is not found, the command returns `CommandError`
+3. For remote libraries with stored credentials, deletes the provider-hosted content and the local working copy
+4. If remote deletion cannot run because credentials, connectivity, or provider access are unavailable, removes only the local working copy and registration; `remote_repository_deleted` is `false`
+5. The UI must present this as a permanent destructive action
+6. If the library ID is not found, the command returns `CommandError`
 
 ### Shared type: `Song`
 
@@ -936,6 +937,13 @@ Pass `null` for `language` to clear the language tag.
 | ------------------- | ------------------------ | ---------------------------- |
 | `active_library_id` | `Option<String>`         | Active library ID, or `null` |
 | `libraries`         | `Vec<RegisteredLibrary>` | All registered libraries     |
+
+### Shared type: `DeleteLibraryResult`
+
+| Field                       | Type                      | Notes                                                                                                          |
+| --------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `registry`                  | `LibraryRegistrySnapshot` | Registry after removing the library                                                                            |
+| `remote_repository_deleted` | `Option<bool>`            | `true` when remote content was deleted, `false` when remote access was unavailable, `null` for local libraries |
 
 ### Shared type: `RegisteredLibrary`
 

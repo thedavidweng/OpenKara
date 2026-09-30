@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "기존 원격 저장소",
       "connectRemoteGoogleDrive": "Google Drive에 연결",
       "connectRemoteDropbox": "Dropbox에 연결",
-      "connectRemoteWebdav": "연결"
+      "connectRemoteWebdav": "연결",
+      "deleteRemoteRepositoryWarning": "{{provider}}의 {{path}}에서 원격 저장소를 영구 삭제합니다. 이 기기의 연결만 제거하려면 {{disconnectAction}}을(를) 선택하세요.",
+      "remoteDeletionSkipped": "로컬 연결은 제거되었지만 현재 연결 또는 자격 증명으로 접근할 수 없어 원격 저장소는 {{provider}}에 남아 있습니다. 필요하면 다시 연결한 후 {{provider}}에서 삭제하세요."
     },
     "stemMode": {
       "label": "스템 분리 모드",

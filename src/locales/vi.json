@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "Kho lưu trữ từ xa hiện có",
       "connectRemoteGoogleDrive": "Kết nối tới Google Drive",
       "connectRemoteDropbox": "Kết nối tới Dropbox",
-      "connectRemoteWebdav": "Kết nối"
+      "connectRemoteWebdav": "Kết nối",
+      "deleteRemoteRepositoryWarning": "Thao tác này xóa vĩnh viễn kho lưu trữ từ xa khỏi {{provider}} tại {{path}}. Để chỉ xóa kết nối của thiết bị này, hãy chọn {{disconnectAction}}.",
+      "remoteDeletionSkipped": "Kết nối cục bộ đã được xóa, nhưng kho lưu trữ từ xa vẫn còn trong {{provider}} vì OpenKara không thể truy cập bằng kết nối hoặc thông tin xác thực hiện tại. Nếu cần, hãy kết nối lại rồi xóa nó khỏi {{provider}}."
     },
     "stemMode": {
       "label": "Chế độ tách bè",

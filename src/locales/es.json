@@ -402,7 +402,9 @@
       "existingRemoteLibraries": "Repositorios remotos existentes",
       "connectRemoteGoogleDrive": "Conectar con Google Drive",
       "connectRemoteDropbox": "Conectar con Dropbox",
-      "connectRemoteWebdav": "Conectar"
+      "connectRemoteWebdav": "Conectar",
+      "deleteRemoteRepositoryWarning": "Esto elimina permanentemente el repositorio remoto de {{provider}} en {{path}}. Para quitar solo la conexión de este dispositivo, selecciona {{disconnectAction}}.",
+      "remoteDeletionSkipped": "Se quitó la conexión local, pero el repositorio remoto permanece en {{provider}} porque OpenKara no pudo acceder con la conexión o las credenciales actuales. Vuelve a conectarlo y elimínalo de {{provider}} si es necesario."
     },
     "stemMode": {
       "label": "Modo de separación de pistas",

@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "Mevcut Uzak Depolar",
       "connectRemoteGoogleDrive": "Google Drive'a Bağlan",
       "connectRemoteDropbox": "Dropbox'a Bağlan",
-      "connectRemoteWebdav": "Bağlan"
+      "connectRemoteWebdav": "Bağlan",
+      "deleteRemoteRepositoryWarning": "Bu işlem {{provider}} içindeki {{path}} konumundan uzak depoyu kalıcı olarak siler. Yalnızca bu cihazın bağlantısını kaldırmak için {{disconnectAction}} seçeneğini seçin.",
+      "remoteDeletionSkipped": "Yerel bağlantı kaldırıldı, ancak OpenKara mevcut bağlantı veya kimlik bilgileriyle erişemediği için uzak depo {{provider}} içinde kalıyor. Gerekirse yeniden bağlanın ve {{provider}} içinden silin."
     },
     "stemMode": {
       "label": "Katman Ayırma Modu",

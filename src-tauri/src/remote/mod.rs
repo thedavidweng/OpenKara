@@ -132,7 +132,37 @@ pub use types::{
 pub(crate) fn delete_remote_library_root(
     app_data_dir: &std::path::Path,
     library: &RegisteredLibrary,
-) -> CommandResult<()> {
+) -> CommandResult<bool> {
+    if types::load_remote_credential::<serde_json::Value>(app_data_dir, library.id())?.is_none() {
+        return Ok(false);
+    }
+
     let provider = provider::create_repository_storage(app_data_dir, library)?;
-    provider.delete_path("")
+    provider.delete_path("")?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{RegisteredLibrary, RemoteLibraryProvider};
+
+    #[test]
+    fn deleting_remote_root_without_credentials_skips_remote_request() {
+        let app_data_dir = tempfile::tempdir().expect("temporary app data directory");
+        let library = RegisteredLibrary::remote(
+            "remote-library".to_owned(),
+            "Remote Library".to_owned(),
+            RemoteLibraryProvider::Dropbox,
+            "account".to_owned(),
+            "/openkara".to_owned(),
+            "/openkara".to_owned(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(!delete_remote_library_root(app_data_dir.path(), &library)
+            .expect("missing credentials should not block deletion"));
+    }
 }

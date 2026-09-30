@@ -39,6 +39,19 @@ const localLibrary: RegisteredLibrary = {
   root_path: "/karaoke",
 };
 
+const remoteLibrary: RegisteredLibrary = {
+  id: "remote:dropbox",
+  kind: "remote",
+  display_name: "Remote Library",
+  provider: "dropbox",
+  account_id: "account",
+  remote_root_locator: "/openkara",
+  remote_path_display: "/openkara",
+  connection_config: null,
+  cached_db_path: null,
+  remote_revision: null,
+};
+
 const cleanReport: IntegrityReport = {
   checked_local_songs: 0,
   skipped_remote_songs: 0,
@@ -176,8 +189,11 @@ describe("SettingsLibrarySection interactions", () => {
 
   test("the exact delete confirmation name enables confirm and deletes", async () => {
     const deleteLibrary = vi.fn(async () => ({
-      active_library_id: null,
-      libraries: [],
+      registry: {
+        active_library_id: null,
+        libraries: [],
+      },
+      remote_repository_deleted: null,
     }));
     const harness = await activeLocalLibraryHarness({
       overrides: { librarySetup: { deleteLibrary } },
@@ -199,6 +215,25 @@ describe("SettingsLibrarySection interactions", () => {
     });
 
     expect(deleteLibrary).toHaveBeenCalledWith(localLibrary.id);
+  });
+
+  test("explains that remote deletion differs from disconnecting", async () => {
+    const harness = await createInitializedSettingsHarness({
+      libraries: [remoteLibrary],
+      activeLibraryId: remoteLibrary.id,
+    });
+    renderSection(harness.controller);
+
+    const input = await openDeleteConfirmDialog();
+
+    expect(
+      document.getElementById("input-dialog-description")?.textContent,
+    ).toBe(
+      "settings.library.deleteRemoteRepositoryWarning{provider=setup.remoteProvider.dropbox.title,path=setup.remoteProvider.dropbox.title · /openkara,disconnectAction=settings.library.removeLibrary}",
+    );
+    expect(input.getAttribute("aria-describedby")).toContain(
+      "input-dialog-description",
+    );
   });
 
   test("disables the integrity check while a cleanup is in progress", async () => {

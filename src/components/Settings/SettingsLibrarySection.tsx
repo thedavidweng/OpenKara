@@ -40,6 +40,7 @@ type RenameDialogState = {
 type DeleteConfirmDialogState = {
   libraryId: string;
   displayName: string;
+  library: RegisteredLibrary;
 };
 
 function webDavRootPathFromLocator(
@@ -76,6 +77,18 @@ function describeLibrarySubtitle(t: TFunction, library: RegisteredLibrary) {
   return `${providerLabel} · ${
     library.remote_path_display || library.remote_root_locator
   }`;
+}
+
+function remoteProviderDisplayName(t: TFunction, library: RegisteredLibrary) {
+  if (library.kind !== "remote") {
+    return t("settings.library.thisLibrary");
+  }
+
+  return library.provider === "google_drive"
+    ? t("setup.remoteProvider.googleDrive.title")
+    : library.provider === "dropbox"
+      ? t("setup.remoteProvider.dropbox.title")
+      : t("setup.remoteProvider.webdav.title");
 }
 
 export function SettingsLibrarySection() {
@@ -263,6 +276,7 @@ export function SettingsLibrarySection() {
                       setDeleteConfirmDialog({
                         libraryId: library.id,
                         displayName: library.display_name,
+                        library,
                       })
                     }
                     disabled={isInitializing}
@@ -341,6 +355,18 @@ export function SettingsLibrarySection() {
           title={t("settings.library.typeToConfirmDelete", {
             displayName: deleteConfirmDialog.displayName,
           })}
+          description={
+            deleteConfirmDialog.library.kind === "remote"
+              ? t("settings.library.deleteRemoteRepositoryWarning", {
+                  provider: remoteProviderDisplayName(
+                    t,
+                    deleteConfirmDialog.library,
+                  ),
+                  path: describeLibrarySubtitle(t, deleteConfirmDialog.library),
+                  disconnectAction: t("settings.library.removeLibrary"),
+                })
+              : undefined
+          }
           confirmLabel={t("common.confirm")}
           expectedValue={deleteConfirmDialog.displayName}
           mismatchHint={t("settings.library.confirmNameMismatch", {

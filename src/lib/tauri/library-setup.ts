@@ -1,5 +1,9 @@
 import type { LibrarySetupBackend } from "@/lib/backend/types";
-import type { LibraryRegistrySnapshot, RegisteredLibrary } from "@/types/ipc";
+import type {
+  DeleteLibraryResult,
+  LibraryRegistrySnapshot,
+  RegisteredLibrary,
+} from "@/types/ipc";
 import type { InvokeCommand } from "./invoke";
 
 export function createLibrarySetupCommands(
@@ -31,6 +35,6 @@ export function createLibrarySetupCommands(
       }),
 
     deleteLibrary: (libraryId) =>
-      invoke<LibraryRegistrySnapshot>("delete_library", { libraryId }),
+      invoke<DeleteLibraryResult>("delete_library", { libraryId }),
   };
 }

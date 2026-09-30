@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "既存のリモートリポジトリ",
       "connectRemoteGoogleDrive": "Google ドライブに接続",
       "connectRemoteDropbox": "Dropbox に接続",
-      "connectRemoteWebdav": "接続"
+      "connectRemoteWebdav": "接続",
+      "deleteRemoteRepositoryWarning": "{{provider}} の {{path}} にあるリモートリポジトリを完全に削除します。このデバイスの接続だけを削除するには、{{disconnectAction}} を選択してください。",
+      "remoteDeletionSkipped": "ローカル接続は削除されましたが、現在の接続または認証情報ではアクセスできなかったため、リモートリポジトリは {{provider}} に残っています。必要に応じて再接続し、{{provider}} から削除してください。"
     },
     "stemMode": {
       "label": "ステム分離モード",

@@ -401,7 +401,9 @@
       "existingRemoteLibraries": "Bestaande externe opslag",
       "connectRemoteGoogleDrive": "Verbinden met Google Drive",
       "connectRemoteDropbox": "Verbinden met Dropbox",
-      "connectRemoteWebdav": "Verbinden"
+      "connectRemoteWebdav": "Verbinden",
+      "deleteRemoteRepositoryWarning": "Hiermee wordt de externe opslag bij {{provider}} op {{path}} permanent verwijderd. Kies {{disconnectAction}} om alleen de verbinding van dit apparaat te verwijderen.",
+      "remoteDeletionSkipped": "De lokale verbinding is verwijderd, maar de externe opslag blijft bij {{provider}} staan omdat OpenKara deze niet kon bereiken met de huidige verbinding of inloggegevens. Maak indien nodig opnieuw verbinding en verwijder deze bij {{provider}}."
     },
     "stemMode": {
       "label": "Sporenscheidingsmodus",

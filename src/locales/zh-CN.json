@@ -359,6 +359,8 @@
       "removeLibrary": "断开资料库",
       "deleteLibrary": "删除资料库",
       "typeToConfirmDelete": "输入“{{displayName}}”以确认永久删除。",
+      "deleteRemoteRepositoryWarning": "这会从 {{provider}} 的 {{path}} 永久删除远程资料库。若只想移除此设备的连接，请选择“{{disconnectAction}}”。",
+      "remoteDeletionSkipped": "本机连接记录已移除，但由于当前连接或凭据无法访问远端，{{provider}} 中的远程资料库仍然保留。如有需要，请重新连接后从 {{provider}} 删除它。",
       "confirmNameMismatch": "输入的名称与“{{displayName}}”不一致。",
       "confirmDisconnectRemote": "断开“{{displayName}}”与 {{appName}} 的连接？远程资料库内容将保留在 {{provider}} 中。",
       "confirmDisconnectLocal": "断开此曲库与 {{appName}} 的连接？曲库数据会保留在磁盘上。",
