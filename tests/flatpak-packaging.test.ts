@@ -338,6 +338,18 @@ describe("Flatpak packaging", () => {
     );
   });
 
+  test("bootstraps WinGet with authenticated GitHub downloads instead of anonymous repair", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain(
+      "gh release download --repo microsoft/winget-cli",
+    );
+    expect(packagingWorkflow).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(packagingWorkflow).not.toContain("Repair-WinGetPackageManager");
+  });
+
   test("includes generated dependency manifests instead of copying them as files", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",

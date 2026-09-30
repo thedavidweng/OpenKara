@@ -160,49 +160,55 @@ jobs:
 
       - name: Install latest WinGet client
         shell: pwsh
+        env:
+          # Authenticated downloads of microsoft/winget-cli assets. Bootstrapping
+          # through the WinGet PowerShell repair cmdlets uses the anonymous
+          # GitHub API and regularly exhausts the shared-runner 60 req/h IP quota.
+          GH_TOKEN: ${{ github.token }}
         run: |
           $progressPreference = 'silentlyContinue'
-          # GitHub Windows images normally include a preinstalled winget client.
           # OpenKara manifests use schema v1.12.0; the client must be >= 1.12.0.
-          # Only call Repair-WinGetPackageManager when missing or older than 1.12.0,
-          # avoiding unnecessary GitHub API calls (subject to shared runner IP limits).
-          $wingetReady = $false
-          try {
-            $raw = (& winget --version | Out-String).Trim()
-            if ($LASTEXITCODE -eq 0 -and $raw -match '(\d+\.\d+(?:\.\d+)?)' -and [version]$Matches[1] -ge [version]'1.12.0') {
-              $wingetReady = $true
+          $minVersion = [version]'1.12.0'
+
+          function Get-WingetVersion {
+            try {
+              $raw = (& winget --version | Out-String).Trim()
+              if ($LASTEXITCODE -eq 0 -and $raw -match '(\d+\.\d+(?:\.\d+)?)') {
+                return [version]$Matches[1]
+              }
+            } catch {
+              Write-Warning "winget --version failed: $_"
             }
-          } catch {
-            Write-Warning "The preinstalled WinGet client is unavailable or unsupported: $_"
+            return $null
           }
 
-          if (-not $wingetReady) {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-            Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope CurrentUser | Out-Null
-            Import-Module Microsoft.WinGet.Client
-
-            # Repair-WinGetPackageManager may hit the anonymous GitHub API
-            # (60 req/h per IP). Keep recovery bounded at three attempts.
-            for ($attempt = 1; $attempt -le 3 -and -not $wingetReady; $attempt++) {
-              try {
-                Repair-WinGetPackageManager -Force -Latest
-                $raw = (& winget --version | Out-String).Trim()
-                if ($LASTEXITCODE -eq 0 -and $raw -match '(\d+\.\d+(?:\.\d+)?)' -and [version]$Matches[1] -ge [version]'1.12.0') {
-                  $wingetReady = $true
-                }
-              } catch {
-                Write-Warning "Repair-WinGetPackageManager attempt ${attempt} failed: $_"
+          $current = Get-WingetVersion
+          if ($null -ne $current -and $current -ge $minVersion) {
+            Write-Host "Using preinstalled WinGet $current"
+          } else {
+            Write-Host "Preinstalled WinGet is missing or below $minVersion (found: $(if ($null -eq $current) { 'none' } else { $current })). Bootstrapping via authenticated GitHub download."
+            $dir = Join-Path $env:RUNNER_TEMP 'winget-bootstrap'
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            Push-Location $dir
+            try {
+              gh release download --repo microsoft/winget-cli --clobber `
+                --pattern 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle' `
+                --pattern 'DesktopAppInstaller_Dependencies.zip'
+              Expand-Archive .\DesktopAppInstaller_Dependencies.zip -DestinationPath .\deps -Force
+              $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+              Get-ChildItem ".\deps\$arch" -Filter '*.appx' -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "Installing dependency $($_.Name)"
+                Add-AppxPackage -Path $_.FullName -ErrorAction SilentlyContinue
               }
-              if (-not $wingetReady -and $attempt -lt 3) {
-                Start-Sleep -Seconds 15
-              }
+              Add-AppxPackage -Path .\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
+            } finally {
+              Pop-Location
             }
+            $current = Get-WingetVersion
           }
 
-          # Keep this as a hard gate: a failed repair must not silently green
-          # the validation job.
-          if (-not $wingetReady) {
-            throw "A WinGet client >= 1.12.0 is required to validate manifests, but none could be configured."
+          if ($null -eq $current -or $current -lt $minVersion) {
+            throw "A WinGet client >= $minVersion is required to validate manifests, but none could be configured (found: $(if ($null -eq $current) { 'none' } else { $current }))."
           }
           winget --version
 
