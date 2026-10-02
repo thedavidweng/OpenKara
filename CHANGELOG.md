@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.15.1](https://github.com/thedavidweng/OpenKara/compare/v0.15.0...v0.15.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **lyrics:** keep brackets inside LRC metadata tag values ([#466](https://github.com/thedavidweng/OpenKara/issues/466)) ([388252b](https://github.com/thedavidweng/OpenKara/commit/388252b105cba7b8e45a6ff758c2b375cbc59e6c))
+
 ## [0.15.0](https://github.com/thedavidweng/OpenKara/compare/v0.14.0...v0.15.0) (2026-09-21)
 
 
