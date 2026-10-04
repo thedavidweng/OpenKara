@@ -97,6 +97,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         StemMode::default(),
         "htdemucs",
         ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
         &std::sync::atomic::AtomicBool::new(false),
         |_| {},
     )
