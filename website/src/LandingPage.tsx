@@ -175,6 +175,8 @@ const BUILT_WITH_TOOLS = [
   },
 ] as const;
 
+const currentYear = currentYear;
+
 export function LandingPage() {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("openkara-site-language");
@@ -419,7 +421,7 @@ export function LandingPage() {
           <a href={documentHref(language, "terms")}>{copy.footerTerms}</a>
         </nav>
         <div className="footer-meta">
-          <span>© {new Date().getFullYear()} OpenKara</span>
+          <span>© {currentYear} OpenKara</span>
         </div>
       </footer>
     </div>
