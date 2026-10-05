@@ -366,4 +366,9 @@ Contributions are welcome! Please open an issue before starting major changes so
 
 ## License
 
-[Apache License 2.0](./LICENSE) — Copyright (c) 2025 David Weng
+[GNU AGPL v3.0 only](./LICENSE) — Copyright (c) 2025 David Weng
+
+See [LICENSING.md](LICENSING.md) for historical and third-party licenses.
+External contributions require [CLA version 1.0](CLA.md), signed by replying
+to the bot in your PR. Contributors retain copyright and permit commercial
+and proprietary licensing of accepted contributions.

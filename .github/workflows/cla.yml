@@ -1,0 +1,103 @@
+name: CLA
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: cla-signatures
+  cancel-in-progress: false
+
+jobs:
+  cla:
+    name: CLA Assistant
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+        github.event.comment.user.type == 'User' &&
+        (github.event.comment.body == 'recheck' ||
+          github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mark the PR commit pending
+        id: pr
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: context.issue.number,
+            });
+            core.setOutput('head', pr.head.sha);
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: pr.head.sha, context: 'CLA', state: 'pending',
+              description: 'Checking contributor agreement signatures',
+            });
+            if (pr.commits > 100) {
+              throw new Error('CLA Assistant supports at most 100 commits per PR. Split this PR.');
+            }
+            if (pr.user.type === 'User' && pr.user.id !== 95214375) {
+              const commits = await github.paginate(github.rest.pulls.listCommits, {
+                owner, repo, pull_number: context.issue.number, per_page: 100,
+              });
+              if (!commits.some(commit => commit.author?.id === pr.user.id)) {
+                throw new Error('The PR opener must be a linked commit author for this CLA check.');
+              }
+            }
+
+      - name: Record and check signatures
+        id: agreement
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: https://github.com/thedavidweng/OpenKara/blob/cc7a3e1b7e24d9bbe10c2fc9f6b39ff84328d2f1/CLA.md
+          path-to-signatures: signatures/version1/cla.json
+          branch: cla-signatures
+          allowlist: thedavidweng,dependabot[bot],github-actions[bot]
+          custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
+          custom-allsigned-prcomment: CLA acceptance received. The CLA check will confirm that signatures were saved.
+          lock-pullrequest-aftermerge: false
+
+      - name: Publish the CLA result on the checked commit
+        if: always() && steps.pr.outputs.head != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CHECKED_HEAD: ${{ steps.pr.outputs.head }}
+          AGREEMENT_RESULT: ${{ steps.agreement.outcome }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: context.issue.number,
+            });
+            const passed = process.env.AGREEMENT_RESULT === 'success' &&
+              pr.head.sha === process.env.CHECKED_HEAD;
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: process.env.CHECKED_HEAD, context: 'CLA',
+              state: passed ? 'success' : 'failure',
+              description: passed ? 'Contributor agreements verified' : 'Contributor agreements not verified',
+              target_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+            });
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const prompt = comments.find(comment => comment.user?.id === 41898282 &&
+              comment.body?.includes('CLA Assistant Lite bot'));
+            if (prompt) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: prompt.id,
+                body: passed
+                  ? 'All contributors have signed the CLA. Signatures have been recorded. ✍️ ✅\n\n<sub>CLA Assistant Lite bot</sub>'
+                  : `CLA signatures could not be verified for the checked commit. See the [CLA check](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}).\n\n<sub>CLA Assistant Lite bot</sub>`,
+              });
+            }

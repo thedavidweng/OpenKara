@@ -1,0 +1,13 @@
+OpenKara
+Copyright David Weng and contributors.
+
+Application code at pre-migration revision f461b2a377f0f6e7ee6a89b2be2a63954425ad9b
+was made available under Apache-2.0, except for separately licensed
+components and material. The original project license is preserved in
+LICENSES/Apache-2.0.txt. That authorization and applicable notices remain
+in effect for those portions; the combined project is now distributed
+under AGPL-3.0-only. Third-party material retains its own license.
+
+The LRC metadata parser includes a contribution by Chris Joanis originally
+submitted under Apache-2.0 in commit 388252b105cba7b8e45a6ff758c2b375cbc59e6c.
+That original contribution retains its Apache-2.0 authorization.

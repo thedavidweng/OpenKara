@@ -23,6 +23,10 @@ allow = [
     "CDLA-Permissive-2.0",
 ]
 
+[[licenses.exceptions]]
+name = "openkara"
+allow = ["AGPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
