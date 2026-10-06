@@ -330,25 +330,28 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Audit dependencies
-        run: pnpm audit --audit-level=high
+      # Read-only. db-schema drift stays below: it rewrites a generated
+      # file and then diffs it, so it cannot share the worktree.
+      - parallel:
+          - name: Audit dependencies
+            run: pnpm audit --audit-level=high
 
-      - name: Verify formatting
-        run: node --run format
+          - name: Verify formatting
+            run: node --run format
 
-      - name: Lint frontend
-        run: node --run lint
+          - name: Lint frontend
+            run: node --run lint
 
-      - name: Check i18n keys
-        run: node --run check:i18n
+          - name: Check i18n keys
+            run: node --run check:i18n
+
+          - name: knip (unused exports / dependencies)
+            run: pnpm knip --no-progress
 
       - name: Check db-schema drift
         run: |
           pnpm generate:db-schema
           git diff --exit-code docs/references/generated/db-schema.md
-
-      - name: knip (unused exports / dependencies)
-        run: pnpm knip --no-progress
 
   # ── App frontend ─────────────────────────────────────────────────────
   # App typecheck, production build, and unit tests with coverage.
