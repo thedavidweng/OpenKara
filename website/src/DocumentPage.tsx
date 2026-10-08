@@ -126,8 +126,8 @@ function renderInline(value: string): ReactNode[] {
         const normalized = normalizeInternalHref(link[2]);
         const external = /^https?:\/\//.test(normalized);
         // Internal root-relative hrefs must be prefixed with the Vite base
-        // (/OpenKara/ in production) so document body links like
-        // [Privacy Policy](/privacy) stay under the GitHub Pages project path.
+        // (`/` in production) so document body links like
+        // [Privacy Policy](/privacy) stay on this host.
         const href = external ? normalized : withBase(normalized);
         return (
           <a
