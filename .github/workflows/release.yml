@@ -794,33 +794,37 @@ jobs:
           node-version: 24
           package-manager-cache: false # release workflow: disable cache to prevent poisoning
 
-      - name: Render WinGet manifests
-        env:
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-        run: |
-          node scripts/render-winget-manifests.mjs \
-            --version "${RELEASE_VERSION}" \
-            --output "${GITHUB_WORKSPACE}/dist/winget"
+      # Distinct output directories and artifact names, so the two renders
+      # and the two uploads do not share files.
+      - parallel:
+          - name: Render WinGet manifests
+            env:
+              RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+            run: |
+              node scripts/render-winget-manifests.mjs \
+                --version "${RELEASE_VERSION}" \
+                --output "${GITHUB_WORKSPACE}/dist/winget"
 
-      - name: Render Flatpak manifests
-        env:
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-        run: |
-          node scripts/render-flatpak-manifest.mjs \
-            --version "${RELEASE_VERSION}" \
-            --output "${GITHUB_WORKSPACE}/dist/flatpak"
+          - name: Render Flatpak manifests
+            env:
+              RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+            run: |
+              node scripts/render-flatpak-manifest.mjs \
+                --version "${RELEASE_VERSION}" \
+                --output "${GITHUB_WORKSPACE}/dist/flatpak"
 
-      - name: Upload WinGet manifest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: winget-manifests
-          path: dist/winget
+      - parallel:
+          - name: Upload WinGet manifest artifact
+            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            with:
+              name: winget-manifests
+              path: dist/winget
 
-      - name: Upload Flatpak manifest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: flatpak-manifests
-          path: dist/flatpak
+          - name: Upload Flatpak manifest artifact
+            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            with:
+              name: flatpak-manifests
+              path: dist/flatpak
 
   submit-winget-pr:
     name: Submit WinGet PR
