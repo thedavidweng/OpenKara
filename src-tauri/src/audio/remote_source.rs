@@ -488,7 +488,7 @@ impl DownloadSemaphore {
 
     pub fn try_acquire(&self) -> bool {
         self.active
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
+            .try_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
                 if current >= self.max_concurrent {
                     None
                 } else {
@@ -501,7 +501,7 @@ impl DownloadSemaphore {
     pub fn release(&self) {
         let _ = self
             .active
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |current| {
+            .try_update(Ordering::Release, Ordering::Relaxed, |current| {
                 current.checked_sub(1)
             });
     }
