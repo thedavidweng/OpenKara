@@ -108,7 +108,8 @@
       "title": "Atualizar todas as músicas para 4 faixas",
       "message": "Isso vai separar novamente todas as músicas usando o modo de 4 faixas. O uso de espaço em disco para as faixas vai aproximadamente dobrar.",
       "confirm": "Atualizar tudo"
-    }
+    },
+    "netease": "NetEase Cloud Music"
   },
   "toolbar": {
     "import": "Importar",
@@ -190,7 +191,18 @@
     },
     "modelPreparing": "Preparando o modelo de separação…",
     "cancelSeparation": "Cancelar separação",
-    "usingCachedSeparation": "Usando separação em cache"
+    "usingCachedSeparation": "Usando separação em cache",
+    "revealSongFile": "Mostrar arquivo da música",
+    "revealStems": "Abrir pasta de stems",
+    "decision": {
+      "title": "Decisão da biblioteca",
+      "importConflict": "Esta faixa já está na biblioteca com um arquivo diferente. Mantenha a música da biblioteca ou substitua.",
+      "keep": "Manter música da biblioteca",
+      "replace": "Substituir música da biblioteca",
+      "applyToRemaining": "Aplicar aos conflitos restantes",
+      "librarySong": "Música da biblioteca",
+      "incoming": "Arquivo de entrada"
+    }
   },
   "player": {
     "previous": "Anterior",
@@ -677,6 +689,14 @@
     "lyricsBlurInactive": {
       "enable": "Desfocar letras que não estão tocando",
       "description": "Suaviza linhas passadas e futuras. Deixe desligado para ler com antecedência."
+    },
+    "onlineSources": {
+      "label": "Fontes online",
+      "description": "Ative uma origem de música ou vídeo. As duas ficam desligadas até você escolhê-las.",
+      "youtube": "YouTube",
+      "youtubeDescription": "Cole um link público de vídeo ou playlist na fila. O OpenKara não baixa o áudio do YouTube.",
+      "netease": "NetEase Cloud Music",
+      "neteaseDescription": "Entre para navegar e importar músicas que você pode reproduzir. O OpenKara passa a gerenciar os arquivos importados."
     }
   },
   "bootstrap": {
@@ -738,7 +758,11 @@
     "separation_failed": "Falha na separação",
     "internal": "Erro interno",
     "remote_repository_unavailable": "Repositório remoto indisponível",
-    "somethingWentWrong": "Algo deu errado"
+    "somethingWentWrong": "Algo deu errado",
+    "online_source_disabled": "Esta fonte online está desligada.",
+    "streaming_auth_failed": "Falha ao entrar",
+    "streaming_session_expired": "A sessão da fonte de streaming expirou. Entre novamente.",
+    "video_source_unavailable": "Este vídeo não pode ser reproduzido como convidado."
   },
   "updater": {
     "available": "A versão {{version}} está disponível",
@@ -748,5 +772,45 @@
     "restartToApply": "Atualização pronta — reinicie para aplicar",
     "restart": "Reiniciar",
     "failed": "Falha na atualização — baixe a versão mais recente manualmente"
+  },
+  "catalog": {
+    "netease": {
+      "title": "NetEase Cloud Music",
+      "signIn": "Entrar",
+      "signOut": "Sair",
+      "qr": "Entrar com QR",
+      "phone": "Telefone e senha",
+      "email": "E-mail e senha",
+      "password": "Senha",
+      "phoneNumber": "Número de telefone",
+      "countryCode": "Código do país",
+      "signedInAs": "Conectado como {{name}}",
+      "sessionExpired": "A sessão expirou. Entre novamente.",
+      "liked": "Faixas curtidas",
+      "playlists": "Playlists de streaming",
+      "search": "Pesquisar",
+      "searchPlaceholder": "Pesquisar no NetEase",
+      "importTrack": "Importar faixa",
+      "importPlaylist": "Importar playlist de streaming",
+      "importRefusal": "Importação recusada",
+      "waitingForScan": "Escaneie este QR no app NetEase.",
+      "scanned": "Escaneado. Confirme no telefone.",
+      "qrExpired": "Este QR expirou. Obtenha um novo.",
+      "loginWithPhone": "Entrar com telefone",
+      "loginWithEmail": "Entrar com e-mail",
+      "loginWithQr": "Entrar com QR",
+      "passwordNotice": "O OpenKara envia a senha uma vez e não a armazena.",
+      "qrHint": "Abra o app NetEase Cloud Music e escaneie este código.",
+      "refreshQr": "Obter um novo QR"
+    }
+  },
+  "youtube": {
+    "pasteLink": "Colar um link do YouTube",
+    "pastePlaceholder": "https://www.youtube.com/watch?v=…",
+    "addToQueue": "Adicionar à fila",
+    "invalidUrl": "Isso não é um link público de reprodução ou playlist do YouTube.",
+    "ageRestricted": "Este vídeo tem restrição de idade.",
+    "private": "Este vídeo é privado.",
+    "unlisted": "Este vídeo não está listado."
   }
 }

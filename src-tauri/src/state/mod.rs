@@ -1,10 +1,12 @@
 pub mod airplay;
+pub mod catalog;
 pub mod playback;
 pub mod remote;
 pub mod separation;
 pub mod shell;
 
 pub use airplay::AirPlayState;
+pub use catalog::CatalogState;
 pub use playback::{
     PlaybackState, SingleflightCompletionGuard, WaveformKey, WaveformResult, WaveformSingleflight,
     SANITIZED_WAVEFORM_ERROR,
@@ -26,6 +28,7 @@ pub struct AppState {
     pub airplay: AirPlayState,
     pub separation: SeparationState,
     pub remote: RemoteState,
+    pub catalog: CatalogState,
     pub shell: AppShell,
     /// Shared HTTP clients for lyrics providers. Cloning a reqwest::Client
     /// shares its internal connection pool, so cloning AppState per command
@@ -43,6 +46,7 @@ impl AppState {
             airplay: AirPlayState::test_fixture(),
             separation: SeparationState::test_fixture(),
             remote: RemoteState::test_fixture(),
+            catalog: CatalogState::test_fixture(),
             shell: AppShell::test_fixture(),
             amll_client: AmllClient::new_default(),
             lrclib_client: LrcLibClient::new_default(),

@@ -10,6 +10,7 @@ export interface ContextMenuItem {
   children?: ContextMenuItem[];
   onClick?: () => void;
   indicator?: "checked" | "mixed" | null;
+  disabled?: boolean;
 }
 
 interface ContextMenuProps {
@@ -245,7 +246,12 @@ export function ContextMenu({
                   : undefined
               }
               tabIndex={index === focusedIndex ? 0 : -1}
+              disabled={item.disabled}
+              aria-disabled={item.disabled ? "true" : undefined}
               onClick={() => {
+                if (item.disabled) {
+                  return;
+                }
                 if (!item.children) {
                   item.onClick?.();
                   onClose();

@@ -127,6 +127,14 @@ impl AppConfig {
         self.eq_enabled.unwrap_or(false)
     }
 
+    pub fn effective_youtube_source_enabled(&self) -> bool {
+        self.youtube_source_enabled.unwrap_or(false)
+    }
+
+    pub fn effective_netease_source_enabled(&self) -> bool {
+        self.netease_source_enabled.unwrap_or(false)
+    }
+
     pub fn effective_eq_gains_db(&self) -> [f32; 5] {
         let mut gains = self.eq_gains_db.unwrap_or([0.0; 5]);
         for g in gains.iter_mut() {
@@ -194,6 +202,8 @@ mod tests {
             library_sort_mode: None,
             theme_preference: None,
             update_policy: None,
+            youtube_source_enabled: None,
+            netease_source_enabled: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -231,6 +241,8 @@ mod tests {
             library_sort_mode: None,
             theme_preference: None,
             update_policy: None,
+            youtube_source_enabled: None,
+            netease_source_enabled: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -238,6 +250,16 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));
+    }
+
+    #[test]
+    fn online_sources_default_to_off_and_omit_from_json() {
+        let config = AppConfig::default();
+        assert!(!config.effective_youtube_source_enabled());
+        assert!(!config.effective_netease_source_enabled());
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("youtube_source_enabled"));
+        assert!(!json.contains("netease_source_enabled"));
     }
 
     #[test]
@@ -254,6 +276,8 @@ mod tests {
             library_sort_mode: None,
             theme_preference: None,
             update_policy: None,
+            youtube_source_enabled: None,
+            netease_source_enabled: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -271,6 +295,8 @@ mod tests {
                 library_sort_mode: Some(mode),
                 theme_preference: None,
                 update_policy: None,
+                youtube_source_enabled: None,
+                netease_source_enabled: None,
                 ..AppConfig::default()
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -343,6 +369,8 @@ mod tests {
             library_sort_mode: Some(LibrarySortMode::ArtistAsc),
             theme_preference: None,
             update_policy: None,
+            youtube_source_enabled: None,
+            netease_source_enabled: None,
             ..AppConfig::default()
         };
         save_config(tmp.path(), &config).unwrap();

@@ -27,7 +27,7 @@ use super::{
         random_token, remote_auth_session_exists, update_remote_auth_session,
     },
     types::{
-        current_unix_time_ms, load_remote_credential, slugify_display_name,
+        bundled_resource_file, current_unix_time_ms, load_remote_credential, slugify_display_name,
         store_remote_credential, stored_dropbox_app_key, BundledDropboxOAuthClientFile,
         DropboxCreateFolderResponse, DropboxMetadata, DropboxProviderCredentials, DropboxSecret,
         DropboxSessionData, DropboxTokenResponse, RemoteAuthSession, RemoteAuthState,
@@ -82,7 +82,7 @@ pub(crate) fn dropbox_provider_credentials_from_env(
 fn load_dropbox_provider_credentials_from_resource_dir(
     resource_dir: &Path,
 ) -> CommandResult<Option<DropboxProviderCredentials>> {
-    let path = resource_dir.join(DROPBOX_OAUTH_CLIENT_RESOURCE_PATH);
+    let path = bundled_resource_file(resource_dir, DROPBOX_OAUTH_CLIENT_RESOURCE_PATH);
     if !path.exists() {
         return Ok(None);
     }

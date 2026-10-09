@@ -35,6 +35,8 @@ export interface AppSettingsSnapshot {
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
   updatePolicy: UpdatePolicy;
+  youtubeSourceEnabled: boolean;
+  neteaseSourceEnabled: boolean;
 }
 
 interface SettingsState {
@@ -58,6 +60,8 @@ interface SettingsState {
   librarySortMode: AppSettingsSnapshot["librarySortMode"];
   themePreference: AppSettingsSnapshot["themePreference"];
   updatePolicy: AppSettingsSnapshot["updatePolicy"];
+  youtubeSourceEnabled: AppSettingsSnapshot["youtubeSourceEnabled"];
+  neteaseSourceEnabled: AppSettingsSnapshot["neteaseSourceEnabled"];
   themePreferenceMutationGeneration: number;
   updatePolicyMutationGeneration: number;
   toggle: () => void;
@@ -102,6 +106,8 @@ export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   librarySortMode: "recently_imported",
   themePreference: "dark",
   updatePolicy: "notify",
+  youtubeSourceEnabled: false,
+  neteaseSourceEnabled: false,
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -125,6 +131,8 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     librarySortMode: settings.library_sort_mode,
     themePreference: settings.theme_preference,
     updatePolicy: settings.update_policy ?? "notify",
+    youtubeSourceEnabled: settings.youtube_source_enabled,
+    neteaseSourceEnabled: settings.netease_source_enabled,
   };
 }
 
@@ -151,6 +159,8 @@ function selectAppSettingsSnapshot(
     librarySortMode: state.librarySortMode,
     themePreference: state.themePreference,
     updatePolicy: state.updatePolicy,
+    youtubeSourceEnabled: state.youtubeSourceEnabled,
+    neteaseSourceEnabled: state.neteaseSourceEnabled,
   };
 }
 
@@ -190,6 +200,8 @@ function applySettingsSyncSnapshot(
     librarySortMode: snapshot.librarySortMode,
     themePreference: snapshot.themePreference,
     updatePolicy: snapshot.updatePolicy,
+    youtubeSourceEnabled: snapshot.youtubeSourceEnabled,
+    neteaseSourceEnabled: snapshot.neteaseSourceEnabled,
   });
 }
 

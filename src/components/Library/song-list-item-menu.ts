@@ -68,6 +68,11 @@ interface BuildSongListContextMenuItemsArgs {
   onCreatePlaylistAndAdd: () => void;
   activePlaylistId: string | null;
   onRemoveFromActivePlaylist: () => void;
+  isVideoSourceItem?: boolean;
+  revealSongFileAvailable?: boolean;
+  revealStemsAvailable?: boolean;
+  onRevealSongFile?: () => void;
+  onRevealStems?: () => void;
 }
 
 export function buildSongListContextMenuItems({
@@ -102,6 +107,11 @@ export function buildSongListContextMenuItems({
   onCreatePlaylistAndAdd,
   activePlaylistId,
   onRemoveFromActivePlaylist,
+  isVideoSourceItem = false,
+  revealSongFileAvailable = false,
+  revealStemsAvailable = false,
+  onRevealSongFile,
+  onRevealStems,
 }: BuildSongListContextMenuItemsArgs): ContextMenuItem[] {
   const addToPlaylistChildren: ContextMenuItem[] = [
     ...playlists.map((p) => {
@@ -265,6 +275,20 @@ export function buildSongListContextMenuItems({
       label: t("library.properties"),
       onClick: openProperties,
     },
+    ...(!isVideoSourceItem
+      ? [
+          {
+            label: t("library.revealSongFile"),
+            onClick: () => onRevealSongFile?.(),
+            disabled: !revealSongFileAvailable,
+          },
+          {
+            label: t("library.revealStems"),
+            onClick: () => onRevealStems?.(),
+            disabled: !revealStemsAvailable,
+          },
+        ]
+      : []),
     ...(removeFromPlaylistItem ? [removeFromPlaylistItem] : []),
     {
       label: t("library.delete"),
