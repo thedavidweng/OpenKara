@@ -6,6 +6,12 @@ const nodeSourcesPath = "packaging/flatpak/generated/node-sources.0.json";
 const PNPM_TARBALL_DEST = "flatpak-node/pnpm-tarballs";
 const PNPM_MANIFEST_FILENAME = "pnpm-manifest.json";
 
+function projectLockfileDocument(lockfile) {
+  const body = lockfile.startsWith("---\n") ? lockfile.slice(4) : lockfile;
+  const documents = body.split(/\n---\n/);
+  return documents[documents.length - 1] ?? lockfile;
+}
+
 function splitPackageKey(key) {
   const unquoted = key.replace(/^'|'$/g, "");
   const versionSeparator = unquoted.lastIndexOf("@");
@@ -38,7 +44,7 @@ function parsePnpmLockfilePackages(lockfile) {
   let inPackagesSection = false;
   let currentKey = null;
 
-  for (const line of lockfile.split(/\r?\n/)) {
+  for (const line of projectLockfileDocument(lockfile).split(/\r?\n/)) {
     if (line === "packages:") {
       inPackagesSection = true;
       continue;
@@ -105,9 +111,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     dest: "flatpak-node",
     contents: JSON.stringify(
       {
-        // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
-        // Populate must use the same version directory or offline install fails
-        // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
+        // pnpm 12 still stores packages under store-dir/v11 (see `pnpm store
+        // path`). fetch/install must use that version directory or offline
+        // install fails with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
         store_version: "v11",
         packages: Object.fromEntries(
           lockfilePackages.map((pkg) => [
@@ -137,6 +143,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     manifestSource,
     ...preservedSources.slice(1),
   ];
+  const rewriteScript = readFileSync(
+    "scripts/flatpak/rewrite_lockfile_local_tarballs.mjs",
+    "utf8",
+  );
+  for (const source of nextSources) {
+    if (source["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs") {
+      source.contents = rewriteScript;
+    }
+  }
 
   writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);
 }
