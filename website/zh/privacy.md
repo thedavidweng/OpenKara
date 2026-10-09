@@ -17,7 +17,7 @@ OpenKara 项目没有为核心桌面工作流运营托管后端。大多数处�
 
 ## 项目运营方
 
-OpenKara 以开源软件项目和网站的形式维护。除非在某个分发渠道里明确声明了独立的商业实体或服务协议，否则本政策里提到的"OpenKara"、"我们"或"项目"都指 OpenKara 项目的维护者以及公共网站 [thedavidweng.github.io/OpenKara/](https://thedavidweng.github.io/OpenKara/)。
+OpenKara 以开源软件项目和网站的形式维护。除非在某个分发渠道里明确声明了独立的商业实体或服务协议，否则本政策里提到的"OpenKara"、"我们"或"项目"都指 OpenKara 项目的维护者以及公共网站 [openkara.blahaj.uk/](https://openkara.blahaj.uk/)。
 
 ## 网站数据
 

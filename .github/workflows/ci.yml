@@ -330,25 +330,28 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Audit dependencies
-        run: pnpm audit --audit-level=high
+      # Read-only. db-schema drift stays below: it rewrites a generated
+      # file and then diffs it, so it cannot share the worktree.
+      - parallel:
+          - name: Audit dependencies
+            run: pnpm audit --audit-level=high
 
-      - name: Verify formatting
-        run: node --run format
+          - name: Verify formatting
+            run: node --run format
 
-      - name: Lint frontend
-        run: node --run lint
+          - name: Lint frontend
+            run: node --run lint
 
-      - name: Check i18n keys
-        run: node --run check:i18n
+          - name: Check i18n keys
+            run: node --run check:i18n
+
+          - name: knip (unused exports / dependencies)
+            run: pnpm knip --no-progress
 
       - name: Check db-schema drift
         run: |
           pnpm generate:db-schema
           git diff --exit-code docs/references/generated/db-schema.md
-
-      - name: knip (unused exports / dependencies)
-        run: pnpm knip --no-progress
 
   # ── App frontend ─────────────────────────────────────────────────────
   # App typecheck, production build, and unit tests with coverage.
@@ -529,10 +532,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: actionlint
-        uses: reviewdog/action-actionlint@2085657ab2c7f48c58edcc767fba576f63bea76b # v1.77.0
+      - name: Install jactionlint
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          actionlint_flags: ""
+          cache: false
+          mise_toml: |
+            [tools]
+            jactionlint = "1.8.2"
+
+      - name: Problem matcher
+        run: echo "::add-matcher::.github/jactionlint-matcher.json"
+
+      - name: jactionlint
+        run: |
+          jactionlint -version
+          jactionlint
+        env:
+          SHELLCHECK_OPTS: ""
 
       - name: zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4

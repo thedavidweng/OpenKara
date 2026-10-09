@@ -30,10 +30,10 @@ function slimPreviewCatalogPlugin(): Plugin {
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
-  // Serve from the GitHub Pages project subpath (`thedavidweng.github.io/OpenKara/`).
-  // No CNAME → no custom domain redirect. The xyz domain stays registered for
-  // Dropbox app configuration but no longer serves the site.
-  base: "/OpenKara/",
+  // Served at the domain root (openkara.blahaj.uk). GitHub redirects the
+  // project URL here. openkara.103279.xyz stays registered for Dropbox and
+  // does not serve this site.
+  base: "/",
   plugins: [react(), tailwindcss(), slimPreviewCatalogPlugin()],
   resolve: {
     alias: [
