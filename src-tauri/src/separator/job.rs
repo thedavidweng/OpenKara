@@ -50,6 +50,7 @@ pub fn separate_song_into_cache(
     stem_mode: StemMode,
     model_variant: &str,
     ep_preference: ExecutionProviderPreference,
+    session_options: model::SessionOptions,
     cancel: &AtomicBool,
     mut report_progress: impl FnMut(u8),
 ) -> Result<SeparationArtifacts> {
@@ -102,9 +103,14 @@ pub fn separate_song_into_cache(
                     model_path.display()
                 )
             })?;
-        let cache_key = model::session_cache_key(model_path, ep_preference, &runtime_metadata);
+        let cache_key = model::session_cache_key(
+            model_path,
+            ep_preference,
+            session_options,
+            &runtime_metadata,
+        );
         model_cache.get_or_load_with_key(cache_key, || {
-            model::load_from_path(model_path, ep_preference).with_context(|| {
+            model::load_from_path(model_path, ep_preference, session_options).with_context(|| {
                 format!("failed to load Demucs model from {}", model_path.display())
             })
         })?

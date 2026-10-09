@@ -74,3 +74,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0028 — Do not depend on AGPL AMLL player packages](./0028-do-not-depend-on-agpl-amll-player-packages.md)
 - [0029 — Centered lyrics use an in-house focus stage](./0029-centered-lyrics-use-in-house-focus-stage.md)
 - [0030 — Focus stage owns line slots, word roman, and emphasis](./0030-focus-stage-owns-slots-word-roman-and-emphasis.md)
+- [0031 — DirectML graph fusion opt-out](./0031-directml-graph-fusion-opt-out.md)
