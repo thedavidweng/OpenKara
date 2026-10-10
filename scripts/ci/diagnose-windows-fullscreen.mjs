@@ -1,17 +1,4 @@
-import { chromium } from "@playwright/test";
-
 const endpoint = "http://127.0.0.1:9222";
-let ready = false;
-for (let attempt = 0; attempt < 120; attempt++) {
-  try {
-    const response = await fetch(`${endpoint}/json/version`);
-    ready = response.ok;
-  } catch {}
-  if (ready) break;
-  await new Promise((resolve) => setTimeout(resolve, 500));
-}
-if (!ready) throw new Error("WebView2 diagnostic endpoint did not start");
-const browser = await chromium.connectOverCDP(endpoint);
 function observe() {
   window.addEventListener(
     "keydown",
@@ -33,8 +20,10 @@ function observe() {
     },
     true,
   );
-  const internals = window.__TAURI_INTERNALS__;
-  if (internals) {
+  const timer = setInterval(() => {
+    const internals = window.__TAURI_INTERNALS__;
+    if (!internals) return;
+    clearInterval(timer);
     const invoke = internals.invoke.bind(internals);
     internals.invoke = async (command, args, options) => {
       const record = /plugin:(window|webview)\|/.test(command);
@@ -48,25 +37,63 @@ function observe() {
         throw error;
       }
     };
+  }, 50);
+}
+
+const observed = new Set();
+const sockets = [];
+let nextId = 1;
+for (let attempt = 0; attempt < 1200; attempt++) {
+  let targets;
+  try {
+    const response = await fetch(`${endpoint}/json/list`);
+    if (!response.ok) throw new Error(`CDP target list: ${response.status}`);
+    targets = await response.json();
+  } catch (error) {
+    if (observed.size) {
+      console.log("BROWSER_CLOSED", String(error));
+      break;
+    }
+    if (attempt === 119)
+      throw new Error("WebView2 diagnostic endpoint did not start");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    continue;
   }
+  for (const target of targets.filter((target) => target.type === "page")) {
+    if (observed.has(target.id)) continue;
+    observed.add(target.id);
+    console.log("PAGE", target.id, target.url);
+    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    sockets.push(socket);
+    socket.addEventListener("message", ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.method === "Runtime.consoleAPICalled") {
+        console.log(
+          target.id,
+          message.params.type,
+          ...message.params.args.map((arg) => arg.value ?? arg.description),
+        );
+      }
+      if (message.method === "Runtime.exceptionThrown" || message.error) {
+        console.error(target.id, JSON.stringify(message));
+      }
+    });
+    await new Promise((resolve, reject) => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", reject, { once: true });
+    });
+    const send = (method, params = {}) =>
+      socket.send(JSON.stringify({ id: nextId++, method, params }));
+    send("Runtime.enable");
+    const source = `(${observe.toString()})();`;
+    send("Page.addScriptToEvaluateOnNewDocument", { source });
+    send("Runtime.evaluate", { expression: source });
+    send("Runtime.evaluate", {
+      expression:
+        "JSON.stringify({focused:document.hasFocus(),active:document.activeElement?.outerHTML?.slice(0,250)})",
+      returnByValue: true,
+    });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
-async function attach(page) {
-  console.log("PAGE", page.url());
-  page.on("console", (message) => console.log(message.type(), message.text()));
-  page.on("pageerror", (error) => console.error("PAGE_ERROR", error.message));
-  await page.addInitScript(observe);
-  await page.waitForFunction(() => Boolean(window.__TAURI_INTERNALS__));
-  await page.evaluate(observe);
-  console.log(
-    "FOCUS",
-    await page.evaluate(() => ({
-      focused: document.hasFocus(),
-      active: document.activeElement?.outerHTML?.slice(0, 250),
-    })),
-  );
-}
-for (const context of browser.contexts()) {
-  context.on("page", (page) => attach(page).catch(console.error));
-  for (const page of context.pages()) await attach(page);
-}
-await new Promise((resolve) => browser.on("disconnected", resolve));
+for (const socket of sockets) socket.close();
