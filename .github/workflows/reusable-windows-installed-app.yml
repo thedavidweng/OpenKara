@@ -621,13 +621,6 @@ jobs:
           if ($null -eq $probe) { throw "UIA probe executable was not found." }
 
           $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
-          $diagnosticDir = Join-Path $env:RUNNER_TEMP "desktop-e2e"
-          New-Item -ItemType Directory -Force -Path $diagnosticDir | Out-Null
-          $browserLog = Join-Path $diagnosticDir "webview-diagnostic.browser.log"
-          $browserPolicy = "HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
-          New-Item -Path $browserPolicy -Force | Out-Null
-          New-ItemProperty -Path $browserPolicy -Name "*" -Value "--remote-debugging-port=9222 --force-renderer-accessibility --enable-logging --v=1 --log-file=`"$browserLog`"" -PropertyType String -Force | Out-Null
-          $diagnostic = Start-Process -FilePath "node" -ArgumentList "scripts/ci/diagnose-windows-fullscreen.mjs" -PassThru -RedirectStandardOutput (Join-Path $diagnosticDir "webview-diagnostic.stdout.log") -RedirectStandardError (Join-Path $diagnosticDir "webview-diagnostic.stderr.log")
           # 60s per step is enough once Wait-For-UiReady has already proven the
           # WebView tree is live; keep headroom above the old 30s default.
           & scripts/ci/run-windows-desktop-e2e.ps1 `
@@ -756,7 +749,6 @@ jobs:
             ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
             ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
             ${{ runner.temp }}/desktop-e2e/uia-tree-*.json
-            ${{ runner.temp }}/desktop-e2e/webview-diagnostic.*.log
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 

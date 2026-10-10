@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { WindowOptions } from "@tauri-apps/api/window";
+import windowsConfig from "../../src-tauri/tauri.windows.conf.json";
 import {
   closeFullscreenPlayer,
   openFullscreenPlayer,
@@ -116,6 +118,20 @@ describe("closeFullscreenPlayer", () => {
 });
 
 describe("openFullscreenPlayer", () => {
+  test("shares the Windows main window's WebView2 scrollbar environment", async () => {
+    mockGetByLabel.mockResolvedValue(null);
+    mockAvailableMonitors.mockResolvedValue(monitors);
+
+    await openFullscreenPlayer();
+
+    const mainWindow: WindowOptions = windowsConfig.app.windows[0];
+    const fullscreenWindow: WindowOptions =
+      mockWebviewWindowConstructor.mock.calls[0][1];
+    expect(fullscreenWindow.scrollBarStyle ?? "default").toBe(
+      mainWindow.scrollBarStyle ?? "default",
+    );
+  });
+
   test("closes existing fullscreen-player window before creating a new one", async () => {
     mockGetByLabel.mockResolvedValue({ close: mockCloseByLabel });
     mockAvailableMonitors.mockResolvedValue(monitors);
