@@ -17,7 +17,7 @@ dotnet build -c Release
 
 The output is `bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.exe`.
 
-Check the native `INPUT` size and union offset before testing keyboard input:
+Check the native `INPUT` size, union offset, nonzero letter scan code, and extended-key flags before testing keyboard input:
 
 ```powershell
 OpenKara.AccessibilityProbe --verify-input-layout

@@ -15,6 +15,9 @@ class Program
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
+    [DllImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
@@ -31,6 +34,8 @@ class Program
 
     private const int INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint MAPVK_VK_TO_VSC_EX = 4;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
 
@@ -81,7 +86,16 @@ class Program
             {
                 throw new InvalidOperationException($"Invalid Win32 INPUT layout: size={Marshal.SizeOf<INPUT>()}, union offset={Marshal.OffsetOf<INPUT>(nameof(INPUT.U))}");
             }
-            Console.WriteLine($"Win32 INPUT layout passed: size={expectedSize}, union offset={expectedOffset}");
+            var letterDown = KeyDown(0x46).U.ki;
+            var letterUp = KeyUp(0x46).U.ki;
+            if (letterDown.wScan == 0 || letterDown.wScan != letterUp.wScan ||
+                letterUp.dwFlags != KEYEVENTF_KEYUP ||
+                KeyDown(0x25).U.ki.dwFlags != KEYEVENTF_EXTENDEDKEY ||
+                KeyUp(0x25).U.ki.dwFlags != (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+            {
+                throw new InvalidOperationException("Invalid Win32 keyboard scan-code mapping");
+            }
+            Console.WriteLine($"Win32 INPUT layout and keyboard mapping passed: size={expectedSize}, union offset={expectedOffset}, F scan={letterDown.wScan}");
             return 0;
         }
 
@@ -1007,37 +1021,33 @@ class Program
         return true;
     }
 
-    private static INPUT KeyDown(ushort vk) => new INPUT
+    private static INPUT KeyDown(ushort vk)
     {
-        type = INPUT_KEYBOARD,
-        U = new InputUnion
+        // WebView2 derives KeyboardEvent.code from the native scan code.
+        uint scanCode = MapVirtualKey(vk, MAPVK_VK_TO_VSC_EX);
+        return new INPUT
         {
-            ki = new KEYBDINPUT
+            type = INPUT_KEYBOARD,
+            U = new InputUnion
             {
-                wVk = vk,
-                wScan = 0,
-                dwFlags = 0,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero,
+                ki = new KEYBDINPUT
+                {
+                    wVk = vk,
+                    wScan = (ushort)(scanCode & 0xff),
+                    dwFlags = (scanCode & 0xff00) == 0xe000 ? KEYEVENTF_EXTENDEDKEY : 0,
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero,
+                },
             },
-        },
-    };
+        };
+    }
 
-    private static INPUT KeyUp(ushort vk) => new INPUT
+    private static INPUT KeyUp(ushort vk)
     {
-        type = INPUT_KEYBOARD,
-        U = new InputUnion
-        {
-            ki = new KEYBDINPUT
-            {
-                wVk = vk,
-                wScan = 0,
-                dwFlags = KEYEVENTF_KEYUP,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero,
-            },
-        },
-    };
+        var input = KeyDown(vk);
+        input.U.ki.dwFlags |= KEYEVENTF_KEYUP;
+        return input;
+    }
 
     private sealed class Node
     {
