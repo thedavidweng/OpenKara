@@ -12,8 +12,14 @@ namespace OpenKara.AccessibilityProbe;
 
 class Program
 {
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -27,12 +33,12 @@ class Program
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
 
     private const int INPUT_KEYBOARD = 1;
-    private const int INPUT_MOUSE = 0;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_SCANCODE = 0x0008;
+    private const uint MAPVK_VK_TO_VSC_EX = 4;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
-    private const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
-    private const uint MOUSEEVENTF_MOVE = 0x0001;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -44,7 +50,19 @@ class Program
     [StructLayout(LayoutKind.Explicit)]
     private struct InputUnion
     {
+        [FieldOffset(0)] public MOUSEINPUT mi;
         [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -60,10 +78,34 @@ class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "--verify-input-layout" }))
+        {
+            int expectedSize = IntPtr.Size == 8 ? 40 : 28;
+            int expectedOffset = IntPtr.Size == 8 ? 8 : 4;
+            if (Marshal.SizeOf<INPUT>() != expectedSize ||
+                Marshal.OffsetOf<INPUT>(nameof(INPUT.U)).ToInt32() != expectedOffset)
+            {
+                throw new InvalidOperationException($"Invalid Win32 INPUT layout: size={Marshal.SizeOf<INPUT>()}, union offset={Marshal.OffsetOf<INPUT>(nameof(INPUT.U))}");
+            }
+            var letterDown = KeyDown(0x46).U.ki;
+            var letterUp = KeyUp(0x46).U.ki;
+            if (letterDown.wScan == 0 || letterDown.wScan != letterUp.wScan ||
+                letterDown.dwFlags != KEYEVENTF_SCANCODE ||
+                letterUp.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP) ||
+                KeyDown(0x25).U.ki.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY) ||
+                KeyUp(0x25).U.ki.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+            {
+                throw new InvalidOperationException($"Invalid Win32 keyboard scan-code mapping: F down={letterDown.wScan}/{letterDown.dwFlags}, up={letterUp.wScan}/{letterUp.dwFlags}, Left down={KeyDown(0x25).U.ki.wScan}/{KeyDown(0x25).U.ki.dwFlags}, up={KeyUp(0x25).U.ki.wScan}/{KeyUp(0x25).U.ki.dwFlags}");
+            }
+            Console.WriteLine($"Win32 INPUT layout and keyboard mapping passed: size={expectedSize}, union offset={expectedOffset}, F scan={letterDown.wScan}");
+            return 0;
+        }
+
         int? processId = null;
         string? processName = null;
         string? outputPath = null;
         string? windowTitle = null;
+        int? windowHandle = null;
         string action = "snapshot";
         string? targetName = null;
         string? controlTypeFilter = null;
@@ -95,6 +137,15 @@ class Program
             else if (arg == "--window-title" && i + 1 < args.Length)
             {
                 windowTitle = args[++i];
+            }
+            else if (arg == "--window-handle" && i + 1 < args.Length)
+            {
+                if (!int.TryParse(args[++i], out int handle) || handle == 0)
+                {
+                    Console.Error.WriteLine("Invalid window handle.");
+                    return 1;
+                }
+                windowHandle = handle;
             }
             else if (arg == "--timeout" && i + 1 < args.Length)
             {
@@ -134,7 +185,7 @@ class Program
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
-                    "[--output <path>] [--timeout <ms>] [--window-title <title>] " +
+                    "[--output <path>] [--timeout <ms>] [--window-title <title>] [--window-handle <handle>] " +
                     "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] " +
                     "[--name <substring>] [--automation-id <id>] [--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
@@ -191,10 +242,10 @@ class Program
         }
 
         // System file pickers may live outside the app process. Allow title-only lookup.
-        var root = FindWindow(processId, timeoutMs, windowTitle);
+        var root = FindWindow(processId, timeoutMs, windowTitle, windowHandle);
         if (root is null)
         {
-            Console.Error.WriteLine("Top-level window not found.");
+            Console.Error.WriteLine($"Top-level window not found: pid={processId}, handle={windowHandle}, title='{windowTitle}', foreground={GetForegroundWindow()}, probe session={Process.GetCurrentProcess().SessionId}");
             return 1;
         }
 
@@ -260,6 +311,7 @@ class Program
                 }
                 else if (action == "press-key")
                 {
+                    Console.WriteLine($"press-key target: pid={root.Current.ProcessId}, handle={root.Current.NativeWindowHandle}, title='{root.Current.Name}', session={Process.GetProcessById(root.Current.ProcessId).SessionId}, foreground={GetForegroundWindow()}");
                     if (target is not null)
                     {
                         try
@@ -456,14 +508,14 @@ class Program
         }
     }
 
-    private static AutomationElement? FindWindow(int? processId, int timeoutMs, string? windowTitle = null)
+    private static AutomationElement? FindWindow(int? processId, int timeoutMs, string? windowTitle = null, int? windowHandle = null)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 0));
         do
         {
             try
             {
-                var window = FindWindowOnce(processId, windowTitle);
+                var window = FindWindowOnce(processId, windowTitle, windowHandle);
                 if (window is not null)
                 {
                     return window;
@@ -482,8 +534,13 @@ class Program
         return null;
     }
 
-    private static AutomationElement? FindWindowOnce(int? processId, string? windowTitle)
+    private static AutomationElement? FindWindowOnce(int? processId, string? windowTitle, int? windowHandle)
     {
+        if (windowHandle is int handle)
+        {
+            var window = AutomationElement.FromHandle(new IntPtr(handle));
+            return processId is null || window.Current.ProcessId == processId ? window : null;
+        }
         // Prefer exact process match when provided.
         if (processId is int pid && pid > 0)
         {
@@ -613,6 +670,8 @@ class Program
             ControlType = controlType,
             Name = name,
             AutomationId = automationId,
+            ProcessId = current.ProcessId,
+            NativeWindowHandle = current.NativeWindowHandle,
             IsEnabled = current.IsEnabled,
             IsFocusable = current.IsKeyboardFocusable,
             HasKeyboardFocus = current.HasKeyboardFocus,
@@ -915,6 +974,7 @@ class Program
                 "right" => (ushort)0x27,
                 "down" => (ushort)0x28,
                 "f" => (ushort)0x46,
+                "f4" => (ushort)0x73,
                 "m" => (ushort)0x4D,
                 "q" => (ushort)0x51,
                 "s" => (ushort)0x53,
@@ -952,50 +1012,52 @@ class Program
             inputs.Add(KeyUp(modifiers[i]));
         }
 
+        Console.WriteLine($"SendInput key='{keySpec}': scan={inputs[modifiers.Count].U.ki.wScan}, flags={inputs[modifiers.Count].U.ki.dwFlags}, foreground={GetForegroundWindow()}");
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         if (sent != inputs.Count)
         {
-            error = $"SendInput sent {sent}/{inputs.Count} events.";
+            int lastError = Marshal.GetLastWin32Error();
+            error = $"SendInput sent {sent}/{inputs.Count} events: Win32 error={lastError}, INPUT size={Marshal.SizeOf<INPUT>()}, foreground={GetForegroundWindow()}, probe pid={Environment.ProcessId}, session={Process.GetCurrentProcess().SessionId}.";
             return false;
         }
 
         return true;
     }
 
-    private static INPUT KeyDown(ushort vk) => new INPUT
+    private static INPUT KeyDown(ushort vk)
     {
-        type = INPUT_KEYBOARD,
-        U = new InputUnion
+        // WebView2 derives KeyboardEvent.code from the native scan code.
+        uint scanCode = MapVirtualKey(vk, MAPVK_VK_TO_VSC_EX);
+        return new INPUT
         {
-            ki = new KEYBDINPUT
+            type = INPUT_KEYBOARD,
+            U = new InputUnion
             {
-                wVk = vk,
-                wScan = 0,
-                dwFlags = 0,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero,
+                ki = new KEYBDINPUT
+                {
+                    wVk = 0,
+                    wScan = (ushort)(scanCode & 0xff),
+                    dwFlags = KEYEVENTF_SCANCODE |
+                        (vk is >= 0x25 and <= 0x28 or 0x5B || (scanCode & 0xff00) == 0xe000
+                            ? KEYEVENTF_EXTENDEDKEY : 0),
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero,
+                },
             },
-        },
-    };
+        };
+    }
 
-    private static INPUT KeyUp(ushort vk) => new INPUT
+    private static INPUT KeyUp(ushort vk)
     {
-        type = INPUT_KEYBOARD,
-        U = new InputUnion
-        {
-            ki = new KEYBDINPUT
-            {
-                wVk = vk,
-                wScan = 0,
-                dwFlags = KEYEVENTF_KEYUP,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero,
-            },
-        },
-    };
+        var input = KeyDown(vk);
+        input.U.ki.dwFlags |= KEYEVENTF_KEYUP;
+        return input;
+    }
 
     private sealed class Node
     {
+        public int ProcessId { get; set; }
+        public int NativeWindowHandle { get; set; }
         public string Path { get; set; } = string.Empty;
         public string ControlType { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;

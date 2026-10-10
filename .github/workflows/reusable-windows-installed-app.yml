@@ -218,6 +218,8 @@ jobs:
           if ($probe.ExitCode -ne 0) {
             throw "UIA probe build failed with exit code $($probe.ExitCode)"
           }
+          & "tools/windows-accessibility/OpenKara.AccessibilityProbe/bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.exe" --verify-input-layout
+          if ($LASTEXITCODE -ne 0) { throw "UIA probe Win32 INPUT layout regression check failed" }
 
       - name: Upload UIA probe
         if: always()
