@@ -35,6 +35,7 @@ class Program
     private const int INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_SCANCODE = 0x0008;
     private const uint MAPVK_VK_TO_VSC_EX = 4;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -89,9 +90,10 @@ class Program
             var letterDown = KeyDown(0x46).U.ki;
             var letterUp = KeyUp(0x46).U.ki;
             if (letterDown.wScan == 0 || letterDown.wScan != letterUp.wScan ||
-                letterUp.dwFlags != KEYEVENTF_KEYUP ||
-                KeyDown(0x25).U.ki.dwFlags != KEYEVENTF_EXTENDEDKEY ||
-                KeyUp(0x25).U.ki.dwFlags != (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+                letterDown.dwFlags != KEYEVENTF_SCANCODE ||
+                letterUp.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP) ||
+                KeyDown(0x25).U.ki.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY) ||
+                KeyUp(0x25).U.ki.dwFlags != (KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
             {
                 throw new InvalidOperationException($"Invalid Win32 keyboard scan-code mapping: F down={letterDown.wScan}/{letterDown.dwFlags}, up={letterUp.wScan}/{letterUp.dwFlags}, Left down={KeyDown(0x25).U.ki.wScan}/{KeyDown(0x25).U.ki.dwFlags}, up={KeyUp(0x25).U.ki.wScan}/{KeyUp(0x25).U.ki.dwFlags}");
             }
@@ -1010,6 +1012,7 @@ class Program
             inputs.Add(KeyUp(modifiers[i]));
         }
 
+        Console.WriteLine($"SendInput key='{keySpec}': scan={inputs[modifiers.Count].U.ki.wScan}, flags={inputs[modifiers.Count].U.ki.dwFlags}, foreground={GetForegroundWindow()}");
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         if (sent != inputs.Count)
         {
@@ -1032,10 +1035,11 @@ class Program
             {
                 ki = new KEYBDINPUT
                 {
-                    wVk = vk,
+                    wVk = 0,
                     wScan = (ushort)(scanCode & 0xff),
-                    dwFlags = vk is >= 0x25 and <= 0x28 or 0x5B || (scanCode & 0xff00) == 0xe000
-                        ? KEYEVENTF_EXTENDEDKEY : 0,
+                    dwFlags = KEYEVENTF_SCANCODE |
+                        (vk is >= 0x25 and <= 0x28 or 0x5B || (scanCode & 0xff00) == 0xe000
+                            ? KEYEVENTF_EXTENDEDKEY : 0),
                     time = 0,
                     dwExtraInfo = IntPtr.Zero,
                 },
