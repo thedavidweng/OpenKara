@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.16.1](https://github.com/thedavidweng/OpenKara/compare/v0.16.0...v0.16.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ci:** run actual packaging builds on manual dispatch ([#513](https://github.com/thedavidweng/OpenKara/issues/513)) ([cacb32f](https://github.com/thedavidweng/OpenKara/commit/cacb32f0c2060f3d9ccebbe6234bb783932360e3))
+* update patched TOML parser and Flatpak source manifest ([#519](https://github.com/thedavidweng/OpenKara/issues/519)) ([fd86776](https://github.com/thedavidweng/OpenKara/commit/fd8677652d4181e01bb34bc9fc3042edeffd1eeb))
+* **windows:** align fullscreen WebView2 environment and native input ([#514](https://github.com/thedavidweng/OpenKara/issues/514)) ([f8c91cd](https://github.com/thedavidweng/OpenKara/commit/f8c91cdba05048a0b0eda5724fcc851816ed5643))
+
 ## [0.16.0](https://github.com/thedavidweng/OpenKara/compare/v0.15.0...v0.16.0) (2026-10-10)
 
 
