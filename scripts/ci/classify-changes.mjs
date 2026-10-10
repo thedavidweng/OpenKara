@@ -152,6 +152,10 @@ const CATEGORY_PATTERNS = {
   ],
 
   other_workflow: [
+    ".github/jactionlint*.yaml",
+    ".github/jactionlint*.yml",
+    ".github/jactionlint-matcher.json",
+    ".github/actions/**",
     ".github/workflows/dependabot-automerge.yml",
     ".github/workflows/dependabot-sync.yml",
     ".github/workflows/mirror.yml",

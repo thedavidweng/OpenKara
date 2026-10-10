@@ -158,28 +158,28 @@ jobs:
       contents: write # recreate the rolling nightly tag + prerelease
     steps:
       - name: Download Windows installer
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nightly-dist-windows-x64-installer
           path: ${{ runner.temp }}/nightly-download/windows-x64
 
       - name: Download macOS installer (Apple Silicon)
         if: needs.macos-aarch64.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nightly-dist-macos-aarch64-installer
           path: ${{ runner.temp }}/nightly-download/macos-aarch64
 
       - name: Download macOS installer (Intel)
         if: needs.macos-x86_64.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nightly-dist-macos-x86_64-installer
           path: ${{ runner.temp }}/nightly-download/macos-x86_64
 
       - name: Download Linux installer
         if: needs.linux.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nightly-dist-linux-x86_64-installer
           path: ${{ runner.temp }}/nightly-download/linux-x86_64

@@ -8,11 +8,12 @@
 //   3. No broad `workflows` boolean appears in app-job conditions (the old
 //      broken pattern from PR #150).
 //   4. CI Gate reads the classifier's expected-jobs output.
-//   5. Packaging build jobs use packaging-specific gates (tested in
-//      packaging-workflow-contract.test.ts).
+//   5. Packaging build jobs and aggregate gates agree for every trigger.
 //   6. The Playwright config and workflow agree on report generation.
 
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { runInNewContext } from "node:vm";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -183,6 +184,12 @@ describe("Playwright report contract", () => {
 describe("Packaging workflow contract", () => {
   const packagingYaml = readProjectFile(".github/workflows/packaging.yml");
 
+  test("WinGet validation uses a published stable release", () => {
+    expect(packagingYaml).toMatch(
+      /gh release list[^\n]*--exclude-drafts[^\n]*--exclude-pre-releases/,
+    );
+  });
+
   test("release.yml is not a packaging trigger", () => {
     // A release-notes text edit must not trigger full packaging builds.
     expect(packagingYaml).not.toMatch(/\.github\/workflows\/release\.yml/);
@@ -204,6 +211,71 @@ describe("Packaging workflow contract", () => {
     // inputs, not just the workflow trigger.
     expect(buildFlatpakSection).toMatch(/if:/);
   });
+
+  test.each([
+    ["pull_request", true],
+    ["pull_request", false],
+    ["push", true],
+    ["push", false],
+    ["workflow_dispatch", false],
+  ])(
+    "%s packaging changes=%s has matching build and gate requirements",
+    (event, changed) => {
+      const condition = packagingYaml.match(
+        /  build-flatpak:[\s\S]*?    if: \|\n([\s\S]*?)    runs-on:/,
+      )?.[1];
+      expect(condition).toBeDefined();
+      const gate = packagingYaml
+        .split("  packaging-gate:")[1]
+        .split("        run: |\n")[1];
+      expect(gate).toBeDefined();
+      const required = changed || event === "workflow_dispatch";
+      for (const validation of ["success", "failure"]) {
+        const expression = condition!
+          .replace(/!cancelled\(\)/g, "true")
+          .replace(
+            /needs\.validate-flatpak\.result/g,
+            JSON.stringify(validation),
+          )
+          .replace(
+            /needs\.triage\.outputs\.packaging_(inputs|workflow)/g,
+            JSON.stringify(String(changed)),
+          )
+          .replace(/github\.event_name/g, JSON.stringify(event));
+        expect(runInNewContext(expression)).toBe(
+          required && validation === "success",
+        );
+      }
+      for (const field of [
+        "FLATPAK_BUILD",
+        "FLATPAK_VAL",
+        "WINGET",
+        "TRIAGE",
+      ]) {
+        for (const status of ["success", "failure", "cancelled", "skipped"]) {
+          const result = spawnSync("bash", ["-c", gate], {
+            env: {
+              ...process.env,
+              TRIAGE: "success",
+              WINGET: required ? "success" : "skipped",
+              FLATPAK_VAL: required ? "success" : "skipped",
+              FLATPAK_BUILD: required ? "success" : "skipped",
+              PKG_INPUTS: String(changed),
+              PKG_WORKFLOW: "false",
+              REL_META: "false",
+              EVENT_NAME: event,
+              [field]: status,
+            },
+          });
+          expect(result.status).toBe(
+            status === (required || field === "TRIAGE" ? "success" : "skipped")
+              ? 0
+              : 1,
+          );
+        }
+      }
+    },
+  );
 
   test("packaging-gate depends on all other packaging workflow jobs", () => {
     const jobs = extractJobIds(packagingYaml);
