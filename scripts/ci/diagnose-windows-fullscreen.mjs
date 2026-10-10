@@ -21,6 +21,7 @@ function observe() {
     true,
   );
   window.__openkaraCallbacks = new Set();
+  console.log("OBSERVER_READY", location.href, document.hasFocus());
 }
 
 const observed = new Set();
@@ -48,10 +49,43 @@ for (let attempt = 0; attempt < 1200; attempt++) {
     console.log("PAGE", target.id, target.url);
     const socket = new WebSocket(target.webSocketDebuggerUrl);
     sockets.push(socket);
+
     const conditions = new Map();
+    const source = `(${observe.toString()})();`;
+    const send = (method, params = {}) =>
+      socket.send(JSON.stringify({ id: nextId++, method, params }));
     socket.addEventListener("message", ({ data }) => {
       const message = JSON.parse(data);
+      if (message.method === "Runtime.executionContextCreated") {
+        const context = message.params.context;
+        if (context.auxData?.isDefault && /^https?:/.test(context.origin)) {
+          send("Runtime.evaluate", {
+            expression: source,
+            contextId: context.id,
+          });
+          const ipcCondition = `(() => { const m = arguments[0]; if (!m.cmd.startsWith('plugin:window|') && !m.cmd.startsWith('plugin:webview|')) return false; window.__openkaraCallbacks.add(m.callback); window.__openkaraCallbacks.add(m.error); console.log('IPC_REQUEST', JSON.stringify(m)); return false; })()`;
+          const callbackCondition = `(window.__openkaraCallbacks.has(arguments[0]) && console.log('IPC_RESULT', arguments[0], JSON.stringify(arguments[1])), false)`;
+          for (const [name, condition] of [
+            ["postMessage", ipcCondition],
+            ["runCallback", callbackCondition],
+          ]) {
+            conditions.set(nextId, condition);
+            send("Runtime.evaluate", {
+              expression: `new Promise(resolve => { const timer = setInterval(() => { const fn = window.__TAURI_INTERNALS__?.${name}; if (fn) { clearInterval(timer); resolve(fn); } }, 50); })`,
+              awaitPromise: true,
+              contextId: context.id,
+            });
+          }
+          send("Runtime.evaluate", {
+            expression:
+              "JSON.stringify({focused:document.hasFocus(),active:document.activeElement?.outerHTML?.slice(0,250)})",
+            returnByValue: true,
+            contextId: context.id,
+          });
+        }
+      }
       const condition = conditions.get(message.id);
+      conditions.delete(message.id);
       if (condition && message.result?.result?.objectId) {
         send("Debugger.setBreakpointOnFunctionCall", {
           objectId: message.result.result.objectId,
@@ -66,47 +100,21 @@ for (let attempt = 0; attempt < 1200; attempt++) {
           "EVALUATION_ERROR",
           JSON.stringify(message.result.exceptionDetails),
         );
-
-      if (message.method === "Runtime.consoleAPICalled") {
+      if (message.method === "Runtime.consoleAPICalled")
         console.log(
           target.id,
           message.params.type,
           ...message.params.args.map((arg) => arg.value ?? arg.description),
         );
-      }
-      if (message.method === "Runtime.exceptionThrown" || message.error) {
+      if (message.method === "Runtime.exceptionThrown" || message.error)
         console.error(target.id, JSON.stringify(message));
-      }
     });
     await new Promise((resolve, reject) => {
       socket.addEventListener("open", resolve, { once: true });
       socket.addEventListener("error", reject, { once: true });
     });
-    const send = (method, params = {}) =>
-      socket.send(JSON.stringify({ id: nextId++, method, params }));
-    send("Runtime.enable");
     send("Debugger.enable");
-    const source = `(${observe.toString()})();`;
-    send("Page.addScriptToEvaluateOnNewDocument", { source });
-    send("Runtime.evaluate", { expression: source });
-    const ipcCondition = `(() => { const m = arguments[0]; if (!/^plugin:(window|webview)\\|/.test(m.cmd)) return false; window.__openkaraCallbacks.add(m.callback); window.__openkaraCallbacks.add(m.error); console.log('IPC_REQUEST', JSON.stringify(m)); return false; })()`;
-    const callbackCondition = `(window.__openkaraCallbacks.has(arguments[0]) && console.log('IPC_RESULT', arguments[0], JSON.stringify(arguments[1])), false)`;
-    for (const [name, condition] of [
-      ["postMessage", ipcCondition],
-      ["runCallback", callbackCondition],
-    ]) {
-      conditions.set(nextId, condition);
-      send("Runtime.evaluate", {
-        expression: `new Promise(resolve => { const timer = setInterval(() => { const fn = window.__TAURI_INTERNALS__?.${name}; if (fn) { clearInterval(timer); resolve(fn); } }, 50); })`,
-        awaitPromise: true,
-      });
-    }
-
-    send("Runtime.evaluate", {
-      expression:
-        "JSON.stringify({focused:document.hasFocus(),active:document.activeElement?.outerHTML?.slice(0,250)})",
-      returnByValue: true,
-    });
+    send("Runtime.enable");
   }
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
