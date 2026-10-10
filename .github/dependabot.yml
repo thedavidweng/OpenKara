@@ -4,6 +4,9 @@ updates:
     directory: "/src-tauri"
     ignore:
       - dependency-name: "tauri*"
+      # cc 1.6.0 snapshots process env on Build creation, breaking aws-lc-sys 0.45.0
+      # jitterentropy compilation under Flatpak SDK's CFLAGS (-O2). Pin < 1.6.0.
+      - dependency-name: "cc"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -204,4 +204,27 @@ describe("Packaging workflow contract", () => {
     // inputs, not just the workflow trigger.
     expect(buildFlatpakSection).toMatch(/if:/);
   });
+
+  test("packaging-gate depends on all other packaging workflow jobs", () => {
+    const jobs = extractJobIds(packagingYaml);
+    expect(jobs).toContain("packaging-gate");
+    const gateBlock = packagingYaml.match(
+      /packaging-gate:[\s\S]*?runs-on:/,
+    )?.[0];
+    expect(gateBlock).toBeDefined();
+    for (const job of [
+      "triage",
+      "validate-winget",
+      "validate-flatpak",
+      "build-flatpak",
+    ]) {
+      expect(gateBlock).toContain(`- ${job}`);
+    }
+  });
+
+  test("packaging workflow does not filter pull_request by paths so Packaging Gate is always reporting", () => {
+    // Top-level pull_request must not carry paths filter; triage handles gating.
+    const prTrigger = packagingYaml.match(/pull_request:\s*\n\s+paths:/);
+    expect(prTrigger).toBeNull();
+  });
 });
