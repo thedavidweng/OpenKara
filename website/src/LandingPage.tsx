@@ -175,7 +175,7 @@ const BUILT_WITH_TOOLS = [
   },
 ] as const;
 
-const currentYear = currentYear;
+const currentYear = new Date().getFullYear();
 
 export function LandingPage() {
   const [language, setLanguage] = useState<Language>(() => {
