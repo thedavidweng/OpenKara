@@ -345,6 +345,20 @@ describe("PR fixtures", () => {
     expect(result.expectedJobs).not.toContain("tauri-build-smoke");
   });
 
+  test.each([
+    ".github/jactionlint.yaml",
+    ".github/jactionlint.yml",
+    ".github/jactionlint-matcher.json",
+    ".github/actions/check/action.yml",
+  ])("workflow audit metadata %s runs lint without heavy builds", (path) => {
+    const result = pr(path);
+    expect(result.unknownFiles).toEqual([]);
+    expect(result.expectedJobs).toContain("workflow-lint");
+    for (const job of FULL_CI_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
+  });
+
   test("PR #154 — release.yml only", () => {
     const result = pr(".github/workflows/release.yml");
     expect(result.categories).toEqual(["release_workflow"]);

@@ -1,4 +1,12 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -34,19 +42,82 @@ describe("dependabot automerge contract", () => {
     );
   });
 
-  test("auto-merge is limited to patch, non-production minor, and github-actions non-major", () => {
-    expect(workflow).toContain('"version-update:semver-patch"');
-    expect(workflow).toContain('"version-update:semver-minor"');
-    expect(workflow).toContain('dt" != "direct:production"');
-    expect(workflow).toContain('ut" != "version-update:semver-major"');
-    expect(workflow).toContain("github-actions-non-major");
-  });
-
-  test("security updates are always eligible", () => {
-    expect(workflow).toContain('alert" = "OPEN"');
-    expect(workflow).toContain('alert" = "FIXED"');
-    expect(workflow).toContain("security-update");
-  });
+  test.each([
+    ["actions/checkout", "version-update:semver-patch", "", "", true],
+    ["actions/checkout", "version-update:semver-minor", "", "", true],
+    ["actions/checkout", "version-update:semver-major", "", "OPEN", false],
+    ["actions/checkout", "unknown", "", "OPEN", false],
+    ["actions/checkout", "unknown", "", "FIXED", false],
+    ["actions/checkout", "", "", "OPEN", false],
+    [
+      "example/pkg",
+      "version-update:semver-minor",
+      "direct:production",
+      "",
+      false,
+    ],
+    [
+      "example/pkg",
+      "version-update:semver-minor",
+      "direct:development",
+      "",
+      true,
+    ],
+    [
+      "example/pkg",
+      "version-update:semver-minor",
+      "direct:production",
+      "OPEN",
+      true,
+    ],
+    [
+      "contributor-license/cla-action",
+      "version-update:semver-patch",
+      "",
+      "OPEN",
+      false,
+    ],
+    [
+      "actions/checkout, jdx/jactionlint",
+      "version-update:semver-minor",
+      "",
+      "",
+      false,
+    ],
+  ])(
+    "classifies %s %s %s %s as merge=%s",
+    (names, update, kind, alert, expected) => {
+      const directory = mkdtempSync(join(tmpdir(), "openkara-automerge-"));
+      const gh = join(directory, "gh");
+      writeFileSync(gh, '#!/bin/sh\nprintf "%s\\n" AUTO_MERGE_ENABLED\n');
+      chmodSync(gh, 0o755);
+      const script = workflow
+        .split("        run: |", 2)[1]
+        .split("\n")
+        .map((line) => line.replace(/^ {10}/, ""))
+        .join("\n");
+      try {
+        const output = execFileSync("bash", ["-c", script], {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            GH_TOKEN: "test-only",
+            PR_URL: "https://github.com/example/repo/pull/1",
+            DEP_NAMES: names,
+            UPDATE_TYPE: update,
+            DEP_TYPE: kind,
+            ALERT_STATE: alert,
+            PKG_ECOSYSTEM:
+              names === "example/pkg" ? "npm_and_yarn" : "github-actions",
+          },
+        });
+        expect(output.includes("AUTO_MERGE_ENABLED")).toBe(expected);
+      } finally {
+        rmSync(directory, { recursive: true });
+      }
+    },
+  );
 
   test("denylists release and review tooling", () => {
     expect(workflow).toContain("googleapis/release-please-action");
