@@ -177,11 +177,17 @@ public class OpenKaraWin32 {
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
     public static IntPtr FindOtherVisibleWindow(int processId, IntPtr mainWindow) {
+        StringBuilder mainTitle = new StringBuilder(512);
+        GetWindowText(mainWindow, mainTitle, mainTitle.Capacity);
         IntPtr found = IntPtr.Zero;
         EnumWindows((hWnd, lParam) => {
             if (hWnd == mainWindow || !IsWindowVisible(hWnd)) return true;
             GetWindowThreadProcessId(hWnd, out uint pid);
             if (pid != processId) return true;
+            StringBuilder title = new StringBuilder(512);
+            GetWindowText(hWnd, title, title.Capacity);
+            // Tauri also owns a visible single-instance IPC window.
+            if (title.ToString() != mainTitle.ToString()) return true;
             found = hWnd;
             return false;
         }, IntPtr.Zero);
@@ -325,13 +331,15 @@ function Wait-For-UiReady {
         $attempt++
         try {
             # Nudge the webview so focus and accessibility hosts activate.
-            if ($null -ne $script:process -and $script:process.MainWindowHandle -ne [IntPtr]::Zero) {
-                [void][OpenKaraWin32]::SetForegroundWindow($script:process.MainWindowHandle)
+            if ($null -ne $script:process -and $script:mainWindowHandle -ne [IntPtr]::Zero) {
+                [void][OpenKaraWin32]::SetForegroundWindow($script:mainWindowHandle)
                 if ($attempt -eq 1 -or ($attempt % 5) -eq 0) {
                     [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
                 }
             }
             $tree = Get-UiTree -ProcessId $ProcessId -TimeoutMs ([Math]::Min($ProbeTimeoutMs, 8000))
+            $window = Find-ElementByControlType -Tree $tree -ControlType "Window"
+            $script:mainWindowHandle = [IntPtr]$window.nativeWindowHandle
             $namedInteractive = @($tree | Where-Object {
                 $_.isOffscreen -ne $true -and
                 -not [string]::IsNullOrWhiteSpace($_.name) -and
@@ -374,23 +382,6 @@ function Wait-For-UiReady {
         Start-Sleep -Milliseconds 1500
     }
     throw "WebView UI did not reach main shell within ${TimeoutMs}ms ($lastObservation)"
-}
-
-function Wait-For-ProcessWindow {
-    param([System.Diagnostics.Process]$Process, [int]$TimeoutMs)
-
-    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        try {
-            $Process.Refresh()
-            if ($Process.MainWindowHandle -ne [IntPtr]::Zero -and [OpenKaraWin32]::IsWindowVisible($Process.MainWindowHandle)) {
-                return $Process.MainWindowHandle
-            }
-        } catch {
-        }
-        Start-Sleep -Milliseconds 100
-    }
-    throw "OpenKara main window did not appear within ${TimeoutMs}ms"
 }
 
 function Get-UiTree {
@@ -570,7 +561,7 @@ function Send-KeyboardInput {
     param([string]$Keys, [IntPtr]$Handle = [IntPtr]::Zero)
 
     if ($Handle -eq [IntPtr]::Zero) {
-        $Handle = $script:process.MainWindowHandle
+        $Handle = $script:mainWindowHandle
     }
     if ($Handle -eq [IntPtr]::Zero) {
         throw "Main window handle is not available"
@@ -1029,7 +1020,6 @@ function Invoke-StepAction {
             "launch" {
                 $script:process = Start-OpenKaraApp
                 $launchTimeoutMs = [Math]::Max($StepTimeoutMs, 180000)
-                $script:mainWindowHandle = Wait-For-ProcessWindow -Process $script:process -TimeoutMs $launchTimeoutMs
                 # Window chrome alone is not enough: wait until WebView2 exposes
                 # named interactive DOM controls for keyboard navigation.
                 $tree = Wait-For-UiReady -ProcessId $script:process.Id -TimeoutMs $launchTimeoutMs
