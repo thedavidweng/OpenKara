@@ -20,24 +20,7 @@ function observe() {
     },
     true,
   );
-  const timer = setInterval(() => {
-    const internals = window.__TAURI_INTERNALS__;
-    if (!internals) return;
-    clearInterval(timer);
-    const invoke = internals.invoke.bind(internals);
-    internals.invoke = async (command, args, options) => {
-      const record = /plugin:(window|webview)\|/.test(command);
-      if (record) console.log("IPC_DIAGNOSTIC", command, JSON.stringify(args));
-      try {
-        const result = await invoke(command, args, options);
-        if (record) console.log("IPC_RESULT", command, JSON.stringify(result));
-        return result;
-      } catch (error) {
-        if (record) console.error("IPC_ERROR", command, String(error));
-        throw error;
-      }
-    };
-  }, 50);
+  window.__openkaraCallbacks = new Set();
 }
 
 const observed = new Set();
@@ -65,8 +48,25 @@ for (let attempt = 0; attempt < 1200; attempt++) {
     console.log("PAGE", target.id, target.url);
     const socket = new WebSocket(target.webSocketDebuggerUrl);
     sockets.push(socket);
+    const conditions = new Map();
     socket.addEventListener("message", ({ data }) => {
       const message = JSON.parse(data);
+      const condition = conditions.get(message.id);
+      if (condition && message.result?.result?.objectId) {
+        send("Debugger.setBreakpointOnFunctionCall", {
+          objectId: message.result.result.objectId,
+          condition,
+        });
+        console.log("IPC_OBSERVER", target.id, "installed");
+      }
+      if (message.result?.result?.value)
+        console.log("STATE", target.id, message.result.result.value);
+      if (message.result?.exceptionDetails)
+        console.error(
+          "EVALUATION_ERROR",
+          JSON.stringify(message.result.exceptionDetails),
+        );
+
       if (message.method === "Runtime.consoleAPICalled") {
         console.log(
           target.id,
@@ -85,9 +85,23 @@ for (let attempt = 0; attempt < 1200; attempt++) {
     const send = (method, params = {}) =>
       socket.send(JSON.stringify({ id: nextId++, method, params }));
     send("Runtime.enable");
+    send("Debugger.enable");
     const source = `(${observe.toString()})();`;
     send("Page.addScriptToEvaluateOnNewDocument", { source });
     send("Runtime.evaluate", { expression: source });
+    const ipcCondition = `(() => { const m = arguments[0]; if (!/^plugin:(window|webview)\\|/.test(m.cmd)) return false; window.__openkaraCallbacks.add(m.callback); window.__openkaraCallbacks.add(m.error); console.log('IPC_REQUEST', JSON.stringify(m)); return false; })()`;
+    const callbackCondition = `(window.__openkaraCallbacks.has(arguments[0]) && console.log('IPC_RESULT', arguments[0], JSON.stringify(arguments[1])), false)`;
+    for (const [name, condition] of [
+      ["ipc", ipcCondition],
+      ["runCallback", callbackCondition],
+    ]) {
+      conditions.set(nextId, condition);
+      send("Runtime.evaluate", {
+        expression: `new Promise(resolve => { const timer = setInterval(() => { const fn = window.__TAURI_INTERNALS__?.${name}; if (fn) { clearInterval(timer); resolve(fn); } }, 50); })`,
+        awaitPromise: true,
+      });
+    }
+
     send("Runtime.evaluate", {
       expression:
         "JSON.stringify({focused:document.hasFocus(),active:document.activeElement?.outerHTML?.slice(0,250)})",
