@@ -121,7 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="$(gh release list --repo "${GITHUB_REPOSITORY}" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName | sub("^v"; "")')"
+          version="$(gh release list --repo "${GITHUB_REPOSITORY}" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName | sub("^v"; "")')"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Render WinGet manifests from current public release
@@ -278,14 +278,12 @@ jobs:
   build-flatpak:
     name: Build Flatpak (x86_64)
     needs: [triage, validate-flatpak]
-    # Only build Flatpak from source when packaging inputs or the packaging
-    # workflow itself changed — not for release-metadata-only or
-    # workflow_dispatch validation runs.
     if: |
       !cancelled() &&
       needs.validate-flatpak.result == 'success' &&
       (needs.triage.outputs.packaging_inputs == 'true' ||
-       needs.triage.outputs.packaging_workflow == 'true')
+       needs.triage.outputs.packaging_workflow == 'true' ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     # Run inside the Flathub-maintained container. This image ships a
