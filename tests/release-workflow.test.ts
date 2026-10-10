@@ -167,6 +167,7 @@ describe("release workflow", () => {
     expect(reusableWorkflow).toMatch(/cache:\s*pnpm/);
     // UIA probe builds in parallel with cargo, not as a serial follow-up step.
     expect(reusableWorkflow).toContain('Start-Process -FilePath "dotnet"');
+    expect(reusableWorkflow).toContain("--verify-input-layout");
 
     // Release call must enable keyboard UIA, upgrade (empty previous_version),
     // and fault injection, with long artifact retention.

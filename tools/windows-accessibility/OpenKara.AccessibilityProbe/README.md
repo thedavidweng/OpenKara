@@ -17,6 +17,12 @@ dotnet build -c Release
 
 The output is `bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.exe`.
 
+Check the native `INPUT` size and union offset before testing keyboard input:
+
+```powershell
+OpenKara.AccessibilityProbe --verify-input-layout
+```
+
 ## Usage
 
 Find the window by process ID:
@@ -32,6 +38,9 @@ OpenKara.AccessibilityProbe --process-name OpenKara --output snapshot.json
 ```
 
 Omit `--output` to print the JSON to `stdout`.
+
+Use `--window-handle <handle>` with `--process-id` when multiple app windows
+share a title. Snapshots include each node's process ID and native window handle.
 
 Set keyboard focus on a named control (substring match):
 

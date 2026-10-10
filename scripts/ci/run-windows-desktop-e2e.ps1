@@ -161,18 +161,11 @@ public class OpenKaraWin32 {
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
     [DllImport("winmm.dll")]
     public static extern uint waveOutGetNumDevs();
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -183,10 +176,21 @@ public class OpenKaraWin32 {
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
+    public static IntPtr FindOtherVisibleWindow(int processId, IntPtr mainWindow) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((hWnd, lParam) => {
+            if (hWnd == mainWindow || !IsWindowVisible(hWnd)) return true;
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid != processId) return true;
+            found = hWnd;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     public static IntPtr FindWindowByTitle(int processId, string title) {
         if (string.IsNullOrWhiteSpace(title)) return IntPtr.Zero;
         IntPtr found = IntPtr.Zero;
-        string lowerTitle = title.ToLowerInvariant();
         EnumWindows((hWnd, lParam) => {
             if (!IsWindowVisible(hWnd)) return true;
             if (processId > 0) {
@@ -390,12 +394,14 @@ function Wait-For-ProcessWindow {
 }
 
 function Get-UiTree {
-    param([int]$ProcessId, [string]$WindowTitle = "", [int]$TimeoutMs = $ProbeTimeoutMs)
+    param([int]$ProcessId, [string]$WindowTitle = "", [int]$TimeoutMs = $ProbeTimeoutMs, [IntPtr]$WindowHandle = $script:mainWindowHandle)
 
     $snapshotPath = Join-Path $OutputDir ("uia-tree-{0}-{1}.json" -f $ProcessId, ([Guid]::NewGuid().ToString("N")))
     $argList = @("--process-id", $ProcessId, "--output", $snapshotPath, "--timeout", $TimeoutMs)
     if (-not [string]::IsNullOrWhiteSpace($WindowTitle)) {
         $argList += @("--window-title", $WindowTitle)
+    } elseif ($WindowHandle -ne [IntPtr]::Zero) {
+        $argList += @("--window-handle", $WindowHandle.ToInt32())
     }
 
     & $script:ProbePath @argList
@@ -421,6 +427,7 @@ function Invoke-ProbeAction {
         [string]$Value = "",
         [string]$Key = "",
         [string]$WindowTitle = "",
+        [IntPtr]$WindowHandle = $script:mainWindowHandle,
         [int]$TimeoutMs = $ProbeTimeoutMs
     )
 
@@ -443,6 +450,8 @@ function Invoke-ProbeAction {
     }
     if (-not [string]::IsNullOrWhiteSpace($WindowTitle)) {
         $argList += @("--window-title", $WindowTitle)
+    } elseif ($ProcessId -gt 0 -and $WindowHandle -ne [IntPtr]::Zero) {
+        $argList += @("--window-handle", $WindowHandle.ToInt32())
     }
     if ($Action -eq "set-value") {
         $argList += @("--value", $Value)
@@ -777,13 +786,13 @@ function Find-Descendants {
 }
 
 function Wait-For-Condition {
-    param([scriptblock]$Condition, [int]$TimeoutMs = $StepTimeoutMs, [int]$PollMs = 500)
+    param([scriptblock]$Condition, [int]$TimeoutMs = $StepTimeoutMs, [int]$PollMs = 500, [IntPtr]$WindowHandle = $script:mainWindowHandle)
 
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
     while ([DateTime]::UtcNow -lt $deadline) {
         $tree = $null
         try {
-            $tree = Get-UiTree -ProcessId $script:process.Id
+            $tree = Get-UiTree -ProcessId $script:process.Id -WindowHandle $WindowHandle
         } catch {
             $tree = $null
         }
@@ -962,6 +971,47 @@ function Close-Settings-Overlay {
     }
 
     return $null -ne $closed
+}
+
+function Open-FullscreenWindow {
+    if ($null -eq $script:process) { throw "Application has not been launched" }
+    if (-not (Close-Settings-Overlay)) { throw "Settings overlay did not close" }
+    if ([OpenKaraWin32]::FindOtherVisibleWindow($script:process.Id, $script:mainWindowHandle) -ne [IntPtr]::Zero) {
+        throw "An unexpected secondary window was already visible before fullscreen"
+    }
+    if (-not (Send-AppShortcut -KeyCombo "f" -FocusName "All Tracks")) {
+        throw "Fullscreen keyboard shortcut failed"
+    }
+    $opened = Wait-For-Condition -Condition {
+        param($t)
+        return [OpenKaraWin32]::FindOtherVisibleWindow($script:process.Id, $script:mainWindowHandle) -ne [IntPtr]::Zero
+    }
+    if ($null -eq $opened) { throw "Fullscreen shortcut did not create a visible secondary window" }
+    $handle = [OpenKaraWin32]::FindOtherVisibleWindow($script:process.Id, $script:mainWindowHandle)
+    $tree = Wait-For-Condition -WindowHandle $handle -Condition {
+        param($t)
+        return $null -ne (Find-ElementByAutomationId -Tree $t -AutomationId "play-pause")
+    }
+    if ($null -eq $tree) { throw "Fullscreen WebView did not expose its player controls" }
+    $window = Find-ElementByControlType -Tree $tree -ControlType "Window"
+    $bounds = [System.Windows.Forms.Screen]::FromHandle($handle).Bounds
+    $expected = "{0:F1},{1:F1},{2:F1},{3:F1}" -f $bounds.X, $bounds.Y, $bounds.Width, $bounds.Height
+    if ($window.boundingRectangle -ne $expected) {
+        throw "Fullscreen window does not cover its monitor: observed=$($window.boundingRectangle), expected=$expected"
+    }
+    return $tree
+}
+
+function Close-FullscreenWindow {
+    $handle = [OpenKaraWin32]::FindOtherVisibleWindow($script:process.Id, $script:mainWindowHandle)
+    if ($handle -eq [IntPtr]::Zero) { throw "Fullscreen window was not found" }
+    Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" -WindowHandle $handle | Out-Null
+    $returned = Wait-For-Condition -Condition {
+        param($t)
+        return -not [OpenKaraWin32]::IsWindow($handle)
+    }
+    if ($null -eq $returned) { throw "Escape did not close the fullscreen window and restore the main window" }
+    return $returned
 }
 
 function Invoke-StepAction {
@@ -1932,138 +1982,15 @@ function Invoke-StepAction {
             }
 
             "toggle-fullscreen" {
-                if ($null -eq $script:process) { throw "Application has not been launched" }
-
-                Close-Settings-Overlay | Out-Null
-                Start-Sleep -Milliseconds 300
-
-                if (-not (Send-AppShortcut -KeyCombo "f")) {
-                    Send-KeyboardInput "f"
+                $fs = Open-FullscreenWindow
+                $tree = Close-FullscreenWindow
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $fs -Check {
+                    param($t)
+                    $window = Find-ElementByControlType -Tree $t -ControlType "Window"
+                    if ($null -eq $window -or $window.isOffscreen) { return "fullscreen window was not visible" }
+                    return $true
                 }
-
-                $fs = $null
-                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
-                while ([DateTime]::UtcNow -lt $deadline) {
-                    try {
-                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 3000
-                        if ($fs) { break }
-                    } catch {
-                    }
-                    Start-Sleep -Milliseconds 400
-                }
-
-                if ($null -eq $fs) {
-                    # Second attempt: focus Play (known interactive control) then F.
-                    if (-not (Send-AppShortcut -KeyCombo "f" -FocusName "Play" -FocusControlType "Button")) {
-                        Send-KeyboardInput "f"
-                    }
-                    $deadline = [DateTime]::UtcNow.AddMilliseconds(10000)
-                    while ([DateTime]::UtcNow -lt $deadline) {
-                        try {
-                            $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 2000
-                            if ($fs) { break }
-                        } catch {
-                        }
-                        Start-Sleep -Milliseconds 300
-                    }
-                }
-
-                if ($null -eq $fs) {
-                    # Headless Windows runners may reject SendInput. Use the
-                    # product's monitor picker to exercise the same fullscreen
-                    # action through a real UIA control.
-                    if (Invoke-NamedControl -Name "Select Monitor" -PreferredAction "invoke") {
-                        $monitorTree = Wait-For-Condition -Condition {
-                            param($t)
-                            return $null -ne (Find-ElementByAutomationId -Tree $t -AutomationId "monitor-option-0")
-                        } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
-                        if ($null -ne $monitorTree) {
-                            try {
-                                Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
-                            } catch {
-                                try {
-                                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
-                                } catch {
-                                }
-                            }
-                            $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 20000))
-                            while ([DateTime]::UtcNow -lt $deadline) {
-                                try {
-                                    $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 3000
-                                    if ($fs) { break }
-                                } catch {
-                                }
-                                Start-Sleep -Milliseconds 400
-                            }
-
-                            if ($null -eq $fs) {
-                                try {
-                                    Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId "monitor-option-0" -ControlType "ListItem" | Out-Null
-                                } catch {
-                                }
-                                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 10000))
-                                while ([DateTime]::UtcNow -lt $deadline) {
-                                    try {
-                                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 2000
-                                        if ($fs) { break }
-                                    } catch {
-                                    }
-                                    Start-Sleep -Milliseconds 400
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if ($null -eq $fs) {
-                    if ($osVersion -match "\bServer\b") {
-                        Add-EnvironmentLimitedAssertion -StepId $stepId -Expected $Step.assertion -Observed "Windows Server hosted runner did not expose a second WebView2 window; the fullscreen route is covered by the Playwright accessibility smoke" | Out-Null
-                    } else {
-                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window 'OpenKara Player' did not appear"
-                        $stepStatus = "failed"
-                    }
-                } else {
-                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $fs -Check {
-                        param($t)
-                        $window = Find-ElementByControlType -Tree $t -ControlType "Window"
-                        if ($null -eq $window) { return "no Window control in fullscreen UIA tree" }
-                        if ([string]::IsNullOrWhiteSpace($window.name)) { return "fullscreen window has no accessible name" }
-                        return $true
-                    }
-                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
-
-                    # Close the fullscreen window so the rest of the workflow runs in the main window.
-                    $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
-                    if ($hWnd -eq [IntPtr]::Zero) {
-                        Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window handle was not found for cleanup"
-                        $stepStatus = "failed"
-                    } else {
-                        Send-KeyboardInput "{ESC}" -Handle $hWnd
-                        $returned = Wait-For-Condition -Condition {
-                            param($t)
-                            return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
-                        } -TimeoutMs ([math]::Max($StepTimeoutMs, 30000))
-                        if ($null -eq $returned) {
-                            [OpenKaraWin32]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-                            $returned = Wait-For-Condition -Condition {
-                                param($t)
-                                return ([OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player") -eq [IntPtr]::Zero)
-                            } -TimeoutMs ([math]::Min($StepTimeoutMs, 10000))
-                            if ($null -eq $returned) {
-                                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window did not close before the cleanup timeout"
-                                $stepStatus = "failed"
-                            }
-                        }
-                        if ($null -ne $returned) {
-                            $mainTree = Get-UiTree -ProcessId $script:process.Id
-                            $mainWindow = Find-ElementByControlType -Tree $mainTree -ControlType "Window"
-                            if ($null -eq $mainWindow) {
-                                Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "main window was not restored after closing fullscreen"
-                                $stepStatus = "failed"
-                            }
-                        }
-                    }
-                }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "stop-playback" {
@@ -2108,58 +2035,21 @@ function Invoke-StepAction {
             }
 
             "open-fullscreen" {
-                if ($null -eq $script:process) { throw "Application has not been launched" }
-
-                Send-KeyboardInput "f"
-                $fs = $null
-                $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 30000))
-                while ([DateTime]::UtcNow -lt $deadline) {
-                    try {
-                        $fs = Get-UiTree -ProcessId $script:process.Id -WindowTitle "OpenKara Player" -TimeoutMs 5000
-                        if ($fs) { break }
-                    } catch {
-                    }
-                    Start-Sleep -Milliseconds 500
-                }
-
-                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $script:currentTree -Check {
+                $tree = Open-FullscreenWindow
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
-                    if ($null -eq $fs) { return "fullscreen window 'OpenKara Player' did not appear" }
-                    return $true
+                    return $null -ne (Find-ElementByControlType -Tree $t -ControlType "Window")
                 }
                 if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "close-fullscreen" {
-                if ($null -eq $script:process) { throw "Application has not been launched" }
-
-                $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
-                if ($hWnd -eq [IntPtr]::Zero) {
-                    Add-FailingAssertion -StepId $stepId -Expected $Step.assertion -Observed "fullscreen window was not found"
-                    $stepStatus = "failed"
-                } else {
-                    Send-KeyboardInput "{ESC}" -Handle $hWnd
-                    Start-Sleep -Milliseconds 1000
-
-                    $closed = $false
-                    $deadline = [DateTime]::UtcNow.AddMilliseconds([math]::Max($StepTimeoutMs, 30000))
-                    while ([DateTime]::UtcNow -lt $deadline) {
-                        $hWnd = [OpenKaraWin32]::FindWindowByTitle($script:process.Id, "OpenKara Player")
-                        if ($hWnd -eq [IntPtr]::Zero) {
-                            $closed = $true
-                            break
-                        }
-                        Start-Sleep -Milliseconds 500
-                    }
-
-                    $tree = Get-UiTree -ProcessId $script:process.Id
-                    $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
-                        param($t)
-                        if ($closed) { return $true }
-                        return "fullscreen window did not close"
-                    }
-                    if ($assertion.result -ne "pass") { $stepStatus = "failed" }
+                $tree = Close-FullscreenWindow
+                $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
+                    param($t)
+                    return $null -ne (Find-ElementByControlType -Tree $t -ControlType "Window")
                 }
+                if ($assertion.result -ne "pass") { $stepStatus = "failed" }
             }
 
             "cancel-file-picker" {
@@ -2205,25 +2095,9 @@ function Invoke-StepAction {
             "close" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
                 $closeStarted = [DateTime]::UtcNow
-                Close-Settings-Overlay | Out-Null
-                Send-KeyboardInput "%{F4}"
-                $exited = $script:process.WaitForExit(10000)
-                if (-not $exited) {
-                    Close-Settings-Overlay | Out-Null
-                    try {
-                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "invoke" -Name "Close" -ControlType "Button" | Out-Null
-                    } catch {
-                        Write-Warning "UIA close action failed: $_"
-                    }
-                    $exited = $script:process.WaitForExit(10000)
-                }
-                if (-not $exited) {
-                    $hWnd = $script:process.MainWindowHandle
-                    if ($hWnd -ne [IntPtr]::Zero) {
-                        [OpenKaraWin32]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-                        $exited = $script:process.WaitForExit(10000)
-                    }
-                }
+                if (-not (Close-Settings-Overlay)) { throw "Settings overlay did not close before Alt+F4" }
+                Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
+                $exited = $script:process.WaitForExit($StepTimeoutMs)
                 if (-not $exited) {
                     Stop-Process -InputObject $script:process -Force -ErrorAction SilentlyContinue
                 }
@@ -2232,7 +2106,7 @@ function Invoke-StepAction {
                     param($t)
                     if (-not $exited) {
                         $closeElapsed = [int]([DateTime]::UtcNow - $closeStarted).TotalSeconds
-                        return "Application did not exit in ${closeElapsed}s. The script used three 10-second waits. The script ran Close-Settings-Overlay."
+                        return "Application did not exit in ${closeElapsed}s. Alt+F4 targeted the main window handle $script:mainWindowHandle."
                     }
                     return $true
                 }
