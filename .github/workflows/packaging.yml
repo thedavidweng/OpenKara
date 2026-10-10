@@ -2,32 +2,9 @@ name: Packaging
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/packaging.yml"
-      - "package.json"
-      - "packaging/**"
-      - "pnpm-lock.yaml"
-      - "scripts/prepare-onnx-runtime.mjs"
-      - "scripts/render-*.mjs"
-      - "scripts/release-metadata.mjs"
-      - "src-tauri/Cargo.lock"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/tauri.conf.json"
-      - "tests/flatpak-packaging.test.ts"
   push:
     branches: ["main"]
-    paths:
-      - ".github/workflows/packaging.yml"
-      - "package.json"
-      - "packaging/**"
-      - "pnpm-lock.yaml"
-      - "scripts/prepare-onnx-runtime.mjs"
-      - "scripts/render-*.mjs"
-      - "scripts/release-metadata.mjs"
-      - "src-tauri/Cargo.lock"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/tauri.conf.json"
-      - "tests/flatpak-packaging.test.ts"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -406,3 +383,93 @@ jobs:
           flatpak-builder-lint --exceptions --debug manifest dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
           flatpak-builder-lint --exceptions --debug builddir flatpak_app
           flatpak-builder-lint --exceptions --debug repo repo
+
+  # ── Packaging Gate ───────────────────────────────────────────────────
+  # Required packaging gate for branch protection. Always runs on every
+  # pull request so the required check is never missing.
+  # Verifies that:
+  #   1. When packaging inputs changed, all packaging jobs ran and succeeded.
+  #   2. When packaging inputs did not change, expensive packaging jobs were skipped.
+  #   3. If any expected packaging job failed or was cancelled, the gate fails.
+  packaging-gate:
+    name: Packaging Gate
+    if: always()
+    needs:
+      - triage
+      - validate-winget
+      - validate-flatpak
+      - build-flatpak
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Verify packaging status
+        env:
+          TRIAGE: ${{ needs.triage.result }}
+          WINGET: ${{ needs.validate-winget.result }}
+          FLATPAK_VAL: ${{ needs.validate-flatpak.result }}
+          FLATPAK_BUILD: ${{ needs.build-flatpak.result }}
+          PKG_INPUTS: ${{ needs.triage.outputs.packaging_inputs }}
+          PKG_WORKFLOW: ${{ needs.triage.outputs.packaging_workflow }}
+          REL_META: ${{ needs.triage.outputs.release_metadata }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          echo "Event: $EVENT_NAME"
+          echo "Triage: $TRIAGE (packaging_inputs=$PKG_INPUTS, packaging_workflow=$PKG_WORKFLOW, release_metadata=$REL_META)"
+          echo "WinGet: $WINGET"
+          echo "Flatpak Validate: $FLATPAK_VAL"
+          echo "Flatpak Build: $FLATPAK_BUILD"
+
+          if [ "$TRIAGE" != "success" ]; then
+            echo "::error::Triage failed"
+            exit 1
+          fi
+
+          fail=0
+          should_run_packaging="false"
+          if [ "$PKG_INPUTS" = "true" ] || [ "$PKG_WORKFLOW" = "true" ]; then
+            should_run_packaging="true"
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            should_run_packaging="true"
+          fi
+
+          if [ "$should_run_packaging" = "true" ]; then
+            if [ "$FLATPAK_VAL" != "success" ]; then
+              echo "::error::Expected validate-flatpak to succeed (result: $FLATPAK_VAL)"
+              fail=1
+            fi
+            if [ "$FLATPAK_BUILD" != "success" ]; then
+              echo "::error::Expected build-flatpak to succeed (result: $FLATPAK_BUILD)"
+              fail=1
+            fi
+          else
+            if [ "$FLATPAK_VAL" != "skipped" ]; then
+              echo "::error::Unexpected validate-flatpak ran when packaging was not expected (result: $FLATPAK_VAL)"
+              fail=1
+            fi
+            if [ "$FLATPAK_BUILD" != "skipped" ]; then
+              echo "::error::Unexpected build-flatpak ran when packaging was not expected (result: $FLATPAK_BUILD)"
+              fail=1
+            fi
+          fi
+
+          should_run_winget="false"
+          if [ "$should_run_packaging" = "true" ] || [ "$REL_META" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            should_run_winget="true"
+          fi
+
+          if [ "$should_run_winget" = "true" ]; then
+            if [ "$WINGET" != "success" ]; then
+              echo "::error::Expected validate-winget to succeed (result: $WINGET)"
+              fail=1
+            fi
+          else
+            if [ "$WINGET" != "skipped" ]; then
+              echo "::error::Unexpected validate-winget ran when WinGet validation was not expected (result: $WINGET)"
+              fail=1
+            fi
+          fi
+
+          exit $fail
