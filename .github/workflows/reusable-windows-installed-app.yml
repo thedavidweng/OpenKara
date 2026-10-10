@@ -85,6 +85,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PNPM_CONFIG_MANAGE_PACKAGE_MANAGER_VERSIONS: "false"
 
 jobs:
   build-installer:
@@ -101,6 +102,7 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -185,9 +187,9 @@ jobs:
           # Product installers use automation-smoke only. The driver binary is
           # built with automation-driver after tauri so it is not packed into NSIS.
           if ($env:RELEASE_BUILD -eq "true") {
-            pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --config src-tauri/tauri.release.conf.json '--' --bin openkara
           } else {
-            pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign -- --bin openkara
+            pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign '--' --bin openkara
           }
           if ($LASTEXITCODE -ne 0) {
             if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
