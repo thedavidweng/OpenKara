@@ -92,7 +92,7 @@ for (let attempt = 0; attempt < 1200; attempt++) {
     const ipcCondition = `(() => { const m = arguments[0]; if (!/^plugin:(window|webview)\\|/.test(m.cmd)) return false; window.__openkaraCallbacks.add(m.callback); window.__openkaraCallbacks.add(m.error); console.log('IPC_REQUEST', JSON.stringify(m)); return false; })()`;
     const callbackCondition = `(window.__openkaraCallbacks.has(arguments[0]) && console.log('IPC_RESULT', arguments[0], JSON.stringify(arguments[1])), false)`;
     for (const [name, condition] of [
-      ["ipc", ipcCondition],
+      ["postMessage", ipcCondition],
       ["runCallback", callbackCondition],
     ]) {
       conditions.set(nextId, condition);

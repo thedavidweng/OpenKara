@@ -612,7 +612,6 @@ jobs:
         env:
           OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install
           UIA_SCENARIO: ${{ inputs.uia_scenario }}
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --remote-debugging-port=9222
         run: |
           $ErrorActionPreference = "Stop"
           if ([string]::IsNullOrWhiteSpace($env:OPENKARA_APP_DATA_DIR)) {
@@ -622,6 +621,9 @@ jobs:
           if ($null -eq $probe) { throw "UIA probe executable was not found." }
 
           $installDir = $env:OPENKARA_WINDOWS_INSTALL_DIR
+          $browserPolicy = "HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+          New-Item -Path $browserPolicy -Force | Out-Null
+          New-ItemProperty -Path $browserPolicy -Name "*" -Value "--remote-debugging-port=9222 --force-renderer-accessibility" -PropertyType String -Force | Out-Null
           $diagnosticDir = Join-Path $env:RUNNER_TEMP "desktop-e2e"
           New-Item -ItemType Directory -Force -Path $diagnosticDir | Out-Null
           $diagnostic = Start-Process -FilePath "node" -ArgumentList "scripts/ci/diagnose-windows-fullscreen.mjs" -PassThru -RedirectStandardOutput (Join-Path $diagnosticDir "webview-diagnostic.stdout.log") -RedirectStandardError (Join-Path $diagnosticDir "webview-diagnostic.stderr.log")
