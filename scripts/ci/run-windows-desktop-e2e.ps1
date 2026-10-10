@@ -337,9 +337,7 @@ function Wait-For-UiReady {
                     [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
                 }
             }
-            $tree = Get-UiTree -ProcessId $ProcessId -TimeoutMs ([Math]::Min($ProbeTimeoutMs, 8000))
-            $window = Find-ElementByControlType -Tree $tree -ControlType "Window"
-            $script:mainWindowHandle = [IntPtr]$window.nativeWindowHandle
+            $tree = Get-UiTree -ProcessId $ProcessId -WindowTitle $script:mainWindowTitle -TimeoutMs ([Math]::Min($ProbeTimeoutMs, 8000))
             $namedInteractive = @($tree | Where-Object {
                 $_.isOffscreen -ne $true -and
                 -not [string]::IsNullOrWhiteSpace($_.name) -and
@@ -369,6 +367,8 @@ function Wait-For-UiReady {
                     $_.name.IndexOf($hint, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
                 } | Select-Object -First 1
                 if ($null -ne $hit) {
+                    $window = Find-ElementByControlType -Tree $tree -ControlType "Window"
+                    $script:mainWindowHandle = [IntPtr]$window.nativeWindowHandle
                     Write-Host "UI ready after ${attempt} probe(s): found '$($hit.name)' ($($hit.controlType))"
                     return $tree
                 }
@@ -999,7 +999,10 @@ function Close-FullscreenWindow {
     Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "escape" -WindowHandle $handle | Out-Null
     $returned = Wait-For-Condition -Condition {
         param($t)
-        return -not [OpenKaraWin32]::IsWindow($handle)
+        $window = Find-ElementByControlType -Tree $t -ControlType "Window"
+        return -not [OpenKaraWin32]::IsWindow($handle) -and
+            $null -ne $window -and $window.nativeWindowHandle -eq $script:mainWindowHandle.ToInt32() -and
+            -not $window.isOffscreen
     }
     if ($null -eq $returned) { throw "Escape did not close the fullscreen window and restore the main window" }
     return $returned
@@ -2151,6 +2154,8 @@ $script:process = $null
 $script:currentTree = @()
 $script:lastSnapshotPath = ""
 $script:mainWindowHandle = [IntPtr]::Zero
+$tauriConfig = Get-Content (Join-Path $repoRoot "src-tauri/tauri.conf.json") -Raw | ConvertFrom-Json
+$script:mainWindowTitle = ($tauriConfig.app.windows | Where-Object { $_.label -eq "main" }).title
 $script:audioOutputAvailable = $null
 try {
     $script:audioOutputAvailable = [OpenKaraWin32]::waveOutGetNumDevs() -gt 0
