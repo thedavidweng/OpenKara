@@ -134,7 +134,7 @@ jobs:
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Install nextest
-        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
           tool: nextest
 
