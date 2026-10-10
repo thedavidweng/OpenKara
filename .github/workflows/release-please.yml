@@ -44,6 +44,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write # push the native manifest sync commit to main
+      pull-requests: write # open a sync PR if direct push is declined
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,6 +63,7 @@ jobs:
       - name: Commit and push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
@@ -74,7 +76,17 @@ jobs:
           fi
           git commit -m "chore(release): sync native manifests for ${TAG_NAME}"
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push
+          if ! git push origin main; then
+            echo "Direct push to main was declined (protected branch). Opening pull request..."
+            sync_branch="chore/sync-native-manifests-${TAG_NAME}"
+            git checkout -b "${sync_branch}"
+            git push origin "${sync_branch}"
+            gh pr create \
+              --title "chore(release): sync native manifests for ${TAG_NAME}" \
+              --body "Sync native manifests (Cargo.toml, Cargo.lock, tauri.conf.json) following release ${TAG_NAME}." \
+              --head "${sync_branch}" \
+              --base main
+          fi
 
   # GITHUB_TOKEN events do not start other workflows. release-please also
   # leaves its draft release tagged untagged-*: it creates the draft before
