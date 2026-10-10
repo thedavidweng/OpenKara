@@ -55,6 +55,7 @@ async function attach(page) {
   page.on("console", (message) => console.log(message.type(), message.text()));
   page.on("pageerror", (error) => console.error("PAGE_ERROR", error.message));
   await page.addInitScript(observe);
+  await page.waitForFunction(() => Boolean(window.__TAURI_INTERNALS__));
   await page.evaluate(observe);
   console.log(
     "FOCUS",

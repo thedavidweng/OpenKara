@@ -753,6 +753,7 @@ jobs:
             ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
             ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
             ${{ runner.temp }}/desktop-e2e/uia-tree-*.json
+            ${{ runner.temp }}/desktop-e2e/webview-diagnostic.*.log
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 
