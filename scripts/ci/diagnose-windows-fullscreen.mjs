@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 const endpoint = "http://127.0.0.1:9222";
 function observe() {
   window.addEventListener(
@@ -45,6 +47,16 @@ for (let attempt = 0; attempt < 1200; attempt++) {
   }
   for (const target of targets.filter((target) => target.type === "page")) {
     if (observed.has(target.id)) continue;
+    if (process.platform === "win32") {
+      console.log(
+        "BROWSER_PROCESSES",
+        execFileSync("powershell.exe", [
+          "-NoProfile",
+          "-Command",
+          "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress",
+        ]).toString(),
+      );
+    }
     observed.add(target.id);
     console.log("PAGE", target.id, target.url);
     const socket = new WebSocket(target.webSocketDebuggerUrl);
