@@ -93,7 +93,7 @@ class Program
                 KeyDown(0x25).U.ki.dwFlags != KEYEVENTF_EXTENDEDKEY ||
                 KeyUp(0x25).U.ki.dwFlags != (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
             {
-                throw new InvalidOperationException("Invalid Win32 keyboard scan-code mapping");
+                throw new InvalidOperationException($"Invalid Win32 keyboard scan-code mapping: F down={letterDown.wScan}/{letterDown.dwFlags}, up={letterUp.wScan}/{letterUp.dwFlags}, Left down={KeyDown(0x25).U.ki.wScan}/{KeyDown(0x25).U.ki.dwFlags}, up={KeyUp(0x25).U.ki.wScan}/{KeyUp(0x25).U.ki.dwFlags}");
             }
             Console.WriteLine($"Win32 INPUT layout and keyboard mapping passed: size={expectedSize}, union offset={expectedOffset}, F scan={letterDown.wScan}");
             return 0;
@@ -1034,7 +1034,8 @@ class Program
                 {
                     wVk = vk,
                     wScan = (ushort)(scanCode & 0xff),
-                    dwFlags = (scanCode & 0xff00) == 0xe000 ? KEYEVENTF_EXTENDEDKEY : 0,
+                    dwFlags = vk is >= 0x25 and <= 0x28 or 0x5B || (scanCode & 0xff00) == 0xe000
+                        ? KEYEVENTF_EXTENDEDKEY : 0,
                     time = 0,
                     dwExtraInfo = IntPtr.Zero,
                 },
