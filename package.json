@@ -2,7 +2,7 @@
   "name": "openkara",
   "version": "0.15.0",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",

@@ -317,4 +317,8 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 
 ## 许可证
 
-[Apache License 2.0](./LICENSE) — Copyright (c) 2025 David Weng
+[GNU AGPL v3.0 only](./LICENSE) — Copyright (c) 2025 David Weng
+
+历史授权与第三方许可见 [LICENSING.md](LICENSING.md)。外部贡献者需签署
+[CLA 1.0](CLA.md)：在 PR 回复机器人要求的声明即可，无需额外授权。
+贡献者保留版权，并许可 David Weng 将贡献用于商业及闭源版本。
