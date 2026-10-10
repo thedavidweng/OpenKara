@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.16.0](https://github.com/thedavidweng/OpenKara/compare/v0.15.0...v0.16.0) (2026-10-10)
+
+
+### Features
+
+* **website:** serve the site at openkara.blahaj.uk ([20d2ae0](https://github.com/thedavidweng/OpenKara/commit/20d2ae02bb69425b7183e6462f3c04b2a9f80791))
+
+
+### Bug Fixes
+
+* **ci:** add always-reporting Packaging Gate and pin cc &lt; 1.6.0 for aws-lc-sys ([#500](https://github.com/thedavidweng/OpenKara/issues/500)) ([505e50c](https://github.com/thedavidweng/OpenKara/commit/505e50c887348e9472be5282bdae5ed8cef759a7))
+* **deps:** bump transitive source-map-js past GHSA-68fv-2mgg-jv7q ([d46be9a](https://github.com/thedavidweng/OpenKara/commit/d46be9a4da5f484d37033dd52ef65821e66d884d))
+* **deps:** bump transitive source-map-js past GHSA-68fv-2mgg-jv7q ([7edbfa8](https://github.com/thedavidweng/OpenKara/commit/7edbfa834bd8b7980edafe89fac2db1a981699c9))
+* **lyrics:** keep brackets inside LRC metadata tag values ([#466](https://github.com/thedavidweng/OpenKara/issues/466)) ([388252b](https://github.com/thedavidweng/OpenKara/commit/388252b105cba7b8e45a6ff758c2b375cbc59e6c))
+* **packaging:** regenerate flatpak node sources for the source-map-js bump ([8380a04](https://github.com/thedavidweng/OpenKara/commit/8380a0470eab5810aec5ad20a5587f4e5c29c7c1))
+* **packaging:** regenerate flatpak node sources for the source-map-js bump ([a963713](https://github.com/thedavidweng/OpenKara/commit/a963713ceba017f7938e5c5263d7108f5a6c11e0))
+* **rust:** migrate DownloadSemaphore off deprecated fetch_update ([1a9634d](https://github.com/thedavidweng/OpenKara/commit/1a9634de4d53fc03c96ec8537cfe8ba157f470c9))
+
 ## [0.15.0](https://github.com/thedavidweng/OpenKara/compare/v0.14.0...v0.15.0) (2026-09-21)
 
 
