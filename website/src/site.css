@@ -59,11 +59,7 @@ body {
   color: var(--landing-text);
   background: var(--landing-bg);
   font-family:
-    Inter,
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
 

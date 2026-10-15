@@ -431,8 +431,8 @@ which matches the pre-field behavior.
      stable catalog 获取与缓存；检查失败绝不影响已安装 runtime 的就绪状态
    - `delete_runtime() -> ()`
    - 状态机：`missing | downloading | installing | probing | activating | ready |
-update_available | downloading_candidate | candidate_ready_restart_required |
-activation_failed_previous_restored | corrupt | failed`
+     update_available | downloading_candidate | candidate_ready_restart_required |
+     activation_failed_previous_restored | corrupt | failed`
    - 快照字段新增 `active_artifact_id`、`target_triple`、
      `candidate_version`、`restart_required`；`version` 为 ACTIVE runtime
      的上游版本（如 `v1.27.1`），legacy 安装报告 `legacy`，未安装时报告
