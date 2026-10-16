@@ -582,7 +582,8 @@ jobs:
         run: |
           pnpm vitest run \
             tests/release-workflow.test.ts \
-            tests/release-metadata.test.ts
+            tests/release-metadata.test.ts \
+            tests/macos-release-signing.test.ts
 
   dependency-checks:
     name: Dependency surface checks
