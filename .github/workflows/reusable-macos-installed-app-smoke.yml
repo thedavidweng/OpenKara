@@ -85,7 +85,8 @@ env:
 jobs:
   build-installer:
     name: Build DMG and driver
-    runs-on: ${{ inputs.os }}
+    # Intel runners cannot reliably reach Apple signing services (runner-images#14924).
+    runs-on: ${{ inputs.release_build && 'macos-latest' || inputs.os }}
     timeout-minutes: 90
     env:
       APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}

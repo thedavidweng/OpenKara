@@ -241,6 +241,13 @@ describe("release workflow", () => {
       ".github/workflows/reusable-windows-installed-app.yml",
     );
 
+    const buildInstaller = macOSWorkflow.split("  clean-install:")[0];
+    const cleanInstall = macOSWorkflow.split("  clean-install:")[1];
+    expect(buildInstaller).toContain(
+      "runs-on: ${{ inputs.release_build && 'macos-latest' || inputs.os }}",
+    );
+    expect(cleanInstall).toContain("runs-on: ${{ inputs.os }}");
+
     expect(macOSWorkflow).toContain(
       'tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}"',
     );
