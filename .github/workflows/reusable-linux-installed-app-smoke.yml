@@ -147,8 +147,10 @@ jobs:
           TAURI_TARGET: ${{ inputs.tauri_target }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LDAI_UPDATE_INFORMATION: gh-releases-zsync|thedavidweng|OpenKara|latest|OpenKara_*_amd64.AppImage.zsync
         run: |
           set -euo pipefail
+          python3 scripts/test-appimage-zsync.py
           bundles="appimage"
           if [ "${RELEASE_BUILD}" = "true" ]; then
             bundles="appimage,deb"
@@ -160,6 +162,7 @@ jobs:
           else
             pnpm tauri build --ci --bundles "${bundles}" --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
           fi
+          bash scripts/collect-appimage-zsync.sh "src-tauri/target/${TAURI_TARGET}/release/bundle/appimage"
 
       - name: Build automation driver
         working-directory: src-tauri
@@ -252,7 +255,7 @@ jobs:
           signature="${signatures[0]}"
           updater_dir="${RUNNER_TEMP}/linux-updater"
           mkdir -p "$updater_dir"
-          cp "$signature" "$updater_dir/"
+          cp "$signature" "${appimage}.zsync" "$updater_dir/"
 
       - name: Upload Linux updater artifacts
         if: ${{ inputs.release_build }}
@@ -438,7 +441,7 @@ jobs:
           artifact_args+=(--artifact "deb:${RELEASE_PLATFORM}:${candidate_deb}")
           while IFS= read -r -d '' artifact; do
             artifact_args+=(--artifact "updater-${artifact##*/}:${RELEASE_PLATFORM}:${artifact}")
-          done < <(find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig" -print0)
+          done < <(find "${RUNNER_TEMP}/updater" -type f \( -name "*.AppImage.sig" -o -name "*.AppImage.zsync" \) -print0)
           "$evidence_driver" fragment-from-automation-report \
             --input "$SMOKE_ROOT/automation-report.json" \
             --repository "$GITHUB_REPOSITORY" \

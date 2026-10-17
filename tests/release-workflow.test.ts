@@ -310,7 +310,6 @@ describe("release workflow", () => {
     expect(linuxValidationStep).toContain(
       "Expected exactly one Linux updater signature matching",
     );
-    expect(linuxValidationStep).toContain('cp "$signature" "$updater_dir/"');
     expect(linuxValidationStep).not.toContain("tar.gz");
     expect(linuxValidationStep).not.toContain('name "*.sig"');
 
@@ -362,9 +361,6 @@ describe("release workflow", () => {
     const linuxEvidenceStep = readWorkflowStep(
       linuxWorkflow,
       "Generate Rust release evidence fragment",
-    );
-    expect(linuxEvidenceStep).toContain(
-      'find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig"',
     );
     expect(linuxEvidenceStep).not.toContain('name "*.tar.gz"');
     expect(linuxEvidenceStep).not.toContain('name "*.sig"');

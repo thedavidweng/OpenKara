@@ -661,7 +661,8 @@ jobs:
             -name "*.AppImage" -o \
             -name "*.deb" -o \
             -name "*.tar.gz" -o \
-            -name "*.sig" \
+            -name "*.sig" -o \
+            -name "*.AppImage.zsync" \
           \) -print0)
 
           if [ "${#files[@]}" -eq 0 ]; then
@@ -800,6 +801,7 @@ jobs:
             "OpenKara_${RELEASE_VERSION}_aarch64.dmg"
             "OpenKara_${RELEASE_VERSION}_x64.dmg"
             "OpenKara_${RELEASE_VERSION}_amd64.AppImage"
+            "OpenKara_${RELEASE_VERSION}_amd64.AppImage.zsync"
             "OpenKara_${RELEASE_VERSION}_amd64.deb"
             "release-evidence.json"
             "latest.json"

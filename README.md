@@ -91,6 +91,11 @@ Download the latest build for your platform from [GitHub Releases](https://githu
 | Windows               | `.exe` (NSIS installer) |
 | Linux                 | `.AppImage` / `.deb`    |
 
+Linux AppImages also embed stable-release AppImageUpdate information. The matching
+`.AppImage.zsync` release asset enables external delta updates without replacing
+OpenKara's existing signed Tauri updater. Update metadata is embedded before Tauri
+signs the final AppImage; publication retains the delta file in release evidence.
+
 **macOS (Homebrew):**
 
 ```bash
