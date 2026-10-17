@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.16.1](https://github.com/thedavidweng/OpenKara/compare/v0.16.0...v0.16.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **release:** require Developer ID signing and notarization on macOS ([#525](https://github.com/thedavidweng/OpenKara/issues/525)) ([69987a8](https://github.com/thedavidweng/OpenKara/commit/69987a8e26c410d28c5b4710a9288d29efe0916e))
+
 ## [0.16.0](https://github.com/thedavidweng/OpenKara/compare/v0.15.0...v0.16.0) (2026-10-10)
 
 
