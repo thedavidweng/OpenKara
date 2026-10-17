@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.16.2](https://github.com/thedavidweng/OpenKara/compare/v0.16.1...v0.16.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ci:** sign macOS releases on Apple Silicon runners ([#528](https://github.com/thedavidweng/OpenKara/issues/528)) ([4b0933a](https://github.com/thedavidweng/OpenKara/commit/4b0933a4c1b8f7b3f3b7391c3a4bdf349d522c52))
+
 ## [0.16.1](https://github.com/thedavidweng/OpenKara/compare/v0.16.0...v0.16.1) (2026-10-17)
 
 
