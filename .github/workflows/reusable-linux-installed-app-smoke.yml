@@ -204,7 +204,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact_prefix }}-installer
-          path: src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage
+          path: |
+            src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage
+            src-tauri/target/${{ inputs.rust_target }}/release/bundle/appimage/*.AppImage.zsync
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 
