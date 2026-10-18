@@ -376,6 +376,15 @@ jobs:
           pattern: release-*-smoke-reports
           path: ${{ runner.temp }}/smoke-reports
 
+      - name: Download available bundle size reports
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-size-report
+          path: ${{ runner.temp }}/size-reports
+          merge-multiple: true
+
       - name: Aggregate canonical release evidence
         env:
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
@@ -406,6 +415,22 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Merge bundle size reports
+        if: ${{ always() }}
+        run: |
+          node scripts/ci/merge-size-reports.mjs \
+            "${RUNNER_TEMP}/size-reports" \
+            "${RUNNER_TEMP}/evidence/release-size-report.json"
+
+      - name: Upload bundle size report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-size-report
+          path: ${{ runner.temp }}/evidence/release-size-report.json
+          if-no-files-found: error
+          retention-days: 90
+
   publish-release-evidence:
     name: Publish release evidence
     runs-on: ubuntu-latest
@@ -429,6 +454,22 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" \
             "${RUNNER_TEMP}/release-evidence/release-evidence.json" --clobber
+
+      - name: Download bundle size report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-size-report
+          path: ${{ runner.temp }}/release-size-report
+
+      - name: Upload bundle size report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" --repo "$GH_REPO" \
+            "${RUNNER_TEMP}/release-size-report/release-size-report.json" --clobber
 
   # Playwright accessibility is exercised in nightly-hardening (windows-matrix
   # accessibility leg) and local `pnpm test:a11y`. Release publish is gated on

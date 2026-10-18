@@ -184,6 +184,15 @@ jobs:
           name: nightly-dist-linux-x86_64-installer
           path: ${{ runner.temp }}/nightly-download/linux-x86_64
 
+      - name: Download available bundle size reports
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nightly-dist-*-size-report
+          path: ${{ runner.temp }}/nightly-size-reports
+          merge-multiple: true
+
       - name: Stage nightly assets
         env:
           DOWNLOAD_ROOT: ${{ runner.temp }}/nightly-download
@@ -228,6 +237,10 @@ jobs:
             echo "::error::The Windows installer is missing from the staged assets."
             exit 1
           fi
+
+          node scripts/ci/merge-size-reports.mjs \
+            "${RUNNER_TEMP}/nightly-size-reports" \
+            "${STAGING_DIR}/bundle-size-report.json"
 
           (cd "${STAGING_DIR}" && sha256sum -- * > SHA256SUMS)
           ls -la "${STAGING_DIR}"

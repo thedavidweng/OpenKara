@@ -370,6 +370,25 @@ describe("release workflow", () => {
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
   });
 
+  test("publishes non-blocking per-platform bundle size evidence", () => {
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const windowsWorkflow = readProjectFile(
+      ".github/workflows/reusable-windows-installed-app.yml",
+    );
+
+    expect(windowsWorkflow).toContain("tauri_target:");
+    expect(windowsWorkflow).toContain("x86_64-pc-windows-msvc");
+    expect(releaseWorkflow).toContain("pattern: release-*-size-report");
+    expect(releaseWorkflow).toContain("merge-size-reports.mjs");
+    expect(releaseWorkflow).toContain("name: release-size-report");
+    expect(releaseWorkflow).toContain("release-size-report.json");
+    expect(releaseWorkflow).toContain("Upload bundle size report");
+    expect(releaseWorkflow).toContain("continue-on-error: true");
+    // The canonical release evidence remains a separate artifact and upload.
+    expect(releaseWorkflow).toContain("name: release-evidence");
+    expect(releaseWorkflow).toContain("release-evidence.json");
+  });
+
   test("requires a matching signature for each Windows installer", () => {
     const installers = [
       "OpenKara_0.12.0_x64-setup.exe",

@@ -67,6 +67,15 @@ describe("nightly installers workflow", () => {
     expect(workflow).toContain("needs.windows.result == 'success'");
   });
 
+  test("publishes available bundle size evidence without adding updater assets", () => {
+    expect(workflow).toContain("pattern: nightly-dist-*-size-report");
+    expect(workflow).toContain("merge-size-reports.mjs");
+    expect(workflow).toContain("bundle-size-report.json");
+    expect(workflow).toContain("continue-on-error: true");
+    expect(workflow).toContain("latest.json");
+    expect(workflow).toMatch(/-name '\*\.sig'/);
+  });
+
   test("scopes write permissions to the publish job", () => {
     expect(workflow).toMatch(/^permissions:\n  contents: read$/m);
     const writeGrants = workflow.match(/contents: write/g) ?? [];
