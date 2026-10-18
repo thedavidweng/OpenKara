@@ -32,8 +32,19 @@ describe("bundle size reports", () => {
     writeFileSync(join(runtime, "libonnxruntime.dylib"), "12");
     writeFileSync(join(bundle, "macos", "OpenKara.app", "openkara"), "123456");
     writeFileSync(join(bundle, "OpenKara_0.16.2_aarch64.dmg"), "123456789");
+    writeFileSync(join(bundle, "OpenKara_0.16.2_aarch64.dmg.sig"), "signature");
     const binary = join(root, "openkara");
     writeFileSync(binary, "1234567");
+    const inputPaths = [
+      join(frontend, "index.js"),
+      join(frontend, "dict", "data.bin"),
+      join(runtime, "libonnxruntime.dylib"),
+      join(bundle, "macos", "OpenKara.app", "openkara"),
+      join(bundle, "OpenKara_0.16.2_aarch64.dmg"),
+      join(bundle, "OpenKara_0.16.2_aarch64.dmg.sig"),
+      binary,
+    ];
+    const before = inputPaths.map((inputPath) => readFileSync(inputPath));
 
     const result = run(measureScript, [
       "--platform",
@@ -59,6 +70,9 @@ describe("bundle size reports", () => {
     expect(report.installers).toEqual([
       { path: "OpenKara_0.16.2_aarch64.dmg", byte_size: 9 },
     ]);
+    expect(inputPaths.map((inputPath) => readFileSync(inputPath))).toEqual(
+      before,
+    );
     expect(report.components).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "frontend_dist", byte_size: 5 }),

@@ -111,7 +111,7 @@ async function main() {
 
   const bundleFiles = await filesUnder(bundleRoot);
   const installerFiles = bundleFiles.filter(({ path: filePath }) =>
-    /\.(?:AppImage|deb|dmg|exe|tar\.gz|sig)$/u.test(filePath),
+    /\.(?:AppImage|deb|dmg|exe|tar\.gz)$/u.test(filePath),
   );
   const report = {
     schema_version: 1,

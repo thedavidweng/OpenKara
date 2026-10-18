@@ -157,6 +157,11 @@ jobs:
     permissions:
       contents: write # recreate the rolling nightly tag + prerelease
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download Windows installer
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -238,9 +243,12 @@ jobs:
             exit 1
           fi
 
-          node scripts/ci/merge-size-reports.mjs \
+          if ! node scripts/ci/merge-size-reports.mjs \
             "${RUNNER_TEMP}/nightly-size-reports" \
-            "${STAGING_DIR}/bundle-size-report.json"
+            "${STAGING_DIR}/bundle-size-report.json"; then
+            echo "::warning::Bundle size evidence was unavailable; publishing installers without it."
+            rm -f "${STAGING_DIR}/bundle-size-report.json"
+          fi
 
           (cd "${STAGING_DIR}" && sha256sum -- * > SHA256SUMS)
           ls -la "${STAGING_DIR}"
