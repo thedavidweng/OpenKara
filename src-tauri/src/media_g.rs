@@ -58,7 +58,10 @@ pub fn inspect_zip_for_media_g(path: &Path) -> Result<ZipMediaGAsset> {
             continue;
         }
 
-        let entry_path = Path::new(entry.name());
+        let entry_name = entry
+            .name()
+            .with_context(|| format!("invalid ZIP entry name #{index} in {}", path.display()))?;
+        let entry_path = Path::new(entry_name.as_ref());
         let Some(file_name) = entry_path.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
@@ -144,6 +147,6 @@ where
     let mut bytes = Vec::new();
     entry
         .read_to_end(&mut bytes)
-        .with_context(|| format!("failed to read ZIP entry {}", entry.name()))?;
+        .with_context(|| format!("failed to read ZIP entry #{index}"))?;
     Ok(bytes)
 }

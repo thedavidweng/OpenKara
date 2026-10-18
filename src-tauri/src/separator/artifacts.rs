@@ -540,7 +540,8 @@ fn collect_zip_members(archive_path: &Path) -> Result<ArchiveMembers> {
             bail!("archive contains a link entry, which is not allowed");
         }
 
-        let raw_path = PathBuf::from(entry.name());
+        let entry_name = entry.name().context("failed to decode ZIP entry name")?;
+        let raw_path = PathBuf::from(entry_name.as_ref());
         let relative = sanitize_member_path(&raw_path)?;
 
         if members.len() + 1 > MAX_ARCHIVE_MEMBERS {
