@@ -167,6 +167,35 @@ jobs:
           RUST_TARGET: ${{ inputs.rust_target }}
         run: cargo build --release --target "${RUST_TARGET}" --features automation-driver --bin openkara_automation_driver --bin openkara_release_evidence
 
+      - name: Measure bundle size
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          SIZE_PLATFORM: ${{ inputs.updater_target }}
+          SIZE_OUTPUT: ${{ runner.temp }}/${{ inputs.artifact_prefix }}-size-report.json
+          TAURI_TARGET: ${{ inputs.tauri_target }}
+          RUST_TARGET: ${{ inputs.rust_target }}
+        run: |
+          platform="${SIZE_PLATFORM:-${TAURI_TARGET}}"
+          node scripts/ci/measure-bundle-size.mjs \
+            --platform "$platform" \
+            --output "$SIZE_OUTPUT" \
+            --bundle-root "src-tauri/target/${RUST_TARGET}/release/bundle" \
+            --binary "src-tauri/target/${RUST_TARGET}/release/openkara" \
+            --frontend-root dist \
+            --frontend-dict-root dist/dict \
+            --runtime-root src-tauri/generated/onnxruntime
+
+      - name: Upload bundle size report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-size-report
+          path: ${{ runner.temp }}/${{ inputs.artifact_prefix }}-size-report.json
+          if-no-files-found: ignore
+          retention-days: ${{ inputs.retention_days }}
+
       - name: Upload AppImage
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

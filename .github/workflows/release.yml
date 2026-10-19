@@ -364,6 +364,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download Rust evidence driver
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -375,6 +380,15 @@ jobs:
         with:
           pattern: release-*-smoke-reports
           path: ${{ runner.temp }}/smoke-reports
+
+      - name: Download available bundle size reports
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-size-report
+          path: ${{ runner.temp }}/size-reports
+          merge-multiple: true
 
       - name: Aggregate canonical release evidence
         env:
@@ -406,6 +420,24 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Merge bundle size reports
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          node scripts/ci/merge-size-reports.mjs \
+            "${RUNNER_TEMP}/size-reports" \
+            "${RUNNER_TEMP}/evidence/release-size-report.json"
+
+      - name: Upload bundle size report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-size-report
+          path: ${{ runner.temp }}/evidence/release-size-report.json
+          if-no-files-found: ignore
+          retention-days: 90
+
   publish-release-evidence:
     name: Publish release evidence
     runs-on: ubuntu-latest
@@ -429,6 +461,29 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" \
             "${RUNNER_TEMP}/release-evidence/release-evidence.json" --clobber
+
+      - name: Download bundle size report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-size-report
+          path: ${{ runner.temp }}/release-size-report
+
+      - name: Upload bundle size report
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/release-size-report/release-size-report.json"
+          if [ -f "$report" ]; then
+            gh release upload "$RELEASE_TAG" --repo "$GH_REPO" "$report" --clobber
+          else
+            echo "Bundle size evidence was unavailable; canonical release evidence was already published."
+          fi
 
   # Playwright accessibility is exercised in nightly-hardening (windows-matrix
   # accessibility leg) and local `pnpm test:a11y`. Release publish is gated on
