@@ -120,7 +120,12 @@ const CATEGORY_PATTERNS = {
     "src-tauri/catalog/**",
   ],
 
-  deps_js: ["package.json", "pnpm-lock.yaml", "sidecars/netease/**"],
+  deps_js: [
+    "sidecars/netease/**",
+    "package.json",
+    "pnpm-lock.yaml",
+    "packaging/flatpak/generated/node-sources.0.json",
+  ],
 
   deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
 
@@ -139,6 +144,10 @@ const CATEGORY_PATTERNS = {
     ".github/workflows/release-please.yml",
     ".github/workflows/reusable-windows-installed-app.yml",
     "tests/release-workflow.test.ts",
+    "tests/macos-release-signing.test.ts",
+    "scripts/ci/notarize-macos-release.sh",
+    ".github/workflows/reusable-macos-installed-app-smoke.yml",
+    "src-tauri/tauri.release.conf.json",
     "tests/desktop/windows/**",
     "scripts/ci/run-windows-desktop-e2e.ps1",
     "scripts/setup.sh",
@@ -153,6 +162,10 @@ const CATEGORY_PATTERNS = {
   ],
 
   other_workflow: [
+    ".github/jactionlint*.yaml",
+    ".github/jactionlint*.yml",
+    ".github/jactionlint-matcher.json",
+    ".github/actions/**",
     ".github/workflows/dependabot-automerge.yml",
     ".github/workflows/dependabot-sync.yml",
     ".github/workflows/mirror.yml",
@@ -260,13 +273,7 @@ const JOB_RULES = {
     cats.has("ci_workflow") ||
     cats.has("unknown"),
 
-  "workflow-lint": (cats) =>
-    cats.has("ci_workflow") ||
-    cats.has("release_workflow") ||
-    cats.has("packaging_workflow") ||
-    cats.has("e2e_workflow") ||
-    cats.has("other_workflow") ||
-    cats.has("unknown"),
+  "workflow-lint": () => true,
 
   "release-validation": (cats) =>
     cats.has("release_workflow") ||

@@ -4,10 +4,10 @@ name: Dependabot auto-merge
 # Dependabot PRs. Never checkout or execute PR code in this workflow.
 # Safety model:
 # - Dependabot cooldown delays version-update PRs (supply-chain window)
-# - Security updates bypass cooldown and auto-merge ASAP
+# - Only eligible non-major security updates bypass cooldown
 # - CI/required checks still gate the actual merge when configured
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] Same-repository Dependabot metadata only; no checkout.
 
 permissions: {}
 
@@ -46,9 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           # Release/review tooling stays manual even when patch/minor.
-          deny='googleapis/release-please-action dependabot/fetch-metadata'
+          deny='googleapis/release-please-action dependabot/fetch-metadata jdx/jactionlint github/codeql-action zizmorcore/zizmor-action actions/dependency-review-action trufflesecurity/trufflehog sigstore/cosign-installer anchore/sbom-action contributor-assistant/github-action contributor-license/cla-action'
+          dep_names="${DEP_NAMES// /}"
           for blocked in $deny; do
-            case ",${DEP_NAMES}," in
+            case ",${dep_names}," in
               *",${blocked},"*)
                 echo "skip auto-merge (denylist): $blocked"
                 exit 0
@@ -61,11 +62,16 @@ jobs:
           dt="${DEP_TYPE}"
           alert="${ALERT_STATE}"
 
+          case "$ut" in
+            version-update:semver-patch|version-update:semver-minor) ;;
+            *) echo "major or unclassified updates require manual review"; exit 0 ;;
+          esac
+
           eligible=false
           reason=""
 
-          # Security updates: always auto-merge (cooldown does not apply to them).
-          if [ "$alert" = "OPEN" ] || [ "$alert" = "FIXED" ]; then
+          # Eligible non-major security updates bypass cooldown.
+          if { [ "$alert" = "OPEN" ] || [ "$alert" = "FIXED" ]; }; then
             eligible=true
             reason="security-update"
           fi
@@ -76,9 +82,9 @@ jobs:
             reason="semver-patch"
           fi
 
-          # github-actions non-major (covers SHA pin bumps with empty update-type).
+          # Only explicitly classified patch/minor Action updates are eligible.
           if [ "$eco" = "github-actions" ] || [ "$eco" = "github_actions" ]; then
-            if [ "$ut" != "version-update:semver-major" ]; then
+            if [ "$ut" = "version-update:semver-patch" ] || [ "$ut" = "version-update:semver-minor" ]; then
               eligible=true
               reason="github-actions-non-major"
             fi

@@ -8,15 +8,19 @@
 //   3. No broad `workflows` boolean appears in app-job conditions (the old
 //      broken pattern from PR #150).
 //   4. CI Gate reads the classifier's expected-jobs output.
-//   5. Packaging build jobs use packaging-specific gates (tested in
-//      packaging-workflow-contract.test.ts).
+//   5. Packaging build jobs and aggregate gates agree for every trigger.
 //   6. The Playwright config and workflow agree on report generation.
 
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { runInNewContext } from "node:vm";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { ALL_JOBS } from "../../scripts/ci/classify-changes.mjs";
+import {
+  ALL_JOBS,
+  classifyChanges,
+} from "../../scripts/ci/classify-changes.mjs";
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -147,6 +151,35 @@ describe("CI workflow drift protection", () => {
     expect(ciYaml).toContain("EXPECTED_JOBS");
   });
 
+  test("workflow lint runs without a path or triage dependency", () => {
+    const lintJob = ciYaml.split("  workflow-lint:\n")[1].split("\n  #")[0];
+    expect(lintJob).not.toMatch(/^    (if|needs):/m);
+  });
+
+  test("ci-gate rejects skipped workflow lint on a docs-only PR", () => {
+    const classification = classifyChanges(["docs/guide.md"], "pull_request");
+    const gate = ciYaml.split("  ci-gate:")[1].split("        run: |\n")[1];
+    for (const status of ["success", "failure", "cancelled", "skipped"]) {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
+        UNKNOWN_FLAG: "false",
+        WORKFLOW_LINT: status,
+      };
+      for (const job of ALL_JOBS) {
+        if (job === "workflow-lint") continue;
+        env[job.replaceAll("-", "_").toUpperCase()] = classification.run[job]
+          ? "success"
+          : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", gate], { env });
+      expect(
+        result.status,
+        result.stdout.toString() + result.stderr.toString(),
+      ).toBe(status === "success" ? 0 : 1);
+    }
+  });
+
   test("prepare-model does not run for frontend-only or docs-only changes", () => {
     // The prepare-model job should use run_prepare-model, not a broad
     // category OR that includes frontend.
@@ -183,6 +216,12 @@ describe("Playwright report contract", () => {
 describe("Packaging workflow contract", () => {
   const packagingYaml = readProjectFile(".github/workflows/packaging.yml");
 
+  test("WinGet validation uses a published stable release", () => {
+    expect(packagingYaml).toMatch(
+      /gh release list[^\n]*--exclude-drafts[^\n]*--exclude-pre-releases/,
+    );
+  });
+
   test("release.yml is not a packaging trigger", () => {
     // A release-notes text edit must not trigger full packaging builds.
     expect(packagingYaml).not.toMatch(/\.github\/workflows\/release\.yml/);
@@ -203,5 +242,93 @@ describe("Packaging workflow contract", () => {
     // build-flatpak should have an if: condition that gates on packaging
     // inputs, not just the workflow trigger.
     expect(buildFlatpakSection).toMatch(/if:/);
+  });
+
+  test.each([
+    ["pull_request", true],
+    ["pull_request", false],
+    ["push", true],
+    ["push", false],
+    ["workflow_dispatch", false],
+  ])(
+    "%s packaging changes=%s has matching build and gate requirements",
+    (event, changed) => {
+      const condition = packagingYaml.match(
+        /  build-flatpak:[\s\S]*?    if: \|\n([\s\S]*?)    runs-on:/,
+      )?.[1];
+      expect(condition).toBeDefined();
+      const gate = packagingYaml
+        .split("  packaging-gate:")[1]
+        .split("        run: |\n")[1];
+      expect(gate).toBeDefined();
+      const required = changed || event === "workflow_dispatch";
+      for (const validation of ["success", "failure"]) {
+        const expression = condition!
+          .replace(/!cancelled\(\)/g, "true")
+          .replace(
+            /needs\.validate-flatpak\.result/g,
+            JSON.stringify(validation),
+          )
+          .replace(
+            /needs\.triage\.outputs\.packaging_(inputs|workflow)/g,
+            JSON.stringify(String(changed)),
+          )
+          .replace(/github\.event_name/g, JSON.stringify(event));
+        expect(runInNewContext(expression)).toBe(
+          required && validation === "success",
+        );
+      }
+      for (const field of [
+        "FLATPAK_BUILD",
+        "FLATPAK_VAL",
+        "WINGET",
+        "TRIAGE",
+      ]) {
+        for (const status of ["success", "failure", "cancelled", "skipped"]) {
+          const result = spawnSync("bash", ["-c", gate], {
+            env: {
+              ...process.env,
+              TRIAGE: "success",
+              WINGET: required ? "success" : "skipped",
+              FLATPAK_VAL: required ? "success" : "skipped",
+              FLATPAK_BUILD: required ? "success" : "skipped",
+              PKG_INPUTS: String(changed),
+              PKG_WORKFLOW: "false",
+              REL_META: "false",
+              EVENT_NAME: event,
+              [field]: status,
+            },
+          });
+          expect(result.status).toBe(
+            status === (required || field === "TRIAGE" ? "success" : "skipped")
+              ? 0
+              : 1,
+          );
+        }
+      }
+    },
+  );
+
+  test("packaging-gate depends on all other packaging workflow jobs", () => {
+    const jobs = extractJobIds(packagingYaml);
+    expect(jobs).toContain("packaging-gate");
+    const gateBlock = packagingYaml.match(
+      /packaging-gate:[\s\S]*?runs-on:/,
+    )?.[0];
+    expect(gateBlock).toBeDefined();
+    for (const job of [
+      "triage",
+      "validate-winget",
+      "validate-flatpak",
+      "build-flatpak",
+    ]) {
+      expect(gateBlock).toContain(`- ${job}`);
+    }
+  });
+
+  test("packaging workflow does not filter pull_request by paths so Packaging Gate is always reporting", () => {
+    // Top-level pull_request must not carry paths filter; triage handles gating.
+    const prTrigger = packagingYaml.match(/pull_request:\s*\n\s+paths:/);
+    expect(prTrigger).toBeNull();
   });
 });

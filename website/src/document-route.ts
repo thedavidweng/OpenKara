@@ -7,10 +7,8 @@ export interface DocumentRoute {
 }
 
 /**
- * Prefix a root-absolute path with the Vite base so assets and internal links
- * resolve correctly when the site is served from a subpath (e.g. the GitHub
- * Pages project URL `thedavidweng.github.io/OpenKara/`). In dev `BASE_URL` is
- * `/`, so this is a no-op; in production it is `/OpenKara/`.
+ * Prefix a root-absolute path with the Vite base. The site is served at the
+ * domain root, so production `BASE_URL` is `/`, the same as dev.
  */
 export function withBase(path: string): string {
   if (!path.startsWith("/")) return path;

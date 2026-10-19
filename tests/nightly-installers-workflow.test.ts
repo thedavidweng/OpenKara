@@ -9,6 +9,18 @@ function readProjectFile(path: string) {
   return readFileSync(join(projectRoot, path), "utf8");
 }
 
+function readWorkflowJob(workflow: string, name: string) {
+  const marker = `  ${name}:`;
+  const start = workflow.indexOf(marker);
+  if (start === -1) return "";
+  const bodyStart = start + marker.length;
+  const nextJobOffset = workflow.slice(bodyStart).search(/\n  [A-Za-z0-9_-]+:/);
+  return workflow.slice(
+    start,
+    nextJobOffset === -1 ? workflow.length : bodyStart + nextJobOffset,
+  );
+}
+
 describe("nightly installers workflow", () => {
   const workflow = readProjectFile(".github/workflows/nightly-installers.yml");
 
@@ -65,6 +77,24 @@ describe("nightly installers workflow", () => {
     // The publish gate exists for the Windows installer specifically.
     expect(workflow).toContain("OpenKara_nightly_x64-setup.exe");
     expect(workflow).toContain("needs.windows.result == 'success'");
+  });
+
+  test("publishes available bundle size evidence without adding updater assets", () => {
+    const publishJob = readWorkflowJob(workflow, "publish");
+    expect(workflow).toContain("pattern: nightly-dist-*-size-report");
+    expect(workflow).toContain("merge-size-reports.mjs");
+    expect(workflow).toContain("bundle-size-report.json");
+    expect(workflow).toContain("continue-on-error: true");
+    expect(workflow).toContain("latest.json");
+    expect(workflow).toMatch(/-name '\*\.sig'/);
+    const checkout = publishJob.indexOf("actions/checkout@");
+    const merge = publishJob.indexOf("merge-size-reports.mjs");
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(merge).toBeGreaterThan(checkout);
+    expect(publishJob).toContain("if ! node scripts/ci/merge-size-reports.mjs");
+    expect(publishJob).toContain(
+      'rm -f "${STAGING_DIR}/bundle-size-report.json"',
+    );
   });
 
   test("scopes write permissions to the publish job", () => {

@@ -50,7 +50,7 @@ pub fn parse_lrc_metadata(lrc: &str) -> LrcMetadata {
     for line in lrc.lines() {
         let line = line.trim();
         if let Some(stripped) = line.strip_prefix('[') {
-            if let Some(close) = stripped.find(']') {
+            if let Some(close) = find_tag_close(stripped) {
                 let tag = &stripped[..close];
                 if let Some(value) = tag.strip_prefix("ar:") {
                     meta.artist = Some(value.trim().to_owned());
@@ -67,6 +67,22 @@ pub fn parse_lrc_metadata(lrc: &str) -> LrcMetadata {
         }
     }
     meta
+}
+
+/// Finds the `]` that closes a tag, skipping over balanced brackets inside its
+/// value (e.g. `ti:Vision [Radio Edit]]`). Falls back to the last `]` when the
+/// inner brackets never balance.
+fn find_tag_close(s: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' if depth == 0 => return Some(i),
+            ']' => depth -= 1,
+            _ => {}
+        }
+    }
+    s.rfind(']')
 }
 
 pub fn parse_lrc(lrc: &str) -> Result<Vec<LyricLine>> {
@@ -340,6 +356,22 @@ mod tests {
         .expect("lyric line should serialize");
         assert_eq!(json["section"], serde_json::Value::Null);
         assert_eq!(json["roman"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn parse_lrc_metadata_keeps_brackets_inside_values() {
+        let lrc = "[ti:Vision [Radio Edit]]\n[ar:Artist]\n[al:Hits [Deluxe] [Remastered]]\n";
+        let meta = parse_lrc_metadata(lrc);
+        assert_eq!(meta.title.as_deref(), Some("Vision [Radio Edit]"));
+        assert_eq!(meta.artist.as_deref(), Some("Artist"));
+        assert_eq!(meta.album.as_deref(), Some("Hits [Deluxe] [Remastered]"));
+    }
+
+    #[test]
+    fn parse_lrc_metadata_handles_unbalanced_brackets_in_values() {
+        let meta = parse_lrc_metadata("[ti:Vision [Radio Edit]\n[ar:Artist][ti:Ignored]\n");
+        assert_eq!(meta.title.as_deref(), Some("Vision [Radio Edit"));
+        assert_eq!(meta.artist.as_deref(), Some("Artist"));
     }
 
     #[test]

@@ -78,3 +78,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0032 — End Streaming Import at the shared import path](./0032-end-streaming-import-at-the-shared-import-path.md)
 - [0033 — Send a China Client Address and do not ship UNM](./0033-send-a-china-client-address-and-do-not-ship-unm.md)
 - [0034 — Play YouTube from the public watch page](./0034-play-youtube-from-the-public-watch-page.md)
+- [0032 — AGPL application license](./0032-agpl-license.md)

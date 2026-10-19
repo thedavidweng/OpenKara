@@ -51,7 +51,7 @@ describe("Tauri window config", () => {
     expect(window?.resizable).toBe(true);
   });
 
-  test("macOS bundle keeps ONNX Runtime library validation entitlement", () => {
+  test("macOS bundle permits ONNX Runtime libraries and NetEase Node JIT", () => {
     expect(baseConfig.bundle?.macOS?.entitlements).toBe("Entitlements.plist");
 
     const entitlements = readFileSync(
@@ -62,7 +62,7 @@ describe("Tauri window config", () => {
     expect(entitlements).toContain(
       "<key>com.apple.security.cs.disable-library-validation</key>",
     );
-    expect(entitlements).not.toContain(
+    expect(entitlements).toContain(
       "<key>com.apple.security.cs.allow-jit</key>",
     );
     expect(entitlements).not.toContain(

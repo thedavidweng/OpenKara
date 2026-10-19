@@ -8,13 +8,14 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PNPM_CONFIG_MANAGE_PACKAGE_MANAGER_VERSIONS: "false"
 
 jobs:
   # ── Triage ───────────────────────────────────────────────────────────
@@ -43,19 +44,12 @@ jobs:
       pull-requests: write # labeler needs this to add/remove labels
     outputs:
       expected-jobs: ${{ steps.classify.outputs.expected-jobs }}
-      expected-skipped-heavy: ${{ steps.classify.outputs.expected-skipped-heavy }}
       unknown: ${{ steps.classify.outputs.unknown }}
-      unknown-files: ${{ steps.classify.outputs.unknown-files }}
-      categories: ${{ steps.classify.outputs.categories }}
-      run_triage: ${{ steps.classify.outputs.run_triage }}
-      run_conventional-commits: ${{ steps.classify.outputs.run_conventional-commits }}
       run_standards-reference: ${{ steps.classify.outputs.run_standards-reference }}
-      run_ci-gate: ${{ steps.classify.outputs.run_ci-gate }}
       run_js-quality: ${{ steps.classify.outputs.run_js-quality }}
       run_app-frontend: ${{ steps.classify.outputs.run_app-frontend }}
       run_website: ${{ steps.classify.outputs.run_website }}
       run_playwright-ui-smoke: ${{ steps.classify.outputs.run_playwright-ui-smoke }}
-      run_workflow-lint: ${{ steps.classify.outputs.run_workflow-lint }}
       run_release-validation: ${{ steps.classify.outputs.run_release-validation }}
       run_cargo-deny: ${{ steps.classify.outputs.run_cargo-deny }}
       run_dependency-checks: ${{ steps.classify.outputs.run_dependency-checks }}
@@ -203,7 +197,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
@@ -252,7 +246,7 @@ jobs:
           echo "$MODEL_FILE_SHA256  src-tauri/models/$MODEL_FILE" | sha256sum -c
 
       - name: Upload separation model
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: separation-model
           path: src-tauri/models/${{ steps.model.outputs.file }}
@@ -290,7 +284,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
 
@@ -319,9 +313,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -330,27 +325,30 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Audit dependencies
-        run: |
-          pnpm audit --audit-level=high
-          npm audit --prefix sidecars/netease --omit=dev --audit-level=high
+      # Read-only. db-schema drift stays below: it rewrites a generated
+      # file and then diffs it, so it cannot share the worktree.
+      - parallel:
+          - name: Audit dependencies
+            run: |
+              pnpm audit --audit-level=high
+              npm audit --prefix sidecars/netease --omit=dev --audit-level=high
 
-      - name: Verify formatting
-        run: node --run format
+          - name: Verify formatting
+            run: node --run format
 
-      - name: Lint frontend
-        run: node --run lint
+          - name: Lint frontend
+            run: node --run lint
 
-      - name: Check i18n keys
-        run: node --run check:i18n
+          - name: Check i18n keys
+            run: node --run check:i18n
+
+          - name: knip (unused exports / dependencies)
+            run: pnpm knip --no-progress
 
       - name: Check db-schema drift
         run: |
           pnpm generate:db-schema
           git diff --exit-code docs/references/generated/db-schema.md
-
-      - name: knip (unused exports / dependencies)
-        run: pnpm knip --no-progress
 
   # ── App frontend ─────────────────────────────────────────────────────
   # App typecheck, production build, and unit tests with coverage.
@@ -377,9 +375,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -399,8 +398,10 @@ jobs:
 
       - name: Upload test results to Codecov
         if: always()
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
+          report_type: test_results
+          files: test-results.junit.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
@@ -431,7 +432,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: frontend-coverage
           path: coverage/
@@ -475,9 +476,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -514,10 +516,6 @@ jobs:
 
   workflow-lint:
     name: Workflow lint
-    needs: triage
-    if: |
-      !cancelled() &&
-      needs.triage.outputs.run_workflow-lint == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -531,10 +529,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: actionlint
-        uses: reviewdog/action-actionlint@ab7138020abfe6cd20b742c82e5b7a9749fb5884 # v1.75.0
+      - name: jactionlint
+        uses: jdx/jactionlint@a0bb9f012b6b5760c17c9ccd040001d08002a10e # v2.1.0
         with:
-          actionlint_flags: ""
+          profile: default
 
       - name: zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
@@ -565,9 +563,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -580,7 +579,8 @@ jobs:
         run: |
           pnpm vitest run \
             tests/release-workflow.test.ts \
-            tests/release-metadata.test.ts
+            tests/release-metadata.test.ts \
+            tests/macos-release-signing.test.ts
 
   dependency-checks:
     name: Dependency surface checks
@@ -598,12 +598,12 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
@@ -614,7 +614,7 @@ jobs:
       # Prebuilt binary rather than `cargo install`, which rebuilt cargo-shear
       # from source on every run of a job whose actual work takes seconds.
       - name: Install cargo-shear
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-shear@1.12.4
 
@@ -649,7 +649,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
@@ -663,7 +663,7 @@ jobs:
           fi
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
 
@@ -696,7 +696,7 @@ jobs:
             libxdo-dev
 
       - name: Download separation model
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: separation-model
           path: src-tauri/models
@@ -722,7 +722,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Install nextest
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: nextest
 
@@ -761,7 +761,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
 
@@ -824,16 +824,17 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
 
@@ -939,9 +940,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -959,7 +961,7 @@ jobs:
           fi
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
 
@@ -1099,9 +1101,10 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.20.0
+          standalone: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -1163,7 +1166,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: playwright-report/
@@ -1225,23 +1228,23 @@ jobs:
           set -euo pipefail
 
           # All checkable jobs and their result env vars.
-          declare -A JOBS=(
-            [triage]="$TRIAGE"
-            [conventional-commits]="$CONVENTIONAL_COMMITS"
-            [standards-reference]="$STANDARDS_REFERENCE"
-            [js-quality]="$JS_QUALITY"
-            [app-frontend]="$APP_FRONTEND"
-            [website]="$WEBSITE"
-            [cargo-deny]="$CARGO_DENY"
-            [workflow-lint]="$WORKFLOW_LINT"
-            [release-validation]="$RELEASE_VALIDATION"
-            [dependency-checks]="$DEPENDENCY_CHECKS"
-            [prepare-model]="$PREPARE_MODEL"
-            [rust-test]="$RUST_TEST"
-            [rust-test-windows-compile]="$RUST_TEST_WINDOWS_COMPILE"
-            [tauri-build-smoke]="$TAURI_BUILD_SMOKE"
-            [tauri-build]="$TAURI_BUILD"
-            [playwright-ui-smoke]="$PLAYWRIGHT_UI_SMOKE"
+          JOBS=(
+            "triage:$TRIAGE"
+            "conventional-commits:$CONVENTIONAL_COMMITS"
+            "standards-reference:$STANDARDS_REFERENCE"
+            "js-quality:$JS_QUALITY"
+            "app-frontend:$APP_FRONTEND"
+            "website:$WEBSITE"
+            "cargo-deny:$CARGO_DENY"
+            "workflow-lint:$WORKFLOW_LINT"
+            "release-validation:$RELEASE_VALIDATION"
+            "dependency-checks:$DEPENDENCY_CHECKS"
+            "prepare-model:$PREPARE_MODEL"
+            "rust-test:$RUST_TEST"
+            "rust-test-windows-compile:$RUST_TEST_WINDOWS_COMPILE"
+            "tauri-build-smoke:$TAURI_BUILD_SMOKE"
+            "tauri-build:$TAURI_BUILD"
+            "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"
           )
 
           # Verify triage produced valid expected-jobs JSON.
@@ -1252,8 +1255,9 @@ jobs:
 
           fail=0
 
-          for job in "${!JOBS[@]}"; do
-            result="${JOBS[$job]}"
+          for entry in "${JOBS[@]}"; do
+            job="${entry%%:*}"
+            result="${entry#*:}"
             is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
 
             echo "$job: result=$result expected=$is_expected"

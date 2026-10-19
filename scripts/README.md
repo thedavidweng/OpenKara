@@ -1,5 +1,38 @@
 # Scripts
 
+## `ci/notarize-macos-release.sh`
+
+Run this script after the Tauri release build and before artifact upload:
+
+```bash
+bash scripts/ci/notarize-macos-release.sh src-tauri/target/aarch64-apple-darwin/release/bundle
+```
+
+The release workflow requires these repository secrets:
+
+- `APPLE_CERTIFICATE_P12_BASE64`: Developer ID Application certificate and private key, in base64 PKCS#12 format.
+- `APPLE_CERTIFICATE_PASSWORD`: PKCS#12 password.
+- `APPLE_API_KEY_ID`: App Store Connect API key ID.
+- `APPLE_API_ISSUER`: API issuer ID.
+- `APPLE_API_KEY_BASE64`: base64 contents of the `.p8` API key.
+
+The release overlay selects the MOE AI LLC identity, team `NCFNX3LJ83`.
+Tauri signs nested code and the App, then notarizes and staples the App.
+Tauri imports the certificate into a temporary keychain and deletes that keychain
+when the bundler exits. The workflow deletes the API key file after the gate.
+This flow uses API authentication and does not use an Apple ID password.
+
+The script checks the App signature, team, timestamp, hardened runtime,
+notarization ticket, and Gatekeeper result. It extracts the updater archive,
+checks its App, and compares its files with the original App. It then checks the
+DMG signature, submits the DMG for notarization, requires `Accepted`, staples the
+DMG, and checks Gatekeeper. Both native architectures must pass these checks
+before installed-app tests and Release Evidence can authorize publication.
+
+Run `pnpm vitest run tests/macos-release-signing.test.ts` for gate tests with
+controlled Apple tool responses. These tests do not prove Apple acceptance.
+Development and Nightly builds retain their existing signature policy.
+
 ## `ci/nightly-evidence.mjs`
 
 The script creates and verifies the Nightly release-gate manifest.

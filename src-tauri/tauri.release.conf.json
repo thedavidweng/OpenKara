@@ -1,5 +1,9 @@
 {
   "bundle": {
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "Developer ID Application: MOE AI LLC (NCFNX3LJ83)",
+      "hardenedRuntime": true
+    }
   }
 }
