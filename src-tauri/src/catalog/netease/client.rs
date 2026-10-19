@@ -73,11 +73,8 @@ impl NeteaseApi for LiveNeteaseApi {
                 } else {
                     "netease-node"
                 });
-            let resources = self
-                .app
-                .path()
-                .resource_dir()
-                .map_err(|_| integration_error())?;
+            let app_state = self.app.state::<crate::AppState>();
+            let resources = &app_state.shell.app_resource_dir;
             let mut command = Command::new(node);
             command
                 .arg(resources.join("netease/worker.mjs"))
