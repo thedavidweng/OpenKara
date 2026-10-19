@@ -119,7 +119,11 @@ const CATEGORY_PATTERNS = {
     "src-tauri/catalog/**",
   ],
 
-  deps_js: ["package.json", "pnpm-lock.yaml"],
+  deps_js: [
+    "package.json",
+    "pnpm-lock.yaml",
+    "packaging/flatpak/generated/node-sources.0.json",
+  ],
 
   deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
 
@@ -263,13 +267,7 @@ const JOB_RULES = {
     cats.has("ci_workflow") ||
     cats.has("unknown"),
 
-  "workflow-lint": (cats) =>
-    cats.has("ci_workflow") ||
-    cats.has("release_workflow") ||
-    cats.has("packaging_workflow") ||
-    cats.has("e2e_workflow") ||
-    cats.has("other_workflow") ||
-    cats.has("unknown"),
+  "workflow-lint": () => true,
 
   "release-validation": (cats) =>
     cats.has("release_workflow") ||

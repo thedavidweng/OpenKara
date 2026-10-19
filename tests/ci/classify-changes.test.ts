@@ -180,6 +180,16 @@ describe("classifyFile", () => {
     ]);
   });
 
+  test("Flatpak node sources run dependency validation and packaging", () => {
+    const result = pr("packaging/flatpak/generated/node-sources.0.json");
+    expect(result.categories).toEqual(["deps_js", "packaging_inputs"]);
+    expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("js-quality");
+    expect(result.expectedJobs).toContain("website");
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).not.toContain("rust-test");
+  });
+
   test("tauri.conf.json is packaging_inputs", () => {
     expect(classifyFile("src-tauri/tauri.conf.json")).toEqual([
       "packaging_inputs",
@@ -444,6 +454,7 @@ describe("synthetic fixtures", () => {
       "conventional-commits",
       "standards-reference",
       "ci-gate",
+      "workflow-lint",
     ]);
   });
 
@@ -456,6 +467,7 @@ describe("synthetic fixtures", () => {
       "conventional-commits",
       "standards-reference",
       "ci-gate",
+      "workflow-lint",
     ]);
   });
 
@@ -501,6 +513,24 @@ describe("synthetic fixtures", () => {
 // ── Event type behavior ───────────────────────────────────────────────
 
 describe("event type behavior", () => {
+  test.each(["pull_request", "push", "workflow_dispatch"])(
+    "%s always requires workflow lint for every path category",
+    (event) => {
+      for (const files of [
+        [],
+        ["docs/guide.md"],
+        ["src/App.tsx"],
+        ["src-tauri/src/lib.rs"],
+        ["website/src/site.css"],
+        ["packaging/flatpak/generated/node-sources.0.json"],
+      ]) {
+        const result = classifyChanges(files, event);
+        expect(result.run["workflow-lint"]).toBe(true);
+        expect(result.expectedJobs).toContain("workflow-lint");
+      }
+    },
+  );
+
   test("push to main is path-aware (docs-only skips heavy jobs)", () => {
     const result = classifyChanges(["docs/guide.md"], "push");
     expect(result.expectedJobs).toContain("triage");

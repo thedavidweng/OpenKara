@@ -50,7 +50,6 @@ jobs:
       run_app-frontend: ${{ steps.classify.outputs.run_app-frontend }}
       run_website: ${{ steps.classify.outputs.run_website }}
       run_playwright-ui-smoke: ${{ steps.classify.outputs.run_playwright-ui-smoke }}
-      run_workflow-lint: ${{ steps.classify.outputs.run_workflow-lint }}
       run_release-validation: ${{ steps.classify.outputs.run_release-validation }}
       run_cargo-deny: ${{ steps.classify.outputs.run_cargo-deny }}
       run_dependency-checks: ${{ steps.classify.outputs.run_dependency-checks }}
@@ -515,10 +514,6 @@ jobs:
 
   workflow-lint:
     name: Workflow lint
-    needs: triage
-    if: |
-      !cancelled() &&
-      needs.triage.outputs.run_workflow-lint == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -1231,23 +1226,23 @@ jobs:
           set -euo pipefail
 
           # All checkable jobs and their result env vars.
-          declare -A JOBS=(
-            [triage]="$TRIAGE"
-            [conventional-commits]="$CONVENTIONAL_COMMITS"
-            [standards-reference]="$STANDARDS_REFERENCE"
-            [js-quality]="$JS_QUALITY"
-            [app-frontend]="$APP_FRONTEND"
-            [website]="$WEBSITE"
-            [cargo-deny]="$CARGO_DENY"
-            [workflow-lint]="$WORKFLOW_LINT"
-            [release-validation]="$RELEASE_VALIDATION"
-            [dependency-checks]="$DEPENDENCY_CHECKS"
-            [prepare-model]="$PREPARE_MODEL"
-            [rust-test]="$RUST_TEST"
-            [rust-test-windows-compile]="$RUST_TEST_WINDOWS_COMPILE"
-            [tauri-build-smoke]="$TAURI_BUILD_SMOKE"
-            [tauri-build]="$TAURI_BUILD"
-            [playwright-ui-smoke]="$PLAYWRIGHT_UI_SMOKE"
+          JOBS=(
+            "triage:$TRIAGE"
+            "conventional-commits:$CONVENTIONAL_COMMITS"
+            "standards-reference:$STANDARDS_REFERENCE"
+            "js-quality:$JS_QUALITY"
+            "app-frontend:$APP_FRONTEND"
+            "website:$WEBSITE"
+            "cargo-deny:$CARGO_DENY"
+            "workflow-lint:$WORKFLOW_LINT"
+            "release-validation:$RELEASE_VALIDATION"
+            "dependency-checks:$DEPENDENCY_CHECKS"
+            "prepare-model:$PREPARE_MODEL"
+            "rust-test:$RUST_TEST"
+            "rust-test-windows-compile:$RUST_TEST_WINDOWS_COMPILE"
+            "tauri-build-smoke:$TAURI_BUILD_SMOKE"
+            "tauri-build:$TAURI_BUILD"
+            "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"
           )
 
           # Verify triage produced valid expected-jobs JSON.
@@ -1258,8 +1253,9 @@ jobs:
 
           fail=0
 
-          for job in "${!JOBS[@]}"; do
-            result="${JOBS[$job]}"
+          for entry in "${JOBS[@]}"; do
+            job="${entry%%:*}"
+            result="${entry#*:}"
             is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
 
             echo "$job: result=$result expected=$is_expected"
