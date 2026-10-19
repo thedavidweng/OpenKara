@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.17.1](https://github.com/thedavidweng/OpenKara/compare/v0.17.0...v0.17.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **deps:** align notification npm and Rust versions ([#541](https://github.com/thedavidweng/OpenKara/issues/541)) ([5790271](https://github.com/thedavidweng/OpenKara/commit/5790271d80f0d8bf0f50b76de989ce549fb8dbca))
+
 ## [0.17.0](https://github.com/thedavidweng/OpenKara/compare/v0.16.2...v0.17.0) (2026-10-19)
 
 
