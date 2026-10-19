@@ -17,7 +17,10 @@ import { runInNewContext } from "node:vm";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { ALL_JOBS } from "../../scripts/ci/classify-changes.mjs";
+import {
+  ALL_JOBS,
+  classifyChanges,
+} from "../../scripts/ci/classify-changes.mjs";
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -146,6 +149,35 @@ describe("CI workflow drift protection", () => {
   test("ci-gate verifies expected jobs against actual results", () => {
     // The gate must read expected-jobs and compare against actual results.
     expect(ciYaml).toContain("EXPECTED_JOBS");
+  });
+
+  test("workflow lint runs without a path or triage dependency", () => {
+    const lintJob = ciYaml.split("  workflow-lint:\n")[1].split("\n  #")[0];
+    expect(lintJob).not.toMatch(/^    (if|needs):/m);
+  });
+
+  test("ci-gate rejects skipped workflow lint on a docs-only PR", () => {
+    const classification = classifyChanges(["docs/guide.md"], "pull_request");
+    const gate = ciYaml.split("  ci-gate:")[1].split("        run: |\n")[1];
+    for (const status of ["success", "failure", "cancelled", "skipped"]) {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
+        UNKNOWN_FLAG: "false",
+        WORKFLOW_LINT: status,
+      };
+      for (const job of ALL_JOBS) {
+        if (job === "workflow-lint") continue;
+        env[job.replaceAll("-", "_").toUpperCase()] = classification.run[job]
+          ? "success"
+          : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", gate], { env });
+      expect(
+        result.status,
+        result.stdout.toString() + result.stderr.toString(),
+      ).toBe(status === "success" ? 0 : 1);
+    }
   });
 
   test("prepare-model does not run for frontend-only or docs-only changes", () => {

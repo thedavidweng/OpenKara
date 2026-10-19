@@ -157,6 +157,11 @@ jobs:
     permissions:
       contents: write # recreate the rolling nightly tag + prerelease
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download Windows installer
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -183,6 +188,15 @@ jobs:
         with:
           name: nightly-dist-linux-x86_64-installer
           path: ${{ runner.temp }}/nightly-download/linux-x86_64
+
+      - name: Download available bundle size reports
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nightly-dist-*-size-report
+          path: ${{ runner.temp }}/nightly-size-reports
+          merge-multiple: true
 
       - name: Stage nightly assets
         env:
@@ -227,6 +241,13 @@ jobs:
           if [ ! -f "${STAGING_DIR}/OpenKara_nightly_x64-setup.exe" ]; then
             echo "::error::The Windows installer is missing from the staged assets."
             exit 1
+          fi
+
+          if ! node scripts/ci/merge-size-reports.mjs \
+            "${RUNNER_TEMP}/nightly-size-reports" \
+            "${STAGING_DIR}/bundle-size-report.json"; then
+            echo "::warning::Bundle size evidence was unavailable; publishing installers without it."
+            rm -f "${STAGING_DIR}/bundle-size-report.json"
           fi
 
           (cd "${STAGING_DIR}" && sha256sum -- * > SHA256SUMS)

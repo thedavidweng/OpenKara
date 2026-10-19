@@ -28,6 +28,18 @@ function readWorkflowStep(workflow: string, name: string) {
   return workflow.slice(start, end);
 }
 
+function readWorkflowJob(workflow: string, name: string) {
+  const marker = `  ${name}:`;
+  const start = workflow.indexOf(marker);
+  if (start === -1) return "";
+  const bodyStart = start + marker.length;
+  const nextJobOffset = workflow.slice(bodyStart).search(/\n  [A-Za-z0-9_-]+:/);
+  return workflow.slice(
+    start,
+    nextJobOffset === -1 ? workflow.length : bodyStart + nextJobOffset,
+  );
+}
+
 describe("release workflow", () => {
   test("gates release publishing on release-only native and installed-app smoke", () => {
     const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
@@ -368,6 +380,53 @@ describe("release workflow", () => {
       "src-tauri/target/release/bundle/**/*setup.exe\n",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
+  });
+
+  test("publishes non-blocking per-platform bundle size evidence", () => {
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const windowsWorkflow = readProjectFile(
+      ".github/workflows/reusable-windows-installed-app.yml",
+    );
+
+    expect(windowsWorkflow).toContain("tauri_target:");
+    expect(windowsWorkflow).toContain("x86_64-pc-windows-msvc");
+    expect(releaseWorkflow).toContain("pattern: release-*-size-report");
+    expect(releaseWorkflow).toContain("merge-size-reports.mjs");
+    expect(releaseWorkflow).toContain("name: release-size-report");
+    expect(releaseWorkflow).toContain("release-size-report.json");
+    expect(releaseWorkflow).toContain("Upload bundle size report");
+    expect(releaseWorkflow).toContain("continue-on-error: true");
+    // The canonical release evidence remains a separate artifact and upload.
+    expect(releaseWorkflow).toContain("name: release-evidence");
+    expect(releaseWorkflow).toContain("release-evidence.json");
+  });
+
+  test("keeps optional size evidence independent from canonical release evidence", () => {
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const assembleJob = readWorkflowJob(
+      releaseWorkflow,
+      "assemble-release-evidence",
+    );
+    const publishEvidenceJob = readWorkflowJob(
+      releaseWorkflow,
+      "publish-release-evidence",
+    );
+    const checkout = assembleJob.indexOf("actions/checkout@");
+    const merge = assembleJob.indexOf("merge-size-reports.mjs");
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(merge).toBeGreaterThan(checkout);
+    expect(
+      readWorkflowStep(assembleJob, "Merge bundle size reports"),
+    ).toContain("continue-on-error: true");
+    expect(
+      readWorkflowStep(assembleJob, "Upload bundle size report"),
+    ).toContain("if-no-files-found: ignore");
+    expect(
+      readWorkflowStep(publishEvidenceJob, "Download bundle size report"),
+    ).toContain("continue-on-error: true");
+    expect(
+      readWorkflowStep(publishEvidenceJob, "Upload bundle size report"),
+    ).toContain('if [ -f "$report" ]; then');
   });
 
   test("requires a matching signature for each Windows installer", () => {
