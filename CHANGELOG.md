@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.17.0](https://github.com/thedavidweng/OpenKara/compare/v0.16.2...v0.17.0) (2026-10-19)
+
+
+### Features
+
+* **ci:** publish non-blocking bundle size evidence ([#543](https://github.com/thedavidweng/OpenKara/issues/543)) ([a0c7d43](https://github.com/thedavidweng/OpenKara/commit/a0c7d430dbb3fc8910a0dfa53822c2fe6eeae595))
+
+
+### Bug Fixes
+
+* **ci:** require workflow lint and classify Flatpak node sources ([#532](https://github.com/thedavidweng/OpenKara/issues/532)) ([7a1f88d](https://github.com/thedavidweng/OpenKara/commit/7a1f88df5a7c432e9fe0ecbbe5c143b190e52f5a))
+* update aws-lc build dependencies ([#534](https://github.com/thedavidweng/OpenKara/issues/534)) ([cd6ce7d](https://github.com/thedavidweng/OpenKara/commit/cd6ce7da40b5ba0089a5039217375dfdb667f16e))
+* update updater and zip dependencies ([#533](https://github.com/thedavidweng/OpenKara/issues/533)) ([fbac684](https://github.com/thedavidweng/OpenKara/commit/fbac6840438e7f03bee3c2bb0cee392b2fb08af9))
+
 ## [0.16.2](https://github.com/thedavidweng/OpenKara/compare/v0.16.1...v0.16.2) (2026-10-17)
 
 
