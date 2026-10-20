@@ -31,7 +31,15 @@ and accepts no normal results before this succeeds. A plugin selects the highest
 common major and returns:
 
 ```json
-{"id":"h1","result":{"protocol":{"major":1,"minor":0},"package_id":"org.openkara.fixture","source_id":"fixture","package_version":"1.0.0"}}
+{
+  "id": "h1",
+  "result": {
+    "protocol": { "major": 1, "minor": 0 },
+    "package_id": "org.openkara.fixture",
+    "source_id": "fixture",
+    "package_version": "1.0.0"
+  }
+}
 ```
 
 The host compares all identity/version fields with the verified manifest and
@@ -64,17 +72,17 @@ may escape the archive root; reject absolute paths, traversal, symlinks, device
 files, duplicate entries, and install scripts. The client never installs npm
 dependencies. `manifest_version` is 1. Required manifest fields:
 
-| Field | Meaning |
-| --- | --- |
-| `package_id`, `publisher`, `source_id` | Stable verified package/publisher/source binding. Lowercase ASCII source id `[a-z][a-z0-9_-]{0,63}`. |
-| `version`, `minimum_host_version` | SemVer strings; host uses SemVer ordering. |
-| `protocol` | `{ "majors": [1], "minor": 0 }`; nonempty supported majors. |
-| `runtime` | `{ "kind": "node", "major": 24 }`; exact version and platform bytes come from the signed index, not PATH. |
-| `entry`, `name`, `description`, `license` | Relative entry, plain display text, SPDX expression. No HTML or executable presentation. |
-| `capabilities` | Known capability strings listed below. |
-| `authentication` | Auth declaration below. |
-| `requires_authentication` | Array of method names that require a verified session. |
-| `resource_origins`, `media_origins` | Exact HTTPS origins allowed for resource/media requests, including scoped cookies. No wildcard origins. |
+| Field                                     | Meaning                                                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `package_id`, `publisher`, `source_id`    | Stable verified package/publisher/source binding. Lowercase ASCII source id `[a-z][a-z0-9_-]{0,63}`.      |
+| `version`, `minimum_host_version`         | SemVer strings; host uses SemVer ordering.                                                                |
+| `protocol`                                | `{ "majors": [1], "minor": 0 }`; nonempty supported majors.                                               |
+| `runtime`                                 | `{ "kind": "node", "major": 24 }`; exact version and platform bytes come from the signed index, not PATH. |
+| `entry`, `name`, `description`, `license` | Relative entry, plain display text, SPDX expression. No HTML or executable presentation.                  |
+| `capabilities`                            | Known capability strings listed below.                                                                    |
+| `authentication`                          | Auth declaration below.                                                                                   |
+| `requires_authentication`                 | Array of method names that require a verified session.                                                    |
+| `resource_origins`, `media_origins`       | Exact HTTPS origins allowed for resource/media requests, including scoped cookies. No wildcard origins.   |
 
 The signed index uses a dedicated signing key. It binds these identities,
 versions, archive HTTPS URL, byte size, SHA-256, protocol, host requirement,
@@ -100,15 +108,15 @@ Auth methods that do not apply to the declared flow return
 An expired session is never an empty successful result. A signed-out source can
 serve public operations; authentication is not a universal browser gate.
 
-| Capability | Method | Required params | Result |
-| --- | --- | --- | --- |
-| `search` | `search` | `query: string, cursor: string or null` | `Page<Track>` |
-| `liked_tracks` | `liked_tracks` | `cursor` | `Page<Track>` |
-| `playlists` | `playlists` | `cursor` | `Page<StreamingPlaylist>` |
-| `playlist_tracks` | `playlist.tracks` | `playlist_id: string, cursor` | `{playlist: StreamingPlaylist, ...Page<Track>}` |
-| `track_details` | `tracks.get` | `track_ids: string[]` (1–100) | `{items: Track[], missing_ids: string[]}` |
-| `preview` | `media.resolve` | `track_id: string, purpose: "preview"` | `Resolution` |
-| `import` | `media.resolve` | `track_id: string, purpose: "import"` | `Resolution` |
+| Capability        | Method            | Required params                         | Result                                          |
+| ----------------- | ----------------- | --------------------------------------- | ----------------------------------------------- |
+| `search`          | `search`          | `query: string, cursor: string or null` | `Page<Track>`                                   |
+| `liked_tracks`    | `liked_tracks`    | `cursor`                                | `Page<Track>`                                   |
+| `playlists`       | `playlists`       | `cursor`                                | `Page<StreamingPlaylist>`                       |
+| `playlist_tracks` | `playlist.tracks` | `playlist_id: string, cursor`           | `{playlist: StreamingPlaylist, ...Page<Track>}` |
+| `track_details`   | `tracks.get`      | `track_ids: string[]` (1–100)           | `{items: Track[], missing_ids: string[]}`       |
+| `preview`         | `media.resolve`   | `track_id: string, purpose: "preview"`  | `Resolution`                                    |
+| `import`          | `media.resolve`   | `track_id: string, purpose: "import"`   | `Resolution`                                    |
 
 A method/purpose without its capability returns `unsupported_operation`, even
 if the session is signed out. Hosts show only known declared actions; ignore
@@ -240,24 +248,24 @@ source-id routing, library mutation, or job ids originate in a plugin. The host
 binds progress to its own source/request/import job and keeps the job active
 when the user changes browser pages.
 
-| Error code | Meaning / host action |
-| --- | --- |
-| `invalid_request` | Bad params; do not retry unchanged. |
-| `handshake_required` | Credentials/normal operation sent too early; host defect. |
-| `incompatible_plugin` | No compatible protocol or identity mismatch; update required. |
-| `unsupported_operation` | Missing capability or wrong auth flow; remove unavailable action. |
-| `authentication_required` | Sign in for this operation. |
-| `session_expired` | Source rejected saved/current credentials; show sign-in, not empty list. |
-| `challenge_expired` | Restart sign-in. |
-| `invalid_cursor` | Restart the relevant list, not another source's list. |
-| `not_found` | Unknown track/playlist. |
-| `network` | Recoverable upstream connection failure. |
-| `rate_limited` | Retry only after optional positive `retry_after_ms`. |
-| `busy` | Concurrency bound reached; user can retry. |
-| `cancelled` | Work cancelled; no success side effects. |
-| `source_disabled` | Host rejected dispatch to disabled source; never sent to plugin. |
-| `source_unavailable` | Host could not start or lost process; no NetEase fallback. |
-| `internal` | Sanitized source failure; never expose upstream credential-bearing data. |
+| Error code                | Meaning / host action                                                    |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `invalid_request`         | Bad params; do not retry unchanged.                                      |
+| `handshake_required`      | Credentials/normal operation sent too early; host defect.                |
+| `incompatible_plugin`     | No compatible protocol or identity mismatch; update required.            |
+| `unsupported_operation`   | Missing capability or wrong auth flow; remove unavailable action.        |
+| `authentication_required` | Sign in for this operation.                                              |
+| `session_expired`         | Source rejected saved/current credentials; show sign-in, not empty list. |
+| `challenge_expired`       | Restart sign-in.                                                         |
+| `invalid_cursor`          | Restart the relevant list, not another source's list.                    |
+| `not_found`               | Unknown track/playlist.                                                  |
+| `network`                 | Recoverable upstream connection failure.                                 |
+| `rate_limited`            | Retry only after optional positive `retry_after_ms`.                     |
+| `busy`                    | Concurrency bound reached; user can retry.                               |
+| `cancelled`               | Work cancelled; no success side effects.                                 |
+| `source_disabled`         | Host rejected dispatch to disabled source; never sent to plugin.         |
+| `source_unavailable`      | Host could not start or lost process; no NetEase fallback.               |
+| `internal`                | Sanitized source failure; never expose upstream credential-bearing data. |
 
 Every error includes `code`, plain `message`, and boolean `retryable`.
 Optional `retry_after_ms` is meaningful only for retryable errors. `network`,
@@ -267,17 +275,17 @@ not permission for a plugin to activate another version.
 
 ## Design review against both sources
 
-| Concern | NetEase package design | Executable `fixture` package |
-| --- | --- | --- |
-| Identity | `netease`; same existing Streaming Track Identity | `fixture`; tracks `1`, `2`, `3`, playlist `42` deliberately collide with NetEase test ids |
-| Auth | Isolated official page, MUSIC_U/__csrf, `user_account` verification | QR/text prompt, opaque challenge, pending then complete polls; deterministic test account |
-| Capabilities | All seven capabilities, authenticated browse/resolve | Playlists, playlist tracks, details and import only; no search, liked tracks or preview |
-| Pagination | Plugin converts upstream offsets/id batches; can cache bounded snapshots | Uneven 1-then-2 track pages; opaque session-bound single-use cursors, no full id list |
-| Metadata | Converts upstream titles/artists/privileges and CDN artwork URLs | Distinct known titles/artists and generated artwork; no NetEase-shaped fields |
-| Media | `song_url`, full-track checks, China Client Address, no UNM | Full generated WAV descriptors; track `2` is a trial refusal; no vendor credentials |
-| Expiry/errors | Upstream auth expiry distinct from refusal/network failure | Restored expired credential scenario, cancelled/expired challenges, network fault mode |
-| Progress/cancel | Resolution/upstream batch progress before result | Delayed resolution with correlated progress and cancellable completion |
-| Ownership | Host downloads, previews, imports, stores credentials | Same ownership; fixture has no library writer or host imports |
+| Concern         | NetEase package design                                                   | Executable `fixture` package                                                              |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Identity        | `netease`; same existing Streaming Track Identity                        | `fixture`; tracks `1`, `2`, `3`, playlist `42` deliberately collide with NetEase test ids |
+| Auth            | Isolated official page, MUSIC_U/__csrf, `user_account` verification      | QR/text prompt, opaque challenge, pending then complete polls; deterministic test account |
+| Capabilities    | All seven capabilities, authenticated browse/resolve                     | Playlists, playlist tracks, details and import only; no search, liked tracks or preview   |
+| Pagination      | Plugin converts upstream offsets/id batches; can cache bounded snapshots | Uneven 1-then-2 track pages; opaque session-bound single-use cursors, no full id list     |
+| Metadata        | Converts upstream titles/artists/privileges and CDN artwork URLs         | Distinct known titles/artists and generated artwork; no NetEase-shaped fields             |
+| Media           | `song_url`, full-track checks, China Client Address, no UNM              | Full generated WAV descriptors; track `2` is a trial refusal; no vendor credentials       |
+| Expiry/errors   | Upstream auth expiry distinct from refusal/network failure               | Restored expired credential scenario, cancelled/expired challenges, network fault mode    |
+| Progress/cancel | Resolution/upstream batch progress before result                         | Delayed resolution with correlated progress and cancellable completion                    |
+| Ownership       | Host downloads, previews, imports, stores credentials                    | Same ownership; fixture has no library writer or host imports                             |
 
 Review result: no host method requires NetEase batch sizes, numeric ids, cookie
 keys, or authentication UI. The second source can omit preview/search without

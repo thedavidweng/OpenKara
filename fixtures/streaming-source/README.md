@@ -36,14 +36,15 @@ progress/cancellation, sign-out, restore, and explicit session expiry. Expiry
 output is `PASS real stdio: expired challenge remains unauthenticated`.
 Network output is `PASS real stdio: network failure is distinct from session expiry and refusal`.
 
-The smoke was written before the source process. Intended red: the process
-cannot start or produce a compatible handshake/domain result before the entry
-exists. No red/green run is claimed in this slice; the integration owner runs
-these commands once after integration. This is a runnable process smoke recipe,
-not a permanent test suite at a new seam. The approved permanent behavioral seam
-remains the application source workflow with the real host. No current host
-integration, library outcome, signature validation, or platform acceptance is
-established by this client.
+The smoke checks process behavior. It is not application-host integration or a
+permanent test suite at a new seam. The approved permanent behavioral seam
+remains the application source workflow with the real host. This client does
+not establish library outcomes, signature validation, or platform acceptance.
+
+Synchronous session and cursor operations commit their terminal outcome before
+a later cancellation can win. Authentication cancellation and sign-out remain
+available when sixteen media requests are pending. BOM-prefixed frames fail
+the process without a success response, as the transport contract requires.
 
 The process can also be driven directly:
 
