@@ -33,6 +33,44 @@ Run `pnpm vitest run tests/macos-release-signing.test.ts` for gate tests with
 controlled Apple tool responses. These tests do not prove Apple acceptance.
 Development and Nightly builds retain their existing signature policy.
 
+## Streaming Source runtime feasibility
+
+The `automation-smoke` application build accepts these commands:
+
+```bash
+"/path/to/installed/openkara" --automation-streaming-runtime install /path/to/fresh-app-data
+"/path/to/installed/openkara" --automation-streaming-runtime restart /path/to/fresh-app-data
+```
+
+The application downloads Node 24.21.0 from nodejs.org, verifies the archive
+size and the digest in `sidecars/netease/runtime.json`, extracts only the
+runtime executable, and starts that executable as its child. The restart
+command verifies the installed executable digest and does not download it.
+The commands write `streaming-runtime-install.json` and
+`streaming-runtime-restart.json` in the supplied directory. These reports
+include the application and runtime hashes, target, version, and parent PID.
+They contain no account credentials. This is an opt-in feasibility command,
+not the Streaming Source installer or signed source-index implementation.
+
+Repository-owner dispatch of `streaming-runtime-feasibility.yml` builds a
+signed, notarized macOS candidate and a Windows installer on the selected
+branch. It uses the existing installed-application workflows and uploads
+candidate artifacts and runtime observations. It does not publish a release.
+The Windows observation requires Defender and real-time protection before
+and after execution. An unsigned Windows candidate does not establish a
+signed release's reputation. The macOS observation records Gatekeeper status
+and extended attributes without changing protection or quarantine.
+
+Passing these commands does not establish quarantine enforcement, every
+Windows reputation state, Flatpak sandbox execution, or Flathub approval.
+The current workflow does not produce Flatpak acceptance evidence. The
+Flathub policy decision remains separate from sandbox execution.
+
+For the opt-in real-process test, run
+`cargo test --features automation-smoke --test streaming_runtime_smoke -- --ignored`
+on the target operating system with network access. Distributed candidates,
+not a development executable, are required for platform acceptance.
+
 ## `ci/nightly-evidence.mjs`
 
 The script creates and verifies the Nightly release-gate manifest.

@@ -1,0 +1,50 @@
+name: Streaming runtime feasibility candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streaming-runtime-feasibility-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require repository owner branch dispatch
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$ACTOR" = "$OWNER"
+          test "$REF_TYPE" = branch
+
+  macos:
+    needs: authorize
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: feasibility-553
+      artifact_prefix: feasibility-553-macos-arm64
+      os: macos-latest
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
+      updater_target: darwin-aarch64
+      previous_version: none
+      release_build: true
+      streaming_runtime_smoke: true
+      retention_days: 14
+    secrets: inherit
+
+  windows:
+    needs: authorize
+    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    with:
+      openkara_version: feasibility-553
+      artifact_prefix: feasibility-553-windows-x64
+      previous_version: none
+      streaming_runtime_smoke: true
+      retention_days: 14
