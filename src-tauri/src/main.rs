@@ -14,6 +14,11 @@ fn run_app_or_worker() -> anyhow::Result<()> {
     }
 
     #[cfg(feature = "automation-smoke")]
+    if openkara_lib::streaming_runtime_smoke::maybe_run_from_cli()? {
+        return Ok(());
+    }
+
+    #[cfg(feature = "automation-smoke")]
     if openkara_lib::runtime_bootstrap_regression::maybe_run_from_cli()? {
         return Ok(());
     }

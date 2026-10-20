@@ -33,6 +33,8 @@ pub mod runtime_bootstrap_regression;
 pub mod separator;
 pub mod services;
 pub mod smoke;
+#[cfg(feature = "automation-smoke")]
+pub mod streaming_runtime_smoke;
 pub mod state;
 pub mod system_credentials;
 mod window_shell;
