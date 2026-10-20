@@ -226,6 +226,9 @@ pub(crate) enum FadeState {
 pub struct PlaybackController {
     pub(crate) current_track: Option<LoadedTrack>,
     loading_song_id: Option<String>,
+    /// The user paused while a track was still loading; the track installs
+    /// paused instead of starting to play.
+    pause_when_loaded: bool,
     transport_generation: u64,
     volume: f32,
     stem_volumes: StemVolumes,
@@ -246,6 +249,7 @@ impl Default for PlaybackController {
         Self {
             current_track: None,
             loading_song_id: None,
+            pause_when_loaded: false,
             transport_generation: 0,
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
@@ -279,12 +283,13 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        let is_playing = !std::mem::take(&mut self.pause_when_loaded);
         self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
             stems: None,
-            is_playing: true,
+            is_playing,
             render_frame: 0,
             streaming: None,
         });
@@ -301,6 +306,7 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        let is_playing = !std::mem::take(&mut self.pause_when_loaded);
         self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
@@ -311,7 +317,7 @@ impl PlaybackController {
                 samples: Vec::new(),
             },
             stems: None,
-            is_playing: true,
+            is_playing,
             render_frame: 0,
             streaming: Some(streaming),
         });
@@ -322,6 +328,7 @@ impl PlaybackController {
         self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
+        self.pause_when_loaded = false;
         self.cancel_crossfade_and_prepared();
         self.snapshot()
     }
@@ -329,6 +336,7 @@ impl PlaybackController {
     pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
             if self.loading_song_id.is_some() {
+                self.pause_when_loaded = false;
                 return Ok(self.snapshot());
             }
             return Err(PlaybackError::InvalidPlaybackState(
@@ -351,6 +359,7 @@ impl PlaybackController {
     pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
             if self.loading_song_id.is_some() {
+                self.pause_when_loaded = true;
                 return Ok(self.snapshot());
             }
             return Err(PlaybackError::InvalidPlaybackState(
@@ -707,6 +716,7 @@ impl PlaybackController {
     pub fn clear_track(&mut self) {
         self.current_track = None;
         self.loading_song_id = None;
+        self.pause_when_loaded = false;
         self.fade = FadeState::None;
         self.cancel_crossfade_and_prepared();
     }
@@ -779,6 +789,7 @@ impl PlaybackController {
     pub fn cancel_loading_if_matching(&mut self, song_id: &str) -> bool {
         if self.loading_song_id.as_deref() == Some(song_id) {
             self.loading_song_id = None;
+            self.pause_when_loaded = false;
             return true;
         }
         false
@@ -1134,6 +1145,40 @@ mod tests {
         assert_eq!(started.state, "playing");
         assert_eq!(started.transport_generation, 1);
         assert!(started.is_playing);
+    }
+
+    #[test]
+    fn pause_while_loading_installs_the_track_paused() {
+        let mut controller = super::PlaybackController::default();
+        controller.start_track_loading("song-a");
+        controller.pause(0).unwrap();
+        let decoded = crate::audio::decode::DecodedAudio {
+            sample_rate_hz: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 100],
+        };
+        let snapshot = controller.start_track("song-a".to_owned(), decoded, 0);
+        assert!(!snapshot.is_playing);
+    }
+
+    #[test]
+    fn resume_while_loading_cancels_a_pending_pause() {
+        let mut controller = super::PlaybackController::default();
+        controller.start_track_loading("song-a");
+        controller.pause(0).unwrap();
+        controller.play(0).unwrap();
+        let decoded = crate::audio::decode::DecodedAudio {
+            sample_rate_hz: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 100],
+        };
+        assert!(
+            controller
+                .start_track("song-a".to_owned(), decoded, 0)
+                .is_playing
+        );
     }
 
     #[test]

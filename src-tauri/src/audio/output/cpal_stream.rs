@@ -111,7 +111,14 @@ where
             },
             move |error| {
                 tracing::warn!("audio output stream error: {error}");
-                device_lost.store(true, Ordering::SeqCst);
+                // An xrun is a glitch on a healthy stream; rebuilding for it
+                // turns one dropout into a burst of them.
+                if !matches!(
+                    error.kind(),
+                    cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied
+                ) {
+                    device_lost.store(true, Ordering::SeqCst);
+                }
             },
             None,
         )

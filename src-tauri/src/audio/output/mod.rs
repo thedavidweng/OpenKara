@@ -107,9 +107,14 @@ pub fn render_output_buffer(
 
         if below_low {
             playback.is_buffering = true;
+            // A pending fade-out is the user's pause. Dropping it here would
+            // cancel the pause (is_playing stays true) whenever an underrun
+            // lands inside the fade window; `finalize_fade_if_complete`
+            // below completes it by wall clock even while no audio renders.
             if !matches!(
                 playback.fade,
                 crate::audio::playback::FadeState::FadingAfterSeek { .. }
+                    | crate::audio::playback::FadeState::FadingOut { .. }
             ) {
                 playback.fade = crate::audio::playback::FadeState::None;
             }
@@ -678,6 +683,56 @@ mod tests {
             "buffering flag should clear once buffer refills"
         );
         assert!(rendered > 0, "should render audio after recovery");
+    }
+
+    /// A pause (fade-out) issued while the stream is starved must not be
+    /// cancelled by the underrun handling.
+    #[test]
+    fn pause_survives_an_underrun() {
+        use crate::audio::playback::PlaybackController;
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let (_prod, consumer) = streaming::create_stream_pair(sample_rate, channels);
+        let mut controller = PlaybackController::default();
+        controller.start_track_streaming(
+            "test-pause".to_owned(),
+            sample_rate,
+            channels,
+            30_000,
+            StreamingTrack::Single { consumer },
+            0,
+        );
+        controller.pause(0).unwrap();
+
+        let device_channels = 2;
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = ResamplerCache::new();
+        let mut crossfade_incoming_rc = ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut crossfade_incoming_rc,
+            &mut eq,
+            &mut peak_acc,
+            &ring,
+        );
+        assert!(
+            !controller.snapshot().is_playing,
+            "the underrun must not turn a pause back into playback"
+        );
     }
 
     /// R5: Position must not advance while any required stem is unavailable
