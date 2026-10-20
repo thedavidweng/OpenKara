@@ -75,6 +75,40 @@ For the opt-in real-process test, run
 on the target operating system with network access. Distributed candidates,
 not a development executable, are required for platform acceptance.
 
+## `ci/observe-linux-streaming-runtime.mjs`
+
+Run this command on the target Linux system. Use an artifact directory with
+exactly one distributed candidate of the selected format:
+
+```bash
+node scripts/ci/observe-linux-streaming-runtime.mjs --format appimage --artifact-dir /path/to/appimage --output /path/to/new-appimage-observations
+node scripts/ci/observe-linux-streaming-runtime.mjs --format deb --artifact-dir /path/to/deb --output /path/to/new-deb-observations
+```
+
+The reusable Linux workflow accepts `streaming_runtime_feasibility: true`.
+This opt-in builds both formats and runs each on a separate runner. It does
+not change the production release path. Use `ubuntu-22.04` with the
+`x86_64-unknown-linux-gnu` Rust and Tauri targets for the x64 candidate.
+
+The AppImage command probes a real FUSE mount, then starts the original
+artifact for each runtime phase. If the mount fails, it records the failure
+and starts `AppRun` from that artifact's extracted filesystem. The report
+labels this mode `extraction-fallback`; it is not mounted-AppImage evidence.
+The deb command installs the artifact with `sudo apt-get install` and starts
+the executable owned by that package. Neither command changes security
+policy, kernel settings, or FUSE device permissions.
+
+Each command writes `linux-streaming-runtime-observation.json`, phase logs,
+and the application's `app-data/streaming-runtime-{install,restart}.json`
+reports. The observation records the distribution, kernel, FUSE setup and
+mode, package installation, artifact and executable hashes, pinned Node
+version and direct app parent, and restart runtime identity. An invalid
+invariant fails the command. The workflow uploads reports and logs as
+`<artifact_prefix>-streaming-runtime-{appimage,deb}-observations`, including
+on failure. It does not upload downloaded runtime executables. These reports
+describe the observed runner and artifact; they do not establish Flatpak or
+distribution policy acceptance.
+
 ## `ci/nightly-evidence.mjs`
 
 The script creates and verifies the Nightly release-gate manifest.
