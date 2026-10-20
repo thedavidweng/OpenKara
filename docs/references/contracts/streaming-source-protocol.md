@@ -94,6 +94,14 @@ track references, playlist stamps, preview keys, cursors, and request/job state.
 Remote ids are opaque strings, not globally unique integers. No request contains
 an arbitrary source id for dispatch to a different process.
 
+The host chooses runtime delivery from its application channel, not plugin
+output. macOS, Windows, AppImage, and deb install verified runtime bytes from
+the signed index. Flatpak uses the pinned executable in its application
+package and never downloads a runtime executable. Both modes validate exact
+version, target, and protocol/host compatibility against the signed release.
+If the bundled runtime cannot satisfy a release, show update-required and
+retain the usable installation; do not fall back to an executable download.
+
 ## Description, capabilities, and sessions
 
 Mandatory methods: `describe`, `session.restore`, `auth.start`, `auth.poll`,
