@@ -6,6 +6,13 @@ use std::{fs, process::Command};
 #[ignore = "downloads the pinned runtime; run on the target OS with network access"]
 fn installed_application_downloads_its_runtime_and_restarts_without_system_node() {
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("streaming-runtime-staging")).unwrap();
+    fs::write(
+        root.path()
+            .join("streaming-runtime-staging/partial.download"),
+        b"interrupted",
+    )
+    .unwrap();
     let run = |phase: &str| {
         Command::new(env!("CARGO_BIN_EXE_openkara"))
             .args(["--automation-streaming-runtime", phase])

@@ -400,9 +400,10 @@ jobs:
           Get-FileHash -Algorithm SHA256 $env:OPENKARA_INSTALLED_APP | ConvertTo-Json | Set-Content "$root/app-hash.json"
           $before = Get-MpComputerStatus
           $before | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureVersion | ConvertTo-Json | Set-Content "$root/defender-before.json"
+          Get-MpPreference | Select-Object ExclusionPath,ExclusionProcess,ExclusionExtension | ConvertTo-Json | Set-Content "$root/defender-exclusions.json"
           if (-not ($before.AMServiceEnabled -and $before.AntivirusEnabled -and $before.RealTimeProtectionEnabled)) { throw "Defender must be enabled for this observation" }
           foreach ($phase in @("install", "restart")) {
-            $process = Start-Process -FilePath $env:OPENKARA_INSTALLED_APP -ArgumentList @("--automation-streaming-runtime", $phase, $root) -PassThru -Wait
+            $process = Start-Process -FilePath $env:OPENKARA_INSTALLED_APP -ArgumentList @("--automation-streaming-runtime", $phase, "`"$root`"") -PassThru -Wait
             if ($process.ExitCode -ne 0) { throw "Streaming runtime $phase failed: $($process.ExitCode)" }
           }
           $after = Get-MpComputerStatus

@@ -1,6 +1,9 @@
 name: Streaming runtime feasibility candidate
 
 on:
+  push:
+    branches:
+      - feat/551-streaming-source-plugins
   workflow_dispatch:
 
 permissions:
@@ -14,13 +17,19 @@ jobs:
   authorize:
     runs-on: ubuntu-latest
     steps:
-      - name: Require repository owner branch dispatch
+      - name: Require repository owner branch invocation
         env:
           ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
           OWNER: ${{ github.repository_owner }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
           test "$ACTOR" = "$OWNER"
+          test "$TRIGGERING_ACTOR" = "$OWNER"
+          test "$REPOSITORY" = thedavidweng/OpenKara
+          test "$REF" = refs/heads/feat/551-streaming-source-plugins
           test "$REF_TYPE" = branch
 
   macos:
@@ -37,7 +46,14 @@ jobs:
       release_build: true
       streaming_runtime_smoke: true
       retention_days: 14
-    secrets: inherit
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
   windows:
     needs: authorize
@@ -46,5 +62,7 @@ jobs:
       openkara_version: feasibility-553
       artifact_prefix: feasibility-553-windows-x64
       previous_version: none
-      streaming_runtime_smoke: true
+      # Hosted Windows disables Defender RTP and excludes whole drives. Run
+      # the installed candidate on a protected native machine for #553.
+      streaming_runtime_smoke: false
       retention_days: 14

@@ -17,7 +17,9 @@ pub fn maybe_run_from_cli() -> Result<bool> {
         return Ok(false);
     }
     let phase = args.next().context("expected install or restart")?;
-    let root = args.next().context("expected an isolated app-data directory")?;
+    let root = args
+        .next()
+        .context("expected an isolated app-data directory")?;
     if args.next().is_some() {
         bail!("unexpected streaming runtime smoke argument");
     }
@@ -31,7 +33,8 @@ pub fn maybe_run_from_cli() -> Result<bool> {
 
 fn run(phase: &str, root: &Path) -> Result<()> {
     let target = crate::separator::catalog::current_target_triple();
-    let pin: serde_json::Value = serde_json::from_str(include_str!("../../sidecars/netease/runtime.json"))?;
+    let pin: serde_json::Value =
+        serde_json::from_str(include_str!("../../sidecars/netease/runtime.json"))?;
     let target_pin = pin["targets"][target]
         .as_array()
         .context("unsupported runtime smoke target")?;
@@ -55,10 +58,11 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         if installed.exists() {
             bail!("install requires a fresh directory; use restart for an existing runtime");
         }
-        let staging = root.join("streaming-runtime-staging");
-        fs::create_dir(&staging).context("staging directory already exists or cannot be created")?;
+        let staging = artifacts::unique_temp_path(root, "streaming-runtime-staging");
+        fs::create_dir(&staging).context("cannot create runtime staging directory")?;
         let result = (|| -> Result<()> {
-            let archive = artifacts::download_verified_to_temp(&url, size, digest, &staging, |_, _| {})?;
+            let archive =
+                artifacts::download_verified_to_temp(&url, size, digest, &staging, |_, _| {})?;
             let candidate = staging.join(if cfg!(windows) { "node.exe" } else { "node" });
             extract_runtime(&archive, &archive_name, &candidate)?;
             #[cfg(unix)]
@@ -94,14 +98,14 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000);
     }
-    let output = command.output().context("downloaded runtime could not start")?;
+    let output = command
+        .output()
+        .context("downloaded runtime could not start")?;
     if !output.status.success() {
         bail!("downloaded runtime exited with {}", output.status);
     }
     let runtime: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    if runtime["version"] != format!("v{VERSION}")
-        || runtime["parent_pid"] != std::process::id()
-    {
+    if runtime["version"] != format!("v{VERSION}") || runtime["parent_pid"] != std::process::id() {
         bail!("runtime did not report the expected version and app parent");
     }
     let report = json!({
@@ -118,7 +122,10 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         "runtime": runtime,
         "flatpak_id": std::env::var("FLATPAK_ID").ok(),
     });
-    fs::write(root.join(format!("streaming-runtime-{phase}.json")), serde_json::to_vec_pretty(&report)?)?;
+    fs::write(
+        root.join(format!("streaming-runtime-{phase}.json")),
+        serde_json::to_vec_pretty(&report)?,
+    )?;
     Ok(())
 }
 
@@ -126,22 +133,38 @@ fn copy_runtime(mut reader: impl Read, destination: &Path, declared: u64) -> Res
     if declared == 0 || declared > MAX_RUNTIME_BYTES {
         bail!("runtime exceeds size limit");
     }
-    let mut output = fs::OpenOptions::new().write(true).create_new(true).open(destination)?;
-    if io::copy(&mut reader.by_ref().take(MAX_RUNTIME_BYTES + 1), &mut output)? != declared {
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+    if io::copy(
+        &mut reader.by_ref().take(MAX_RUNTIME_BYTES + 1),
+        &mut output,
+    )? != declared
+    {
         bail!("runtime expanded size differs from its declaration");
     }
     Ok(())
 }
 
 fn extract_runtime(archive: &Path, archive_name: &str, destination: &Path) -> Result<()> {
-    let stem = archive_name.trim_end_matches(".tar.gz").trim_end_matches(".zip");
-    let member = format!("{stem}/{}", if cfg!(windows) { "node.exe" } else { "bin/node" });
+    let stem = archive_name
+        .trim_end_matches(".tar.gz")
+        .trim_end_matches(".zip");
+    let member = format!(
+        "{stem}/{}",
+        if cfg!(windows) {
+            "node.exe"
+        } else {
+            "bin/node"
+        }
+    );
     if archive_name.ends_with(".zip") {
         let mut zip = zip::ZipArchive::new(fs::File::open(archive)?)?;
         let mut found = false;
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index)?;
-            if entry.name() == member {
+            if entry.name()? == member {
                 if found || !entry.is_file() || entry.is_symlink() {
                     bail!("runtime archive has an invalid executable member");
                 }
