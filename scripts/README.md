@@ -65,6 +65,17 @@ native machine. An unsigned candidate does not establish a signed release's
 reputation. The macOS observation records Gatekeeper status and extended
 attributes without changing protection or quarantine.
 
+On macOS, the application calls `/usr/bin/xattr` in read-only mode after the
+production download, after extraction, after installation, and on restart.
+It fails if `com.apple.quarantine` is present or the observation fails. The
+reports include `macos_quarantine` with each observed path and attribute name.
+The application also writes `streaming-runtime-quarantine-install.json` and
+`streaming-runtime-quarantine-restart.json` after each observation. These files
+preserve the archive result before the application deletes the archive, and
+preserve a failed invariant before it removes the staging directory. The
+workflow uploads these files with the runtime reports. It does not add or
+remove attributes and does not simulate a browser download.
+
 Passing these commands does not establish quarantine enforcement, every
 Windows reputation state, Flatpak sandbox execution, or Flathub approval.
 The current workflow does not produce Flatpak acceptance evidence. The
