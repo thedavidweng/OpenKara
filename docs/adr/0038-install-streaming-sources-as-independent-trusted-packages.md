@@ -53,13 +53,38 @@ readiness, and authentication are separate states. Disable retains credentials;
 sign-out removes them; uninstall offers their removal and keeps library songs.
 
 Use a project-managed runtime pinned by each signed release, never inherited
-PATH or system npm. Platform feasibility is a separate release gate under
-[#553](https://github.com/thedavidweng/OpenKara/issues/553). A distributed macOS,
-Windows, or Flatpak run is not established by this ADR. If executable downloads
-are not viable, prefer a channel-bundled pinned runtime and downloaded JavaScript
-packages. If that also fails, explicitly ship that channel without Streaming
-Sources. Flathub policy acceptance is separate from sandbox execution. Never ask
-users to bypass platform protection.
+PATH or system npm. Runtime delivery depends on the application channel:
+
+| Channel                                   | Runtime delivery                                                                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS, Windows, Linux AppImage, Linux deb | Download and verify the pinned runtime from the signed source index.                                                                                            |
+| Flatpak                                   | Bundle a fixed pinned Node runtime in the application package. Download only signed, verified JavaScript source packages at runtime, never executable runtimes. |
+
+Both modes check the runtime version, target, and compatibility against the
+signed source release. A bundled runtime skips the download, not validation.
+A source that requires an unavailable bundled runtime version needs a
+compatible source or application update; do not download an executable as a
+hidden fallback.
+
+The production macOS downloader does not add `com.apple.quarantine` to its
+downloads or extracted executable. Record that behavior and check it in the
+runtime regression. Do not simulate a browser download or remove attributes
+to make a check pass. Never ask users to bypass platform protection.
+
+Record actual distributed runtime feasibility under
+[#553](https://github.com/thedavidweng/OpenKara/issues/553), including Linux
+AppImage and deb, distribution, FUSE environment, and runtime digests. Exercise
+Intel macOS when a runner is available; otherwise record the gap under
+[#557](https://github.com/thedavidweng/OpenKara/issues/557). Flatpak sandbox
+acceptance and its pnpm tarball build repair also belong to #557, not #553.
+
+OpenKara has not submitted to Flathub; see the
+[packaging boundary](../../packaging/flatpak/README.md). There is no Flathub
+review conclusion. Downloadable JavaScript plugins are a first-submission
+policy risk, not a condition for closing #553. If the first submission rejects
+those downloads, ship Flatpak without Streaming Sources and state that limit
+in Settings and release notes. Actual sandbox execution and Flathub policy
+acceptance are separate evidence; neither implies the other.
 
 Keep application code AGPL-3.0-only. MIT is the intended license for plugin-owned
 code and protocol development materials only where sufficient rights exist.
