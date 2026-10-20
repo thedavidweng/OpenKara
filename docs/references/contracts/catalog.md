@@ -3,6 +3,11 @@
 Field or command semantic changes must update this document before changing UI
 code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0036.
 
+The independently installed Streaming Source process boundary is specified in
+[Streaming Source protocol 1.0](streaming-source-protocol.md) and ADR 0038.
+That contract does not change the current application IPC below; adoption is
+the source-neutral host/browser slice of #551.
+
 ## Types
 
 `OnlineSourceId`: `"youtube"` | `"netease"`

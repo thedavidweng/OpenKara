@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "package_id": "org.openkara.fixture",
+  "publisher": "org.openkara",
+  "source_id": "fixture",
+  "version": "1.0.0",
+  "minimum_host_version": "0.17.0",
+  "protocol": { "majors": [1], "minor": 0 },
+  "runtime": { "kind": "node", "major": 24 },
+  "entry": "worker.mjs",
+  "name": "Deterministic Streaming Source",
+  "description": "Generated tones for source workflow acceptance. Not a music service.",
+  "license": "AGPL-3.0-only",
+  "capabilities": ["playlists", "playlist_tracks", "track_details", "import"],
+  "authentication": { "flow": "plugin", "presentations": ["qr", "text"] },
+  "requires_authentication": ["playlists", "playlist.tracks", "tracks.get", "media.resolve"],
+  "resource_origins": ["https://streaming-fixture.openkara.test:9443"],
+  "media_origins": ["https://streaming-fixture.openkara.test:9443"]
+}

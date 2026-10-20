@@ -3,6 +3,12 @@
 Date: 2026-08-16
 Status: accepted
 
+Factual erratum (2026-10-20): the Apache-2.0 statement below describes the
+project at the decision date, not its current license. The application now
+uses AGPL-3.0-only; see [ADR 0037](0037-agpl-license.md) and
+[LICENSING.md](../../LICENSING.md). The China Client Address and no-UNM
+decisions remain unchanged.
+
 ## Context
 
 NetEase often returns an empty stream URL when the client egress IP is
