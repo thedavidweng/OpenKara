@@ -80,4 +80,5 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0034 — Play YouTube from the public watch page](./0034-play-youtube-from-the-public-watch-page.md)
 - [0035 — Open NetEase sign-in in an isolated window](./0035-open-netease-sign-in-in-an-isolated-window.md)
 - [0036 — Preview NetEase tracks by streaming without a library song](./0036-preview-netease-tracks-by-streaming-without-a-library-song.md)
-- [0032 — AGPL application license](./0032-agpl-license.md)
+- [0037 — AGPL application license](./0037-agpl-license.md) (formerly the duplicate 0032; other ADR numbers stay unchanged)
+- [0038 — Install Streaming Sources as independent trusted packages](./0038-install-streaming-sources-as-independent-trusted-packages.md)

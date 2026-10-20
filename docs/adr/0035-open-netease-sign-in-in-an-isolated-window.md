@@ -1,7 +1,8 @@
 # ADR 0035 — NetEase web sign-in and bundled API sidecar
 
 Date: 2026-09-28
-Status: accepted
+Status: accepted for controlled official-page authentication; the bundled-sidecar
+decision is superseded by [ADR 0038](0038-install-streaming-sources-as-independent-trusted-packages.md)
 
 ## Context
 
