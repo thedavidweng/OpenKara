@@ -86,6 +86,29 @@ those downloads, ship Flatpak without Streaming Sources and state that limit
 in Settings and release notes. Actual sandbox execution and Flathub policy
 acceptance are separate evidence; neither implies the other.
 
+### Channel feasibility evidence
+
+The accepted #553 evidence supports the delivery choices above, not every OS
+or security reputation state. Durable issue reports record exact application
+and runtime hashes, OS versions, and install/restart parent-process checks:
+
+- [macOS ARM64 and native Intel](https://github.com/thedavidweng/OpenKara/issues/553#issuecomment-6301606565):
+  signed, notarized candidates; Gatekeeper assessments enabled; no quarantine
+  on the downloaded archive, extracted executable, installed runtime, or
+  restarted runtime. The application-facing regression fails if this changes.
+- [Windows 11](https://github.com/thedavidweng/OpenKara/issues/553#issuecomment-6300784567):
+  actual installed candidate; Defender and real-time protection enabled;
+  no exclusions. The tested application candidate is unsigned; this does not
+  establish other signing or reputation states.
+- [AppImage and deb on Ubuntu 22.04.5](https://github.com/thedavidweng/OpenKara/issues/553#issuecomment-6304283709):
+  the AppImage ran from its actual FUSE mount with `libfuse2` 2.9.9-5ubuntu3;
+  deb execution matched the supplied package payload. Both downloaded and
+  restarted the verified runtime. No runtime-delivery fallback is required.
+
+Flatpak uses the maintainer-selected bundled-runtime policy. Its actual
+sandbox evidence and pnpm tarball repair remain #557 acceptance work. There
+is no Intel runner gap and no Flathub approval claim.
+
 Keep application code AGPL-3.0-only. MIT is the intended license for plugin-owned
 code and protocol development materials only where sufficient rights exist.
 The [provenance audit](../references/streaming-source-provenance.md) records the
