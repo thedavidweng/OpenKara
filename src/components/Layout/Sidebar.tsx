@@ -5,7 +5,9 @@ import {
   Folder,
   CheckCircle2,
   Layers,
+  Link2,
   ListMusic,
+  Music2,
 } from "lucide-react";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { InputDialog } from "@/components/Settings/InputDialog";
@@ -17,7 +19,7 @@ import {
   batchSeparationInProgress,
   batchSeparationLabelArgs,
 } from "@/lib/task-progress";
-import { NeteasePanel } from "@/components/Catalog/NeteasePanel";
+import { APP_SHORTCUTS, getShortcutDisplay } from "@/lib/app-shortcuts";
 import { useCatalogStore } from "@/stores/catalog-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
@@ -46,6 +48,13 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const hideUpgradeAll = useSettingsStore((s) => s.hideUpgradeAll);
   const stemMode = useSettingsStore((s) => s.stemMode);
   const neteaseSourceEnabled = useSettingsStore((s) => s.neteaseSourceEnabled);
+  const youtubeSourceEnabled = useSettingsStore((s) => s.youtubeSourceEnabled);
+  const neteaseSession = useCatalogStore((s) => s.session);
+  const neteaseSignedIn =
+    !!neteaseSession?.signed_in && !neteaseSession.expired;
+  const youtubeLinkOpen = useCatalogStore((s) => s.youtubeLinkOpen);
+  const setYoutubeLinkOpen = useCatalogStore((s) => s.setYoutubeLinkOpen);
+  const youtubeShortcut = getShortcutDisplay(APP_SHORTCUTS.openYoutubeLink);
   const catalogView = useCatalogStore((s) => s.activeView);
   const setCatalogView = useCatalogStore((s) => s.setActiveView);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
@@ -157,7 +166,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               setCatalogView("library");
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
-              filter === "all" && !activePlaylistId
+              filter === "all" && !activePlaylistId && catalogView !== "netease"
                 ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
@@ -184,7 +193,9 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               setCatalogView("library");
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
-              filter === "separated" && !activePlaylistId
+              filter === "separated" &&
+              !activePlaylistId &&
+              catalogView !== "netease"
                 ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
@@ -197,10 +208,18 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               {separatedCount}
             </span>
           </button>
+        </div>
+      )}
+
+      {!activePlaylistId && (neteaseSourceEnabled || youtubeSourceEnabled) ? (
+        <div className="mt-4 shrink-0 space-y-0.5 px-2">
+          <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
+            {t("sidebar.onlineSources")}
+          </div>
           {neteaseSourceEnabled ? (
             <button
               type="button"
-              aria-label={t("sidebar.netease")}
+              aria-current={catalogView === "netease" ? "page" : undefined}
               onClick={() => {
                 setCatalogView("netease");
                 setActivePlaylist(null);
@@ -212,13 +231,43 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               }`}
             >
               <span className="flex items-center gap-2">
-                <ListMusic size={14} className="text-[var(--color-accent)]" />
+                <Music2 size={14} className="text-[var(--color-accent)]" />
                 <span>{t("sidebar.netease")}</span>
+              </span>
+              {neteaseSignedIn ? (
+                <span
+                  role="img"
+                  aria-label={t("sidebar.neteaseSignedIn")}
+                  className="size-2 rounded-full bg-[var(--color-success)]"
+                />
+              ) : (
+                <span className="text-[11px] text-[var(--color-warning)]">
+                  {t("sidebar.neteaseSignIn")}
+                </span>
+              )}
+            </button>
+          ) : null}
+          {youtubeSourceEnabled ? (
+            <button
+              type="button"
+              data-youtube-link-trigger="true"
+              aria-haspopup="dialog"
+              aria-expanded={youtubeLinkOpen}
+              aria-keyshortcuts={youtubeShortcut}
+              onClick={() => setYoutubeLinkOpen(!youtubeLinkOpen)}
+              className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]`}
+            >
+              <span className="flex items-center gap-2">
+                <Link2 size={14} className="text-[var(--color-accent)]" />
+                <span>{t("sidebar.youtubeLink")}</span>
+              </span>
+              <span className="text-[11px] text-[var(--color-text-dim)]">
+                {youtubeShortcut}
               </span>
             </button>
           ) : null}
         </div>
-      )}
+      ) : null}
 
       <div
         className={`shrink-0 space-y-0.5 px-2 ${previewMode ? "mt-3" : "mt-4"}`}
@@ -274,14 +323,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         )}
       </div>
 
-      {!activePlaylistId &&
-      catalogView === "netease" &&
-      neteaseSourceEnabled ? (
-        <div className="mt-4 flex flex-1 flex-col overflow-hidden">
-          <NeteasePanel />
-        </div>
-      ) : null}
-      {!activePlaylistId && catalogView !== "netease" && (
+      {!activePlaylistId && (
         <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">

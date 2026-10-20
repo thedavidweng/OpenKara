@@ -71,12 +71,11 @@ vi.mock("@/stores/settings-store", () => ({
 
 vi.mock("@/stores/catalog-store", () => ({
   useCatalogStore: (
-    selector: (state: { videoItems: Record<string, never> }) => unknown,
-  ) => selector({ videoItems: {} }),
-}));
-
-vi.mock("@/components/Catalog/YoutubePasteLink", () => ({
-  YoutubePasteLink: () => null,
+    selector: (state: {
+      videoItems: Record<string, never>;
+      previewItems: Record<string, never>;
+    }) => unknown,
+  ) => selector({ videoItems: {}, previewItems: {} }),
 }));
 
 describe("QueuePanel", () => {

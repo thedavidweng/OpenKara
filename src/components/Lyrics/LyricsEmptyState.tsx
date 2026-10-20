@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LyricsEditDialog } from "@/components/Lyrics/LyricsEditDialog";
+import { isOnlinePreviewQueueId } from "@/playback";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 
@@ -26,7 +27,7 @@ export function LyricsEmptyState({
       <p className="text-[14px] text-[var(--color-text-dimmer)]">
         {t("lyrics.noLyrics")}
       </p>
-      {songId && !isAudience && (
+      {songId && !isAudience && !isOnlinePreviewQueueId(songId) && (
         <>
           <button
             type="button"

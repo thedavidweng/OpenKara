@@ -39,6 +39,18 @@ export const APP_SHORTCUTS = {
     key: ",",
     displayKey: ",",
   },
+  openYoutubeLink: {
+    id: "youtube.link",
+    code: "KeyL",
+    key: "l",
+    displayKey: "L",
+  },
+  findInView: {
+    id: "view.find",
+    code: "KeyF",
+    key: "f",
+    displayKey: "F",
+  },
   increaseLyricsFont: {
     id: "lyrics.font.increase",
     displayKey: "+",

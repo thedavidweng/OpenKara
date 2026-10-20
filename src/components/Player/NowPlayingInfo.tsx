@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Download } from "lucide-react";
+import { Tooltip } from "@/components/Overlay/Tooltip";
+import { NeteaseCover } from "@/components/Catalog/NeteaseCover";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -19,6 +22,8 @@ export function NowPlayingInfo({
   const snapshot = usePlayerStore((s) => s.snapshot);
   const songs = useLibraryStore((s) => s.songs);
   const videoItems = useCatalogStore((s) => s.videoItems);
+  const previewItems = useCatalogStore((s) => s.previewItems);
+  const importTracks = useCatalogStore((s) => s.importTracks);
 
   if (!snapshot?.song_id) {
     return (
@@ -32,8 +37,14 @@ export function NowPlayingInfo({
 
   const song = songs.find((s) => s.hash === snapshot.song_id);
   const video = videoItems[snapshot.song_id];
-  const title = song?.title || video?.title || t("common.unknownTitle");
-  const artist = song?.artist || video?.channel || t("common.unknownArtist");
+  const preview = previewItems[snapshot.song_id];
+  const title =
+    song?.title || video?.title || preview?.title || t("common.unknownTitle");
+  const artist =
+    song?.artist ||
+    video?.channel ||
+    preview?.artist ||
+    t("common.unknownArtist");
   const hideArtist = density === "tight";
   const showCoverArt = !hideCoverArt && (song?.has_cover_art ?? false);
 
@@ -58,6 +69,13 @@ export function NowPlayingInfo({
           className="h-12 w-12 shrink-0"
         />
       )}
+      {preview && !hideCoverArt && (
+        <NeteaseCover
+          url={preview.cover_url}
+          size={96}
+          className="size-12 shrink-0 rounded-md"
+        />
+      )}
       <div className="flex min-w-0 flex-col overflow-hidden">
         <MarqueeTitle title={title} />
         {!hideArtist && (
@@ -66,6 +84,18 @@ export function NowPlayingInfo({
           </span>
         )}
       </div>
+      {preview && density !== "tight" && (
+        <Tooltip label={t("catalog.netease.importToSing")}>
+          <button
+            type="button"
+            aria-label={t("catalog.netease.importToSing")}
+            onClick={() => void importTracks([preview.remote_track_id])}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--color-accent)] hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+          >
+            <Download className="size-4" aria-hidden="true" />
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }

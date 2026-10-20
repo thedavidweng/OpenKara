@@ -156,6 +156,33 @@ function baseDeps(
 }
 
 describe("handleAppKeyDown", () => {
+  test("opens the YouTube link popover with the primary shortcut, even while typing", () => {
+    const openYoutubeLink = vi.fn();
+    const event = createKeyboardEvent({
+      code: "KeyL",
+      key: "l",
+      metaKey: true,
+      target: createKeyboardTarget("INPUT"),
+    });
+
+    const handled = handleAppKeyDown(event, baseDeps({ openYoutubeLink }));
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(openYoutubeLink).toHaveBeenCalledOnce();
+  });
+
+  test("leaves the YouTube link shortcut unhandled when the source is disabled", () => {
+    const event = createKeyboardEvent({
+      code: "KeyL",
+      key: "l",
+      ctrlKey: true,
+    });
+
+    expect(handleAppKeyDown(event, baseDeps())).toBe(false);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   test("toggles the sidebar with the shared primary shortcut", () => {
     const toggleSidebar = vi.fn();
     const event = createKeyboardEvent({
@@ -755,6 +782,23 @@ describe("useKeyboardShortcuts", () => {
     renderHook(() => useKeyboardShortcuts(false));
     expect(addSpy).not.toHaveBeenCalledWith("keydown", expect.any(Function));
     addSpy.mockRestore();
+  });
+
+  test("opens the YouTube link popover only when the source is enabled", async () => {
+    const { unmount } = renderHook(() => useKeyboardShortcuts(true));
+    const { useCatalogStore } = await import("@/stores/catalog-store");
+
+    useSettingsStore.setState({ youtubeSourceEnabled: false } as never);
+    await dispatchKey({ code: "KeyL", key: "l", ctrlKey: true });
+    expect(useCatalogStore.getState().youtubeLinkOpen).toBe(false);
+
+    useSettingsStore.setState({ youtubeSourceEnabled: true } as never);
+    await dispatchKey({ code: "KeyL", key: "l", ctrlKey: true });
+    expect(useCatalogStore.getState().youtubeLinkOpen).toBe(true);
+
+    useSettingsStore.setState({ youtubeSourceEnabled: false } as never);
+    useCatalogStore.getState().setYoutubeLinkOpen(false);
+    unmount();
   });
 
   test("exposes all wired callbacks via the keyboard hook", async () => {

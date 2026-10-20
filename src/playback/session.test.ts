@@ -4,6 +4,9 @@ import type {
   SeparationStatusSnapshot,
 } from "@/types/ipc";
 import {
+  isOnlinePreviewQueueId,
+  onlinePreviewQueueId,
+  onlinePreviewRemoteId,
   createPlaybackSession,
   type PlaybackSessionDeps,
   type PlaybackTransport,
@@ -854,5 +857,15 @@ describe("YouTube video transport", () => {
       "video transport is not available",
     );
     expect(deps.transport.play).not.toHaveBeenCalled();
+  });
+});
+
+describe("online preview queue ids", () => {
+  test("round-trip the remote id and reject other ids", () => {
+    expect(onlinePreviewQueueId("42")).toBe("ne:42");
+    expect(isOnlinePreviewQueueId("ne:42")).toBe(true);
+    expect(isOnlinePreviewQueueId("yt:42")).toBe(false);
+    expect(onlinePreviewRemoteId("ne:42")).toBe("42");
+    expect(onlinePreviewRemoteId("abc123")).toBeNull();
   });
 });

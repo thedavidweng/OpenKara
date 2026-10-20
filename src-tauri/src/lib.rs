@@ -92,6 +92,7 @@ pub fn derive_startup_model_bootstrap(
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(catalog::NeteaseSidecar::default())
+        .manage(std::sync::Arc::new(catalog::NeteaseSongCache::default()))
         // First plugin: short-circuit a second launch before any state init
         // (single SQLite writer + remote outbox assume one process).
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -211,9 +212,12 @@ pub fn run() {
             commands::catalog::list_streaming_liked_tracks,
             commands::catalog::list_streaming_playlists,
             commands::catalog::get_streaming_playlist,
+            commands::catalog::get_streaming_tracks,
             commands::catalog::search_streaming_source,
             commands::catalog::start_streaming_import,
             commands::catalog::continue_streaming_import,
+            commands::catalog::cancel_streaming_import,
+            commands::catalog::get_streaming_import_status,
             commands::catalog::resolve_video_source_url,
             commands::catalog::get_reveal_targets,
             commands::catalog::reveal_in_folder,

@@ -1,5 +1,30 @@
 import type { InvokeCommand } from "@/lib/tauri/invoke";
 
+const MOCK_NETEASE_TRACKS = [
+  ["1", "Bohemian Rhapsody", "Queen", "A Night at the Opera", 354000, null],
+  ["2", "Dancing Queen", "ABBA", "Arrival", 231000, null],
+  ["3", "晴天", "周杰伦", "叶惠美", 269000, "no_play_rights"],
+  ["4", "Don't Stop Believin'", "Journey", "Escape", 251000, null],
+  ["5", "Rolling in the Deep", "Adele", "21", 228000, "trial_clip"],
+  ["6", "Sweet Caroline", "Neil Diamond", null, null, null],
+].map(([id, title, artist, album, duration, refusal]) => ({
+  source_id: "netease" as const,
+  remote_track_id: id as string,
+  title: title as string,
+  artist: artist as string,
+  album: album as string | null,
+  duration_ms: duration as number | null,
+  refusal: refusal
+    ? {
+        reason: refusal as "no_play_rights" | "trial_clip",
+        title: title as string,
+        artist: artist as string,
+      }
+    : null,
+  library_song_id: id === "2" ? "mock-song-abba" : (null as string | null),
+  cover_url: null as string | null,
+}));
+
 export interface MockData {
   songs: MockSong[];
   lyrics: MockLyrics;
@@ -804,8 +829,8 @@ export function createTauriMock(data: any): TauriMockResult {
     ],
     get_streaming_session: () => ({
       source_id: "netease",
-      signed_in: false,
-      display_name: null,
+      signed_in: true,
+      display_name: "Demo Listener",
       expired: false,
     }),
     open_streaming_sign_in: () => null,
@@ -815,14 +840,64 @@ export function createTauriMock(data: any): TauriMockResult {
       display_name: null,
       expired: false,
     }),
-    list_streaming_liked_tracks: () => [],
-    list_streaming_playlists: () => [],
+    list_streaming_liked_tracks: () => ({
+      tracks: MOCK_NETEASE_TRACKS.slice(0, 5),
+      track_ids: MOCK_NETEASE_TRACKS.slice(0, 5).map(
+        (track) => track.remote_track_id,
+      ),
+      partial: false,
+    }),
+    get_streaming_tracks: (args: { remoteTrackIds: string[] }) =>
+      MOCK_NETEASE_TRACKS.filter((track) =>
+        args.remoteTrackIds.includes(track.remote_track_id),
+      ),
+    list_streaming_playlists: () => [
+      {
+        remote_id: "pl-1001",
+        name: "Late Night Karaoke",
+        track_count: 6,
+        cover_url: null,
+      },
+      {
+        remote_id: "pl-1002",
+        name: "Road Trip Classics",
+        track_count: 4,
+        cover_url: null,
+      },
+      {
+        remote_id: "pl-1003",
+        name: "周杰伦精选",
+        track_count: 3,
+        cover_url: null,
+      },
+    ],
     get_streaming_playlist: (args: { remotePlaylistId: string }) => ({
       remote_id: args.remotePlaylistId,
-      name: "Streaming Playlist",
-      tracks: [],
+      name:
+        args.remotePlaylistId === "pl-1002"
+          ? "Road Trip Classics"
+          : args.remotePlaylistId === "pl-1003"
+            ? "周杰伦精选"
+            : "Late Night Karaoke",
+      tracks: MOCK_NETEASE_TRACKS.slice(0, 6),
+      track_ids: MOCK_NETEASE_TRACKS.slice(0, 6).map(
+        (track) => track.remote_track_id,
+      ),
+      partial: false,
+      cover_url: null,
+      creator: "Mock user",
+      description: "A mock playlist for previews and tests.",
+      track_count: 6,
+      updated_at_ms: 1_700_000_000_000,
     }),
-    search_streaming_source: () => [],
+    search_streaming_source: (args: { query?: string }) =>
+      MOCK_NETEASE_TRACKS.filter((track) =>
+        `${track.title} ${track.artist}`
+          .toLowerCase()
+          .includes(String(args.query ?? "").toLowerCase()),
+      ),
+    cancel_streaming_import: () => null,
+    get_streaming_import_status: () => null,
     start_streaming_import: () => ({
       status: "completed",
       imported_song_ids: [],

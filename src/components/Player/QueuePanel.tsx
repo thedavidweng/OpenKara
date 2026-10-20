@@ -27,12 +27,10 @@ import {
   type ReactNode,
 } from "react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
-import { YoutubePasteLink } from "@/components/Catalog/YoutubePasteLink";
 import { useCatalogStore } from "@/stores/catalog-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useRotationStore } from "@/stores/rotation-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { RotationControls } from "./RotationControls";
 import { SingerPickerDialog } from "./SingerPickerDialog";
 import {
@@ -276,8 +274,8 @@ export function QueuePanel() {
   const reorderBySongId = useQueueStore((s) => s.reorderBySongId);
   const clearQueue = useQueueStore((s) => s.clearQueue);
   const songs = useLibraryStore((s) => s.songs);
-  const youtubeSourceEnabled = useSettingsStore((s) => s.youtubeSourceEnabled);
   const videoItems = useCatalogStore((s) => s.videoItems);
+  const previewItems = useCatalogStore((s) => s.previewItems);
   const active = useRotationStore((s) => s.active);
   const singerNames = useRotationStore((s) => s.singerNames);
   const queueSingers = useRotationStore((s) => s.queueSingers);
@@ -341,8 +339,11 @@ export function QueuePanel() {
 
   const getSongLabel = useCallback(
     (songId: string) =>
-      getSong(songId)?.title || videoItems[songId]?.title || songId.slice(0, 8),
-    [getSong, videoItems],
+      getSong(songId)?.title ||
+      videoItems[songId]?.title ||
+      previewItems[songId]?.title ||
+      songId.slice(0, 8),
+    [getSong, videoItems, previewItems],
   );
 
   const clearDragState = useCallback(() => {
@@ -495,8 +496,6 @@ export function QueuePanel() {
         )}
       </div>
 
-      {youtubeSourceEnabled ? <YoutubePasteLink /> : null}
-
       <RotationControls />
 
       <div className="flex-1 overflow-y-auto px-1.5 py-1">
@@ -524,8 +523,12 @@ export function QueuePanel() {
                 {filteredQueue.map((songId, index) => {
                   const song = getSong(songId);
                   const video = videoItems[songId];
+                  const preview = previewItems[songId];
                   const title =
-                    song?.title || video?.title || songId.slice(0, 8);
+                    song?.title ||
+                    video?.title ||
+                    preview?.title ||
+                    songId.slice(0, 8);
                   const dropIndicator =
                     songId === overSongId
                       ? getDropIndicatorPosition(activeIndex, overIndex)
@@ -541,6 +544,7 @@ export function QueuePanel() {
                       artist={
                         song?.artist ||
                         video?.channel ||
+                        preview?.artist ||
                         t("common.unknownArtist")
                       }
                       singer={

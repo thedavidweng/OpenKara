@@ -1,21 +1,70 @@
 use super::types::{
     CatalogError, ImportRefusal, ImportRefusalReason, ResolvedStreamingFile, StreamingCredentials,
-    StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingResolveOutcome,
-    StreamingSessionSnapshot, StreamingTrack,
+    StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingPreviewOutcome,
+    StreamingResolveOutcome, StreamingSessionSnapshot, StreamingTrack, StreamingTrackListing,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+/// Receives download progress while a source resolves a track, and lets the
+/// caller stop a download in flight.
+pub trait ResolveProgress: Send + Sync {
+    /// `percent` is 0-100 from the response length, or `None` when unknown.
+    fn downloading(&self, percent: Option<u8>);
+    fn is_cancelled(&self) -> bool;
+}
+
+pub struct NoResolveProgress;
+
+impl ResolveProgress for NoResolveProgress {
+    fn downloading(&self, _percent: Option<u8>) {}
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
 
 pub trait StreamingSource: Send + Sync {
     fn source_id(&self) -> &str;
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn liked_tracks(&self) -> Result<Vec<StreamingTrack>, CatalogError>;
+    /// The liked list as a fast first batch plus every id; the rest is
+    /// fetched with [`StreamingSource::tracks`].
+    fn liked_head(&self) -> Result<StreamingTrackListing, CatalogError> {
+        let tracks = self.liked_tracks()?;
+        Ok(StreamingTrackListing {
+            track_ids: tracks
+                .iter()
+                .map(|track| track.remote_track_id.clone())
+                .collect(),
+            tracks,
+            partial: false,
+        })
+    }
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError>;
+    /// The complete playlist (every track), used by import.
     fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError>;
+    /// The playlist as the provider returns it immediately: the first batch of
+    /// tracks plus every id. The rest is fetched with [`StreamingSource::tracks`].
+    fn playlist_head(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
+        self.playlist(remote_id)
+    }
+    /// Tracks for `ids`, in order; unknown ids are dropped.
+    fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError>;
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError>;
-    fn resolve(&self, remote_track_id: &str) -> Result<StreamingResolveOutcome, CatalogError>;
+    fn resolve(
+        &self,
+        remote_track_id: &str,
+        progress: &dyn ResolveProgress,
+    ) -> Result<StreamingResolveOutcome, CatalogError>;
+    /// A URL the track can be streamed from without importing it, or the
+    /// reason it cannot be played in full.
+    fn preview(&self, _remote_track_id: &str) -> Result<StreamingPreviewOutcome, CatalogError> {
+        Err(CatalogError::Internal(
+            "this source cannot stream previews".to_owned(),
+        ))
+    }
 }
 
 pub struct GatedStreamingSource<S> {
@@ -58,9 +107,24 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
         self.inner.liked_tracks()
     }
 
+    fn liked_head(&self) -> Result<StreamingTrackListing, CatalogError> {
+        self.require_enabled()?;
+        self.inner.liked_head()
+    }
+
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError> {
         self.require_enabled()?;
         self.inner.playlists()
+    }
+
+    fn playlist_head(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
+        self.require_enabled()?;
+        self.inner.playlist_head(remote_id)
+    }
+
+    fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError> {
+        self.require_enabled()?;
+        self.inner.tracks(ids)
     }
 
     fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
@@ -73,9 +137,18 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
         self.inner.search(query)
     }
 
-    fn resolve(&self, remote_track_id: &str) -> Result<StreamingResolveOutcome, CatalogError> {
+    fn resolve(
+        &self,
+        remote_track_id: &str,
+        progress: &dyn ResolveProgress,
+    ) -> Result<StreamingResolveOutcome, CatalogError> {
         self.require_enabled()?;
-        self.inner.resolve(remote_track_id)
+        self.inner.resolve(remote_track_id, progress)
+    }
+
+    fn preview(&self, remote_track_id: &str) -> Result<StreamingPreviewOutcome, CatalogError> {
+        self.require_enabled()?;
+        self.inner.preview(remote_track_id)
     }
 }
 
@@ -186,6 +259,8 @@ impl FakeStreamingSource {
             album: spec.album.clone(),
             duration_ms: spec.duration_ms,
             refusal,
+            library_song_id: None,
+            cover_url: None,
         }
     }
 }
@@ -247,7 +322,7 @@ impl StreamingSource for FakeStreamingSource {
             .find(|playlist| playlist.remote_id == remote_id)
             .cloned()
             .ok_or_else(|| CatalogError::Internal(format!("unknown playlist {remote_id}")))?;
-        let tracks = inner
+        let tracks: Vec<StreamingTrack> = inner
             .playlist_tracks
             .get(remote_id)
             .into_iter()
@@ -257,8 +332,28 @@ impl StreamingSource for FakeStreamingSource {
         Ok(StreamingPlaylistDetail {
             remote_id: summary.remote_id,
             name: summary.name,
+            track_count: tracks.len() as u32,
             tracks,
+            cover_url: summary.cover_url,
+            creator: None,
+            description: None,
+            updated_at_ms: None,
+            track_ids: inner
+                .playlist_tracks
+                .get(remote_id)
+                .cloned()
+                .unwrap_or_default(),
+            partial: false,
         })
+    }
+
+    fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError> {
+        self.require_session()?;
+        let inner = self.inner.lock().expect("fake source lock");
+        Ok(ids
+            .iter()
+            .filter_map(|id| inner.tracks.get(id).map(|spec| self.track_from_spec(spec)))
+            .collect())
     }
 
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError> {
@@ -276,8 +371,15 @@ impl StreamingSource for FakeStreamingSource {
             .collect())
     }
 
-    fn resolve(&self, remote_track_id: &str) -> Result<StreamingResolveOutcome, CatalogError> {
+    fn resolve(
+        &self,
+        remote_track_id: &str,
+        progress: &dyn ResolveProgress,
+    ) -> Result<StreamingResolveOutcome, CatalogError> {
         self.require_session()?;
+        if progress.is_cancelled() {
+            return Err(CatalogError::Cancelled);
+        }
         let inner = self.inner.lock().expect("fake source lock");
         let spec = inner
             .tracks
@@ -301,9 +403,11 @@ impl StreamingSource for FakeStreamingSource {
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
+                progress.downloading(Some(0));
                 std::fs::copy(path, &dest).map_err(|error| {
                     CatalogError::Internal(format!("failed to stage fake file: {error}"))
                 })?;
+                progress.downloading(Some(100));
                 Ok(StreamingResolveOutcome::File(ResolvedStreamingFile {
                     path: dest,
                     title: Some(spec.title.clone()),
@@ -341,11 +445,18 @@ impl StreamingSource for &FakeStreamingSource {
     fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
         (*self).playlist(remote_id)
     }
+    fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError> {
+        (*self).tracks(ids)
+    }
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError> {
         (*self).search(query)
     }
-    fn resolve(&self, remote_track_id: &str) -> Result<StreamingResolveOutcome, CatalogError> {
-        (*self).resolve(remote_track_id)
+    fn resolve(
+        &self,
+        remote_track_id: &str,
+        progress: &dyn ResolveProgress,
+    ) -> Result<StreamingResolveOutcome, CatalogError> {
+        (*self).resolve(remote_track_id, progress)
     }
 }
 
@@ -400,7 +511,10 @@ mod tests {
             resolve: FakeResolveSpec::Refusal(ImportRefusalReason::EmptyUrl),
         });
 
-        match source.resolve("playable").expect("resolve") {
+        match source
+            .resolve("playable", &NoResolveProgress)
+            .expect("resolve")
+        {
             StreamingResolveOutcome::File(file) => {
                 assert_ne!(file.path, path);
                 assert_eq!(
@@ -410,14 +524,20 @@ mod tests {
             }
             StreamingResolveOutcome::Refusal(_) => panic!("expected file"),
         }
-        match source.resolve("trial").expect("resolve") {
+        match source
+            .resolve("trial", &NoResolveProgress)
+            .expect("resolve")
+        {
             StreamingResolveOutcome::Refusal(refusal) => {
                 assert_eq!(refusal.reason, ImportRefusalReason::TrialClip);
                 assert_eq!(refusal.title, "Trial");
             }
             StreamingResolveOutcome::File(_) => panic!("expected refusal"),
         }
-        match source.resolve("empty").expect("resolve") {
+        match source
+            .resolve("empty", &NoResolveProgress)
+            .expect("resolve")
+        {
             StreamingResolveOutcome::Refusal(refusal) => {
                 assert_eq!(refusal.reason, ImportRefusalReason::EmptyUrl);
             }

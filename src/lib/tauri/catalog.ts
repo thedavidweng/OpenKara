@@ -11,6 +11,8 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
       invoke("sign_out_streaming_source", { sourceId }),
     listStreamingLikedTracks: (sourceId) =>
       invoke("list_streaming_liked_tracks", { sourceId }),
+    getStreamingTracks: (sourceId, remoteTrackIds) =>
+      invoke("get_streaming_tracks", { sourceId, remoteTrackIds }),
     listStreamingPlaylists: (sourceId) =>
       invoke("list_streaming_playlists", { sourceId }),
     getStreamingPlaylist: (sourceId, remotePlaylistId) =>
@@ -28,6 +30,8 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
       }),
     continueStreamingImport: (action) =>
       invoke("continue_streaming_import", { action }),
+    cancelStreamingImport: () => invoke("cancel_streaming_import"),
+    getStreamingImportStatus: () => invoke("get_streaming_import_status"),
     resolveVideoSourceUrl: (sourceId, url) =>
       invoke("resolve_video_source_url", { sourceId, url }),
     getRevealTargets: (songId) => invoke("get_reveal_targets", { songId }),

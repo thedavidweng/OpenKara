@@ -9,6 +9,27 @@ import { Sidebar } from "./Sidebar";
 const setFilter = vi.fn();
 const setActivePlaylist = vi.fn();
 const setCatalogView = vi.fn();
+const setYoutubeLinkOpen = vi.fn();
+const settingsState = {
+  hideBatchSeparate: true,
+  hideUpgradeAll: true,
+  stemMode: "two_stem",
+  neteaseSourceEnabled: true,
+  youtubeSourceEnabled: true,
+};
+const catalogState: {
+  activeView: "library" | "netease";
+  setActiveView: typeof setCatalogView;
+  session: { signed_in: boolean; expired: boolean } | null;
+  youtubeLinkOpen: boolean;
+  setYoutubeLinkOpen: typeof setYoutubeLinkOpen;
+} = {
+  activeView: "library",
+  setActiveView: setCatalogView,
+  session: null,
+  youtubeLinkOpen: false,
+  setYoutubeLinkOpen,
+};
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -34,29 +55,13 @@ vi.mock("@/stores/library-store", () => ({
 }));
 
 vi.mock("@/stores/settings-store", () => ({
-  useSettingsStore: (
-    selector: (state: {
-      hideBatchSeparate: boolean;
-      hideUpgradeAll: boolean;
-      stemMode: string;
-      neteaseSourceEnabled: boolean;
-    }) => unknown,
-  ) =>
-    selector({
-      hideBatchSeparate: true,
-      hideUpgradeAll: true,
-      stemMode: "two_stem",
-      neteaseSourceEnabled: true,
-    }),
+  useSettingsStore: (selector: (state: typeof settingsState) => unknown) =>
+    selector(settingsState),
 }));
 
 vi.mock("@/stores/catalog-store", () => ({
-  useCatalogStore: (
-    selector: (state: {
-      activeView: "library" | "netease";
-      setActiveView: typeof setCatalogView;
-    }) => unknown,
-  ) => selector({ activeView: "library", setActiveView: setCatalogView }),
+  useCatalogStore: (selector: (state: typeof catalogState) => unknown) =>
+    selector(catalogState),
 }));
 
 vi.mock("@/stores/playlist-store", () => ({
@@ -92,13 +97,30 @@ vi.mock("@/components/Library/ImportButton", () => ({
 vi.mock("@/components/Library/SortModeSelector", () => ({
   SortModeSelector: () => null,
 }));
-vi.mock("@/components/Catalog/NeteasePanel", () => ({
-  NeteasePanel: () => <div>netease-panel</div>,
-}));
 vi.mock("@/components/Settings/ConfirmationDialog", () => ({
   ConfirmationDialog: () => null,
 }));
 vi.mock("@/lib/errors", () => ({ notifyError: vi.fn() }));
+
+async function renderSidebar(root: ReturnType<typeof createRoot>) {
+  await act(async () => {
+    root.render(
+      <BackendProvider backend={createMockBackend()}>
+        <Sidebar />
+      </BackendProvider>,
+    );
+  });
+}
+
+function rowByText(text: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll("button")).find((b) =>
+    b.textContent?.includes(text),
+  );
+}
+
+function neteaseRow(): HTMLButtonElement {
+  return rowByText("sidebar.netease") as HTMLButtonElement;
+}
 
 describe("Sidebar catalog source rows", () => {
   let container: HTMLDivElement;
@@ -116,6 +138,12 @@ describe("Sidebar catalog source rows", () => {
     setFilter.mockReset();
     setActivePlaylist.mockReset();
     setCatalogView.mockReset();
+    setYoutubeLinkOpen.mockReset();
+    catalogState.activeView = "library";
+    catalogState.session = null;
+    catalogState.youtubeLinkOpen = false;
+    settingsState.neteaseSourceEnabled = true;
+    settingsState.youtubeSourceEnabled = true;
   });
 
   afterEach(() => {
@@ -142,13 +170,57 @@ describe("Sidebar catalog source rows", () => {
         "[aria-label='sidebar.separated']",
       ) as HTMLButtonElement
     ).click();
-    (
-      container.querySelector(
-        "[aria-label='sidebar.netease']",
-      ) as HTMLButtonElement
-    ).click();
+    neteaseRow().click();
     expect(setCatalogView).toHaveBeenCalledWith("library");
     expect(setCatalogView).toHaveBeenCalledWith("netease");
     expect(setActivePlaylist).toHaveBeenCalledWith(null);
+  });
+
+  test("shows the online sources header with sign-in hint when signed out", async () => {
+    await renderSidebar(root);
+    expect(container.textContent).toContain("sidebar.onlineSources");
+    expect(neteaseRow().textContent).toContain("sidebar.neteaseSignIn");
+    expect(
+      container.querySelector("[aria-label='sidebar.neteaseSignedIn']"),
+    ).toBeNull();
+  });
+
+  test("shows a signed-in dot instead of the sign-in hint", async () => {
+    catalogState.session = { signed_in: true, expired: false };
+    await renderSidebar(root);
+    expect(
+      container.querySelector("[aria-label='sidebar.neteaseSignedIn']"),
+    ).not.toBeNull();
+    expect(neteaseRow().textContent).not.toContain("sidebar.neteaseSignIn");
+  });
+
+  test("treats an expired session as signed out", async () => {
+    catalogState.session = { signed_in: true, expired: true };
+    await renderSidebar(root);
+    expect(neteaseRow().textContent).toContain("sidebar.neteaseSignIn");
+  });
+
+  test("marks the NetEase row as the current page when selected", async () => {
+    catalogState.activeView = "netease";
+    await renderSidebar(root);
+    expect(neteaseRow().getAttribute("aria-current")).toBe("page");
+  });
+
+  test("YouTube row toggles the link popover", async () => {
+    await renderSidebar(root);
+    rowByText("sidebar.youtubeLink")!.click();
+    expect(setYoutubeLinkOpen).toHaveBeenCalledWith(true);
+  });
+
+  test("hides disabled sources and the whole section when none are enabled", async () => {
+    settingsState.neteaseSourceEnabled = false;
+    await renderSidebar(root);
+    expect(rowByText("sidebar.netease")).toBeUndefined();
+    expect(rowByText("sidebar.youtubeLink")).toBeDefined();
+    act(() => root.unmount());
+    root = createRoot(container);
+    settingsState.youtubeSourceEnabled = false;
+    await renderSidebar(root);
+    expect(container.textContent).not.toContain("sidebar.onlineSources");
   });
 });

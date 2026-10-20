@@ -96,6 +96,10 @@ _Avoid_: Sync, feed, publish, mirror
 A track on a **Streaming Playlist** that OpenKara will not import. The user can still see title and artist. Typical causes are no play rights, a trial clip, or an empty stream URL.
 _Avoid_: Grey song as the generic name, skip, unblock, UNM
 
+**Online Preview (在线试听)**:
+Playback of a full-length **Streaming Source** track straight from its stream, with no library song behind it. It has a queue id of the form `ne:<id>`, no lyrics, and no stems. Trial clips and tracks under an **Import Refusal** are never previewed. **Streaming Import** turns it into a library song.
+_Avoid_: Temporary song, cached track, trial play
+
 **Playlist Origin Stamp (歌单来源印记)**:
 The **Streaming Source** and that source's playlist id stored on a **Playlist**. It only matches a later **Streaming Import** of the same **Streaming Playlist**. It is not a live link.
 _Avoid_: Binding, sync id, remote playlist id as the playlist itself

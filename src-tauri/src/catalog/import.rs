@@ -2,11 +2,13 @@ use super::identity::{
     find_song_hash_by_file_hash, lookup_playlist_id, lookup_song_hash, stamp_identity,
     stamp_playlist_origin, StreamingTrackIdentity,
 };
-use super::streaming::StreamingSource;
+use super::job::{JobResolveProgress, StreamingImportJob};
+use super::streaming::{NoResolveProgress, StreamingSource};
 use super::types::{
     CatalogError, ImportConflictPrompt, ImportRefusal, LibraryDecisionAction, LibraryDecisionMeta,
-    StreamingImportFailure, StreamingImportFailureReason, StreamingImportProgress,
-    StreamingImportStatus, StreamingResolveOutcome, StreamingTrack,
+    StreamingImportFailure, StreamingImportFailureReason, StreamingImportJobPhase,
+    StreamingImportProgress, StreamingImportStatus, StreamingImportTrackState,
+    StreamingResolveOutcome, StreamingTrack,
 };
 use crate::cache::{self, lyrics as lyrics_cache, waveforms};
 use crate::hash;
@@ -18,6 +20,7 @@ use crate::library_root::LibraryRoot;
 use rusqlite::{params, Connection};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct StreamingImportItem {
@@ -54,6 +57,7 @@ pub struct StreamingImportSession {
     playlist: Option<StreamingPlaylistOrigin>,
     playlist_id: Option<String>,
     paused: Option<PausedConflict>,
+    job: Option<Arc<StreamingImportJob>>,
 }
 
 struct PausedConflict {
@@ -74,7 +78,51 @@ impl StreamingImportSession {
             playlist: request.playlist,
             playlist_id: None,
             paused: None,
+            job: None,
         }
+    }
+
+    /// Attaches the shared progress and cancel handle of this import.
+    pub fn with_job(mut self, job: Arc<StreamingImportJob>) -> Self {
+        self.job = Some(job);
+        self
+    }
+
+    fn report(&self, remote_track_id: &str, state: StreamingImportTrackState) {
+        if let Some(job) = &self.job {
+            job.report(remote_track_id, state);
+        }
+    }
+
+    fn set_phase(&self, phase: StreamingImportJobPhase) {
+        if let Some(job) = &self.job {
+            job.set_phase(phase);
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.job.as_ref().is_some_and(|job| job.is_cancelled())
+    }
+
+    fn cancel_item(&mut self, item: &StreamingImportItem) {
+        push_cancelled(&mut self.failures, item);
+        self.report(
+            &item.remote_track_id,
+            StreamingImportTrackState::Failed {
+                reason: StreamingImportFailureReason::Cancelled,
+            },
+        );
+    }
+
+    fn cancel_remaining(&mut self) {
+        while let Some(item) = self.remaining.pop_front() {
+            self.cancel_item(&item);
+        }
+    }
+
+    fn finish(&self, conflict: Option<ImportConflictPrompt>) -> StreamingImportProgress {
+        self.set_phase(StreamingImportJobPhase::Completed);
+        progress_of(self, StreamingImportStatus::Completed, conflict)
     }
 }
 
@@ -114,12 +162,18 @@ pub fn advance_import_session<S: StreamingSource>(
         if let Some(paused) = session.paused.take() {
             match resolve_action(action, &mut session.apply_remaining) {
                 Decision::Cancel => {
-                    push_cancelled(&mut session.failures, &paused.item);
-                    drain_cancelled(&mut session.remaining, &mut session.failures);
-                    return Ok(progress_of(session, StreamingImportStatus::Completed, None));
+                    session.cancel_item(&paused.item);
+                    let _ = std::fs::remove_file(&paused.incoming_path);
+                    session.cancel_remaining();
+                    return Ok(session.finish(None));
                 }
                 Decision::Keep => {
-                    apply_keep(connection, session, &paused.identity)?;
+                    if let Some(existing) = apply_keep(connection, session, &paused.identity)? {
+                        session.report(
+                            &paused.item.remote_track_id,
+                            StreamingImportTrackState::Imported { song_id: existing },
+                        );
+                    }
                     let _ = std::fs::remove_file(&paused.incoming_path);
                 }
                 Decision::Replace => {
@@ -130,20 +184,51 @@ pub fn advance_import_session<S: StreamingSource>(
                         &paused.incoming_path,
                     )?;
                     add_to_playlist_if_needed(connection, session, &hash)?;
+                    session.report(
+                        &paused.item.remote_track_id,
+                        StreamingImportTrackState::Imported {
+                            song_id: hash.clone(),
+                        },
+                    );
                     remember_import(session, hash);
                 }
             }
         }
     }
+    session.set_phase(StreamingImportJobPhase::Running);
 
     ensure_playlist(connection, session)?;
 
     while let Some(item) = session.remaining.pop_front() {
-        match process_item(connection, library, source, session, item)? {
+        if session.is_cancelled() {
+            session.cancel_item(&item);
+            session.cancel_remaining();
+            break;
+        }
+        let outcome = match process_item(connection, library, source, session, item.clone()) {
+            Ok(outcome) => outcome,
+            Err(CatalogError::Cancelled) => {
+                session.cancel_item(&item);
+                session.cancel_remaining();
+                break;
+            }
+            Err(error) => {
+                session.report(
+                    &item.remote_track_id,
+                    StreamingImportTrackState::Failed {
+                        reason: StreamingImportFailureReason::ImportFailed,
+                    },
+                );
+                session.set_phase(StreamingImportJobPhase::Completed);
+                return Err(error);
+            }
+        };
+        match outcome {
             ItemOutcome::Continue => {}
             ItemOutcome::Pause(paused) => {
                 let prompt = paused.prompt.clone();
                 session.paused = Some(*paused);
+                session.set_phase(StreamingImportJobPhase::AwaitingDecision);
                 return Ok(progress_of(
                     session,
                     StreamingImportStatus::AwaitingDecision,
@@ -153,7 +238,7 @@ pub fn advance_import_session<S: StreamingSource>(
         }
     }
 
-    Ok(progress_of(session, StreamingImportStatus::Completed, None))
+    Ok(session.finish(None))
 }
 
 enum ItemOutcome {
@@ -193,8 +278,24 @@ fn process_item<S: StreamingSource>(
     session: &mut StreamingImportSession,
     item: StreamingImportItem,
 ) -> Result<ItemOutcome, CatalogError> {
-    match source.resolve(&item.remote_track_id)? {
+    let outcome = match session.job.clone() {
+        Some(job) => source.resolve(
+            &item.remote_track_id,
+            &JobResolveProgress {
+                job: &job,
+                remote_track_id: &item.remote_track_id,
+            },
+        )?,
+        None => source.resolve(&item.remote_track_id, &NoResolveProgress)?,
+    };
+    match outcome {
         StreamingResolveOutcome::Refusal(refusal) => {
+            session.report(
+                &item.remote_track_id,
+                StreamingImportTrackState::Skipped {
+                    refusal: refusal.clone(),
+                },
+            );
             session.failures.push(failure_from_refusal(&item, refusal));
             Ok(ItemOutcome::Continue)
         }
@@ -205,10 +306,17 @@ fn process_item<S: StreamingSource>(
                 source: session.source_id.clone(),
                 remote_track_id: item.remote_track_id.clone(),
             };
+            session.report(&item.remote_track_id, StreamingImportTrackState::Importing);
 
             if find_song_hash_by_file_hash(connection, &file_hash)?.is_some() {
                 stamp_identity(connection, &identity, &file_hash)?;
                 add_to_playlist_if_needed(connection, session, &file_hash)?;
+                session.report(
+                    &item.remote_track_id,
+                    StreamingImportTrackState::Imported {
+                        song_id: file_hash.clone(),
+                    },
+                );
                 let _ = std::fs::remove_file(&file.path);
                 return Ok(ItemOutcome::Continue);
             }
@@ -218,7 +326,13 @@ fn process_item<S: StreamingSource>(
                     if let Some(applied) = session.apply_remaining {
                         match applied {
                             KeepOrReplace::Keep => {
-                                apply_keep(connection, session, &identity)?;
+                                if let Some(existing) = apply_keep(connection, session, &identity)?
+                                {
+                                    session.report(
+                                        &item.remote_track_id,
+                                        StreamingImportTrackState::Imported { song_id: existing },
+                                    );
+                                }
                                 let _ = std::fs::remove_file(&file.path);
                                 return Ok(ItemOutcome::Continue);
                             }
@@ -226,6 +340,12 @@ fn process_item<S: StreamingSource>(
                                 let hash =
                                     apply_replace(connection, library, &identity, &file.path)?;
                                 add_to_playlist_if_needed(connection, session, &hash)?;
+                                session.report(
+                                    &item.remote_track_id,
+                                    StreamingImportTrackState::Imported {
+                                        song_id: hash.clone(),
+                                    },
+                                );
                                 remember_import(session, hash);
                                 return Ok(ItemOutcome::Continue);
                             }
@@ -255,6 +375,12 @@ fn process_item<S: StreamingSource>(
             let imported = import_file(connection, library, &file.path)?;
             stamp_identity(connection, &identity, &imported)?;
             add_to_playlist_if_needed(connection, session, &imported)?;
+            session.report(
+                &item.remote_track_id,
+                StreamingImportTrackState::Imported {
+                    song_id: imported.clone(),
+                },
+            );
             remember_import(session, imported);
             let _ = std::fs::remove_file(&file.path);
             Ok(ItemOutcome::Continue)
@@ -284,12 +410,13 @@ fn apply_keep(
     connection: &mut Connection,
     session: &mut StreamingImportSession,
     identity: &StreamingTrackIdentity,
-) -> Result<(), CatalogError> {
-    if let Some(existing) = lookup_song_hash(connection, identity)? {
-        stamp_identity(connection, identity, &existing)?;
-        add_to_playlist_if_needed(connection, session, &existing)?;
+) -> Result<Option<String>, CatalogError> {
+    let existing = lookup_song_hash(connection, identity)?;
+    if let Some(existing) = &existing {
+        stamp_identity(connection, identity, existing)?;
+        add_to_playlist_if_needed(connection, session, existing)?;
     }
-    Ok(())
+    Ok(existing)
 }
 
 fn add_to_playlist_if_needed(
@@ -463,8 +590,16 @@ fn failure_from_refusal(
 ) -> StreamingImportFailure {
     StreamingImportFailure {
         remote_track_id: item.remote_track_id.clone(),
-        title: item.title.clone(),
-        artist: item.artist.clone(),
+        title: if item.title.is_empty() {
+            refusal.title.clone()
+        } else {
+            item.title.clone()
+        },
+        artist: if item.title.is_empty() {
+            refusal.artist.clone()
+        } else {
+            item.artist.clone()
+        },
         reason: StreamingImportFailureReason::Refusal,
         refusal: Some(refusal),
     }
@@ -478,15 +613,6 @@ fn push_cancelled(failures: &mut Vec<StreamingImportFailure>, item: &StreamingIm
         reason: StreamingImportFailureReason::Cancelled,
         refusal: None,
     });
-}
-
-fn drain_cancelled(
-    remaining: &mut VecDeque<StreamingImportItem>,
-    failures: &mut Vec<StreamingImportFailure>,
-) {
-    while let Some(item) = remaining.pop_front() {
-        push_cancelled(failures, &item);
-    }
 }
 
 fn remember_import(session: &mut StreamingImportSession, hash: String) {
@@ -623,6 +749,7 @@ mod tests {
                 remote_id: "pl-1".to_owned(),
                 name: "Night set".to_owned(),
                 track_count: 2,
+                cover_url: None,
             },
             vec!["t1".to_owned(), "t2".to_owned()],
         );
@@ -805,6 +932,150 @@ mod tests {
             StreamingImportFailureReason::Refusal
         );
         assert_eq!(second.failed[0].title, "Trial");
+    }
+
+    fn job_for(
+        ids: &[&str],
+    ) -> (
+        Arc<StreamingImportJob>,
+        Arc<std::sync::Mutex<Vec<crate::catalog::types::StreamingImportEvent>>>,
+    ) {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let job = StreamingImportJob::new(
+            "job-1".to_owned(),
+            ids.iter()
+                .map(|id| ((*id).to_owned(), (*id).to_owned(), "Artist".to_owned()))
+                .collect(),
+            move |event| sink.lock().expect("events").push(event.clone()),
+        );
+        (job, events)
+    }
+
+    fn item(id: &str) -> StreamingImportItem {
+        StreamingImportItem {
+            remote_track_id: id.to_owned(),
+            title: id.to_owned(),
+            artist: "Artist".to_owned(),
+        }
+    }
+
+    #[test]
+    fn job_reports_per_track_states_and_totals() {
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "ok", 3);
+        source.insert_track(FakeTrackSpec {
+            remote_track_id: "trial".to_owned(),
+            title: "Trial".to_owned(),
+            artist: "Artist".to_owned(),
+            album: None,
+            duration_ms: None,
+            resolve: FakeResolveSpec::Refusal(ImportRefusalReason::TrialClip),
+        });
+        let (job, events) = job_for(&["ok", "trial"]);
+        let mut session = StreamingImportSession::new(StreamingImportRequest {
+            source_id: "netease".to_owned(),
+            items: vec![item("ok"), item("trial")],
+            playlist: None,
+        })
+        .with_job(job.clone());
+        advance_import_session(&mut connection, &library, &source, &mut session, None)
+            .expect("import");
+
+        let events = events.lock().expect("events");
+        let ok_states: Vec<_> = events
+            .iter()
+            .filter(|event| event.remote_track_id == "ok")
+            .map(|event| event.state.clone())
+            .collect();
+        assert_eq!(ok_states.len(), 4);
+        assert_eq!(
+            ok_states[0],
+            StreamingImportTrackState::Downloading { percent: Some(0) }
+        );
+        assert_eq!(
+            ok_states[1],
+            StreamingImportTrackState::Downloading { percent: Some(100) }
+        );
+        assert_eq!(ok_states[2], StreamingImportTrackState::Importing);
+        assert!(matches!(
+            ok_states[3],
+            StreamingImportTrackState::Imported { .. }
+        ));
+        let last = events.last().expect("last");
+        assert!(matches!(
+            last.state,
+            StreamingImportTrackState::Skipped { .. }
+        ));
+        assert_eq!((last.completed, last.total), (2, 2));
+        let snapshot = job.snapshot();
+        assert_eq!(snapshot.phase, StreamingImportJobPhase::Completed);
+        assert_eq!(snapshot.completed, 2);
+    }
+
+    #[test]
+    fn cancel_before_start_reports_every_item_cancelled() {
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "a", 3);
+        add_tone_track(&source, &copies, "b", 5);
+        let (job, events) = job_for(&["a", "b"]);
+        job.cancel();
+        let mut session = StreamingImportSession::new(StreamingImportRequest {
+            source_id: "netease".to_owned(),
+            items: vec![item("a"), item("b")],
+            playlist: None,
+        })
+        .with_job(job);
+        let progress =
+            advance_import_session(&mut connection, &library, &source, &mut session, None)
+                .expect("import");
+        assert!(progress.imported_song_ids.is_empty());
+        assert_eq!(progress.failed.len(), 2);
+        assert!(progress
+            .failed
+            .iter()
+            .all(|failure| failure.reason == StreamingImportFailureReason::Cancelled));
+        assert_eq!(events.lock().expect("events").len(), 2);
+    }
+
+    #[test]
+    fn imported_tracks_are_annotated_with_library_song_id() {
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "a", 3);
+        let progress = run_streaming_import(
+            &mut connection,
+            &library,
+            &source,
+            StreamingImportRequest {
+                source_id: "netease".to_owned(),
+                items: vec![item("a")],
+                playlist: None,
+            },
+            |_| panic!("no conflict"),
+        )
+        .expect("import");
+        let mut tracks = vec![source_track("a"), source_track("never-imported")];
+        crate::catalog::annotate_library_songs(&connection, "netease", &mut tracks)
+            .expect("annotate");
+        assert_eq!(
+            tracks[0].library_song_id.as_deref(),
+            progress.imported_song_ids.first().map(String::as_str)
+        );
+        assert_eq!(tracks[1].library_song_id, None);
+    }
+
+    fn source_track(id: &str) -> StreamingTrack {
+        StreamingTrack {
+            source_id: "netease".to_owned(),
+            remote_track_id: id.to_owned(),
+            title: id.to_owned(),
+            artist: "Artist".to_owned(),
+            album: None,
+            duration_ms: None,
+            refusal: None,
+            library_song_id: None,
+            cover_url: None,
+        }
     }
 
     #[test]

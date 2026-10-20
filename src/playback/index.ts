@@ -1,6 +1,9 @@
 export {
   createPlaybackSession,
+  isOnlinePreviewQueueId,
   isVideoSourceQueueId,
+  onlinePreviewQueueId,
+  onlinePreviewRemoteId,
   shouldEnqueueInsteadOfReplacingCurrentSong,
   shouldLoadSeparatedStems,
   selectCurrentPositionMs,

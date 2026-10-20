@@ -16,6 +16,7 @@ pub enum CatalogError {
     AuthFailed { source_id: String, detail: String },
     SessionExpired { source_id: String },
     Network(String),
+    Cancelled,
     VideoUnavailable { reason: VideoUnavailableReason },
     Internal(String),
 }
@@ -41,6 +42,7 @@ impl From<CatalogError> for CommandError {
                 true,
                 crate::commands::error::FallbackAction::Retry,
             ),
+            CatalogError::Cancelled => internal_error("streaming import was cancelled"),
             CatalogError::VideoUnavailable { reason } => {
                 video_source_unavailable(reason.as_str().to_owned())
             }
@@ -149,6 +151,12 @@ pub struct StreamingTrack {
     pub album: Option<String>,
     pub duration_ms: Option<u64>,
     pub refusal: Option<ImportRefusal>,
+    /// Song id (hash) of the library song this track was already imported as,
+    /// from the persisted Streaming Track Identity. Filled by the command
+    /// layer; sources always return `None`.
+    pub library_song_id: Option<String>,
+    /// HTTPS album cover URL (unsized; the UI appends a size parameter).
+    pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,6 +164,8 @@ pub struct StreamingPlaylistSummary {
     pub remote_id: String,
     pub name: String,
     pub track_count: u32,
+    /// HTTPS playlist cover URL (unsized).
+    pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +173,25 @@ pub struct StreamingPlaylistDetail {
     pub remote_id: String,
     pub name: String,
     pub tracks: Vec<StreamingTrack>,
+    pub cover_url: Option<String>,
+    pub creator: Option<String>,
+    pub description: Option<String>,
+    pub track_count: u32,
+    /// Last update time in milliseconds since the Unix epoch, when known.
+    pub updated_at_ms: Option<u64>,
+    /// Every track id of the playlist, in order. Tracks not yet in `tracks`
+    /// are fetched by id with `get_streaming_tracks`.
+    pub track_ids: Vec<String>,
+    /// True when `tracks` holds only the first batch of `track_ids`.
+    pub partial: bool,
+}
+
+/// A track listing whose first batch is loaded and the rest is fetched by id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamingTrackListing {
+    pub tracks: Vec<StreamingTrack>,
+    pub track_ids: Vec<String>,
+    pub partial: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +205,20 @@ pub struct ResolvedStreamingFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamingResolveOutcome {
     File(ResolvedStreamingFile),
+    Refusal(ImportRefusal),
+}
+
+/// A direct audio URL a track can be previewed from, without importing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedStreamingUrl {
+    pub url: String,
+    /// Container extension (`mp3`, `flac`, ...), used as the decoder hint.
+    pub extension: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamingPreviewOutcome {
+    Stream(ResolvedStreamingUrl),
     Refusal(ImportRefusal),
 }
 
@@ -241,6 +284,73 @@ pub struct StreamingImportProgress {
     pub conflict: Option<ImportConflictPrompt>,
 }
 
+/// Per-track state of a running Streaming Import, reported through the
+/// `streaming-import-progress` event and the job snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StreamingImportTrackState {
+    Queued,
+    Downloading {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        percent: Option<u8>,
+    },
+    Importing,
+    Imported {
+        song_id: String,
+    },
+    Skipped {
+        refusal: ImportRefusal,
+    },
+    Failed {
+        reason: StreamingImportFailureReason,
+    },
+}
+
+impl StreamingImportTrackState {
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Imported { .. } | Self::Skipped { .. } | Self::Failed { .. }
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamingImportEvent {
+    pub job_id: String,
+    pub remote_track_id: String,
+    pub title: String,
+    pub artist: String,
+    pub state: StreamingImportTrackState,
+    pub completed: u32,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamingImportJobPhase {
+    Running,
+    AwaitingDecision,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamingImportTrackSnapshot {
+    pub remote_track_id: String,
+    pub title: String,
+    pub artist: String,
+    pub state: StreamingImportTrackState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamingImportJobSnapshot {
+    pub job_id: String,
+    pub phase: StreamingImportJobPhase,
+    pub completed: u32,
+    pub total: u32,
+    pub tracks: Vec<StreamingImportTrackSnapshot>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoQueueItem {
     pub id: String,
@@ -271,9 +381,32 @@ pub fn is_video_source_queue_id(id: &str) -> bool {
     id.starts_with(YOUTUBE_QUEUE_PREFIX)
 }
 
+const NETEASE_PREVIEW_PREFIX: &str = "ne:";
+
+/// Queue id of a NetEase track played as a preview, without being imported.
+pub fn netease_preview_queue_id(remote_track_id: &str) -> String {
+    format!("{NETEASE_PREVIEW_PREFIX}{remote_track_id}")
+}
+
+/// The NetEase track id behind a preview queue id.
+pub fn netease_preview_remote_id(queue_id: &str) -> Option<&str> {
+    queue_id
+        .strip_prefix(NETEASE_PREVIEW_PREFIX)
+        .filter(|id| !id.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_queue_ids_use_prefix() {
+        assert_eq!(netease_preview_queue_id("42"), "ne:42");
+        assert_eq!(netease_preview_remote_id("ne:42"), Some("42"));
+        assert_eq!(netease_preview_remote_id("ne:"), None);
+        assert_eq!(netease_preview_remote_id("yt:42"), None);
+        assert_eq!(netease_preview_remote_id("deadbeef"), None);
+    }
 
     #[test]
     fn video_queue_ids_use_prefix() {

@@ -75,6 +75,8 @@
     --color-accent-hover: #4aa3ff;
     --color-destructive: #ff3b30;
     --color-destructive-foreground: #f5f5f7;
+    --color-success: #32d74b;
+    --color-warning: #ffb340;
     --color-ghost-hover: rgba(255, 255, 255, 0.04);
     /* Semantic tokens consumed by audited components. */
     --color-on-accent: #151618;
@@ -148,6 +150,8 @@
     --color-accent-hover: #005bb8;
     --color-destructive: #d70015;
     --color-destructive-foreground: #ffffff;
+    --color-success: #1a7f37;
+    --color-warning: #9a5b00;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --color-on-accent: #ffffff;
     --color-on-media: #ffffff;

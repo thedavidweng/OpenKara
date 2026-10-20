@@ -170,6 +170,12 @@ impl<'a> LyricsAcquisition<'a> {
         }
     }
 
+    /// Full provider chain for a track that is not in the library. Nothing
+    /// is cached or persisted.
+    pub fn fetch_for_query(&self, query: &LyricsLookupQuery) -> OnlineLyricsResult {
+        self.fetch_online_query(query)
+    }
+
     fn fetch_online_query(&self, query: &LyricsLookupQuery) -> OnlineLyricsResult {
         let providers = [
             TimedLyricsProvider::Amll(self.amll),

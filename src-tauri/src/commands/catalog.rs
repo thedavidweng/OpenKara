@@ -9,6 +9,8 @@ use crate::config;
 use crate::AppState;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent};
 
+const STREAMING_IMPORT_PROGRESS_EVENT: &str = "streaming-import-progress";
+
 fn app_data_dir(app_handle: &AppHandle) -> CommandResult<std::path::PathBuf> {
     app_handle
         .path()
@@ -35,7 +37,24 @@ fn netease_source(app_handle: &AppHandle) -> CommandResult<NeteaseStreamingSourc
     require_source(app_handle, NETEASE_SOURCE_ID)?;
     let http = LiveNeteaseApi::new(app_handle)
         .map_err(Into::<crate::commands::error::CommandError>::into)?;
-    NeteaseStreamingSource::open(http, app_data_dir(app_handle)?).map_err(Into::into)
+    let cache = app_handle
+        .state::<std::sync::Arc<catalog::NeteaseSongCache>>()
+        .inner()
+        .clone();
+    NeteaseStreamingSource::open(http, app_data_dir(app_handle)?)
+        .map(|source| source.with_cache(cache))
+        .map_err(Into::into)
+}
+
+/// Asks NetEase whether `remote_track_id` can be streamed in full, and from
+/// where. Blocking: call it off the async runtime.
+pub(crate) fn resolve_netease_preview(
+    app_handle: &AppHandle,
+    remote_track_id: &str,
+) -> CommandResult<catalog::StreamingPreviewOutcome> {
+    netease_source(app_handle)?
+        .preview(remote_track_id)
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -188,67 +207,140 @@ pub async fn open_streaming_sign_in(app_handle: AppHandle, source_id: String) ->
     Ok(())
 }
 
+/// Runs blocking provider work (sidecar and network calls) off the async
+/// command thread so the UI stays responsive.
+async fn run_blocking<T: Send + 'static>(
+    task: impl FnOnce() -> CommandResult<T> + Send + 'static,
+) -> CommandResult<T> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| internal_error("online source task failed"))?
+}
+
 #[tauri::command]
-pub fn sign_out_streaming_source(
+pub async fn sign_out_streaming_source(
     app_handle: AppHandle,
     source_id: String,
 ) -> CommandResult<catalog::StreamingSessionSnapshot> {
     require_source(&app_handle, &source_id)?;
-    let session = netease_source(&app_handle)?.sign_out()?;
-    if let Some(window) = app_handle.get_webview_window(NETEASE_SIGN_IN_WINDOW) {
-        window
-            .close()
-            .map_err(|error| internal_error(error.to_string()))?;
-    }
-    Ok(session)
+    run_blocking(move || {
+        let session = netease_source(&app_handle)?.sign_out()?;
+        if let Some(window) = app_handle.get_webview_window(NETEASE_SIGN_IN_WINDOW) {
+            window
+                .close()
+                .map_err(|error| internal_error(error.to_string()))?;
+        }
+        Ok(session)
+    })
+    .await
+}
+
+fn annotate_tracks(
+    state: &AppState,
+    source_id: &str,
+    tracks: &mut [catalog::StreamingTrack],
+) -> CommandResult<()> {
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+    catalog::annotate_library_songs(&connection, source_id, tracks)
+        .map_err(Into::<crate::commands::error::CommandError>::into)
 }
 
 #[tauri::command]
-pub fn list_streaming_liked_tracks(
+pub async fn list_streaming_liked_tracks(
+    state: State<'_, AppState>,
     app_handle: AppHandle,
     source_id: String,
+) -> CommandResult<catalog::StreamingTrackListing> {
+    require_source(&app_handle, &source_id)?;
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut listing = netease_source(&app_handle)?.liked_head()?;
+        annotate_tracks(&state, &source_id, &mut listing.tracks)?;
+        Ok(listing)
+    })
+    .await
+}
+
+/// One follow-up page of a partial listing: tracks for `remote_track_ids`, in
+/// order. Served from the session song cache when already fetched.
+#[tauri::command]
+pub async fn get_streaming_tracks(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    source_id: String,
+    remote_track_ids: Vec<String>,
 ) -> CommandResult<Vec<catalog::StreamingTrack>> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?
-        .liked_tracks()
-        .map_err(Into::into)
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut tracks = netease_source(&app_handle)?.tracks(&remote_track_ids)?;
+        annotate_tracks(&state, &source_id, &mut tracks)?;
+        Ok(tracks)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn list_streaming_playlists(
+pub async fn list_streaming_playlists(
     app_handle: AppHandle,
     source_id: String,
 ) -> CommandResult<Vec<catalog::StreamingPlaylistSummary>> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?.playlists().map_err(Into::into)
+    run_blocking(move || netease_source(&app_handle)?.playlists().map_err(Into::into)).await
 }
 
 #[tauri::command]
-pub fn get_streaming_playlist(
+pub async fn get_streaming_playlist(
+    state: State<'_, AppState>,
     app_handle: AppHandle,
     source_id: String,
     remote_playlist_id: String,
 ) -> CommandResult<catalog::StreamingPlaylistDetail> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?
-        .playlist(&remote_playlist_id)
-        .map_err(Into::into)
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut detail = netease_source(&app_handle)?.playlist_head(&remote_playlist_id)?;
+        annotate_tracks(&state, &source_id, &mut detail.tracks)?;
+        Ok(detail)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn search_streaming_source(
+pub async fn search_streaming_source(
+    state: State<'_, AppState>,
     app_handle: AppHandle,
     source_id: String,
     query: String,
 ) -> CommandResult<Vec<catalog::StreamingTrack>> {
     require_source(&app_handle, &source_id)?;
-    netease_source(&app_handle)?
-        .search(&query)
-        .map_err(Into::into)
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut tracks = netease_source(&app_handle)?.search(&query)?;
+        annotate_tracks(&state, &source_id, &mut tracks)?;
+        Ok(tracks)
+    })
+    .await
+}
+
+fn import_job_is_active(state: &AppState) -> CommandResult<bool> {
+    let guard = state
+        .catalog
+        .import_job
+        .lock()
+        .map_err(|_| state_lock_error("catalog import job lock was poisoned"))?;
+    Ok(guard
+        .as_ref()
+        .is_some_and(|job| job.snapshot().phase != catalog::StreamingImportJobPhase::Completed))
+}
+
+fn emit_import_event(app_handle: &AppHandle, event: &catalog::StreamingImportEvent) {
+    let _ = app_handle.emit_to("main", STREAMING_IMPORT_PROGRESS_EVENT, event);
 }
 
 #[tauri::command]
-pub fn start_streaming_import(
+pub async fn start_streaming_import(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     source_id: String,
@@ -256,70 +348,162 @@ pub fn start_streaming_import(
     remote_playlist_id: Option<String>,
 ) -> CommandResult<catalog::StreamingImportProgress> {
     require_source(&app_handle, &source_id)?;
-    let source = netease_source(&app_handle)?;
-    let playlist = match remote_playlist_id.as_deref() {
-        Some(remote_id) => {
-            let detail = source
-                .playlist(remote_id)
-                .map_err(Into::<crate::commands::error::CommandError>::into)?;
-            Some((detail.name.clone(), remote_id.to_owned(), detail.tracks))
-        }
-        None => None,
-    };
-    let items = if let Some((_, _, tracks)) = playlist.as_ref() {
-        if remote_track_ids.is_empty() {
-            items_from_tracks(tracks)
+    if import_job_is_active(&state)? {
+        return Err(internal_error("a streaming import is already running"));
+    }
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = netease_source(&app_handle)?;
+        let playlist = match remote_playlist_id.as_deref() {
+            Some(remote_id) => {
+                let detail = source
+                    .playlist(remote_id)
+                    .map_err(Into::<crate::commands::error::CommandError>::into)?;
+                Some((detail.name.clone(), remote_id.to_owned(), detail.tracks))
+            }
+            None => None,
+        };
+        let items = if let Some((_, _, tracks)) = playlist.as_ref() {
+            if remote_track_ids.is_empty() {
+                items_from_tracks(tracks)
+            } else {
+                items_from_tracks(
+                    &tracks
+                        .iter()
+                        .filter(|track| {
+                            remote_track_ids
+                                .iter()
+                                .any(|id| id == &track.remote_track_id)
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                )
+            }
         } else {
-            items_from_tracks(
-                &tracks
-                    .iter()
-                    .filter(|track| {
-                        remote_track_ids
-                            .iter()
-                            .any(|id| id == &track.remote_track_id)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            )
+            // Name the songs from the session cache (one lookup for any not yet
+            // seen) so skipped and failed rows are never blank.
+            let known = source.tracks(&remote_track_ids).unwrap_or_default();
+            remote_track_ids
+                .into_iter()
+                .map(|remote_track_id| {
+                    let track = known
+                        .iter()
+                        .find(|track| track.remote_track_id == remote_track_id);
+                    catalog::StreamingImportItem {
+                        title: track.map(|track| track.title.clone()).unwrap_or_default(),
+                        artist: track.map(|track| track.artist.clone()).unwrap_or_default(),
+                        remote_track_id,
+                    }
+                })
+                .collect()
+        };
+        let job = catalog::StreamingImportJob::new(
+            new_import_job_id(),
+            items
+                .iter()
+                .map(|item| {
+                    (
+                        item.remote_track_id.clone(),
+                        item.title.clone(),
+                        item.artist.clone(),
+                    )
+                })
+                .collect(),
+            {
+                let app_handle = app_handle.clone();
+                move |event| emit_import_event(&app_handle, event)
+            },
+        );
+        *state
+            .catalog
+            .import_job
+            .lock()
+            .map_err(|_| state_lock_error("catalog import job lock was poisoned"))? =
+            Some(job.clone());
+        let request = StreamingImportRequest {
+            source_id,
+            items,
+            playlist: playlist.map(|(name, remote_id, _)| StreamingPlaylistOrigin {
+                remote_playlist_id: remote_id,
+                name,
+            }),
+        };
+        let mut session = StreamingImportSession::new(request).with_job(job.clone());
+        let result = run_import_on_library(&state, &source, &mut session, None);
+        if result.is_err() {
+            job.set_phase(catalog::StreamingImportJobPhase::Completed);
         }
-    } else {
-        remote_track_ids
-            .into_iter()
-            .map(|remote_track_id| catalog::StreamingImportItem {
-                remote_track_id,
-                title: String::new(),
-                artist: String::new(),
-            })
-            .collect()
-    };
-    let request = StreamingImportRequest {
-        source_id,
-        items,
-        playlist: playlist.map(|(name, remote_id, _)| StreamingPlaylistOrigin {
-            remote_playlist_id: remote_id,
-            name,
-        }),
-    };
-    let mut session = StreamingImportSession::new(request);
-    run_import_on_library(&state, &source, &mut session, None)
+        result
+    })
+    .await
+    .map_err(|_| internal_error("streaming import task failed"))?
 }
 
 #[tauri::command]
-pub fn continue_streaming_import(
+pub async fn continue_streaming_import(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     action: catalog::LibraryDecisionAction,
 ) -> CommandResult<catalog::StreamingImportProgress> {
     require_source(&app_handle, NETEASE_SOURCE_ID)?;
-    let source = netease_source(&app_handle)?;
-    let mut session = state
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = netease_source(&app_handle)?;
+        let mut session = state
+            .catalog
+            .import_session
+            .lock()
+            .map_err(|_| state_lock_error("catalog import session lock was poisoned"))?
+            .take()
+            .ok_or_else(|| internal_error("no streaming import is waiting"))?;
+        let result = run_import_on_library(&state, &source, &mut session, Some(action));
+        if result.is_err() {
+            if let Ok(guard) = state.catalog.import_job.lock() {
+                if let Some(job) = guard.as_ref() {
+                    job.set_phase(catalog::StreamingImportJobPhase::Completed);
+                }
+            }
+        }
+        result
+    })
+    .await
+    .map_err(|_| internal_error("streaming import task failed"))?
+}
+
+/// Stops the running Streaming Import after the current download. Pending
+/// items are reported as `cancelled`. While a Library Decision is open the
+/// flag is applied when the decision resumes the import.
+#[tauri::command]
+pub fn cancel_streaming_import(state: State<'_, AppState>) -> CommandResult<()> {
+    let guard = state
         .catalog
-        .import_session
+        .import_job
         .lock()
-        .map_err(|_| state_lock_error("catalog import session lock was poisoned"))?
-        .take()
-        .ok_or_else(|| internal_error("no streaming import is waiting"))?;
-    run_import_on_library(&state, &source, &mut session, Some(action))
+        .map_err(|_| state_lock_error("catalog import job lock was poisoned"))?;
+    if let Some(job) = guard.as_ref() {
+        job.cancel();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_streaming_import_status(
+    state: State<'_, AppState>,
+) -> CommandResult<Option<catalog::StreamingImportJobSnapshot>> {
+    let guard = state
+        .catalog
+        .import_job
+        .lock()
+        .map_err(|_| state_lock_error("catalog import job lock was poisoned"))?;
+    Ok(guard.as_ref().map(|job| job.snapshot()))
+}
+
+fn new_import_job_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    format!("import-{nanos}")
 }
 
 fn run_import_on_library<S: StreamingSource>(
@@ -352,7 +536,7 @@ fn run_import_on_library<S: StreamingSource>(
 }
 
 #[tauri::command]
-pub fn resolve_video_source_url(
+pub async fn resolve_video_source_url(
     app_handle: AppHandle,
     source_id: String,
     url: String,
@@ -366,11 +550,14 @@ pub fn resolve_video_source_url(
             "YouTube /player stream URLs are not used".to_owned(),
         ));
     }
-    let fetcher =
-        LiveYoutubeFetcher::new().map_err(Into::<crate::commands::error::CommandError>::into)?;
-    YoutubeVideoSource::new(fetcher)
-        .resolve(&url)
-        .map_err(Into::into)
+    run_blocking(move || {
+        let fetcher = LiveYoutubeFetcher::new()
+            .map_err(Into::<crate::commands::error::CommandError>::into)?;
+        YoutubeVideoSource::new(fetcher)
+            .resolve(&url)
+            .map_err(Into::into)
+    })
+    .await
 }
 
 #[tauri::command]

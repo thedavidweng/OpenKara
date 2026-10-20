@@ -1,0 +1,308 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createRef, useState } from "react";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import { useCatalogStore } from "@/stores/catalog-store";
+import { useNotificationStore } from "@/stores/notification-store";
+import { usePlayerStore } from "@/stores/player-store";
+import { useQueueStore } from "@/stores/queue-store";
+import type { StreamingTrack } from "@/types/ipc";
+import { NeteaseTrackList } from "./NeteaseTrackList";
+
+vi.mock("react-i18next", () => ({
+  initReactI18next: { type: "3rdParty", init: () => {} },
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key}|${JSON.stringify(options)}` : key,
+  }),
+}));
+
+// jsdom has no layout; give scroll containers a viewport so rows render.
+const heightDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "offsetHeight",
+);
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 600,
+  });
+});
+afterAll(() => {
+  if (heightDescriptor) {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "offsetHeight",
+      heightDescriptor,
+    );
+  }
+});
+
+const track = (id: string, overrides: Partial<StreamingTrack> = {}) => ({
+  source_id: "netease" as const,
+  remote_track_id: id,
+  title: `Song ${id}`,
+  artist: "Artist",
+  album: "Album",
+  duration_ms: 61000,
+  refusal: null,
+  library_song_id: null,
+  cover_url: null,
+  ...overrides,
+});
+
+const importTracks = vi.fn();
+const playNow = vi.fn();
+const setQueue = vi.fn();
+
+beforeEach(() => {
+  importTracks.mockReset();
+  playNow.mockReset();
+  setQueue.mockReset();
+  useNotificationStore.setState({ notifications: [] });
+  usePlayerStore.setState({ snapshot: null, playNow });
+  useQueueStore.setState({ setQueue });
+  useCatalogStore.setState({ previewItems: {} });
+  useCatalogStore.setState({
+    trackStates: {},
+    hideUnavailable: true,
+    importRun: null,
+    importTracks,
+  });
+});
+
+afterEach(cleanup);
+
+function Harness({
+  tracks,
+  selecting = false,
+  loadingMore,
+  onSelect,
+}: {
+  tracks: StreamingTrack[];
+  selecting?: boolean;
+  loadingMore?: boolean;
+  onSelect?: (ids: Set<string>) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  return (
+    <div ref={scrollHost}>
+      <NeteaseTrackList
+        tracks={tracks}
+        scrollRef={scrollRef}
+        loadingMore={loadingMore}
+        selection={
+          selecting
+            ? {
+                selected,
+                onChange: (next) => {
+                  setSelected(next);
+                  onSelect?.(next);
+                },
+              }
+            : undefined
+        }
+      />
+    </div>
+  );
+}
+const scrollRef = createRef<HTMLElement>();
+const scrollHost = (node: HTMLDivElement | null) => {
+  (scrollRef as { current: HTMLElement | null }).current = node;
+};
+
+describe("NeteaseTrackList", () => {
+  test("shows a loading-more status while pages are still arriving", () => {
+    const { rerender } = render(<Harness tracks={[track("1")]} loadingMore />);
+    expect(screen.getByText("catalog.netease.loadingMore")).toBeTruthy();
+    rerender(<Harness tracks={[track("1")]} />);
+    expect(screen.queryByText("catalog.netease.loadingMore")).toBeNull();
+  });
+
+  test("shows duration, no status chips and no header row", () => {
+    render(<Harness tracks={[track("1")]} />);
+    expect(screen.getByText("1:01")).toBeTruthy();
+    expect(screen.queryByRole("columnheader")).toBeNull();
+  });
+
+  test("shows a ring with the download percent for an in-flight row", () => {
+    useCatalogStore.setState({
+      trackStates: { "1": { kind: "downloading", percent: 62 } },
+    });
+    render(<Harness tracks={[track("1")]} />);
+    const ring = screen.getByRole("progressbar");
+    expect(ring.getAttribute("aria-valuenow")).toBe("62");
+    expect(ring.getAttribute("aria-label")).toBe(
+      'catalog.netease.statusDownloading|{"percent":62}',
+    );
+  });
+
+  test("an in-flight row without a percent is an indeterminate spinner", () => {
+    useCatalogStore.setState({
+      trackStates: { "1": { kind: "downloading" } },
+    });
+    render(<Harness tracks={[track("1")]} />);
+    expect(
+      screen.getByRole("progressbar").getAttribute("aria-valuenow"),
+    ).toBeNull();
+  });
+
+  test("imported rows show a check and failed rows offer a retry", () => {
+    useCatalogStore.setState({
+      trackStates: {
+        "2": { kind: "failed", reason: "import_failed" },
+      },
+    });
+    render(
+      <Harness tracks={[track("1", { library_song_id: "s1" }), track("2")]} />,
+    );
+    expect(
+      screen.getByRole("img", { name: "catalog.netease.statusImported" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: 'catalog.netease.retryImportLabel|{"title":"Song 2"}',
+      }),
+    );
+    expect(importTracks).toHaveBeenCalledWith(["2"]);
+  });
+
+  test("a download button imports one track", () => {
+    render(<Harness tracks={[track("1")]} />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: 'catalog.netease.importTrackLabel|{"title":"Song 1"}',
+      }),
+    );
+    expect(importTracks).toHaveBeenCalledWith(["1"]);
+  });
+
+  test("unavailable rows are dimmed and carry the reason when shown", () => {
+    useCatalogStore.setState({ hideUnavailable: false });
+    render(
+      <Harness
+        tracks={[
+          track("1", {
+            refusal: { reason: "no_play_rights", title: "x", artist: "y" },
+          }),
+        ]}
+      />,
+    );
+    const row = screen.getByTestId("netease-track-row");
+    expect(row.getAttribute("data-unavailable")).toBe("true");
+    expect(screen.getByText("catalog.netease.statusNoRightsHint")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /importTrackLabel/ }),
+    ).toBeNull();
+  });
+
+  test("the toggle reports the hidden count and flips the list", () => {
+    const refusal = {
+      reason: "no_play_rights" as const,
+      title: "x",
+      artist: "y",
+    };
+    render(<Harness tracks={[track("1"), track("2", { refusal })]} />);
+    expect(screen.getAllByTestId("netease-track-row")).toHaveLength(1);
+    expect(
+      screen.getByText('catalog.netease.unavailableHidden|{"hidden":1}'),
+    ).toBeTruthy();
+    const toggle = screen.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getAllByTestId("netease-track-row")).toHaveLength(2);
+  });
+
+  test("selection mode supports select all and shift-range", () => {
+    const onSelect = vi.fn();
+    render(
+      <Harness
+        selecting
+        onSelect={onSelect}
+        tracks={[track("1"), track("2"), track("3"), track("4")]}
+      />,
+    );
+    const boxes = screen.getAllByRole("checkbox");
+    // boxes[0] is select-all
+    fireEvent.click(boxes[1]);
+    fireEvent.click(boxes[3], { shiftKey: true });
+    expect([...onSelect.mock.lastCall![0]].sort()).toEqual(["1", "2", "3"]);
+
+    fireEvent.click(boxes[0]);
+    expect([...onSelect.mock.lastCall![0]].sort()).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+  });
+
+  test("double-click plays a preview and queues the playable rest", () => {
+    const refusal = {
+      reason: "trial_clip" as const,
+      title: "x",
+      artist: "y",
+    };
+    render(
+      <Harness
+        tracks={[
+          track("1"),
+          track("2", { refusal }),
+          track("3", { library_song_id: "lib3" }),
+          track("4"),
+        ]}
+      />,
+    );
+    // Unavailable tracks are hidden by default; show them to prove they are
+    // skipped when queueing.
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.doubleClick(screen.getAllByTestId("netease-track-row")[0]!);
+    expect(playNow).toHaveBeenCalledWith("ne:1");
+    expect(setQueue).toHaveBeenCalledWith(["lib3", "ne:4"]);
+    expect(useCatalogStore.getState().previewItems["ne:1"]?.title).toBe(
+      "Song 1",
+    );
+  });
+
+  test("Enter on a focused row plays it", () => {
+    render(<Harness tracks={[track("1"), track("2")]} />);
+    const rows = screen.getAllByTestId("netease-track-row");
+    fireEvent.keyDown(rows[1]!, { key: "Enter" });
+    expect(playNow).toHaveBeenCalledWith("ne:2");
+    expect(setQueue).toHaveBeenCalledWith([]);
+  });
+
+  test("an unavailable track explains itself instead of playing", () => {
+    const refusal = {
+      reason: "trial_clip" as const,
+      title: "x",
+      artist: "y",
+    };
+    useCatalogStore.setState({ hideUnavailable: false });
+    render(<Harness tracks={[track("1", { refusal })]} />);
+    fireEvent.doubleClick(screen.getByTestId("netease-track-row"));
+    expect(playNow).not.toHaveBeenCalled();
+    const [note] = useNotificationStore.getState().notifications;
+    expect(note?.message).toBe("catalog.netease.refusalReason.trial_clip");
+  });
+
+  test("the playing row is marked current", () => {
+    usePlayerStore.setState({
+      snapshot: { song_id: "ne:2" } as never,
+    });
+    render(<Harness tracks={[track("1"), track("2")]} />);
+    const rows = screen.getAllByTestId("netease-track-row");
+    expect(rows[0]!.getAttribute("aria-current")).toBeNull();
+    expect(rows[1]!.getAttribute("aria-current")).toBe("true");
+  });
+});

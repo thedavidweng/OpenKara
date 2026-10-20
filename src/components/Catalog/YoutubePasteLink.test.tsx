@@ -20,6 +20,7 @@ const {
 }));
 
 vi.mock("react-i18next", () => ({
+  initReactI18next: { type: "3rdParty", init: () => {} },
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
@@ -132,5 +133,37 @@ describe("YoutubePasteLink", () => {
       )!,
     );
     expect(mockNotifyError).toHaveBeenCalled();
+  });
+  test("rejects a non-http link with an alert and does not resolve", async () => {
+    await act(async () => {
+      root.render(<YoutubePasteLink />);
+    });
+    const input = container.querySelector("input") as HTMLInputElement;
+    await user.type(input, "not a link");
+    await user.click(
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("youtube.addToQueue"),
+      )!,
+    );
+    expect(mockResolve).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "youtube.invalidUrl",
+    );
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    await user.type(input, "x");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  test("calls onDone after a successful add", async () => {
+    mockResolve.mockResolvedValue([{ id: "yt:one", title: "One" }]);
+    const onDone = vi.fn();
+    await act(async () => {
+      root.render(<YoutubePasteLink onDone={onDone} />);
+    });
+    const input = container.querySelector("input") as HTMLInputElement;
+    await user.type(input, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    await user.keyboard("{Enter}");
+    expect(mockAddToQueue).toHaveBeenCalledWith("yt:one");
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });

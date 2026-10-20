@@ -26,9 +26,11 @@ import type {
   OnlineSourceId,
   OnlineSourceSnapshot,
   RevealTargets,
+  StreamingImportJobSnapshot,
   StreamingImportProgress,
   StreamingPlaylistDetail,
   StreamingPlaylistSummary,
+  StreamingTrackListing,
   StreamingSessionSnapshot,
   StreamingTrack,
   VideoQueueItem,
@@ -336,7 +338,14 @@ export interface CatalogBackend {
   signOutStreamingSource(
     sourceId: OnlineSourceId,
   ): Promise<StreamingSessionSnapshot>;
-  listStreamingLikedTracks(sourceId: OnlineSourceId): Promise<StreamingTrack[]>;
+  listStreamingLikedTracks(
+    sourceId: OnlineSourceId,
+  ): Promise<StreamingTrackListing>;
+  /** One follow-up page of a partial listing, in `remoteTrackIds` order. */
+  getStreamingTracks(
+    sourceId: OnlineSourceId,
+    remoteTrackIds: string[],
+  ): Promise<StreamingTrack[]>;
   listStreamingPlaylists(
     sourceId: OnlineSourceId,
   ): Promise<StreamingPlaylistSummary[]>;
@@ -356,6 +365,8 @@ export interface CatalogBackend {
   continueStreamingImport(
     action: LibraryDecisionAction,
   ): Promise<StreamingImportProgress>;
+  cancelStreamingImport(): Promise<void>;
+  getStreamingImportStatus(): Promise<StreamingImportJobSnapshot | null>;
   resolveVideoSourceUrl(
     sourceId: OnlineSourceId,
     url: string,

@@ -232,7 +232,10 @@ fn spawn_cache_pin_hold(pin: CachePinGuard, guard: StalenessGuard) {
 }
 
 /// Position for reconnect when the active track still matches `song_id`.
-fn playback_position_for_reconnect(playback: &PlaybackController, song_id: &str) -> Option<u64> {
+pub(super) fn playback_position_for_reconnect(
+    playback: &PlaybackController,
+    song_id: &str,
+) -> Option<u64> {
     let track = playback.current_track_ref()?;
     if track.song_id != song_id {
         return None;

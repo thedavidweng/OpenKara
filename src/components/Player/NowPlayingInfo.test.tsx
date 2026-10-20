@@ -48,10 +48,26 @@ vi.mock("@/stores/library-store", () => ({
     selector(mockLibraryState),
 }));
 
+const mockCatalogState = vi.hoisted(() => ({
+  videoItems: {},
+  previewItems: {} as Record<
+    string,
+    {
+      id: string;
+      remote_track_id: string;
+      title: string;
+      artist: string;
+      album: string | null;
+      duration_ms: number;
+      cover_url: string | null;
+    }
+  >,
+  importTracks: vi.fn(),
+}));
+
 vi.mock("@/stores/catalog-store", () => ({
-  useCatalogStore: (
-    selector: (state: { videoItems: Record<string, never> }) => unknown,
-  ) => selector({ videoItems: {} }),
+  useCatalogStore: (selector: (state: typeof mockCatalogState) => unknown) =>
+    selector(mockCatalogState),
 }));
 
 describe("NowPlayingInfo", () => {
@@ -111,5 +127,31 @@ describe("NowPlayingInfo", () => {
     const markup = renderToStaticMarkup(<NowPlayingInfo />);
 
     expect(markup).toContain('data-now-playing-visual-variant="unified"');
+  });
+
+  test("shows a streamed preview's metadata with an import affordance", () => {
+    mockPlayerState.snapshot.song_id = "ne:99";
+    mockCatalogState.previewItems["ne:99"] = {
+      id: "ne:99",
+      remote_track_id: "99",
+      title: "Streamed Song",
+      artist: "Remote Artist",
+      album: null,
+      duration_ms: 1000,
+      cover_url: null,
+    };
+
+    const markup = renderToStaticMarkup(<NowPlayingInfo />);
+
+    expect(markup).toContain("Streamed Song");
+    expect(markup).toContain("Remote Artist");
+    expect(markup).not.toContain("catalog.netease.previewBadge");
+    expect(markup).toContain('aria-label="catalog.netease.importToSing"');
+
+    const tight = renderToStaticMarkup(<NowPlayingInfo density="tight" />);
+    expect(tight).not.toContain("catalog.netease.importToSing");
+
+    mockPlayerState.snapshot.song_id = "song-1";
+    delete mockCatalogState.previewItems["ne:99"];
   });
 });

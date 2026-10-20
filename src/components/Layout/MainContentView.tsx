@@ -1,6 +1,7 @@
 import { useCallback, useReducer } from "react";
 import { QueuePanel } from "@/components/Player/QueuePanel";
 import { GlobalProgressBar } from "@/components/Layout/GlobalProgressBar";
+import { NeteaseBrowser } from "@/components/Catalog/NeteaseBrowser";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { SettingsOverlay } from "@/components/Settings/SettingsOverlay";
 import { ModelBootstrapBanner } from "@/components/Bootstrap/ModelBootstrapBanner";
@@ -8,6 +9,7 @@ import { RuntimeUpdateBanner } from "@/components/Bootstrap/RuntimeUpdateBanner"
 import { UpdateBanner } from "@/components/Layout/UpdateBanner";
 import { PlaybackBar } from "@/components/Player/PlaybackBar";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useCatalogStore } from "@/stores/catalog-store";
 import { useQueueStore } from "@/stores/queue-store";
 
 interface MainContentViewProps {
@@ -33,6 +35,9 @@ export function MainContentView({
 }: MainContentViewProps = {}) {
   const settingsOpen = useSettingsStore((s) => s.isOpen);
   const queueOpen = useQueueStore((s) => s.isOpen);
+  const catalogView = useCatalogStore((s) => s.activeView);
+  const neteaseSourceEnabled = useSettingsStore((s) => s.neteaseSourceEnabled);
+  const netease = catalogView === "netease" && !!neteaseSourceEnabled;
   const [queuePhase, dispatch] = useReducer(
     queueReducer,
     queueOpen ? "visible" : "hidden",
@@ -69,7 +74,7 @@ export function MainContentView({
           {/* App self-update (#255). Preview builds run in a browser with no
               Tauri IPC, so the launch check would only ever reject — skip it. */}
           {!previewMode && <UpdateBanner />}
-          <PlaybackStage />
+          {netease ? <NeteaseBrowser /> : <PlaybackStage />}
         </div>
         {queueShouldRender && (
           <div

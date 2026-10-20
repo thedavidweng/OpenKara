@@ -5,6 +5,7 @@ use crate::{
         playback::{PlaybackStateSnapshot, StemName},
     },
     cache::{self, waveforms},
+    catalog,
     commands::error::{internal_error, CommandError, CommandResult, ErrorCode, FallbackAction},
     services,
     state::{AppState, SingleflightCompletionGuard, WaveformKey, SANITIZED_WAVEFORM_ERROR},
@@ -43,6 +44,18 @@ pub async fn play(
 ) -> CommandResult<PlaybackStateSnapshot> {
     let background_state = state.inner().clone();
     let background_handle = app_handle.clone();
+    if let Some(remote_track_id) = catalog::netease_preview_remote_id(&song_id) {
+        let remote_track_id = remote_track_id.to_owned();
+        return Ok(tauri::async_runtime::spawn_blocking(move || {
+            services::track_load::preview::start(
+                &background_state,
+                &background_handle,
+                &remote_track_id,
+            )
+        })
+        .await
+        .map_err(|error| internal_error(format!("playback task failed: {error}")))??);
+    }
     Ok(tauri::async_runtime::spawn_blocking(move || {
         services::track_load::start(&background_state, &background_handle, &song_id)
     })
@@ -170,6 +183,10 @@ pub async fn set_preload_candidate(
     let Some(song_id) = song_id else {
         return Ok(());
     };
+    // Previews have no library file to prepare.
+    if catalog::netease_preview_remote_id(&song_id).is_some() {
+        return Ok(());
+    }
 
     services::next_track::spawn_preload_next(
         inner,

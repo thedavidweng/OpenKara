@@ -22,6 +22,27 @@ pub fn lookup_song_hash(
         .map_err(|error| CatalogError::Internal(error.to_string()))
 }
 
+/// Fills `library_song_id` from the persisted Streaming Track Identity.
+pub fn annotate_library_songs(
+    connection: &Connection,
+    source_id: &str,
+    tracks: &mut [super::types::StreamingTrack],
+) -> Result<(), CatalogError> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT song_hash FROM streaming_track_identities \
+             WHERE source = ?1 AND remote_track_id = ?2",
+        )
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    for track in tracks {
+        track.library_song_id = statement
+            .query_row(params![source_id, track.remote_track_id], |row| row.get(0))
+            .optional()
+            .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    }
+    Ok(())
+}
+
 pub fn stamp_identity(
     connection: &Connection,
     identity: &StreamingTrackIdentity,

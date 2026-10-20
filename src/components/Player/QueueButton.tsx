@@ -29,9 +29,10 @@ export function QueueButton() {
         {queue.length > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[8px] font-bold text-[var(--color-on-accent)]"
+            data-queue-count-badge="true"
+            className="absolute left-[25px] top-[8px] flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--color-border-light)] px-[3px] text-[9px] font-semibold leading-none tabular-nums text-[var(--color-text)]"
           >
-            {queue.length > 9 ? "9+" : queue.length}
+            {queue.length > 99 ? "99+" : queue.length}
           </span>
         )}
       </button>

@@ -630,8 +630,8 @@ pub(crate) fn decode_stem_entry(
     }
 }
 
-fn probe_remote_source(
-    source: RemoteMediaSource,
+pub(crate) fn probe_remote_source(
+    source: impl symphonia::core::io::MediaSource + 'static,
     extension: Option<&str>,
 ) -> Result<StreamMetadata, decode::DecodeError> {
     use symphonia::core::{

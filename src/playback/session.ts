@@ -61,6 +61,24 @@ export function isVideoSourceQueueId(songId: string): boolean {
   return songId.startsWith("yt:");
 }
 
+const ONLINE_PREVIEW_PREFIX = "ne:";
+
+/** Queue id of a NetEase track streamed as a preview, not imported. */
+export function onlinePreviewQueueId(remoteTrackId: string): string {
+  return `${ONLINE_PREVIEW_PREFIX}${remoteTrackId}`;
+}
+
+export function isOnlinePreviewQueueId(songId: string): boolean {
+  return songId.startsWith(ONLINE_PREVIEW_PREFIX);
+}
+
+/** The NetEase track id behind a preview queue id. */
+export function onlinePreviewRemoteId(songId: string): string | null {
+  return isOnlinePreviewQueueId(songId)
+    ? songId.slice(ONLINE_PREVIEW_PREFIX.length)
+    : null;
+}
+
 export interface VideoPlaybackTransport {
   play(videoId: string): Promise<PlaybackStateSnapshot>;
   pause(): Promise<PlaybackStateSnapshot>;

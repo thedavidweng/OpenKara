@@ -14,6 +14,7 @@ import type {
   SeparationCompleteEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
+  StreamingImportEvent,
   StreamingSessionSnapshot,
   TrackTransitionedEvent,
   UploadCompleteEvent,
@@ -47,6 +48,7 @@ export interface RuntimeEventMap {
   "remote-playback-failed": RemotePlaybackFailedEvent;
   "netease-sign-in-complete": StreamingSessionSnapshot;
   "netease-sign-in-error": CommandError;
+  "streaming-import-progress": StreamingImportEvent;
 }
 
 export type RuntimeEventName = keyof RuntimeEventMap;
@@ -115,6 +117,7 @@ export function createRecordingRuntimeEventSource(): RuntimeEventSource & {
     "remote-playback-failed": new Set(),
     "netease-sign-in-complete": new Set(),
     "netease-sign-in-error": new Set(),
+    "streaming-import-progress": new Set(),
   };
 
   return {

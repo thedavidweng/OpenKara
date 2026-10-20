@@ -88,6 +88,7 @@ pub enum FetchCommand {
     Shutdown,
 }
 
+#[derive(Debug)]
 pub enum FetchEvent {
     UrlExpired,
     ConsecutiveFailures { count: u32 },

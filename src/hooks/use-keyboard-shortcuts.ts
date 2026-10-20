@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { useCatalogStore } from "@/stores/catalog-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { promptImportFiles } from "@/runtime/menu-runtime";
@@ -39,6 +40,8 @@ interface KeyboardShortcutDeps {
   toggleFullscreen: () => void;
   stopPlayback: () => void;
   separateCurrent: () => void;
+  /** Omitted when the YouTube source is disabled. */
+  openYoutubeLink?: () => void;
   player: KeyboardShortcutPlayerState;
 }
 
@@ -53,12 +56,19 @@ export function handleAppKeyDown(
     toggleFullscreen,
     stopPlayback,
     separateCurrent,
+    openYoutubeLink,
     player,
   }: KeyboardShortcutDeps,
 ): boolean {
   if (matchesShortcut(APP_SHORTCUTS.toggleSettings, e)) {
     e.preventDefault();
     toggleSettings();
+    return true;
+  }
+
+  if (openYoutubeLink && matchesShortcut(APP_SHORTCUTS.openYoutubeLink, e)) {
+    e.preventDefault();
+    openYoutubeLink();
     return true;
   }
 
@@ -238,6 +248,9 @@ export function useKeyboardShortcuts(enabled = true): void {
         toggleFullscreen,
         stopPlayback,
         separateCurrent,
+        openYoutubeLink: useSettingsStore.getState().youtubeSourceEnabled
+          ? () => useCatalogStore.getState().setYoutubeLinkOpen(true)
+          : undefined,
         player: {
           snapshot: playerState.snapshot,
           resume: playerState.resume,

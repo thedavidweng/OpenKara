@@ -6,6 +6,8 @@
 //! track that is playing; request allocation, staleness adjudication, source
 //! resolution, streaming runtime and mid-song reconnect all live behind that.
 
+pub(crate) mod preview;
+mod preview_stream;
 pub(crate) mod reconnect;
 mod request;
 pub(crate) mod source;

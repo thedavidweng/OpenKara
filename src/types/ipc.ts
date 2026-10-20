@@ -97,18 +97,39 @@ export interface StreamingTrack {
   album: string | null;
   duration_ms: number | null;
   refusal: ImportRefusal | null;
+  library_song_id: string | null;
+  /** HTTPS album cover, unsized; append a size parameter before use. */
+  cover_url: string | null;
 }
 
 export interface StreamingPlaylistSummary {
   remote_id: string;
   name: string;
   track_count: number;
+  cover_url: string | null;
 }
 
 export interface StreamingPlaylistDetail {
   remote_id: string;
   name: string;
   tracks: StreamingTrack[];
+  cover_url: string | null;
+  creator: string | null;
+  description: string | null;
+  track_count: number;
+  /** Milliseconds since the Unix epoch, when known. */
+  updated_at_ms: number | null;
+  /** Every track id, in order; ids missing from `tracks` load by id. */
+  track_ids: string[];
+  /** True while `tracks` holds only the first batch of `track_ids`. */
+  partial: boolean;
+}
+
+/** A track list whose first batch is loaded and the rest loads by id. */
+export interface StreamingTrackListing {
+  tracks: StreamingTrack[];
+  track_ids: string[];
+  partial: boolean;
 }
 
 export interface LibraryDecisionMeta {
@@ -156,6 +177,55 @@ export interface StreamingImportProgress {
   failed: StreamingImportFailure[];
   playlist_id: string | null;
   conflict: ImportConflictPrompt | null;
+}
+
+export type StreamingImportTrackState =
+  | { kind: "queued" }
+  | { kind: "downloading"; percent?: number }
+  | { kind: "importing" }
+  | { kind: "imported"; song_id: string }
+  | { kind: "skipped"; refusal: ImportRefusal }
+  | { kind: "failed"; reason: StreamingImportFailureReason };
+
+export interface StreamingImportEvent {
+  job_id: string;
+  remote_track_id: string;
+  title: string;
+  artist: string;
+  state: StreamingImportTrackState;
+  completed: number;
+  total: number;
+}
+
+export type StreamingImportJobPhase =
+  | "running"
+  | "awaiting_decision"
+  | "completed";
+
+export interface StreamingImportTrackSnapshot {
+  remote_track_id: string;
+  title: string;
+  artist: string;
+  state: StreamingImportTrackState;
+}
+
+export interface StreamingImportJobSnapshot {
+  job_id: string;
+  phase: StreamingImportJobPhase;
+  completed: number;
+  total: number;
+  tracks: StreamingImportTrackSnapshot[];
+}
+
+/** Display data for a NetEase track played as a preview (`ne:` queue id). */
+export interface PreviewQueueItem {
+  id: string;
+  remote_track_id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  duration_ms: number | null;
+  cover_url: string | null;
 }
 
 export interface VideoQueueItem {

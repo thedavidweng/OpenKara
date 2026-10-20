@@ -56,25 +56,28 @@ describe("QueueButton", () => {
     mockQueueState.isOpen = false;
   });
 
-  test("renders the queue badge with on-accent color when queue is non-empty", () => {
+  test("renders a muted count pill attached to the icon when queue is non-empty", () => {
     mockQueueState.queue = [
       { hash: "a" },
       { hash: "b" },
     ] as unknown as typeof mockQueueState.queue;
     const markup = renderToStaticMarkup(<QueueButton />);
 
-    expect(markup).toContain("text-[var(--color-on-accent)]");
+    expect(markup).toContain('data-queue-count-badge="true"');
     expect(markup).toContain(">2<");
     mockQueueState.queue = [];
   });
 });
 
-test("shows queue count badge with on-accent token when queue has items", () => {
+test("shows the queue count in a muted pill and caps it at 99+", () => {
   mockQueueState.queue = ["song-1", "song-2"];
   mockQueueState.isOpen = false;
   const markup = renderToStaticMarkup(<QueueButton />);
-  expect(markup).toContain("text-[var(--color-on-accent)]");
+  expect(markup).toContain("bg-[var(--color-border-light)]");
+  expect(markup).not.toContain("bg-[var(--color-accent)]");
   expect(markup).toContain(">2<");
+  mockQueueState.queue = Array.from({ length: 150 }, (_, i) => `song-${i}`);
+  expect(renderToStaticMarkup(<QueueButton />)).toContain(">99+<");
   mockQueueState.queue = [];
 });
 
