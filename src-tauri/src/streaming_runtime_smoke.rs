@@ -54,6 +54,8 @@ fn run(phase: &str, root: &Path) -> Result<()> {
     let executable = installed.join(if cfg!(windows) { "node.exe" } else { "node" });
     let identity_path = installed.join("sha256");
     fs::create_dir_all(root)?;
+    #[cfg(target_os = "macos")]
+    let mut macos_quarantine = json!({});
     if phase == "install" {
         if installed.exists() {
             bail!("install requires a fresh directory; use restart for an existing runtime");
@@ -63,6 +65,14 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         let result = (|| -> Result<()> {
             let archive =
                 artifacts::download_verified_to_temp(&url, size, digest, &staging, |_, _| {})?;
+            #[cfg(target_os = "macos")]
+            observe_no_quarantine(
+                &archive,
+                "downloaded_archive",
+                root,
+                phase,
+                &mut macos_quarantine,
+            )?;
             let candidate = staging.join(if cfg!(windows) { "node.exe" } else { "node" });
             extract_runtime(&archive, &archive_name, &candidate)?;
             #[cfg(unix)]
@@ -70,6 +80,14 @@ fn run(phase: &str, root: &Path) -> Result<()> {
                 use std::os::unix::fs::PermissionsExt;
                 fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755))?;
             }
+            #[cfg(target_os = "macos")]
+            observe_no_quarantine(
+                &candidate,
+                "extracted_executable",
+                root,
+                phase,
+                &mut macos_quarantine,
+            )?;
             fs::write(staging.join("sha256"), artifacts::sha256_file(&candidate)?)?;
             fs::remove_file(archive)?;
             fs::rename(&staging, &installed)?;
@@ -84,6 +102,14 @@ fn run(phase: &str, root: &Path) -> Result<()> {
     if fs::read_to_string(&identity_path)? != runtime_sha256 {
         bail!("installed runtime identity changed");
     }
+    #[cfg(target_os = "macos")]
+    observe_no_quarantine(
+        &executable,
+        "installed_executable",
+        root,
+        phase,
+        &mut macos_quarantine,
+    )?;
     let app = std::env::current_exe()?;
     let mut command = Command::new(fs::canonicalize(&executable)?);
     command
@@ -122,10 +148,55 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         "runtime": runtime,
         "flatpak_id": std::env::var("FLATPAK_ID").ok(),
     });
+    #[cfg(target_os = "macos")]
+    let report = {
+        let mut report = report;
+        report["macos_quarantine"] = macos_quarantine;
+        report
+    };
     fs::write(
         root.join(format!("streaming-runtime-{phase}.json")),
         serde_json::to_vec_pretty(&report)?,
     )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn observe_no_quarantine(
+    path: &Path,
+    stage: &str,
+    root: &Path,
+    phase: &str,
+    observations: &mut serde_json::Value,
+) -> Result<()> {
+    let output = Command::new("/usr/bin/xattr")
+        .arg(path)
+        .output()
+        .with_context(|| format!("cannot inspect {stage} extended attributes"))?;
+    if !output.status.success() {
+        bail!(
+            "cannot inspect {stage} extended attributes: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let stdout = std::str::from_utf8(&output.stdout).context("xattr output is not UTF-8")?;
+    let attributes: Vec<&str> = stdout.lines().collect();
+    let quarantine_present = attributes.contains(&"com.apple.quarantine");
+    observations[stage] = json!({
+        "path": fs::canonicalize(path)?,
+        "attributes": attributes,
+        "quarantine_present": quarantine_present,
+    });
+    fs::write(
+        root.join(format!("streaming-runtime-quarantine-{phase}.json")),
+        serde_json::to_vec_pretty(observations)?,
+    )?;
+    if quarantine_present {
+        bail!(
+            "com.apple.quarantine is present on {stage}: {}",
+            path.display()
+        );
+    }
     Ok(())
 }
 

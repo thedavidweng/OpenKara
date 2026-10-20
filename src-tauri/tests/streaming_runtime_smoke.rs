@@ -30,6 +30,28 @@ fn installed_application_downloads_its_runtime_and_restarts_without_system_node(
     .unwrap();
     assert_eq!(installed["runtime"]["version"], "v24.21.0");
     assert_eq!(installed["runtime"]["parent_pid"], installed["app_pid"]);
+    #[cfg(target_os = "macos")]
+    {
+        let observations = &installed["macos_quarantine"];
+        for stage in [
+            "downloaded_archive",
+            "extracted_executable",
+            "installed_executable",
+        ] {
+            assert_eq!(observations[stage]["quarantine_present"], false, "{stage}");
+            let attributes = observations[stage]["attributes"].as_array().unwrap();
+            assert!(!attributes.iter().any(|name| name == "com.apple.quarantine"));
+        }
+        let durable: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("streaming-runtime-quarantine-install.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(durable, *observations);
+    }
     assert!(run("restart").success());
     let restarted: serde_json::Value = serde_json::from_slice(
         &fs::read(root.path().join("streaming-runtime-restart.json")).unwrap(),
@@ -38,4 +60,15 @@ fn installed_application_downloads_its_runtime_and_restarts_without_system_node(
     assert_eq!(restarted["runtime_sha256"], installed["runtime_sha256"]);
     assert_eq!(restarted["runtime"]["version"], "v24.21.0");
     assert_eq!(restarted["runtime"]["parent_pid"], restarted["app_pid"]);
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(
+            restarted["macos_quarantine"]["installed_executable"]["quarantine_present"],
+            false
+        );
+        assert_eq!(
+            restarted["macos_quarantine"]["installed_executable"]["path"],
+            installed["runtime_executable"]
+        );
+    }
 }
