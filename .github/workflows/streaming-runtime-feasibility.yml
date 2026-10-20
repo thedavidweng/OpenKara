@@ -55,6 +55,29 @@ jobs:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
+  macos-intel:
+    needs: authorize
+    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: feasibility-553
+      artifact_prefix: feasibility-553-macos-x64
+      os: macos-15-intel
+      rust_target: x86_64-apple-darwin
+      tauri_target: x86_64-apple-darwin
+      updater_target: darwin-x86_64
+      previous_version: none
+      release_build: true
+      streaming_runtime_smoke: true
+      retention_days: 30
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+
   windows:
     needs: authorize
     uses: ./.github/workflows/reusable-windows-installed-app.yml
@@ -66,3 +89,18 @@ jobs:
       # the installed candidate on a protected native machine for #553.
       streaming_runtime_smoke: false
       retention_days: 14
+
+  linux:
+    needs: authorize
+    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    with:
+      openkara_version: feasibility-553
+      artifact_prefix: feasibility-553-linux-x64
+      os: ubuntu-22.04
+      rust_target: x86_64-unknown-linux-gnu
+      tauri_target: x86_64-unknown-linux-gnu
+      updater_target: linux-x86_64
+      previous_version: none
+      release_build: false
+      streaming_runtime_feasibility: true
+      retention_days: 30
