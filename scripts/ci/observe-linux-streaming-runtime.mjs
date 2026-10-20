@@ -29,7 +29,11 @@ function requireObservation(condition, message) {
 }
 
 function optionalFile(file) {
-  return existsSync(file) ? readFileSync(file, "utf8") : null;
+  try {
+    return existsSync(file) ? readFileSync(file, "utf8") : null;
+  } catch (error) {
+    return `unavailable: ${error.code}`;
+  }
 }
 
 function commandResult(command, args, options = {}) {
