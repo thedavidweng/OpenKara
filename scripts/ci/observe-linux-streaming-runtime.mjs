@@ -176,7 +176,14 @@ async function appImage(artifact, output, report) {
     if (mountRoot) {
       const mountLine = report.appimage.mountinfo
         .split("\n")
-        .find((line) => line.split(" ")[4] === mountRoot);
+        .find(
+          (line) =>
+            line
+              .split(" ")[4]
+              ?.replace(/\\([0-7]{3})/gu, (_, octal) =>
+                String.fromCharCode(Number.parseInt(octal, 8)),
+              ) === mountRoot,
+        );
       requireObservation(
         mountLine?.includes(" - fuse"),
         "AppImage mount is not recorded as FUSE",
@@ -228,7 +235,7 @@ async function appImage(artifact, output, report) {
   };
 }
 
-function debianPackage(artifact, output, report) {
+async function debianPackage(artifact, output, report) {
   const metadata = run(
     "dpkg-deb",
     ["--field", artifact],
@@ -237,9 +244,17 @@ function debianPackage(artifact, output, report) {
   const packageName = metadata.match(/^Package: (.+)$/mu)?.[1];
   requireObservation(packageName, "Debian artifact has no package name");
   report.deb = { metadata, package: packageName };
+  const payload = path.join(output, "deb-payload");
+  run(
+    "dpkg-deb",
+    ["--extract", artifact, payload],
+    path.join(output, "deb-extract.log"),
+  );
+  const payloadExecutable = appExecutable(payload);
+  report.deb.payload_executable_sha256 = await sha256(payloadExecutable);
   run(
     "sudo",
-    ["apt-get", "install", "-y", artifact],
+    ["apt-get", "install", "--reinstall", "-y", artifact],
     path.join(output, "deb-install.log"),
   );
   report.deb.installed_package = run(
@@ -268,12 +283,21 @@ function debianPackage(artifact, output, report) {
     "expected one installed Debian app executable",
   );
   const executable = realpathSync(executables[0]);
+  requireObservation(
+    (await sha256(executable)) === report.deb.payload_executable_sha256,
+    "installed executable differs from the supplied Debian artifact payload",
+  );
   report.deb.executable_owner = run(
     "dpkg-query",
     ["-S", executables[0]],
     path.join(output, "deb-executable-owner.log"),
   );
-  return { command: executable, executable, mode: "deb-installed" };
+  return {
+    command: executable,
+    executable,
+    executable_sha256: report.deb.payload_executable_sha256,
+    mode: "deb-installed",
+  };
 }
 
 async function observe(launch, output, report) {
@@ -408,7 +432,7 @@ async function main() {
     const launch =
       format === "appimage"
         ? await appImage(artifact, output, report)
-        : debianPackage(artifact, output, report);
+        : await debianPackage(artifact, output, report);
     launch.executable_sha256 ??= await sha256(launch.executable);
     report.launch = launch;
     await observe(launch, output, report);
