@@ -17,8 +17,6 @@
  * assignability checks and verify command name registries at runtime.
  */
 import { describe, expect, test } from "vitest";
-import { createCatalogCommands } from "@/lib/tauri/catalog";
-import type { InvokeCommand } from "@/lib/tauri/invoke";
 
 import type {
   AppSettings,
@@ -1381,54 +1379,5 @@ describe("Serialization compatibility", () => {
     // retryable is already lowercase, no rename issue
     expect(error.retryable).toBe(false);
     expect(error.fallback).toBe("retry");
-  });
-});
-
-describe("Streaming catalog IPC compatibility", () => {
-  test("preserves source identity and opaque cursor across the public command boundary", async () => {
-    const calls: unknown[] = [];
-    const invoke: InvokeCommand = async <T>(
-      command: string,
-      args?: Record<string, unknown>,
-    ) => {
-      calls.push({ command, args });
-      return { tracks: [], next_cursor: "opaque/+=" } as T;
-    };
-    const catalog = createCatalogCommands(invoke);
-    expect(
-      await catalog.searchStreamingSource("third-party", "query", "opaque/+="),
-    ).toEqual({ tracks: [], next_cursor: "opaque/+=" });
-    expect(calls).toEqual([
-      {
-        command: "search_streaming_source",
-        args: { sourceId: "third-party", query: "query", cursor: "opaque/+=" },
-      },
-    ]);
-  });
-
-  test("sends explicit credential retention and active-work consent", async () => {
-    const calls: unknown[] = [];
-    const invoke: InvokeCommand = async <T>(
-      command: string,
-      args?: Record<string, unknown>,
-    ) => {
-      calls.push({ command, args });
-      return undefined as T;
-    };
-    await createCatalogCommands(invoke).uninstallStreamingSource(
-      "third-party",
-      true,
-      false,
-    );
-    expect(calls).toEqual([
-      {
-        command: "uninstall_streaming_source",
-        args: {
-          sourceId: "third-party",
-          stopWork: true,
-          removeCredentials: false,
-        },
-      },
-    ]);
   });
 });

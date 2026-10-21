@@ -32,13 +32,13 @@ Disable and uninstall refuse active work unless `stop_work` is explicit. A stop 
 
 `poll_streaming_sign_in(source_id,challenge)` returns `{state,poll_after_ms?,session?}`. State is `pending`, `complete`, `expired`, or `cancelled`. `cancel_streaming_sign_in(source_id,challenge)` stops that challenge. Challenges belong to one source.
 
-Web sign-in uses host-controlled windows and declared cookie capture. Credentials never cross frontend IPC. `streaming-sign-in-complete` carries the verified session. `streaming-sign-in-error` carries `{source_id,error}` without credentials. Polling can also observe completion.
+Web sign-in uses host-controlled windows and declared cookie capture. Credentials never cross frontend IPC. `streaming-sign-in-complete` carries the verified session. `streaming-sign-in-error` carries `{source_id,challenge,error}` without credentials. A consumer ignores errors from an earlier challenge. Cancellation compares and removes only the originating challenge. Polling can also observe completion.
 
 ## Catalog pages and resources
 
 `StreamingTrack` contains `source_id`, `remote_track_id`, `title`, `artist`, nullable `album`, `duration_ms`, `refusal`, `library_song_id`, and `cover_url`. Artwork URLs are host-managed resource handles. The frontend must not append upstream image-resize parameters or infer provider origins.
 
-`StreamingTrackListing` is `{tracks:StreamingTrack[],next_cursor:string|null}`. `StreamingPlaylistSummary` contains `source_id`, `remote_id`, `name`, `track_count`, and nullable `cover_url`. `StreamingPlaylistListing` is `{items:StreamingPlaylistSummary[],next_cursor:string|null}`. `StreamingPlaylistDetail` contains `source_id`, `remote_id`, `name`, `tracks`, nullable `cover_url`, `description`, `track_count`, `creator`, `updated_at_ms`, and `next_cursor`.
+`StreamingTrackListing` is `{tracks:StreamingTrack[],next_cursor:string|null}`. `StreamingPlaylistSummary` contains `source_id`, `remote_id`, `name`, nullable `track_count`, and nullable `cover_url`. `StreamingPlaylistListing` is `{items:StreamingPlaylistSummary[],next_cursor:string|null}`. `StreamingPlaylistDetail` contains `source_id`, `remote_id`, `name`, `tracks`, nullable `cover_url`, `description`, `track_count`, `creator`, `updated_at_ms`, and `next_cursor`.
 
 | Command                                                            | Result                     |
 | ------------------------------------------------------------------ | -------------------------- |
@@ -101,10 +101,14 @@ Official-page completion retains the source/challenge terminal result for pollin
 after the host closes its window and releases active work. New sign-in and
 sign-out clear the retained result.
 
-Load More forwards the exact opaque cursor. Playlist import follows remaining
-playlist cursors before it sends the complete selection to shared Streaming
-Import. The browser never requests pages by a provider-specific id batch size.
-Artwork paths use the host asset protocol without CDN rewrites.
+Load More forwards the exact opaque cursor. Playlist import starts the global
+source-bound backend job before it follows playlist cursors. Preparation holds
+the actual import work lease and supports cancellation outside navigation.
+An empty track selection with a playlist id means the complete playlist;
+the backend enumerates its pages and reports track progress through the shared
+job. The browser never requests pages by a provider-specific id batch size.
+Artwork paths use the host asset protocol without CDN rewrites. Artwork loads
+observe the same work cancellation token as import preparation.
 
 Tabs support Arrow Left, Arrow Right, Home, and End with a roving tabindex.
 The Find shortcut focuses the supported search field. Track rows retain Enter

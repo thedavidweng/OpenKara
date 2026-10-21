@@ -358,7 +358,8 @@ export function StreamingBrowser() {
                       </div>
                     ) : (
                       <>
-                        {canImport && tracks.length > 0 ? (
+                        {canImport &&
+                        (tracks.length > 0 || (isDetail && detail)) ? (
                           <div className="mb-3 flex gap-2">
                             <button
                               className={button}

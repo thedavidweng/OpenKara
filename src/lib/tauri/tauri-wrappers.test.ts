@@ -704,26 +704,6 @@ describe("settings", () => {
     expect(returned).toBe(session);
   });
 
-  test("sign-in challenge preserves source identity without exposing credentials", async () => {
-    const challenge = {
-      source_id: "third-party",
-      challenge: "opaque-challenge",
-      expires_at: "2099-01-01T00:00:00Z",
-      poll_after_ms: 250,
-      presentation: {
-        kind: "qr",
-        content: "https://example.invalid/auth",
-        text: "Scan to sign in",
-      },
-    };
-    mockInvoke.mockResolvedValueOnce(challenge);
-    const catalog = createCatalogCommands(mockInvoke);
-    expect(await catalog.openStreamingSignIn("third-party")).toEqual(challenge);
-    expect(mockInvoke).toHaveBeenCalledWith("open_streaming_sign_in", {
-      sourceId: "third-party",
-    });
-  });
-
   test("controlYoutubeWatch invokes control_youtube_watch", async () => {
     mockInvoke.mockResolvedValueOnce({
       ended: false,

@@ -507,16 +507,14 @@ test("importing selected liked songs after viewing a playlist does not inherit i
     library_song_id: null,
     cover_url: null,
   };
-  const start = vi
-    .fn()
-    .mockResolvedValue({
-      source_id: "alpha",
-      status: "completed",
-      imported_song_ids: ["local-song"],
-      failed: [],
-      playlist_id: null,
-      conflict: null,
-    });
+  const start = vi.fn().mockResolvedValue({
+    source_id: "alpha",
+    status: "completed",
+    imported_song_ids: ["local-song"],
+    failed: [],
+    playlist_id: null,
+    conflict: null,
+  });
   store = createCatalogStore(
     createMockBackend({
       overrides: {
@@ -633,15 +631,105 @@ test("web sign-in failure does not abandon an in-flight public collection", asyn
     ),
   );
   act(() =>
-    store
-      .getState()
-      .setSignInError("alpha", {
-        code: "internal",
-        message: "Window closed",
-        retryable: true,
-        fallback: "retry",
-      }),
+    store.getState().setSignInError("alpha", "web-alpha", {
+      code: "internal",
+      message: "Window closed",
+      retryable: true,
+      fallback: "retry",
+    }),
   );
   await act(async () => finish({ tracks: [], next_cursor: null }));
   expect(screen.getByText("catalog.streaming.likedEmpty")).toBeTruthy();
+});
+
+test("playlist import exposes its global cancellable job before backend pagination finishes", async () => {
+  let finish!: (progress: StreamingImportProgress) => void;
+  const preparing = new Promise<StreamingImportProgress>((resolve) => {
+    finish = resolve;
+  });
+  const start = vi.fn().mockReturnValue(preparing);
+  const cancel = vi.fn().mockResolvedValue(undefined);
+  const detail = vi
+    .fn()
+    .mockResolvedValue({
+      source_id: "alpha",
+      remote_id: "playlist",
+      name: "Long collection",
+      track_count: null,
+      tracks: [],
+      cover_url: null,
+      creator: null,
+      updated_at_ms: null,
+      description: null,
+      next_cursor: "host-owned-continuation",
+    });
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            expired: false,
+            display_name: null,
+          }),
+          listStreamingPlaylists: async () => ({
+            items: [
+              {
+                source_id: "alpha",
+                remote_id: "playlist",
+                name: "Long collection",
+                track_count: null,
+                cover_url: null,
+              },
+            ],
+            next_cursor: null,
+          }),
+          getStreamingPlaylist: detail,
+          startStreamingImport: start,
+          cancelStreamingImport: cancel,
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store
+    .getState()
+    .applySources([
+      source("alpha", ["playlists", "playlist_tracks", "import"]),
+      source("beta", ["search"]),
+    ]);
+  store.getState().setActiveSource("alpha");
+  render(
+    <>
+      <StreamingBrowser />
+      <StreamingImportBar />
+    </>,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Long collection/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "catalog.streaming.importPlaylist",
+    }),
+  );
+  expect(start.mock.calls[0].slice(0, 3)).toEqual(["alpha", [], "playlist"]);
+  act(() => store.getState().setActiveSource("beta"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.cancelImport" }),
+  );
+  expect(cancel).toHaveBeenCalled();
+  expect(detail.mock.calls).toHaveLength(1);
+  await act(async () =>
+    finish({
+      source_id: "alpha",
+      status: "completed",
+      imported_song_ids: [],
+      failed: [],
+      playlist_id: null,
+      conflict: null,
+    }),
+  );
+  expect(screen.getByRole("button", { name: "common.close" })).toBeTruthy();
 });

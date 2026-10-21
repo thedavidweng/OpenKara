@@ -90,7 +90,11 @@ export interface CatalogState extends SourceBrowseState {
   setSearchDraft: (draft: string) => void;
   clearSearch: () => void;
   dismissImportRun: () => void;
-  setSignInError: (sourceId: string, error: CommandError) => void;
+  setSignInError: (
+    sourceId: string,
+    challenge: string,
+    error: CommandError,
+  ) => void;
   clearSignInError: () => void;
   setYoutubeLinkOpen: (open: boolean) => void;
   rememberVideoItems: (items: VideoQueueItem[]) => void;
@@ -310,7 +314,9 @@ export function createCatalogStore(
       activeImportIds: [],
       importRun: {
         ...run,
-        ...count(run.sourceId, state.activeImportIds, states),
+        imported: progress.imported_song_ids.length,
+        skipped: progress.failed.length,
+        completed: progress.imported_song_ids.length + progress.failed.length,
         phase: "done",
         cancelling: false,
       },
@@ -476,12 +482,12 @@ export function createCatalogStore(
       if (get().importRun?.phase !== "running")
         set({ importRun: null, importFailures: [] });
     },
-    setSignInError: (id, signInError) => {
+    setSignInError: (id, challenge, signInError) => {
       const source = get().sources.find((item) => item.source_id === id);
       if (
         !source?.enabled ||
         !source.installed_version ||
-        (!browse(id).challenge && browse(id).authStatus !== "loading")
+        browse(id).challenge?.challenge !== challenge
       )
         return;
       generation(id, "auth");
@@ -562,7 +568,7 @@ export function createCatalogStore(
       }
     },
     cancelSignIn: async (id = get().activeSourceId ?? "") => {
-      generation(id, "auth");
+      const current = generation(id, "auth");
       clearTimeout(authTimers.get(id));
       const challenge = browse(id).challenge;
       if (!challenge) {
@@ -571,9 +577,18 @@ export function createCatalogStore(
       }
       try {
         await backend.catalog.cancelStreamingSignIn(id, challenge.challenge);
+        if (
+          !current() ||
+          browse(id).challenge?.challenge !== challenge.challenge
+        )
+          return;
         patch(id, { challenge: null, authStatus: "idle" });
       } catch (error) {
-        fail(id, "auth", error);
+        if (
+          current() &&
+          browse(id).challenge?.challenge === challenge.challenge
+        )
+          fail(id, "auth", error);
       }
     },
     acceptSignIn: (session) => {
@@ -612,6 +627,7 @@ export function createCatalogStore(
         });
       } catch (error) {
         fail(id, "auth", error);
+        notifyError(error);
       }
     },
     loadLiked: async (more = false) => {
@@ -754,46 +770,14 @@ export function createCatalogStore(
       const id = get().activeSourceId ?? "";
       const initial = browse(id).playlistDetail;
       if (!initial || get().importRun?.phase === "running") return;
-      const current = generation(id, `playlist:${initial.remote_id}`);
-      patch(id, { playlistDetailStatus: "loading" });
-      try {
-        let detail = initial;
-        while (detail.next_cursor) {
-          const page = await backend.catalog.getStreamingPlaylist(
-            id,
-            detail.remote_id,
-            detail.next_cursor,
-          );
-          if (!current()) return;
-          detail = { ...page, tracks: [...detail.tracks, ...page.tracks] };
-          patch(id, {
-            playlistDetails: {
-              ...browse(id).playlistDetails,
-              [detail.remote_id]: detail,
-            },
-            ...(browse(id).selectedPlaylistId === detail.remote_id
-              ? { playlistDetail: detail }
-              : {}),
-          });
-        }
-        patch(id, { playlistDetailStatus: "ready" });
-        await get().importTracks(
-          detail.tracks
-            .filter((track) => !track.refusal)
-            .map((track) => track.remote_track_id),
-          detail.remote_id,
-          detail.name,
-          id,
-        );
-      } catch (error) {
-        if (current()) {
-          patch(id, { playlistDetailStatus: "error" });
-          fail(id, "playlist", error);
-        }
-      }
+      await get().importTracks([], initial.remote_id, initial.name, id);
     },
     importTracks: async (ids, playlist, label, boundSource) => {
-      if (get().importRun?.phase === "running" || ids.length === 0) return;
+      if (
+        get().importRun?.phase === "running" ||
+        (ids.length === 0 && !playlist)
+      )
+        return;
       const sourceId = boundSource ?? get().activeSourceId ?? "";
       const jobId = crypto.randomUUID();
       const trackStates = { ...get().trackStates };
@@ -863,10 +847,14 @@ export function createCatalogStore(
         !run ||
         run.phase !== "running" ||
         run.sourceId !== event.source_id ||
-        run.jobId !== event.job_id ||
-        !state.activeImportIds.includes(event.remote_track_id)
+        run.jobId !== event.job_id
       )
         return;
+      const activeImportIds = state.activeImportIds.includes(
+        event.remote_track_id,
+      )
+        ? state.activeImportIds
+        : [...state.activeImportIds, event.remote_track_id];
       const trackStates = {
         ...state.trackStates,
         [onlinePreviewQueueId(event.source_id, event.remote_track_id)]:
@@ -893,6 +881,7 @@ export function createCatalogStore(
             : null;
       set({
         trackStates,
+        activeImportIds,
         importFailures: failure
           ? [
               ...state.importFailures.filter(
@@ -903,7 +892,7 @@ export function createCatalogStore(
           : state.importFailures,
         importRun: {
           ...run,
-          ...count(run.sourceId, state.activeImportIds, trackStates),
+          ...count(run.sourceId, activeImportIds, trackStates),
           jobId: event.job_id,
           total: event.total,
           completed: event.completed,

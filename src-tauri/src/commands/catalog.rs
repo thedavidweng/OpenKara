@@ -232,19 +232,7 @@ pub async fn open_streaming_sign_in(
             let remaining =
                 expires_at.saturating_sub(time::OffsetDateTime::now_utc().unix_timestamp()) as u64;
             tokio::select! {_=cancellation.cancelled()=>{},_=tokio::time::sleep(std::time::Duration::from_secs(remaining))=>{}}
-            let matching = app
-                .state::<SourceAuthentication>()
-                .inner
-                .lock()
-                .map(|guard| {
-                    guard
-                        .get(&id)
-                        .is_some_and(|work| work.challenge == expected_challenge)
-                })
-                .unwrap_or(false);
-            if matching {
-                let _ = cancel_authentication(&app, &id).await;
-            }
+            let _ = cancel_matching_authentication(&app, &id, Some(&expected_challenge)).await;
         });
     }
     let mut response = challenge;
@@ -292,7 +280,7 @@ async fn watch_web_sign_in(
             let _ = app.emit_to(
                 "main",
                 "streaming-sign-in-error",
-                json!({"source_id":id,"error":internal_error("source sign-in challenge expired")}),
+                json!({"source_id":id,"challenge":challenge,"error":internal_error("source sign-in challenge expired")}),
             );
             break;
         }
@@ -309,7 +297,7 @@ async fn watch_web_sign_in(
                 let _ = app.emit_to(
                     "main",
                     "streaming-sign-in-error",
-                    json!({"source_id":id,"error":error}),
+                    json!({"source_id":id,"challenge":challenge,"error":error}),
                 );
                 break;
             }
@@ -362,7 +350,7 @@ async fn watch_web_sign_in(
                 let _ = app.emit_to(
                     "main",
                     "streaming-sign-in-error",
-                    json!({"source_id":id,"error":error}),
+                    json!({"source_id":id,"challenge":challenge,"error":error}),
                 );
             }
         }
@@ -482,25 +470,31 @@ pub async fn cancel_streaming_sign_in(
     source_id: String,
     challenge: String,
 ) -> CommandResult<()> {
-    let matching = app_handle
-        .state::<SourceAuthentication>()
-        .inner
-        .lock()
-        .map_err(|_| state_lock_error("authentication state lock"))?
-        .get(&source_id)
-        .is_some_and(|w| w.challenge == challenge);
-    if matching {
-        cancel_authentication(&app_handle, &source_id).await?;
-    }
+    cancel_matching_authentication(&app_handle, &source_id, Some(&challenge)).await?;
     Ok(())
 }
 pub(crate) async fn cancel_authentication(app: &AppHandle, id: &str) -> CommandResult<()> {
-    let work = app
-        .state::<SourceAuthentication>()
-        .inner
-        .lock()
-        .map_err(|_| state_lock_error("authentication state lock"))?
-        .remove(id);
+    cancel_matching_authentication(app, id, None).await
+}
+async fn cancel_matching_authentication(
+    app: &AppHandle,
+    id: &str,
+    challenge: Option<&str>,
+) -> CommandResult<()> {
+    let work = {
+        let auth = app.state::<SourceAuthentication>();
+        let mut guard = auth
+            .inner
+            .lock()
+            .map_err(|_| state_lock_error("authentication state lock"))?;
+        if challenge
+            .is_none_or(|expected| guard.get(id).is_some_and(|work| work.challenge == expected))
+        {
+            guard.remove(id)
+        } else {
+            None
+        }
+    };
     if let Some(work) = work {
         work.lease.cancellation().cancel();
         if let Some(window) = app.get_webview_window(&authentication_window(id)) {

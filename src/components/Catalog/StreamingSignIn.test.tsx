@@ -248,3 +248,84 @@ test("late authentication completion cannot restore a disabled source", async ()
   );
   expect(screen.queryByText("Late account")).toBeNull();
 });
+
+test("an older web challenge error cannot dismiss the current challenge", async () => {
+  let sequence = 0;
+  const store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: `challenge-${++sequence}`,
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 1000,
+            presentation: { kind: "text", text: `Prompt ${sequence}` },
+          }),
+          cancelStreamingSignIn: async () => {},
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn />);
+  await act(async () => {
+    await store.getState().openSignIn();
+    await store.getState().openSignIn();
+  });
+  act(() =>
+    store
+      .getState()
+      .setSignInError("alpha", "challenge-1", {
+        code: "streaming_auth_failed",
+        message: "Old window closed",
+        retryable: true,
+        fallback: "retry",
+      }),
+  );
+  expect(screen.getByText("Prompt 2")).toBeTruthy();
+  expect(screen.queryByText(/Old window closed/)).toBeNull();
+});
+
+test("an older cancellation response cannot remove a replacement prompt", async () => {
+  let finishOld!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    finishOld = resolve;
+  });
+  let cancellations = 0;
+  let sequence = 0;
+  const store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: `challenge-${++sequence}`,
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 1000,
+            presentation: { kind: "text", text: `Prompt ${sequence}` },
+          }),
+          cancelStreamingSignIn: () =>
+            ++cancellations === 1 ? delayed : Promise.resolve(),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn />);
+  await act(async () => store.getState().openSignIn());
+  let cancellation!: Promise<void>;
+  act(() => {
+    cancellation = store.getState().cancelSignIn();
+  });
+  await act(async () => store.getState().openSignIn());
+  await act(async () => {
+    finishOld();
+    await cancellation;
+  });
+  expect(screen.getByText("Prompt 2")).toBeTruthy();
+});

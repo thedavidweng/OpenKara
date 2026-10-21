@@ -17,8 +17,10 @@ export function startStreamingRuntime() {
     eventSubscription("streaming-sign-in-complete", (session) =>
       useCatalogStore.getState().acceptSignIn(session),
     ),
-    eventSubscription("streaming-sign-in-error", ({ source_id, error }) =>
-      useCatalogStore.getState().setSignInError(source_id, error),
+    eventSubscription(
+      "streaming-sign-in-error",
+      ({ source_id, challenge, error }) =>
+        useCatalogStore.getState().setSignInError(source_id, challenge, error),
     ),
     eventSubscription("streaming-source-status", (source) => {
       useCatalogStore.getState().applySource(source);

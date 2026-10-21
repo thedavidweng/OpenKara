@@ -49,7 +49,11 @@ export interface RuntimeEventMap {
   "remote-playback-resync": RemotePlaybackResyncEvent;
   "remote-playback-failed": RemotePlaybackFailedEvent;
   "streaming-sign-in-complete": StreamingSessionSnapshot;
-  "streaming-sign-in-error": { source_id: string; error: CommandError };
+  "streaming-sign-in-error": {
+    source_id: string;
+    challenge: string;
+    error: CommandError;
+  };
   "streaming-source-status": SourceSnapshot;
   "streaming-import-progress": StreamingImportEvent;
   "streaming-import-complete": StreamingImportCompleteEvent;

@@ -277,10 +277,13 @@ impl PluginStreamingSource {
         let Some(descriptor) = descriptor else {
             return Ok(None);
         };
-        let bytes = match tauri::async_runtime::block_on(
-            self.host.load_resource(&self.source_id, descriptor),
-        ) {
+        let bytes = match tauri::async_runtime::block_on(self.host.load_resource(
+            &self.source_id,
+            descriptor,
+            self.cancellation.clone(),
+        )) {
             Ok(bytes) => bytes,
+            Err(error) if error.code == "cancelled" => return Err(CatalogError::Cancelled),
             Err(_) => return Ok(None),
         };
         let path = self

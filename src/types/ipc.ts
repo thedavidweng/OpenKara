@@ -196,7 +196,7 @@ export interface StreamingPlaylistSummary {
   source_id: OnlineSourceId;
   remote_id: string;
   name: string;
-  track_count: number;
+  track_count: number | null;
   cover_url: string | null;
 }
 
