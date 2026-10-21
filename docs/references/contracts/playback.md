@@ -6,7 +6,7 @@
 
 ## 接口
 
-1. `play(song_id: String) -> PlaybackStateSnapshot` — `song_id` is a library `songs.hash`, or a Video Source queue id with a `yt:` prefix. A `yt:` id is played by the frontend video transport (public watch page). The local audio command must not decode a `yt:` id.
+1. `play(song_id: String) -> PlaybackStateSnapshot` — `song_id` is a library `songs.hash` or an Online Preview id `stream:<source_id>:<encodeURIComponent(remote_id)>`. Source ids are open validated strings; remote ids are opaque. A Video Source queue id with a `yt:` prefix is played by the frontend video transport (public watch page). The local audio command must not decode a `yt:` id.
    1a. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>` — see [catalog.md](./catalog.md). Does not call YouTube `/player` stream URLs.
    1b. `control_youtube_watch(action: YoutubeWatchAction) -> YoutubeWatchMediaState` — typed play, pause, seek, volume, query, and navigate for the single incognito YouTube watch WebView (`youtube-watch`). Navigate accepts only `https://www.youtube.com/watch?v=…` (and the `youtube.com` / `m.youtube.com` watch forms). It does not request `/player`, persist Google cookies, or sign in to Google. When the audience window is open, that window hosts this single WebView.
 2. `resume() -> PlaybackStateSnapshot`
@@ -22,6 +22,27 @@
 12. `track-transitioned` 事件 payload 为 `{ transitionSerial: u64, preloadGeneration: u64, fromSongId: String, toSongId: String, state: PlaybackStateSnapshot }` — #88/#89 无缝换轨通知（见下）
 13. `playback-ended` 事件 payload 为 `{ songId: String }` — 播放结束通知（见下）
 14. `get_waveform(hash: String, buckets: Option<usize>) -> Vec<f32>` — #90 波形 seekbar 命令（见下）
+
+### Online Preview
+
+Online Preview uses the existing playback coordinator and transport controls.
+It does not create a library song or preload the next preview. The browser
+prefers an existing library song when the source track has a library match.
+
+SourceHost validates media origins, destination addresses, headers, and every
+redirect before a request. One sequential ranged GET fills the chunk cache.
+Playback starts after the startup buffer, not after a full download. A seek
+outside the cached range restarts the guarded request at that offset. An expired
+descriptor or repeated transfer failure can trigger one descriptor refresh;
+a second failure stops preview and reports an error. Refresh preserves position.
+
+One SourceHost `Preview` work lease covers loading, paused playback, and active
+playback. Source cancellation sends internal `CancelPreview` to the coordinator.
+The coordinator checks both the request id and the song id under its playback
+lock. An old cancellation cannot stop a new replay of the same track. The lease
+drops only after audio, decode, and download stop. Preview lyrics use metadata
+keyed by `(source_id, remote_id)` and the existing host lyric provider chain.
+They do not write lyrics or negative-cache entries to the library.
 
 ### Peak envelope 可视化（#87）
 

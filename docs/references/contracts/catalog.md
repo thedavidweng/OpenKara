@@ -1,422 +1,102 @@
 # Catalog Contract
 
-Field or command semantic changes must update this document before changing UI
-code. Domain terms come from `CONTEXT.md`. Decisions: ADR 0031–0036.
+The source process boundary is specified in [Streaming Source protocol 1.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
 
-The independently installed Streaming Source process boundary is specified in
-[Streaming Source protocol 1.0](streaming-source-protocol.md) and ADR 0038.
-That contract does not change the current application IPC below; adoption is
-the source-neutral host/browser slice of #551.
+## Identity and lifecycle
 
-## Types
+`OnlineSourceId` is an open string. Source ids use safe lowercase ASCII. The native `list_online_sources()` registry contains only YouTube. `set_online_source_enabled(source_id, enabled)` changes its `AppSettings.youtube_source_enabled` flag. Streaming Sources use independent lifecycle commands, not AppSettings flags.
 
-`OnlineSourceId`: `"youtube"` | `"netease"`
+`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `runtime_ready`, `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
 
-`OnlineSourceKind`: `"video"` | `"streaming"`
+`state` is `not_installed`, `installing`, `ready`, `disabled`, `update_required`, `unavailable`, `waiting_for_idle`, or `cancelling`. Installation, enablement, runtime readiness and sign-in are separate states. `progress` contains `phase`, `completed`, and nullable `total`. `last_error` is `{code,message,retryable}`. Active work contains numeric `id`, `kind` (`authentication`, `preview`, or `import`), and `cancelling`.
 
-`OnlineSourceCapabilities`
+`SourceManifest` contains `manifest_version`, `source_id`, `package_id`, `publisher`, `version`, `minimum_host_version`, `protocol: {majors:number[],minor:number}`, `runtime: {kind:string,major:number}`, `entry`, `name`, `description`, `license`, string arrays `capabilities`, `requires_authentication`, `resource_origins`, `media_origins`, and the protocol-defined `authentication` value.
 
-```json
-{
-  "sign_in": false,
-  "browse": false,
-  "import": false,
-  "resolve_video": false
-}
-```
+| Command                                                                      | Result             |
+| ---------------------------------------------------------------------------- | ------------------ |
+| `list_streaming_sources()`                                                   | `SourceSnapshot[]` |
+| `refresh_streaming_sources()`                                                | `SourceSnapshot[]` |
+| `install_streaming_source(source_id, version=null)`                          | `SourceSnapshot`   |
+| `cancel_streaming_source_install(source_id)`                                 | void               |
+| `set_streaming_source_enabled(source_id, enabled, stop_work=false)`          | `SourceSnapshot`   |
+| `uninstall_streaming_source(source_id, stop_work=false, remove_credentials)` | `SourceSnapshot`   |
+| `pin_streaming_source(source_id, version=null)`                              | `SourceSnapshot`   |
 
-`OnlineSourceSnapshot`
+Disable and uninstall refuse active work unless `stop_work` is explicit. A stop cancels source-bound work and waits for it to stop before removing resources. Uninstall requires an explicit credential-retention choice. A failed refresh remains visible and does not erase prior snapshots. `streaming-source-status` carries the changed `SourceSnapshot`.
 
-```json
-{
-  "id": "youtube",
-  "kind": "video",
-  "enabled": false,
-  "capabilities": {
-    "sign_in": false,
-    "browse": false,
-    "import": false,
-    "resolve_video": false
-  }
-}
-```
+## Authentication
 
-`StreamingSessionSnapshot`
+`get_streaming_session(source_id)` returns `{source_id,signed_in,display_name,expired}` after plugin session verification, not a storage-presence guess. `sign_out_streaming_source(source_id,stop_work=false)` clears that source's saved session and returns the same shape. Sign-out requires explicit stop consent when source work is active.
 
-```json
-{
-  "source_id": "netease",
-  "signed_in": false,
-  "display_name": null,
-  "expired": false
-}
-```
+`open_streaming_sign_in(source_id)` returns `AuthChallenge`: `{source_id,challenge,expires_at,poll_after_ms,presentation}`. `poll_after_ms` is nullable. Presentation is `{kind:'web'}`, `{kind:'qr',content,text}`, or `{kind:'text',text}`.
 
-`ImportRefusalReason`: `"no_play_rights"` | `"trial_clip"` | `"empty_url"`
+`poll_streaming_sign_in(source_id,challenge)` returns `{state,poll_after_ms?,session?}`. State is `pending`, `complete`, `expired`, or `cancelled`. `cancel_streaming_sign_in(source_id,challenge)` stops that challenge. Challenges belong to one source.
 
-`StreamingTrack`
+Web sign-in uses host-controlled windows and declared cookie capture. Credentials never cross frontend IPC. `streaming-sign-in-complete` carries the verified session. `streaming-sign-in-error` carries `{source_id,error}` without credentials. Polling can also observe completion.
 
-```json
-{
-  "source_id": "netease",
-  "remote_track_id": "123",
-  "title": "Title",
-  "artist": "Artist",
-  "album": "Album",
-  "duration_ms": 180000,
-  "refusal": null,
-  "library_song_id": null,
-  "cover_url": "https://p1.music.126.net/cover.jpg"
-}
-```
+## Catalog pages and resources
 
-`StreamingTrack.cover_url` is the album cover as an HTTPS URL without a size
-parameter, or `null`. The provider's `http://` URLs are rewritten to `https://`.
+`StreamingTrack` contains `source_id`, `remote_track_id`, `title`, `artist`, nullable `album`, `duration_ms`, `refusal`, `library_song_id`, and `cover_url`. Artwork URLs are host-managed resource handles. The frontend must not append upstream image-resize parameters or infer provider origins.
 
-`StreamingTrack.library_song_id` is the song id of the library song this track
-was imported as (from its persisted Streaming Track Identity), or `null`.
+`StreamingTrackListing` is `{tracks:StreamingTrack[],next_cursor:string|null}`. `StreamingPlaylistSummary` contains `source_id`, `remote_id`, `name`, `track_count`, and nullable `cover_url`. `StreamingPlaylistListing` is `{items:StreamingPlaylistSummary[],next_cursor:string|null}`. `StreamingPlaylistDetail` contains `source_id`, `remote_id`, `name`, `tracks`, nullable `cover_url`, `description`, `track_count`, `creator`, `updated_at_ms`, and `next_cursor`.
 
-`ImportRefusal`
+| Command                                                            | Result                     |
+| ------------------------------------------------------------------ | -------------------------- |
+| `list_streaming_liked_tracks(source_id,cursor=null)`               | `StreamingTrackListing`    |
+| `search_streaming_source(source_id,query,cursor=null)`             | `StreamingTrackListing`    |
+| `list_streaming_playlists(source_id,cursor=null)`                  | `StreamingPlaylistListing` |
+| `get_streaming_playlist(source_id,remote_playlist_id,cursor=null)` | `StreamingPlaylistDetail`  |
+| `get_streaming_tracks(source_id,remote_track_ids)`                 | `StreamingTrack[]`         |
 
-```json
-{
-  "reason": "trial_clip",
-  "title": "Title",
-  "artist": "Artist"
-}
-```
+Cursors are opaque and bound to the source and listing. A null next cursor ends pagination. Remote ids can collide across sources; identity is always `(source_id,remote_id)`.
 
-`StreamingPlaylistSummary`
+## Import and preview
 
-```json
-{
-  "remote_id": "pl-1",
-  "name": "Night set",
-  "track_count": 12,
-  "cover_url": "https://p1.music.126.net/playlist.jpg"
-}
-```
+`start_streaming_import(source_id,remote_track_ids,remote_playlist_id,job_id)` and `continue_streaming_import(action)` return `StreamingImportProgress`. The caller creates a unique `job_id` and stores the source/job pair before invoking start. All subsequent progress must match both identifiers, including the first event while start remains pending. `remote_playlist_id` is nullable. `cancel_streaming_import()` cancels the global job. `get_streaming_import_status()` returns its latest `StreamingImportJobSnapshot` or null. One global job runs at a time; its source cannot change when selection changes.
 
-`StreamingPlaylistDetail`
+Progress, job snapshots and `streaming-import-progress` events all contain `source_id`. Progress contains `status` (`awaiting_decision` or `completed`), `imported_song_ids`, `failed`, nullable `playlist_id`, and nullable `conflict`. Job snapshots contain `job_id`, `phase` (`running`, `awaiting_decision`, `completed`), `completed`, `total`, and `tracks`. Events contain `job_id`, `remote_track_id`, `title`, `artist`, `state`, `completed`, and `total`.
 
-```json
-{
-  "remote_id": "pl-1",
-  "name": "Night set",
-  "tracks": [],
-  "cover_url": "https://p1.music.126.net/playlist.jpg",
-  "creator": "Ada",
-  "description": "Late set",
-  "track_count": 12,
-  "updated_at_ms": 1700000000000,
-  "track_ids": ["1", "2"],
-  "partial": false
-}
-```
+Track states are `queued`, `downloading` (optional percent), `importing`, `imported` (song_id), `skipped` (refusal), or `failed` (reason). Failure reasons are `refusal`, `cancelled`, and `import_failed`. Refusal reasons are `no_play_rights`, `trial_clip`, `empty_url`, and `unavailable`. Protocol `no_media` maps to `empty_url`. A refusal never substitutes another source. Successful imports become ordinary library songs. Playlist origin and track identity include the source id. Conflict actions are `keep`, `replace`, `apply_keep`, `apply_replace`, or `cancel`.
 
-`creator`, `description`, `cover_url`, and `updated_at_ms` are `null` when the
-provider omits them. `track_count` is the provider's total, which can exceed
-`tracks.length` only if provider metadata for some tracks is missing.
-`track_ids` lists every track of the playlist in order. `partial` is `true`
-when `tracks` holds only the first batch of `track_ids`; the rest is fetched
-with `get_streaming_tracks`.
+Online Preview queue ids are `stream:${source_id}:${encodeURIComponent(remote_id)}`. Metadata maps use the complete canonical id. Preview ids are not library songs and do not gain library lyrics, stems, or history. Host lyric lookup uses source-bound metadata. Preview work belongs to its source and must stop before source removal.
 
-`StreamingTrackListing` (liked tracks)
+`resolve_video_source_url(source_id,url)` returns `VideoQueueItem[]` for native YouTube links. Video queue ids retain `yt:`. It does not use YouTube `/player` stream URLs. `get_reveal_targets(song_id)` returns `song_file` and `stems` targets, each `{available,path}`. `reveal_in_folder(path)` opens an existing target in the system file manager.
 
-```json
-{ "tracks": [], "track_ids": ["1", "2"], "partial": true }
-```
+## Browser and Settings UI
 
-`LibraryDecisionMeta`
+Navigation uses installed source snapshots, not a fixed brand list. Settings
+keeps discovery, installation, enablement, runtime readiness, and verified
+authentication separate. The built-in YouTube preference controls only the
+native Video Source. A failed source refresh keeps existing snapshots usable.
+The local-library view is separate from the active source id. A valid source
+id such as `library` does not alias local-library navigation.
 
-```json
-{
-  "title": "Title",
-  "artist": "Artist",
-  "album": "Album",
-  "format": "MP3",
-  "bit_rate_bps": 320,
-  "duration_ms": 180000,
-  "file_size_bytes": 4200000
-}
-```
+The browser shows liked tracks for `liked_tracks`, search for `search`, and
+playlists only when both `playlists` and `playlist_tracks` are declared. Import
+and preview controls require their own capabilities. A library-song mapping
+takes precedence over Online Preview. Authentication gates only methods named
+by `requires_authentication`; public methods remain available without sign-in.
 
-`ImportConflictPrompt`
+Each source owns its session, query, cursors, loaded pages, selection, errors,
+and request generations. Delayed results update the source that started the
+request. Navigation does not cancel an import or move its task subscriptions.
+The import bar and Library Decision dialog remain available outside a source
+browser. Import events must match both source and caller-created job id.
 
-```json
-{
-  "source_id": "netease",
-  "remote_track_id": "123",
-  "library": {},
-  "incoming": {}
-}
-```
+Load More forwards the exact opaque cursor. Playlist import follows remaining
+playlist cursors before it sends the complete selection to shared Streaming
+Import. The browser never requests pages by a provider-specific id batch size.
+Artwork paths use the host asset protocol without CDN rewrites.
 
-`LibraryDecisionAction`: `"keep"` | `"replace"` | `"apply_keep"` | `"apply_replace"` | `"cancel"`
+Tabs support Arrow Left, Arrow Right, Home, and End with a roving tabindex.
+The Find shortcut focuses the supported search field. Track rows retain Enter
+playback, selection, select-all, shift-range selection, refusal explanations,
+and local-song preference. Loading failures provide a retry action and do not
+present a failed request as an empty collection.
 
-`StreamingImportFailureReason`: `"refusal"` | `"cancelled"` | `"import_failed"`
-
-`StreamingImportFailure`
-
-```json
-{
-  "remote_track_id": "123",
-  "title": "Title",
-  "artist": "Artist",
-  "reason": "refusal",
-  "refusal": {
-    "reason": "trial_clip",
-    "title": "Title",
-    "artist": "Artist"
-  }
-}
-```
-
-`StreamingImportProgress`
-
-```json
-{
-  "status": "completed",
-  "imported_song_ids": [],
-  "failed": [],
-  "playlist_id": null,
-  "conflict": null
-}
-```
-
-`StreamingImportProgress.status`: `"awaiting_decision"` | `"completed"`
-
-`StreamingImportTrackState` is tagged by `kind`:
-
-- `{ "kind": "queued" }`
-- `{ "kind": "downloading", "percent": 62 }` (`percent` is 0-100 and omitted when unknown)
-- `{ "kind": "importing" }`
-- `{ "kind": "imported", "song_id": "hash" }`
-- `{ "kind": "skipped", "refusal": ImportRefusal }`
-- `{ "kind": "failed", "reason": StreamingImportFailureReason }`
-
-`StreamingImportEvent`
-
-```json
-{
-  "job_id": "import-1",
-  "remote_track_id": "123",
-  "title": "Title",
-  "artist": "Artist",
-  "state": { "kind": "queued" },
-  "completed": 0,
-  "total": 12
-}
-```
-
-`StreamingImportJobSnapshot`
-
-```json
-{
-  "job_id": "import-1",
-  "phase": "running",
-  "completed": 0,
-  "total": 12,
-  "tracks": [
-    {
-      "remote_track_id": "123",
-      "title": "Title",
-      "artist": "Artist",
-      "state": { "kind": "queued" }
-    }
-  ]
-}
-```
-
-`StreamingImportJobSnapshot.phase`: `"running"` | `"awaiting_decision"` | `"completed"`
-
-`VideoQueueItem`
-
-```json
-{
-  "id": "yt:dQw4w9WgXcQ",
-  "title": "Title",
-  "channel": "Channel",
-  "duration_ms": 180000,
-  "thumbnail_url": null,
-  "watch_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-}
-```
-
-`VideoUnavailableReason`: `"invalid_url"` | `"age_restricted"` | `"private"` | `"unlisted"` | `"unavailable"`
-
-`RevealTarget`
-
-```json
-{
-  "available": true,
-  "path": "/absolute/path"
-}
-```
-
-`RevealTargets`
-
-```json
-{
-  "song_file": { "available": true, "path": "/abs/media/hash.mp3" },
-  "stems": { "available": false, "path": null }
-}
-```
-
-## Commands
-
-1. `list_online_sources() -> Vec<OnlineSourceSnapshot>`
-2. `set_online_source_enabled(source_id: OnlineSourceId, enabled: bool) -> AppSettings`
-3. `get_streaming_session(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-4. `open_streaming_sign_in(source_id: OnlineSourceId) -> ()`
-5. `sign_out_streaming_source(source_id: OnlineSourceId) -> StreamingSessionSnapshot`
-6. `list_streaming_liked_tracks(source_id: OnlineSourceId) -> StreamingTrackListing`
-7. `list_streaming_playlists(source_id: OnlineSourceId) -> Vec<StreamingPlaylistSummary>`
-8. `get_streaming_playlist(source_id: OnlineSourceId, remote_playlist_id: String) -> StreamingPlaylistDetail`
-9. `get_streaming_tracks(source_id: OnlineSourceId, remote_track_ids: Vec<String>) -> Vec<StreamingTrack>`
-10. `search_streaming_source(source_id: OnlineSourceId, query: String) -> Vec<StreamingTrack>`
-11. `start_streaming_import(source_id: OnlineSourceId, remote_track_ids: Vec<String>, remote_playlist_id: Option<String>) -> StreamingImportProgress`
-12. `continue_streaming_import(action: LibraryDecisionAction) -> StreamingImportProgress`
-13. `cancel_streaming_import() -> ()`
-14. `get_streaming_import_status() -> Option<StreamingImportJobSnapshot>`
-15. `resolve_video_source_url(source_id: OnlineSourceId, url: String) -> Vec<VideoQueueItem>`
-16. `get_reveal_targets(song_id: String) -> RevealTargets`
-17. `reveal_in_folder(path: String) -> ()`
-
-## Events
-
-- `netease-sign-in-complete` targets `main` with a verified `StreamingSessionSnapshot`.
-- `netease-sign-in-error` targets `main` with a `CommandError` and no credentials.
-- `streaming-import-progress` targets `main` with a `StreamingImportEvent` for each
-  per-track state change of the running Streaming Import.
-
-## Semantics
-
-1. The registry always returns YouTube then NetEase, in that order.
-2. Both sources default to `enabled: false`.
-3. `set_online_source_enabled` persists only that source. It does not sign out
-   and it does not clear Streaming Credentials.
-4. An unknown `source_id` returns `CommandError` with `code: internal`.
-5. A disabled source rejects browse, sign-in, import, resolve, and YouTube
-   resolve commands with `code: online_source_disabled`.
-6. `AppSettings.youtube_source_enabled` and `AppSettings.netease_source_enabled`
-   match the registry flags after every successful set or `get_settings`.
-7. When a source is off, its `capabilities` are all `false`. When YouTube is on,
-   only `resolve_video` is true. When NetEase is on, `sign_in`, `browse`, and
-   `import` are true.
-8. Streaming Credentials are `MUSIC_U` and `__csrf` only. They live under the
-   keychain service `org.openkara.streaming-source`, separate from Repository
-   Credentials. OpenKara never receives a password or SMS code. The official
-   `music.163.com` page runs as the top-level document in a dedicated incognito
-   window without Tauri capabilities. While it is open, the host checks only
-   the two session cookies. When both appear, it verifies the account, stores
-   the credentials and display name, closes the window, and emits the result.
-   Failed verification stores nothing, closes the window, and emits an error.
-9. Sign-out clears Streaming Credentials. Turning NetEase off does not.
-10. `get_streaming_session` verifies stored credentials against the account
-    operation. An expired session returns `signed_in: false` and `expired: true`.
-    A code 301 from any NetEase operation returns
-    `code: streaming_session_expired` and returns the UI to sign-in.
-11. NetEase operations run through the pinned Enhanced API sidecar. The sidecar
-    owns endpoint paths, encryption, and China Client Address headers. It has
-    line-delimited JSON over standard input/output and no listening socket.
-    Each request line carries an `id` that the response echoes, so the one
-    sidecar process runs up to four requests concurrently and the host matches
-    responses by id. A worker exit fails every waiting request and the process
-    is respawned on the next use.
-    A missing sidecar reports an integration error. Other provider rejections,
-    including code 8860, remain `code: streaming_auth_failed` with the
-    provider code; they do not trigger an alternative identity or source.
-    Playlist details use the complete `trackIds` list for `track_ids`.
-12. Resolve of a Streaming Track returns an importable temp file or an
-    Import Refusal. A no-play-rights song, trial clip, or empty stream URL is an
-    Import Refusal. A pricing flag alone does not refuse an available full URL. An Import Refusal does not download and does not fetch a
-    replacement from another platform. Provider audio-format names are
-    case-insensitive; downloaded files use lowercase extensions.
-13. Streaming Import writes a temp file, then calls the existing song import.
-    A successful import is a normal library song.
-14. A whole-list import creates or updates one Playlist via a Playlist Origin
-    Stamp `(source, remote playlist id)`. A later import of the same Streaming
-    Playlist adds only missing tracks. Remote deletions do not remove local
-    Playlist songs.
-15. Identity is Streaming Track Identity `(source, remote track id)`, not title
-    or artist. Same file hash is a silent no-op. Same identity with different
-    bytes is an Import Conflict.
-16. An Import Conflict is a Library Decision. The prompt shows title, artist,
-    album, format, bit rate, duration, and size. It never shows the file hash.
-    Keep Library Song leaves the file. Replace Library Song swaps audio, keeps
-    lyrics and playlist membership, and drops stale stems and waveform cache.
-    Apply to Remaining covers only later Import Conflicts in this import.
-    Closing the dialog (`cancel`) stops the rest of the batch.
-17. Selected Import Refusals and cancelled items appear on the failure list.
-18. A public YouTube watch link becomes one queue item. A public playlist link
-    expands into ordered queue items. Queue ids use the `yt:` prefix. Those
-    ids are never written to `playlist_songs`.
-19. Age-restricted, private, or unlisted YouTube items fail with
-    `code: video_source_unavailable` and a typed `VideoUnavailableReason`.
-    Resolve does not call YouTube `/player` stream URLs.
-20. `get_reveal_targets` resolves the song file and stem folder to absolute
-    paths. A missing target has `available: false`. `reveal_in_folder` opens
-    the system file manager on an existing path.
-21. There is no UNM crate, ytdl import engine, or second audio engine.
-22. `start_streaming_import` and `continue_streaming_import` run off the main
-    thread; the promise resolves when the import completes or pauses for a
-    Library Decision. Only one import runs at a time; starting another while one
-    is running or awaiting a decision fails. Each track reports `queued`, then
-    `downloading` (with `percent` when the response length is known), then
-    `importing`, then `imported`, `skipped` (Import Refusal) or `failed`.
-    `completed` counts tracks in a final state. NetEase downloads stream to the
-    temp file in chunks and report `percent` on each whole-percent change; the
-    percent is omitted only when the response has no `Content-Length`.
-23. `cancel_streaming_import` stops the import before the next track and
-    interrupts a download in flight between chunks, deleting the partial temp
-    file. Pending and interrupted tracks are reported as
-    `failed` with reason `cancelled` and appear on the failure list. While a
-    Library Decision is open the flag applies when the decision resumes.
-24. `get_streaming_import_status` returns the latest job snapshot, or `null`
-    before any import, so the UI recovers state after a remount.
-25. `library_song_id` is filled for liked, playlist and search results. It
-    survives restarts because Streaming Track Identity is persisted and is
-    removed with its song.
-26. Cover images load from `https://*.music.126.net`. The WebView CSP allows that
-    origin in `img-src` only; no other directive (including `connect-src`) lists
-    it. The UI requests sized thumbnails by appending `?param=<w>y<h>`.
-27. Provider rights flags are matched to songs by `privilege.id === song.id`.
-    Array position is used only when the provider returned privileges without
-    ids. A song with no matching privilege is not refused. Each `song_detail`
-    batch logs a debug-level summary of `st`, `pl`, and `fee` counts so genuine
-    refusals can be told apart from a mismatch.
-    Listing-time refusal follows YesPlayMusic's `isTrackPlayable`: `pl > 0`
-    (or `cs`) is playable; otherwise `fee 1` is `trial_clip` (VIP only, served
-    as a 30-second clip), `fee 4` (paid album), a present `noCopyrightRcmd`, or
-    `st < 0` is `no_play_rights`. The UI names the reason in the skipped list;
-    the song title and artist are filled for single and selected imports.
-28. `list_streaming_liked_tracks`, `list_streaming_playlists`,
-    `get_streaming_playlist`, `get_streaming_tracks`, `search_streaming_source`,
-    `sign_out_streaming_source`, and `resolve_video_source_url` run their
-    provider calls off the main thread and never block the UI.
-29. `get_streaming_playlist` returns immediately with the first batch of tracks
-    and rights flags that `playlist_detail` already carries, every track id, and
-    `partial: true` when more remain. `list_streaming_liked_tracks` returns the
-    first 100 liked tracks the same way. The UI fetches the remaining ids with
-    `get_streaming_tracks` in pages of 500, three at a time, and the list grows
-    in id order as pages arrive. `start_streaming_import` with a playlist id
-    resolves every track of the playlist, not only the loaded ones.
-30. `song_detail` results are kept in an in-memory cache keyed by track id for
-    the session (bounded at 20000 tracks, cleared on sign-in and sign-out), so
-    reopening a list or scrolling never refetches. Fetch timings are logged at
-    debug level.
-31. An Online Preview uses the queue id `ne:<remote track id>`. The `play`
-    command accepts it and streams the track without a library song: it
-    resolves `song_url`, rejects trial clips and refused tracks with a
-    playback error, then plays from one sequential download into the cache
-    (about three seconds buffered before start; a seek past the downloaded
-    frontier restarts the download at that offset). Pause,
-    resume, seek and volume behave as for library songs. `ne:` ids are not
-    in the library database, so lyrics, stems and history do not apply.
-32. `set_preload_candidate` is a no-op for `ne:` ids. A preview does not
-    reconnect: on URL expiry or repeated network failure it re-resolves
-    `song_url` once and continues at the current position. A second failure,
-    or a server without range support, emits `PLAYBACK_ERROR_EVENT` with
-    `NetworkUnavailable`. The `preview-cache` folder in the app data directory
-    is cleared at every preview start.
+Authentication renders plugin text as text. QR content is encoded locally as
+an SVG QR code, not loaded as plugin HTML, SVG, or a remote image. Polling and
+cancellation stay bound to the source challenge. Disable, sign-out, and
+uninstall explain active source work and require explicit consent to stop it.
+Uninstall also requires an explicit keep-or-remove credential choice; neither
+choice removes local songs or playlists.

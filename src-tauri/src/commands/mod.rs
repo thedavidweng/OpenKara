@@ -18,6 +18,7 @@ pub mod runtime_worker;
 pub mod self_update;
 pub mod separation;
 pub mod settings;
+pub mod source_host;
 pub mod youtube_watch;
 
 pub use bootstrap::get_model_bootstrap_status;

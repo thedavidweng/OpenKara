@@ -415,7 +415,6 @@ export function createSettingsController({
       themePreference,
       updatePolicy,
       youtubeSourceEnabled,
-      neteaseSourceEnabled,
     } = patch;
 
     if (language !== undefined) {
@@ -468,15 +467,6 @@ export function createSettingsController({
         backend.settings.setOnlineSourceEnabled(
           "youtube",
           youtubeSourceEnabled,
-        ),
-      );
-    }
-
-    if (neteaseSourceEnabled !== undefined) {
-      await writeOptimisticPreference({ neteaseSourceEnabled }, () =>
-        backend.settings.setOnlineSourceEnabled(
-          "netease",
-          neteaseSourceEnabled,
         ),
       );
     }

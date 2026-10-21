@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
 import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsOnlineSourcesSection } from "./SettingsOnlineSourcesSection";
+vi.mock("./StreamingSources", () => ({
+  StreamingSources: () => <div>Source management</div>,
+}));
 
 describe("SettingsOnlineSourcesSection", () => {
   let container: HTMLDivElement;
@@ -31,7 +34,7 @@ describe("SettingsOnlineSourcesSection", () => {
     vi.restoreAllMocks();
   });
 
-  test("renders both online sources off by default", async () => {
+  test("renders the built-in video source off by default", async () => {
     const harness = await createInitializedSettingsHarness();
 
     act(() => {
@@ -45,11 +48,7 @@ describe("SettingsOnlineSourcesSection", () => {
     const youtube = container.querySelector<HTMLInputElement>(
       '[data-testid="online-source-youtube"]',
     );
-    const netease = container.querySelector<HTMLInputElement>(
-      '[data-testid="online-source-netease"]',
-    );
     expect(youtube?.checked).toBe(false);
-    expect(netease?.checked).toBe(false);
   });
 
   test("enabling youtube writes the video source flag", async () => {
@@ -74,29 +73,5 @@ describe("SettingsOnlineSourcesSection", () => {
     await user.click(youtube!);
 
     expect(setOnlineSourceEnabled).toHaveBeenCalledWith("youtube", true);
-  });
-
-  test("enabling netease writes the streaming source flag", async () => {
-    const harness = await createInitializedSettingsHarness();
-    const setOnlineSourceEnabled = vi.spyOn(
-      harness.backend.settings,
-      "setOnlineSourceEnabled",
-    );
-
-    act(() => {
-      root.render(
-        <SettingsControllerContext value={harness.controller}>
-          <SettingsOnlineSourcesSection />
-        </SettingsControllerContext>,
-      );
-    });
-
-    const netease = container.querySelector<HTMLInputElement>(
-      '[data-testid="online-source-netease"]',
-    );
-    expect(netease).not.toBeNull();
-    await user.click(netease!);
-
-    expect(setOnlineSourceEnabled).toHaveBeenCalledWith("netease", true);
   });
 });

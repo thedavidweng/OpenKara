@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useCatalogStore } from "@/stores/catalog-store";
-import { NeteaseSignInErrorBanner } from "./NeteaseSignInErrorBanner";
+import { StreamingSignInErrorBanner } from "./StreamingSignInErrorBanner";
 
 const { copyDebugInfo } = vi.hoisted(() => ({ copyDebugInfo: vi.fn() }));
 
@@ -27,9 +27,9 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("NeteaseSignInErrorBanner", () => {
+describe("StreamingSignInErrorBanner", () => {
   test("renders nothing without an error", () => {
-    render(<NeteaseSignInErrorBanner />);
+    render(<StreamingSignInErrorBanner />);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -41,7 +41,7 @@ describe("NeteaseSignInErrorBanner", () => {
       fallback: "retry" as const,
     };
     useCatalogStore.setState({ signInError: error });
-    render(<NeteaseSignInErrorBanner />);
+    render(<StreamingSignInErrorBanner />);
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByRole("alert").textContent).toContain("window closed");
     fireEvent.click(screen.getByRole("button", { name: "common.close" }));
@@ -57,7 +57,7 @@ describe("NeteaseSignInErrorBanner", () => {
         fallback: "retry",
       },
     });
-    render(<NeteaseSignInErrorBanner />);
+    render(<StreamingSignInErrorBanner />);
     fireEvent.click(
       screen.getByRole("button", { name: "settings.about.copyDebugInfo" }),
     );

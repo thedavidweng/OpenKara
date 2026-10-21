@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
-import { NeteaseCover } from "@/components/Catalog/NeteaseCover";
+import { StreamingCover } from "@/components/Catalog/StreamingCover";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
-import { useCatalogStore } from "@/stores/catalog-store";
+import { sourceAllows, useCatalogStore } from "@/stores/catalog-store";
 import type { PlaybackBarDensity } from "./playback-bar-layout";
 
 interface NowPlayingInfoProps {
@@ -24,6 +24,8 @@ export function NowPlayingInfo({
   const videoItems = useCatalogStore((s) => s.videoItems);
   const previewItems = useCatalogStore((s) => s.previewItems);
   const importTracks = useCatalogStore((s) => s.importTracks);
+  const sources = useCatalogStore((s) => s.sources);
+  const sourceStates = useCatalogStore((s) => s.sourceStates);
 
   if (!snapshot?.song_id) {
     return (
@@ -70,7 +72,7 @@ export function NowPlayingInfo({
         />
       )}
       {preview && !hideCoverArt && (
-        <NeteaseCover
+        <StreamingCover
           url={preview.cover_url}
           size={96}
           className="size-12 shrink-0 rounded-md"
@@ -84,18 +86,31 @@ export function NowPlayingInfo({
           </span>
         )}
       </div>
-      {preview && density !== "tight" && (
-        <Tooltip label={t("catalog.netease.importToSing")}>
-          <button
-            type="button"
-            aria-label={t("catalog.netease.importToSing")}
-            onClick={() => void importTracks([preview.remote_track_id])}
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--color-accent)] hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
-          >
-            <Download className="size-4" aria-hidden="true" />
-          </button>
-        </Tooltip>
-      )}
+      {preview &&
+        density !== "tight" &&
+        sourceAllows(
+          sources.find((source) => source.source_id === preview.source_id),
+          "import",
+          sourceStates[preview.source_id]?.session,
+        ) && (
+          <Tooltip label={t("catalog.streaming.importToSing")}>
+            <button
+              type="button"
+              aria-label={t("catalog.streaming.importToSing")}
+              onClick={() =>
+                void importTracks(
+                  [preview.remote_track_id],
+                  null,
+                  preview.title,
+                  preview.source_id,
+                )
+              }
+              className="flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--color-accent)] hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+            >
+              <Download className="size-4" aria-hidden="true" />
+            </button>
+          </Tooltip>
+        )}
     </div>
   );
 }

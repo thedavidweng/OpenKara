@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { createTauriBackend } from "@/lib/backend/tauri-backend";
 import { tauriInvoke } from "./invoke";
+import { createCatalogCommands } from "./catalog";
 
 const {
   cdg,
@@ -447,7 +448,6 @@ describe("settings", () => {
     theme_preference: "dark" as const,
     update_policy: "notify" as const,
     youtube_source_enabled: false,
-    netease_source_enabled: false,
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -670,8 +670,17 @@ describe("settings", () => {
 
   test("listOnlineSources invokes list_online_sources", async () => {
     const sources = [
-      { id: "youtube" as const, kind: "video" as const, enabled: false },
-      { id: "netease" as const, kind: "streaming" as const, enabled: true },
+      {
+        id: "youtube",
+        kind: "video",
+        enabled: false,
+        capabilities: {
+          sign_in: false,
+          browse: false,
+          import: false,
+          resolve_video: false,
+        },
+      },
     ];
     mockInvoke.mockResolvedValueOnce(sources);
     const returned = await settings.listOnlineSources();
@@ -681,27 +690,37 @@ describe("settings", () => {
 
   test("getStreamingSession invokes get_streaming_session", async () => {
     const session = {
-      source_id: "netease" as const,
+      source_id: "third-party",
       signed_in: false,
       display_name: null,
       expired: false,
     };
     mockInvoke.mockResolvedValueOnce(session);
-    const { createCatalogCommands } = await import("./catalog");
     const catalog = createCatalogCommands(mockInvoke);
-    const returned = await catalog.getStreamingSession("netease");
+    const returned = await catalog.getStreamingSession("third-party");
     expect(mockInvoke).toHaveBeenCalledWith("get_streaming_session", {
-      sourceId: "netease",
+      sourceId: "third-party",
     });
     expect(returned).toBe(session);
   });
 
-  test("web sign-in command passes only the source identifier", async () => {
-    const { createCatalogCommands } = await import("./catalog");
+  test("sign-in challenge preserves source identity without exposing credentials", async () => {
+    const challenge = {
+      source_id: "third-party",
+      challenge: "opaque-challenge",
+      expires_at: "2099-01-01T00:00:00Z",
+      poll_after_ms: 250,
+      presentation: {
+        kind: "qr",
+        content: "https://example.invalid/auth",
+        text: "Scan to sign in",
+      },
+    };
+    mockInvoke.mockResolvedValueOnce(challenge);
     const catalog = createCatalogCommands(mockInvoke);
-    await catalog.openStreamingSignIn("netease");
+    expect(await catalog.openStreamingSignIn("third-party")).toEqual(challenge);
     expect(mockInvoke).toHaveBeenCalledWith("open_streaming_sign_in", {
-      sourceId: "netease",
+      sourceId: "third-party",
     });
   });
 
@@ -728,7 +747,6 @@ describe("settings", () => {
 
   test("resolveVideoSourceUrl invokes resolve_video_source_url", async () => {
     mockInvoke.mockResolvedValueOnce([]);
-    const { createCatalogCommands } = await import("./catalog");
     const catalog = createCatalogCommands(mockInvoke);
     await catalog.resolveVideoSourceUrl(
       "youtube",
@@ -742,9 +760,9 @@ describe("settings", () => {
 
   test("setOnlineSourceEnabled invokes set_online_source_enabled", async () => {
     mockInvoke.mockResolvedValueOnce(appSettings);
-    const returned = await settings.setOnlineSourceEnabled("netease", true);
+    const returned = await settings.setOnlineSourceEnabled("youtube", true);
     expect(mockInvoke).toHaveBeenCalledWith("set_online_source_enabled", {
-      sourceId: "netease",
+      sourceId: "youtube",
       enabled: true,
     });
     expect(returned).toBe(appSettings);

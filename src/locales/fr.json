@@ -109,11 +109,8 @@
       "message": "Toutes les chansons seront à nouveau séparées en mode 4 pistes. L'espace disque utilisé par les pistes doublera approximativement.",
       "confirm": "Tout passer en 4 pistes"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "SOURCES EN LIGNE",
-    "youtubeLink": "Lien YouTube",
-    "neteaseSignedIn": "Connecté",
-    "neteaseSignIn": "Se connecter"
+    "youtubeLink": "Lien YouTube"
   },
   "toolbar": {
     "import": "Importer",
@@ -343,6 +340,55 @@
     "failedToLoad": "Échec du chargement des propriétés"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "Préférences",
     "library": {
       "label": "Bibliothèque de karaoké",
@@ -700,9 +746,7 @@
       "label": "Sources en ligne",
       "description": "Activez une origine musicale ou vidéo. Les deux restent désactivées jusqu’à ce que vous les choisissiez.",
       "youtube": "YouTube",
-      "youtubeDescription": "Collez un lien de vidéo ou de playlist publique dans la file. OpenKara ne télécharge pas l’audio YouTube.",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Connectez-vous pour parcourir et importer les chansons que vous pouvez lire. OpenKara gère ensuite les fichiers importés."
+      "youtubeDescription": "Collez un lien de vidéo ou de playlist publique dans la file. OpenKara ne télécharge pas l’audio YouTube."
     }
   },
   "bootstrap": {
@@ -746,6 +790,13 @@
     "confirmRemoveSingerMessage": "Ce chanteur est attribué à des chansons de la file. Le retirer supprimera également ces chansons de la file."
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "Erreur de base de données",
     "media_read_failed": "Échec de l'importation",
     "song_not_found": "Chanson introuvable",
@@ -780,25 +831,25 @@
     "failed": "Échec de la mise à jour — téléchargez la dernière version manuellement"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "Déconnexion",
       "sessionExpired": "La session a expiré. Reconnectez-vous.",
       "liked": "Titres likés",
       "playlists": "Playlists",
-      "searchPlaceholder": "Rechercher des titres NetEase",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "Importer",
       "importPlaylist": "Importer la playlist",
-      "connect": "Se connecter avec NetEase",
+      "connect": "Sign in",
       "clearSearch": "Effacer la recherche",
-      "tabsLabel": "Sections de la bibliothèque NetEase",
+      "tabsLabel": "Source library sections",
       "resultsTab": "Résultats pour « {{query}} »",
       "accountMenu": "Menu du compte",
       "importTrackLabel": "Importer « {{title}} »",
       "statusNoRights": "Pas de droits de lecture",
-      "statusNoRightsHint": "NetEase n’accorde pas les droits de lecture de ce titre à votre compte ; il ne peut donc pas être importé.",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "Extrait d’essai uniquement",
-      "statusTrialHint": "NetEase ne propose qu’un court extrait d’essai de ce titre ; il ne peut donc pas être importé.",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "Importation…",
       "statusImported": "Dans la bibliothèque",
       "statusFailed": "Échec de l’importation",
@@ -816,9 +867,9 @@
         "import_failed": "Échec de l’importation"
       },
       "importProgressLabel": "Importation en cours",
-      "connectTitle": "Connecter NetEase Cloud Music",
+      "connectTitle": "Connect your account",
       "connectBody": "Connectez-vous pour parcourir vos titres likés et vos playlists, puis importez ceux que vous pouvez lire. Les fichiers importés appartiennent à votre bibliothèque.",
-      "connectHintWindow": "La connexion ouvre une fenêtre NetEase. OpenKara ne voit jamais votre mot de passe.",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "Les titres sans droits de lecture ou avec seulement un extrait d’essai ne peuvent pas être importés.",
       "signInFailed": "Échec de la connexion : {{message}}",
       "songCount_one": "{{count}} titre",
@@ -847,13 +898,22 @@
       "importingProgress": "Import de {{completed}} sur {{total}}",
       "loadingMore": "Chargement d’autres titres…",
       "refusalReason": {
-        "trial_clip": "Réservé aux VIP : NetEase ne fournit qu’un aperçu de 30 secondes",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "Aucun droit de lecture",
-        "empty_url": "Aucun audio disponible"
+        "empty_url": "Aucun audio disponible",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "Impossible de lire « {{title}} »",
       "importToSing": "Importer pour chanter",
-      "previewHint": "Aperçu en streaming. Importez le morceau pour chanter, séparer les voix ou ajouter des paroles."
+      "previewHint": "Aperçu en streaming. Importez le morceau pour chanter, séparer les voix ou ajouter des paroles.",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

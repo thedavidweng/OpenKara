@@ -15,8 +15,8 @@ import { useCatalogStore } from "@/stores/catalog-store";
 import { useNotificationStore } from "@/stores/notification-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
-import type { StreamingTrack } from "@/types/ipc";
-import { NeteaseTrackList } from "./NeteaseTrackList";
+import type { SourceSnapshot, StreamingTrack } from "@/types/ipc";
+import { StreamingTrackList } from "./StreamingTrackList";
 
 vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: () => {} },
@@ -48,7 +48,7 @@ afterAll(() => {
 });
 
 const track = (id: string, overrides: Partial<StreamingTrack> = {}) => ({
-  source_id: "netease" as const,
+  source_id: "alpha" as const,
   remote_track_id: id,
   title: `Song ${id}`,
   artist: "Artist",
@@ -71,7 +71,23 @@ beforeEach(() => {
   useNotificationStore.setState({ notifications: [] });
   usePlayerStore.setState({ snapshot: null, playNow });
   useQueueStore.setState({ setQueue });
-  useCatalogStore.setState({ previewItems: {} });
+  useCatalogStore.setState({
+    previewItems: {},
+    sources: [
+      {
+        source_id: "alpha",
+        installed_version: "1",
+        enabled: true,
+        runtime_ready: true,
+        state: "ready",
+        manifest: {
+          capabilities: ["preview", "import"],
+          requires_authentication: [],
+        },
+      } as SourceSnapshot,
+    ],
+    sourceStates: {},
+  });
   useCatalogStore.setState({
     trackStates: {},
     hideUnavailable: true,
@@ -96,7 +112,7 @@ function Harness({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   return (
     <div ref={scrollHost}>
-      <NeteaseTrackList
+      <StreamingTrackList
         tracks={tracks}
         scrollRef={scrollRef}
         loadingMore={loadingMore}
@@ -120,12 +136,12 @@ const scrollHost = (node: HTMLDivElement | null) => {
   (scrollRef as { current: HTMLElement | null }).current = node;
 };
 
-describe("NeteaseTrackList", () => {
+describe("StreamingTrackList", () => {
   test("shows a loading-more status while pages are still arriving", () => {
     const { rerender } = render(<Harness tracks={[track("1")]} loadingMore />);
-    expect(screen.getByText("catalog.netease.loadingMore")).toBeTruthy();
+    expect(screen.getByText("catalog.streaming.loadingMore")).toBeTruthy();
     rerender(<Harness tracks={[track("1")]} />);
-    expect(screen.queryByText("catalog.netease.loadingMore")).toBeNull();
+    expect(screen.queryByText("catalog.streaming.loadingMore")).toBeNull();
   });
 
   test("shows duration, no status chips and no header row", () => {
@@ -136,19 +152,19 @@ describe("NeteaseTrackList", () => {
 
   test("shows a ring with the download percent for an in-flight row", () => {
     useCatalogStore.setState({
-      trackStates: { "1": { kind: "downloading", percent: 62 } },
+      trackStates: { "stream:alpha:1": { kind: "downloading", percent: 62 } },
     });
     render(<Harness tracks={[track("1")]} />);
     const ring = screen.getByRole("progressbar");
     expect(ring.getAttribute("aria-valuenow")).toBe("62");
     expect(ring.getAttribute("aria-label")).toBe(
-      'catalog.netease.statusDownloading|{"percent":62}',
+      'catalog.streaming.statusDownloading|{"percent":62}',
     );
   });
 
   test("an in-flight row without a percent is an indeterminate spinner", () => {
     useCatalogStore.setState({
-      trackStates: { "1": { kind: "downloading" } },
+      trackStates: { "stream:alpha:1": { kind: "downloading" } },
     });
     render(<Harness tracks={[track("1")]} />);
     expect(
@@ -159,18 +175,18 @@ describe("NeteaseTrackList", () => {
   test("imported rows show a check and failed rows offer a retry", () => {
     useCatalogStore.setState({
       trackStates: {
-        "2": { kind: "failed", reason: "import_failed" },
+        "stream:alpha:2": { kind: "failed", reason: "import_failed" },
       },
     });
     render(
       <Harness tracks={[track("1", { library_song_id: "s1" }), track("2")]} />,
     );
     expect(
-      screen.getByRole("img", { name: "catalog.netease.statusImported" }),
+      screen.getByRole("img", { name: "catalog.streaming.statusImported" }),
     ).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", {
-        name: 'catalog.netease.retryImportLabel|{"title":"Song 2"}',
+        name: 'catalog.streaming.retryImportLabel|{"title":"Song 2"}',
       }),
     );
     expect(importTracks).toHaveBeenCalledWith(["2"]);
@@ -180,7 +196,7 @@ describe("NeteaseTrackList", () => {
     render(<Harness tracks={[track("1")]} />);
     fireEvent.click(
       screen.getByRole("button", {
-        name: 'catalog.netease.importTrackLabel|{"title":"Song 1"}',
+        name: 'catalog.streaming.importTrackLabel|{"title":"Song 1"}',
       }),
     );
     expect(importTracks).toHaveBeenCalledWith(["1"]);
@@ -197,9 +213,11 @@ describe("NeteaseTrackList", () => {
         ]}
       />,
     );
-    const row = screen.getByTestId("netease-track-row");
+    const row = screen.getByTestId("streaming-track-row");
     expect(row.getAttribute("data-unavailable")).toBe("true");
-    expect(screen.getByText("catalog.netease.statusNoRightsHint")).toBeTruthy();
+    expect(
+      screen.getByText("catalog.streaming.statusNoRightsHint"),
+    ).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /importTrackLabel/ }),
     ).toBeNull();
@@ -212,15 +230,15 @@ describe("NeteaseTrackList", () => {
       artist: "y",
     };
     render(<Harness tracks={[track("1"), track("2", { refusal })]} />);
-    expect(screen.getAllByTestId("netease-track-row")).toHaveLength(1);
+    expect(screen.getAllByTestId("streaming-track-row")).toHaveLength(1);
     expect(
-      screen.getByText('catalog.netease.unavailableHidden|{"hidden":1}'),
+      screen.getByText('catalog.streaming.unavailableHidden|{"hidden":1}'),
     ).toBeTruthy();
     const toggle = screen.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(screen.getAllByTestId("netease-track-row")).toHaveLength(2);
+    expect(screen.getAllByTestId("streaming-track-row")).toHaveLength(2);
   });
 
   test("selection mode supports select all and shift-range", () => {
@@ -266,19 +284,19 @@ describe("NeteaseTrackList", () => {
     // Unavailable tracks are hidden by default; show them to prove they are
     // skipped when queueing.
     fireEvent.click(screen.getByRole("switch"));
-    fireEvent.doubleClick(screen.getAllByTestId("netease-track-row")[0]!);
-    expect(playNow).toHaveBeenCalledWith("ne:1");
-    expect(setQueue).toHaveBeenCalledWith(["lib3", "ne:4"]);
-    expect(useCatalogStore.getState().previewItems["ne:1"]?.title).toBe(
-      "Song 1",
-    );
+    fireEvent.doubleClick(screen.getAllByTestId("streaming-track-row")[0]!);
+    expect(playNow).toHaveBeenCalledWith("stream:alpha:1");
+    expect(setQueue).toHaveBeenCalledWith(["lib3", "stream:alpha:4"]);
+    expect(
+      useCatalogStore.getState().previewItems["stream:alpha:1"]?.title,
+    ).toBe("Song 1");
   });
 
   test("Enter on a focused row plays it", () => {
     render(<Harness tracks={[track("1"), track("2")]} />);
-    const rows = screen.getAllByTestId("netease-track-row");
+    const rows = screen.getAllByTestId("streaming-track-row");
     fireEvent.keyDown(rows[1]!, { key: "Enter" });
-    expect(playNow).toHaveBeenCalledWith("ne:2");
+    expect(playNow).toHaveBeenCalledWith("stream:alpha:2");
     expect(setQueue).toHaveBeenCalledWith([]);
   });
 
@@ -290,18 +308,18 @@ describe("NeteaseTrackList", () => {
     };
     useCatalogStore.setState({ hideUnavailable: false });
     render(<Harness tracks={[track("1", { refusal })]} />);
-    fireEvent.doubleClick(screen.getByTestId("netease-track-row"));
+    fireEvent.doubleClick(screen.getByTestId("streaming-track-row"));
     expect(playNow).not.toHaveBeenCalled();
     const [note] = useNotificationStore.getState().notifications;
-    expect(note?.message).toBe("catalog.netease.refusalReason.trial_clip");
+    expect(note?.message).toBe("catalog.streaming.refusalReason.trial_clip");
   });
 
   test("the playing row is marked current", () => {
     usePlayerStore.setState({
-      snapshot: { song_id: "ne:2" } as never,
+      snapshot: { song_id: "stream:alpha:2" } as never,
     });
     render(<Harness tracks={[track("1"), track("2")]} />);
-    const rows = screen.getAllByTestId("netease-track-row");
+    const rows = screen.getAllByTestId("streaming-track-row");
     expect(rows[0]!.getAttribute("aria-current")).toBeNull();
     expect(rows[1]!.getAttribute("aria-current")).toBe("true");
   });

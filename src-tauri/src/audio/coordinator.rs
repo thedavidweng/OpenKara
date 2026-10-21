@@ -65,6 +65,11 @@ pub enum PlaybackCommand {
         song_id: String,
         error: PlaybackError,
     },
+    CancelPreview {
+        request_id: u64,
+        song_id: String,
+        reply: SnapshotReply,
+    },
     Resume {
         reply: SnapshotReply,
     },
@@ -178,6 +183,11 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
             song_id,
             error,
         } => handle_fail_load(runtime, request_id, &song_id, error),
+        PlaybackCommand::CancelPreview {
+            request_id,
+            song_id,
+            reply,
+        } => handle_cancel_preview(runtime, request_id, &song_id, reply),
         PlaybackCommand::Resume { reply } => handle_resume(runtime, reply),
         PlaybackCommand::Pause { reply } => handle_pause(runtime, reply),
         PlaybackCommand::Seek { target_ms, reply } => handle_seek(runtime, target_ms, reply),
@@ -219,6 +229,40 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
             handle_replace_streaming_source(runtime, request_id, &song_id, position_ms, *new_source)
         }
     }
+}
+
+fn handle_cancel_preview<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    request_id: u64,
+    song_id: &str,
+    reply: SnapshotReply,
+) {
+    let snapshot = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback lock poisoned".to_owned(),
+            )));
+            return;
+        };
+        if !is_latest_request(runtime, request_id)
+            || (playback.current_song_id() != Some(song_id)
+                && playback.loading_song_id() != Some(song_id))
+        {
+            let _ = reply.send(Ok(playback.snapshot()));
+            return;
+        }
+        runtime.latest_request_id.fetch_add(1, Ordering::SeqCst);
+        playback.clear_track();
+        playback.snapshot()
+    };
+    if let Ok(mut cdg_state) = runtime.cdg_state.lock() {
+        *cdg_state = None;
+    }
+    bump_airplay_epoch_and_generation(&runtime.airplay);
+    let _ = runtime
+        .app_handle
+        .emit(PLAYBACK_POSITION_EVENT, playback_position_event(&snapshot));
+    let _ = reply.send(Ok(snapshot));
 }
 
 fn handle_invalidate_deleted_songs<R: Runtime>(
@@ -1108,6 +1152,76 @@ mod tests {
 
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
+        harness.shutdown();
+    }
+
+    #[test]
+    fn cancelling_an_old_preview_does_not_stop_a_new_replay_of_the_same_track() {
+        let harness = Harness::with_request_id(2);
+        install_track(&harness, 2, "stream:fixture:shared");
+        let snapshot = harness
+            .send_and_recv(|reply| PlaybackCommand::CancelPreview {
+                request_id: 1,
+                song_id: "stream:fixture:shared".to_owned(),
+                reply,
+            })
+            .expect("cancel stale preview");
+        assert_eq!(snapshot.song_id.as_deref(), Some("stream:fixture:shared"));
+        harness.shutdown();
+    }
+
+    #[test]
+    fn cancelling_the_active_preview_stops_audio_and_rejects_late_install() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "stream:fixture:shared");
+        let snapshot = harness
+            .send_and_recv(|reply| PlaybackCommand::CancelPreview {
+                request_id: 1,
+                song_id: "stream:fixture:shared".to_owned(),
+                reply,
+            })
+            .expect("cancel preview");
+        assert!(snapshot.song_id.is_none());
+        install_track(&harness, 1, "stream:fixture:shared");
+        assert!(harness.snapshot().song_id.is_none());
+        harness.shutdown();
+    }
+
+    #[test]
+    fn cancelling_a_preview_loading_request_prevents_late_audio_install() {
+        let harness = Harness::with_request_id(1);
+        harness
+            .send_and_recv(|reply| PlaybackCommand::BeginLoad {
+                request_id: 1,
+                song_id: "stream:fixture:shared".to_owned(),
+                reply,
+            })
+            .expect("loading");
+        let snapshot = harness
+            .send_and_recv(|reply| PlaybackCommand::CancelPreview {
+                request_id: 1,
+                song_id: "stream:fixture:shared".to_owned(),
+                reply,
+            })
+            .expect("cancel loading");
+        assert!(snapshot.song_id.is_none());
+        install_track(&harness, 1, "stream:fixture:shared");
+        assert!(harness.snapshot().song_id.is_none());
+        harness.shutdown();
+    }
+
+    #[test]
+    fn a_preview_cancellation_cannot_clear_another_source_with_the_same_remote_id() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "stream:second:shared");
+        let snapshot = harness
+            .send_and_recv(|reply| PlaybackCommand::CancelPreview {
+                request_id: 1,
+                song_id: "stream:first:shared".to_owned(),
+                reply,
+            })
+            .expect("different source");
+        assert_eq!(snapshot.song_id.as_deref(), Some("stream:second:shared"));
         harness.shutdown();
     }
 
