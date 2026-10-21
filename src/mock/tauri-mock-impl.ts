@@ -197,8 +197,15 @@ export function createTauriMock(data: any): TauriMockResult {
         description: "UI-only fixture",
         license: "MIT",
         capabilities: index
-          ? ["search", "playlists", "import"]
-          : ["liked_tracks", "playlists", "search", "preview", "import"],
+          ? ["search", "playlists", "playlist_tracks", "import"]
+          : [
+              "liked_tracks",
+              "playlists",
+              "playlist_tracks",
+              "search",
+              "preview",
+              "import",
+            ],
         authentication: { flow: index ? "plugin" : "web" },
         requires_authentication: ["liked_tracks", "playlists"],
         resource_origins: [],
@@ -221,7 +228,7 @@ export function createTauriMock(data: any): TauriMockResult {
     );
     if (!snapshot)
       throw {
-        code: "unknown_source",
+        code: "streaming_source_not_found",
         message: "Unknown source",
         retryable: false,
       };
@@ -236,7 +243,7 @@ export function createTauriMock(data: any): TauriMockResult {
     const snapshot = source(sourceId);
     if (snapshot.active_work.length && !stop)
       throw {
-        code: "active_work",
+        code: "streaming_work_active",
         message: "Stop active work before continuing",
         retryable: true,
       };
@@ -274,7 +281,7 @@ export function createTauriMock(data: any): TauriMockResult {
     const snapshot = source(sourceId);
     if (!snapshot.enabled || !snapshot.installed_version)
       throw {
-        code: "source_disabled",
+        code: "online_source_disabled",
         message: "Enable the installed source",
         retryable: false,
       };
@@ -298,7 +305,7 @@ export function createTauriMock(data: any): TauriMockResult {
     );
     if (cursor && cursor !== `${sourceId}:next`)
       throw {
-        code: "invalid_cursor",
+        code: "streaming_invalid_cursor",
         message: "Cursor belongs to another source or listing",
         retryable: false,
       };
@@ -987,7 +994,7 @@ export function createTauriMock(data: any): TauriMockResult {
       installations.delete(args.sourceId);
       if (operation.cancelled)
         throw {
-          code: "cancelled",
+          code: "streaming_cancelled",
           message: "Installation cancelled",
           retryable: true,
         };
@@ -1139,7 +1146,7 @@ export function createTauriMock(data: any): TauriMockResult {
         !source(args.sourceId).manifest?.capabilities.includes("liked_tracks")
       )
         throw {
-          code: "unsupported_capability",
+          code: "streaming_unsupported_operation",
           message: "This source does not offer liked tracks",
           retryable: false,
         };
@@ -1156,7 +1163,7 @@ export function createTauriMock(data: any): TauriMockResult {
       tracks(args.sourceId);
       if (args.cursor && args.cursor !== `${args.sourceId}:playlists`)
         throw {
-          code: "invalid_cursor",
+          code: "streaming_invalid_cursor",
           message: "Invalid playlist cursor",
           retryable: false,
         };

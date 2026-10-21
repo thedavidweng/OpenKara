@@ -37,7 +37,7 @@ describe("UI-only streaming source harness", () => {
     const backend = catalog();
     const installation = backend.installStreamingSource("demo-web", "2.0.0");
     const rejected = expect(installation).rejects.toMatchObject({
-      code: "cancelled",
+      code: "streaming_cancelled",
     });
     expect((await backend.listStreamingSources())[0].state).toBe("installing");
     await backend.cancelStreamingSourceInstall("demo-web");
@@ -83,7 +83,7 @@ describe("UI-only streaming source harness", () => {
     ).toHaveLength(1);
     await expect(
       backend.searchStreamingSource("demo-plugin", "", first.next_cursor),
-    ).rejects.toMatchObject({ code: "invalid_cursor" });
+    ).rejects.toMatchObject({ code: "streaming_invalid_cursor" });
   });
 
   test("refuses removal of active auth and cancels it only with explicit consent", async () => {
@@ -92,7 +92,7 @@ describe("UI-only streaming source harness", () => {
     expect(auth.presentation.kind).toBe("qr");
     await expect(
       backend.uninstallStreamingSource("demo-plugin", false, false),
-    ).rejects.toMatchObject({ code: "active_work" });
+    ).rejects.toMatchObject({ code: "streaming_work_active" });
     const removed = await backend.uninstallStreamingSource(
       "demo-plugin",
       true,
