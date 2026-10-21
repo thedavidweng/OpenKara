@@ -10,7 +10,24 @@ pub(crate) fn relative(path:&str)->HostResult<PathBuf> {
     Ok(clean)
 }
 fn invalid()->HostError { HostError::new("invalid_package","Source archive contains an unsafe path, file, or package structure. Obtain a corrected release.") }
-pub(crate) fn package_path(config:&HostConfig,release:&Release)->PathBuf { config.data_root.join("packages").join(&release.archive.sha256) }
+pub(crate) fn package_path(config:&HostConfig,release:&Release)->PathBuf {config.data_root.join("packages").join(release.installed_package.as_deref().unwrap_or(&release.archive.sha256))}
+pub(crate) fn runtime_path(config:&HostConfig,release:&Release)->HostResult<PathBuf> {
+    let artifact=release.runtime.targets.get(&config.target).ok_or_else(invalid)?;
+    Ok(config.data_root.join("runtimes").join(release.installed_runtime.as_deref().unwrap_or(&artifact.sha256)))
+}
+pub(crate) fn verify_installed(config:&HostConfig,release:&Release)->HostResult<()> {
+    let package=package_path(config,release);verify_seal(&package)?;validate_package(&package,release)?;
+    match &config.runtime_policy{
+        RuntimePolicy::Downloaded=>{let root=runtime_path(config,release)?;verify_seal(&root)?;let artifact=release.runtime.targets.get(&config.target).ok_or_else(invalid)?;if !root.join(relative(&artifact.executable)?).is_file(){return Err(invalid())}},
+        RuntimePolicy::ChannelBundled{executable,..}=>if !executable.is_file(){return Err(invalid())},
+    }
+    Ok(())
+}
+pub(crate) fn choose_repair_slots(config:&HostConfig,release:&mut Release)->HostResult<()> {
+    if package_path(config,release).exists()&&verify_seal(&package_path(config,release)).is_err(){release.installed_package=Some(format!("{}-{}",release.archive.sha256,uuid::Uuid::new_v4()));}
+    if matches!(config.runtime_policy,RuntimePolicy::Downloaded){let root=runtime_path(config,release)?;if root.exists()&&verify_seal(&root).is_err(){let artifact=release.runtime.targets.get(&config.target).ok_or_else(invalid)?;release.installed_runtime=Some(format!("{}-{}",artifact.sha256,uuid::Uuid::new_v4()));}}
+    Ok(())
+}
 pub(crate) fn validate_artifact(artifact:&Artifact)->HostResult<()> {
     if artifact.size==0 || artifact.size>2*1024*1024*1024 || artifact.sha256.len()!=64 || !artifact.sha256.bytes().all(|byte|byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) || !["tar","tar.gz","zip"].contains(&artifact.format.as_str()) {return Err(invalid())}
     Ok(())
@@ -132,7 +149,7 @@ pub(crate) async fn runtime(config:&HostConfig,release:&Release,cancel:&Cancella
         }
         RuntimePolicy::Downloaded=>{
             let artifact=release.runtime.targets.get(&config.target).ok_or_else(||HostError::new("incompatible_plugin","This source has no runtime for this platform."))?;
-            let runtime=config.data_root.join("runtimes").join(&artifact.sha256);
+            let runtime=runtime_path(config,release)?;
             if !runtime.exists() {
                 let staged=self::artifact(config,artifact,cancel,progress).await?;
                 let result:HostResult<()>=(||{ if !staged.join(relative(&artifact.executable)?).is_file(){return Err(invalid())} seal(&staged)?; fs::create_dir_all(runtime.parent().ok_or_else(invalid)?)?; fs::rename(&staged,&runtime)?;Ok(())})();

@@ -56,7 +56,7 @@ fn verify_index(config:&HostConfig,bytes:&[u8])->HostResult<SourceIndex> {
             let manifest=&release.manifest;
             if manifest.manifest_version!=1 || manifest.source_id!=*id || manifest.publisher!=source.publisher || manifest.package_id!=source.package_id || !versions.insert(&manifest.version) || semver::Version::parse(&manifest.version).is_err() || semver::Version::parse(&manifest.minimum_host_version).is_err() || manifest.protocol.majors.is_empty() || manifest.runtime.kind!="node" || !manifest.entry.ends_with(".mjs") || install::relative(&manifest.entry).is_err() || manifest.name.is_empty() || manifest.license.is_empty() {return Err(error())}
             let runtime=semver::Version::parse(&release.runtime.version).map_err(|_|error())?;
-            if runtime.major!=manifest.runtime.major || release.runtime.targets.is_empty() || !release.archive.executable.is_empty(){return Err(error())}
+            if runtime.major!=manifest.runtime.major || release.runtime.targets.is_empty() || !release.archive.executable.is_empty() || release.installed_package.is_some() || release.installed_runtime.is_some(){return Err(error())}
             install::validate_artifact(&release.archive)?;
             for artifact in release.runtime.targets.values(){install::validate_artifact(artifact)?;install::relative(&artifact.executable)?;}
             for origin in manifest.resource_origins.iter().chain(&manifest.media_origins){if network::origin(origin)?!=*origin{return Err(error())}}
@@ -98,7 +98,11 @@ impl SourceHost {
     pub async fn new(config:HostConfig)->HostResult<Self> {
         fs::create_dir_all(&config.data_root)?;
         let mut stored:StoredState=match fs::read(config.data_root.join("state.json")){Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|_|HostError::new("storage","Source settings are invalid. Restore the application-data backup."))?,Err(error) if error.kind()==std::io::ErrorKind::NotFound=>StoredState::default(),Err(error)=>return Err(error.into())};
-        let index=match fs::read(config.data_root.join("verified-index.json")){Ok(bytes)=>Some(verify_index(&config,&bytes)?),Err(error) if error.kind()==std::io::ErrorKind::NotFound=>None,Err(error)=>return Err(error.into())};
+        let (index,cache_error)=match fs::read(config.data_root.join("verified-index.json")){
+            Ok(bytes)=>match verify_index(&config,&bytes){Ok(index)=>(Some(index),None),Err(error)=>(None,Some(error))},
+            Err(error) if error.kind()==std::io::ErrorKind::NotFound=>(None,None),
+            Err(error)=>(None,Some(HostError::from(error))),
+        };
         if let Some(index)=&index {
             for source in &index.sources {
                 let owner=binding(&source.publisher,&source.package_id);
@@ -110,7 +114,8 @@ impl SourceHost {
             stored.generation=stored.generation.max(index.generation);save(&config,&stored)?;
         }
         let (changes,_)=tokio::sync::broadcast::channel(128);
-        let host=Self{inner:Arc::new(Inner{config,state:Mutex::new(State{stored,index,sources:BTreeMap::new(),sequence:0}),changes,starts:Mutex::new(BTreeMap::new()),installs:Mutex::new(BTreeMap::new()),runtime_install:tokio::sync::Mutex::new(()),initialization_error:None})};
+        let sources=stored.sources.keys().map(|id|(id.clone(),Live{error:cache_error.clone(),..Live::default()})).collect();
+        let host=Self{inner:Arc::new(Inner{config,state:Mutex::new(State{stored,index,sources,sequence:0}),changes,starts:Mutex::new(BTreeMap::new()),installs:Mutex::new(BTreeMap::new()),runtime_install:tokio::sync::Mutex::new(()),initialization_error:None})};
         let weak=Arc::downgrade(&host.inner);
         tokio::spawn(async move {loop {tokio::time::sleep(Duration::from_millis(40)).await;let Some(inner)=weak.upgrade()else{return};let host=SourceHost{inner};host.maintain().await;}});
         Ok(host)
@@ -132,12 +137,15 @@ impl SourceHost {
                 for source in &index.sources {if state.stored.sources.get(&source.source_id).is_some_and(|stored|stored.owner_binding!=binding(&source.publisher,&source.package_id)){return Err(HostError::new("owner_mismatch","Source publisher ownership changed. The existing installation and credentials remain protected."))}}
                 let mut stored=state.stored.clone();stored.generation=index.generation;
                 for source in &index.sources {let entry=stored.sources.entry(source.source_id.clone()).or_default();entry.owner_binding=binding(&source.publisher,&source.package_id);for version in &source.revoked_versions {if !entry.revoked.contains(version){entry.revoked.push(version.clone());}}}
-                let temp=config.data_root.join("verified-index.json.tmp");fs::write(&temp,&bytes)?;fs::rename(temp,config.data_root.join("verified-index.json"))?;save(config,&stored)?;
                 state.stored=stored;state.index=Some(index);
+                let revoked_ids:Vec<_>=state.stored.sources.iter().filter(|(_,source)|source.active.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version))).map(|(id,_)|id.clone()).collect();
+                for id in revoked_ids{if let Some(live)=state.sources.get(&id){for (_,cancel) in live.work.values(){cancel.cancel();}}}
+                let temp=config.data_root.join("verified-index.json.tmp");let cached=(||{fs::write(&temp,&bytes)?;fs::rename(temp,config.data_root.join("verified-index.json"))?;Ok::<(),std::io::Error>(())})();
+                let saved=save(config,&state.stored);cached?;saved?;
             }
-            self.maintain().await;
             Ok(self.snapshots())
         }.await;
+        self.maintain().await;
         if let Err(error)=&result {let mut state=self.inner.state.lock().unwrap();let ids:Vec<_>=state.stored.sources.keys().cloned().collect();for id in ids{state.sources.entry(id).or_default().error=Some(error.clone());}}
         for snapshot in self.snapshots(){let _=self.inner.changes.send(snapshot);}result
     }
@@ -153,8 +161,8 @@ impl SourceHost {
             let release=source.releases.iter().filter(|release|!stored.revoked.contains(&release.manifest.version) && wanted.is_none_or(|wanted|wanted==release.manifest.version) && compatible(&self.inner.config,release)).max_by_key(|release|semver::Version::parse(&release.manifest.version).ok()).cloned().ok_or_else(incompatible)?;
             let cancel=Cancellation::new();let live=state.sources.entry(id.into()).or_default();live.install=Some(cancel.clone());live.error=None;Ok((release,cancel))
         })();
-        let (release,cancel)=match selection {Ok(selection)=>selection,Err(error)=>{self.inner.state.lock().unwrap().sources.entry(id.into()).or_default().error=Some(error.clone());self.inner.publish(id);return Err(error)}};
-        let result=self.install_release(id,&release,&cancel).await;
+        let (mut release,cancel)=match selection {Ok(selection)=>selection,Err(error)=>{self.inner.state.lock().unwrap().sources.entry(id.into()).or_default().error=Some(error.clone());self.inner.publish(id);return Err(error)}};
+        let result=async {install::choose_repair_slots(&self.inner.config,&mut release)?;self.install_release(id,&release,&cancel).await}.await;
         {let mut state=self.inner.state.lock().unwrap();let live=state.sources.entry(id.into()).or_default();live.install=None;live.progress=None;if let Err(error)=&result{live.error=Some(error.clone());live.failed_install=Some(release.manifest.version.clone());}else{live.failed_install=None;}}
         self.inner.publish(id);result?;self.snapshot(id)
     }
@@ -170,7 +178,13 @@ impl SourceHost {
         }
         install::verify_seal(&package)?;install::validate_package(&package,release)?;cancel.check()?;
         self.progress(id,"handshake",0,None);
+        {
+            let state=self.inner.state.lock().unwrap();let source=state.stored.sources.get(id).ok_or_else(unknown)?;
+            if source.revoked.contains(&release.manifest.version)||!compatible(config,release){return Err(incompatible())}
+        }
+        cancel.check()?;
         let candidate=tokio::select!{_=cancel.cancelled()=>return cancel.check(),candidate=Process::start(&executable,&package,release,config)=>candidate?};candidate.stop().await;cancel.check()?;
+        install::verify_installed(config,release)?;
         {
             let mut state=self.inner.state.lock().unwrap();let mut stored=state.stored.clone();let source=stored.sources.get_mut(id).ok_or_else(unknown)?;
             if source.revoked.contains(&release.manifest.version){return Err(incompatible())}
@@ -184,6 +198,12 @@ impl SourceHost {
             let mut state=self.inner.state.lock().unwrap();let source=state.stored.sources.get(id).ok_or_else(unknown)?;
             if source.staged.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version)||!compatible(&self.inner.config,release)){
                 let mut stored=state.stored.clone();stored.sources.get_mut(id).ok_or_else(unknown)?.staged=None;save(&self.inner.config,&stored)?;state.stored=stored;return Err(incompatible())
+            }
+        }
+        let staged=self.inner.state.lock().unwrap().stored.sources.get(id).and_then(|source|source.staged.clone());
+        if let Some(staged)=staged {
+            if let Err(error)=install::verify_installed(&self.inner.config,&staged){
+                let mut state=self.inner.state.lock().unwrap();let mut stored=state.stored.clone();stored.sources.get_mut(id).ok_or_else(unknown)?.staged=None;let saved=save(&self.inner.config,&stored);state.stored=stored;saved?;return Err(error)
             }
         }
         let old={let mut state=self.inner.state.lock().unwrap();let live=state.sources.entry(id.into()).or_default();if !live.work.is_empty() || live.stopping || live.process.as_ref().is_some_and(|process|process.pending_count()>0){return Ok(())}live.stopping=true;live.process.take()};
@@ -237,8 +257,7 @@ impl SourceHost {
         let result=async {
             let package=install::package_path(&self.inner.config,&release);install::verify_seal(&package)?;install::validate_package(&package,&release)?;
             if let RuntimePolicy::Downloaded=&self.inner.config.runtime_policy {
-                let artifact=release.runtime.targets.get(&self.inner.config.target).ok_or_else(incompatible)?;
-                if !self.inner.config.data_root.join("runtimes").join(&artifact.sha256).exists(){return Err(HostError::new("source_unavailable","Source runtime is missing. Reinstall this source to restore verified runtime files."))}
+                if !install::runtime_path(&self.inner.config,&release)?.exists(){return Err(HostError::new("source_unavailable","Source runtime is missing. Reinstall this source to restore verified runtime files."))}
             }
             let executable={let _guard=self.inner.runtime_install.lock().await;install::runtime(&self.inner.config,&release,&Cancellation::new(),|_|{}).await?};Process::start(&executable,&package,&release,&self.inner.config).await
         }.await;
@@ -264,29 +283,38 @@ impl SourceHost {
         if snapshot.enabled{self.running(id).await?;}self.snapshot(id)
     }
     async fn maintain(&self){
-        let actions={
-            let mut state=self.inner.state.lock().unwrap();let ids:Vec<_>=state.stored.sources.keys().cloned().collect();let mut actions=Vec::new();
-            for id in ids {
-                let source=&state.stored.sources[&id];let revoked=source.active.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version)||!compatible(&self.inner.config,release));let staged=source.staged.is_some();
-                let live=state.sources.entry(id.clone()).or_default();
+        let ids={
+            let mut state=self.inner.state.lock().unwrap();let ids:Vec<_>=state.stored.sources.keys().cloned().collect();
+            for id in &ids {
+                let source=&state.stored.sources[id];let revoked=source.active.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version)||!compatible(&self.inner.config,release));
+                if revoked {if let Some(live)=state.sources.get(id){for (_,cancel) in live.work.values(){cancel.cancel();}}}
+            }
+            ids
+        };
+        for id in ids {
+            let gate=self.inner.gate(&id,false);let Ok(guard)=gate.try_lock()else{continue};
+            let (process,activate,changed)={
+                let mut state=self.inner.state.lock().unwrap();let source=&state.stored.sources[&id];
+                let revoked=source.active.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version)||!compatible(&self.inner.config,release));let staged=source.staged.is_some();
+                let live=state.sources.entry(id.clone()).or_default();let mut changed=false;
                 if live.process.as_ref().is_some_and(|process|!process.alive()) {
                     live.process=None;live.failures+=1;live.retry_at=Some(Instant::now()+self.inner.config.backoff_unit*2u32.pow(live.failures.saturating_sub(1).min(2)));
-                    live.error=Some(HostError::new("source_unavailable","Source process stopped. Retry or install a source update."));
-                    actions.push((id.clone(),None,false));
+                    live.error=Some(HostError::new("source_unavailable","Source process stopped. Retry or install a source update."));changed=true;
                 }
-                if revoked {for (_,cancel) in live.work.values(){cancel.cancel();}}
-                let idle=live.work.is_empty()&&live.process.as_ref().is_none_or(|process|process.pending_count()==0);
-                let stop=(revoked&&idle)||(idle&&live.process.as_ref().is_some_and(|process|process.idle_for()>=self.inner.config.idle_timeout));
-                if stop {if let Some(process)=live.process.take(){actions.push((id.clone(),Some(process),false));}}
-                if staged&&idle&&live.install.is_none(){actions.push((id,None,true));}
-            }
-            actions
-        };
-        for (id,process,activate) in actions{if let Some(process)=process{process.stop().await;}if activate{if let Err(error)=self.activate(&id).await{self.inner.state.lock().unwrap().sources.entry(id.clone()).or_default().error=Some(error);}}self.inner.publish(&id);}
+                let idle=live.work.is_empty()&&!live.stopping&&live.process.as_ref().is_none_or(|process|process.pending_count()==0);
+                let stop=idle&&(revoked||live.process.as_ref().is_some_and(|process|process.idle_for()>=self.inner.config.idle_timeout));
+                let process=if stop{live.process.take()}else{None};
+                (process,staged&&idle&&live.install.is_none(),changed)
+            };
+            let stopped=process.is_some();if let Some(process)=process{process.stop().await;}drop(guard);
+            if activate {if let Err(error)=self.activate(&id).await{self.inner.state.lock().unwrap().sources.entry(id.clone()).or_default().error=Some(error);}}
+            if stopped||activate||changed{self.inner.publish(&id);}
+        }
     }
     pub async fn download_media(&self,id:&str,descriptor:ResourceDescriptor,destination:PathBuf,cancellation:Cancellation)->HostResult<()> {
         use std::io::Write;
         let mut response=self.open_media(id,&descriptor,None,cancellation.clone()).await?;
+        if !(200..300).contains(&response.status){return Err(HostError::new(if matches!(response.status,403|410){"media_expired"}else{"network"},"Source media download failed. Resolve a fresh descriptor or retry."))}
         let temp=destination.with_extension(format!("{}.download",uuid::Uuid::new_v4()));
         let result:HostResult<()>=async {
             let mut file=fs::File::create(&temp)?;let mut size=0u64;
@@ -297,6 +325,7 @@ impl SourceHost {
     }
     pub async fn open_media(&self,id:&str,descriptor:&ResourceDescriptor,range:Option<(u64,Option<u64>)>,cancellation:Cancellation)->HostResult<MediaResponse> {
         let description=self.description(id)?;self.ensure_download(id)?;
+        network::check_expiry(descriptor)?;
         #[cfg(test)] if let Some(response)=network::fixture_media(&self.inner.config,descriptor,&description.manifest.media_origins,range,cancellation.clone()){return response}
         let response=network::response_range(&descriptor.url,&descriptor.headers,Some(&description.manifest.media_origins),false,&cancellation,range).await?;
         Ok(MediaResponse::new(response,cancellation))
@@ -304,8 +333,9 @@ impl SourceHost {
     fn ensure_download(&self,id:&str)->HostResult<()> {let snapshot=self.snapshot(id)?;if !snapshot.enabled{return Err(HostError::new("source_disabled","Source is disabled."))}if snapshot.state==SourceState::UpdateRequired{return Err(incompatible())}Ok(())}
     pub async fn load_resource(&self,id:&str,descriptor:ResourceDescriptor)->HostResult<Vec<u8>> {
         let description=self.description(id)?;self.ensure_download(id)?;let cancel=Cancellation::new();
+        network::check_expiry(&descriptor)?;
         #[cfg(test)] if let Some(response)=network::fixture_media(&self.inner.config,&descriptor,&description.manifest.resource_origins,None,cancel.clone()){
-            let mut response=response?;let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await? {if bytes.len()+chunk.len()>16*1024*1024{return Err(HostError::new("invalid_resource","Source artwork exceeds the download limit."))}bytes.extend_from_slice(&chunk);}return Ok(bytes)
+            let mut response=response?;if !(200..300).contains(&response.status){return Err(HostError::new("network","Source artwork is unavailable. Retry later."))}let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await? {if bytes.len()+chunk.len()>16*1024*1024{return Err(HostError::new("invalid_resource","Source artwork exceeds the download limit."))}bytes.extend_from_slice(&chunk);}return Ok(bytes)
         }
         let response=network::response(&descriptor.url,&descriptor.headers,Some(&description.manifest.resource_origins),false,&cancel).await?;network::read_bounded(response,16*1024*1024,&cancel).await
     }

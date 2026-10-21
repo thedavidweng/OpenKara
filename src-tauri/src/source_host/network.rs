@@ -9,6 +9,13 @@ pub(crate) fn origin(value:&str) -> HostResult<String> {
     Ok(url.origin().ascii_serialization())
 }
 fn invalid() -> HostError { HostError::new("invalid_resource", "Source resource must use an approved public HTTPS origin and permitted headers.") }
+pub(crate) fn check_expiry(descriptor:&ResourceDescriptor)->HostResult<()> {
+    if let Some(expiry)=&descriptor.expires_at {
+        let expiry=time::OffsetDateTime::parse(expiry,&time::format_description::well_known::Rfc3339).map_err(|_|invalid())?;
+        if expiry<=time::OffsetDateTime::now_utc(){return Err(HostError::new("media_expired","Source resource has expired. Resolve a fresh descriptor."))}
+    }
+    Ok(())
+}
 fn public(ip:IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => {
@@ -34,7 +41,7 @@ fn headers(values:&BTreeMap<String,String>) -> HostResult<HeaderMap> {
     Ok(result)
 }
 pub(crate) async fn response(url:&str, values:&BTreeMap<String,String>, origins:Option<&[String]>, test_distribution:bool, cancellation:&Cancellation) -> HostResult<reqwest::Response> {
-    response_range(url,values,origins,test_distribution,cancellation,None).await
+    response_range(url,values,origins,test_distribution,cancellation,None).await?.error_for_status().map_err(|_|HostError::new("network","Source download is unavailable. Retry later."))
 }
 pub(crate) async fn response_range(url:&str, values:&BTreeMap<String,String>, origins:Option<&[String]>, test_distribution:bool, cancellation:&Cancellation, range:Option<(u64,Option<u64>)>) -> HostResult<reqwest::Response> {
     let mut url=Url::parse(url).map_err(|_|invalid())?;
@@ -70,7 +77,7 @@ pub(crate) async fn response_range(url:&str, values:&BTreeMap<String,String>, or
             url=next;
             continue;
         }
-        return response.error_for_status().map_err(|_|HostError::new("network","Source download is unavailable. Retry later."));
+        return Ok(response);
     }
     Err(invalid())
 }
@@ -104,7 +111,7 @@ pub(crate) fn fixture_media(config:&HostConfig,descriptor:&ResourceDescriptor,or
         let (status,start,end,content_range)=if let Some((start,end))=range {
             let end=end.unwrap_or(size.saturating_sub(1)).min(size.saturating_sub(1));if start>end || start>=size{return Err(invalid())}
             (206,start,end+1,Some(format!("bytes {start}-{end}/{size}")))
-        }else{(200,0,size,None)};
+        }else{(config.fixture_statuses.get(&descriptor.url).copied().unwrap_or(200),0,size,None)};
         Ok(MediaResponse{status,content_length:Some(end-start),content_type:None,content_range,response:None,cancellation,fixture:Some(std::io::Cursor::new(bytes[start as usize..end as usize].to_vec()))})
     })
 }

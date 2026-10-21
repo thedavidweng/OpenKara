@@ -295,3 +295,79 @@ async fn auth_cancel_and_sign_out_remain_available_at_normal_request_limit() {
     assert_eq!(host.request("fixture","auth.sign_out",json!({})).await.unwrap()["state"],"signed_out");
     for handle in handles {assert_eq!(handle.result().await.unwrap_err().code,"cancelled");}drop(lease);
 }
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn known_expired_media_is_refused_before_transport_for_bounded_preview_refresh() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;
+    let mut config=fixture.config();let url="https://streaming-fixture.openkara.test:9443/tone-1.wav";config.add_fixture_resource(url.into(),vec!["93.184.216.34".parse().unwrap()],b"media".to_vec());
+    config.set_fixture_status(url.into(),410);
+    let host=SourceHost::new(config).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();
+    let descriptor=ResourceDescriptor{url:url.into(),headers:BTreeMap::new(),expires_at:Some("2000-01-01T00:00:00Z".into())};assert_eq!(host.open_media("fixture",&descriptor,None,Cancellation::new()).await.err().unwrap().code,"media_expired");assert_eq!(host.load_resource("fixture",descriptor).await.unwrap_err().code,"media_expired");
+    let descriptor=ResourceDescriptor{url:url.into(),headers:BTreeMap::new(),expires_at:None};assert_eq!(host.open_media("fixture",&descriptor,None,Cancellation::new()).await.unwrap().status,410);assert_eq!(host.download_media("fixture",descriptor,fixture.root.path().join("expired.wav"),Cancellation::new()).await.unwrap_err().code,"media_expired");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn requests_at_idle_boundary_are_not_terminated_by_maintenance() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;let mut config=fixture.config();config.idle_timeout=Duration::ZERO;
+    let host=SourceHost::new(config).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();
+    for _ in 0..30 {assert_eq!(host.request("fixture","describe",json!({})).await.unwrap()["name"],"Deterministic Streaming Source");tokio::task::yield_now().await;}
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn aborted_backpressured_dispatch_stops_partial_frames_and_releases_activation() {
+    let mut fixture=Fixture::new().await;let worker=include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")).replace("if (method === \"describe\")","if (method === \"tracks.get\") { process.stdin.pause(); return new Promise(()=>{}); } if (method === \"describe\")");
+    fixture.publish("1.0.0",&worker,vec![],None).await;let mut config=fixture.config();config.operation_timeout=Duration::from_millis(100);let host=SourceHost::new(config).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();
+    let stalled=host.start_request("fixture","tracks.get",json!({"track_ids":["1"]})).await.unwrap();tokio::time::sleep(Duration::from_millis(30)).await;
+    let copy=host.clone();let dispatch=tokio::spawn(async move{copy.start_request("fixture","tracks.get",json!({"track_ids":["2"],"padding":"x".repeat(900_000)})).await});tokio::time::sleep(Duration::from_millis(30)).await;dispatch.abort();let _=dispatch.await;
+    let started=Instant::now();stalled.cancel();assert!(stalled.result().await.is_err());assert!(started.elapsed()<Duration::from_millis(2300));
+    tokio::time::sleep(Duration::from_millis(100)).await;assert!(!host.snapshot("fixture").unwrap().running);
+    fixture.publish("1.1.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;host.refresh().await.unwrap();assert_eq!(host.install("fixture",None).await.unwrap().installed_version.as_deref(),Some("1.1.0"));assert_eq!(host.request("fixture","describe",json!({})).await.unwrap()["name"],"Deterministic Streaming Source");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn verified_revocation_applies_even_when_settings_cannot_be_saved() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;
+    let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();let lease=host.acquire_work("fixture",WorkKind::Preview).unwrap();let cancel=lease.cancellation();host.request("fixture","describe",json!({})).await.unwrap();
+    fs::create_dir(fixture.config().data_root.join("state.json.tmp")).unwrap();fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec!["1.0.0".into()],None).await;
+    assert!(host.refresh().await.is_err());assert!(cancel.is_cancelled());assert_eq!(host.request("fixture","describe",json!({})).await.unwrap_err().code,"incompatible_plugin");drop(lease);tokio::time::sleep(Duration::from_millis(100)).await;assert!(!host.snapshot("fixture").unwrap().running);
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn startup_mutation_and_damaged_staged_files_preserve_previous_release() {
+    let mut fixture=Fixture::new().await;let worker=include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs"));fixture.publish("1.0.0",worker,vec![],None).await;let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();
+    fixture.publish("1.1.0",&format!("import {{writeFileSync}} from 'node:fs';writeFileSync('startup-marker','changed');\n{worker}"),vec![],None).await;host.refresh().await.unwrap();assert_eq!(host.install("fixture",None).await.unwrap_err().code,"invalid_package");assert_eq!(host.snapshot("fixture").unwrap().installed_version.as_deref(),Some("1.0.0"));
+    let lease=host.acquire_work("fixture",WorkKind::Import).unwrap();fixture.publish("1.2.0",worker,vec![],None).await;host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();let sha=fixture.index["sources"][0]["releases"][0]["archive"]["sha256"].as_str().unwrap();fs::remove_file(fixture.config().data_root.join("packages").join(sha).join("worker.mjs")).unwrap();drop(lease);tokio::time::sleep(Duration::from_millis(150)).await;assert_eq!(host.snapshot("fixture").unwrap().installed_version.as_deref(),Some("1.0.0"));assert_eq!(host.request("fixture","describe",json!({})).await.unwrap()["name"],"Deterministic Streaming Source");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn retired_cached_root_does_not_block_new_trusted_discovery_or_working_install() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();drop(host);
+    let mut config=fixture.config();config.trusted_keys.remove("test-current");let host=SourceHost::new(config).await.unwrap();assert_eq!(host.request("fixture","describe",json!({})).await.unwrap()["name"],"Deterministic Streaming Source");fixture.change_index(true,|_|{}).await;host.refresh().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn explicit_reinstall_repairs_damaged_package_without_overwriting_running_bytes() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();host.request("fixture","describe",json!({})).await.unwrap();let lease=host.acquire_work("fixture",WorkKind::Preview).unwrap();
+    let sha=fixture.index["sources"][0]["releases"][0]["archive"]["sha256"].as_str().unwrap();let original=fixture.config().data_root.join("packages").join(sha).join("worker.mjs");fs::write(&original,b"damaged").unwrap();let snapshot=host.install("fixture",None).await.unwrap();assert_eq!(snapshot.state,SourceState::WaitingForIdle);assert_eq!(fs::read(&original).unwrap(),b"damaged");drop(lease);tokio::time::sleep(Duration::from_millis(150)).await;assert_eq!(host.request("fixture","describe",json!({})).await.unwrap()["name"],"Deterministic Streaming Source");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn revocation_during_download_prevents_candidate_execution() {
+    use std::io::Write;
+    let mut fixture=Fixture::new().await;let marker=fixture.root.path().join("candidate-executed");let worker=include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs"));fixture.publish("1.0.0",worker,vec![],None).await;
+    let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();
+    let startup=format!("import {{writeFileSync}} from 'node:fs';writeFileSync({},'executed');\n{worker}",serde_json::to_string(&marker).unwrap());fixture.publish("1.1.0",&startup,vec![],None).await;host.refresh().await.unwrap();
+    let bytes=fixture.assets["/package-1.1.0.tar"].clone();fixture.server.reset();fixture.server.mock("GET","/package-1.1.0.tar").with_chunked_body(move|stream|{std::thread::sleep(Duration::from_millis(300));stream.write_all(&bytes)}).create_async().await;
+    let installer=host.clone();let install=tokio::spawn(async move{installer.install("fixture",None).await});
+    loop{if host.snapshot("fixture").unwrap().progress.is_some_and(|progress|progress.phase=="package"){break}tokio::time::sleep(Duration::from_millis(5)).await;}
+    fixture.index["sources"][0]["revoked_versions"]=json!(["1.1.0"]);fixture.generation+=1;fixture.index["generation"]=json!(fixture.generation);let payload=serde_json::to_vec(&fixture.index).unwrap();let envelope=json!({"key_id":"test-current","payload":base64::engine::general_purpose::STANDARD.encode(&payload),"signature":base64::engine::general_purpose::STANDARD.encode(fixture.key.sign(&payload).as_ref())});fixture.server.mock("GET","/index.json").with_body(serde_json::to_vec(&envelope).unwrap()).create_async().await;
+    host.refresh().await.unwrap();assert!(install.await.unwrap().is_err());assert!(!marker.exists());assert_eq!(host.snapshot("fixture").unwrap().installed_version.as_deref(),Some("1.0.0"));
+}
