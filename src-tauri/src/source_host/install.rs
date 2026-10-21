@@ -1,4 +1,4 @@
-use super::{network,types::*,digest};
+use super::{network,types::*};
 use std::{collections::BTreeSet,fs,io::{Read,Write},path::{Component,Path,PathBuf}};
 
 pub(crate) fn relative(path:&str)->HostResult<PathBuf> {
@@ -56,7 +56,7 @@ fn extract(archive:&Path,output:&Path,format:&str,cancel:&Cancellation,runtime_e
             let mut entry=zip.by_index(index).map_err(|_|invalid())?;
             let mode=entry.unix_mode().unwrap_or(0o100644);
             let kind=mode&0o170000;
-            let name=entry.name().to_string();let path=relative(&name)?;
+            let name=entry.name().map_err(|_|invalid())?.into_owned();let path=relative(&name)?;
             if !selected(path.to_str().ok_or_else(invalid)?) {continue}
             if kind!=0 && kind!=0o100000 && kind!=0o040000 {return Err(invalid())}
             let size=entry.size();let dir=entry.is_dir();member(&name,size,dir,&mut entry,mode)?;
@@ -142,7 +142,13 @@ pub(crate) async fn runtime(config:&HostConfig,release:&Release,cancel:&Cancella
         }
     };
     cancel.check()?;
-    let output=tokio::time::timeout(std::time::Duration::from_secs(10),tokio::process::Command::new(&executable).arg("-p").arg("JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})").env_clear().kill_on_drop(true).output()).await.map_err(|_|HostError::new("incompatible_plugin","Runtime validation timed out. Update OpenKara or reinstall the runtime."))?.map_err(|_|HostError::new("incompatible_plugin","The pinned runtime cannot execute on this platform. Update OpenKara or reinstall the runtime."))?;
+    let mut command=tokio::process::Command::new(&executable);
+    command.arg("-p").arg("JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})").env_clear().kill_on_drop(true);
+    for key in ["SYSTEMROOT","WINDIR","TEMP","TMP"]{if let Some(value)=std::env::var_os(key){command.env(key,value);}}
+    let output=tokio::select!{
+        _=cancel.cancelled()=>return Err(HostError::new("cancelled","Runtime validation cancelled. Retry when ready.")),
+        output=tokio::time::timeout(std::time::Duration::from_secs(10),command.output())=>output.map_err(|_|HostError::new("incompatible_plugin","Runtime validation timed out. Update OpenKara or reinstall the runtime."))?.map_err(|_|HostError::new("incompatible_plugin","The pinned runtime cannot execute on this platform. Update OpenKara or reinstall the runtime."))?,
+    };
     let info:serde_json::Value=serde_json::from_slice(&output.stdout).map_err(|_|invalid())?;
     let platform=match std::env::consts::OS {"macos"=>"darwin","windows"=>"win32",other=>other};
     let arch=match std::env::consts::ARCH {"aarch64"=>"arm64","x86_64"=>"x64",other=>other};

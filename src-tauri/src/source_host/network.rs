@@ -52,9 +52,10 @@ pub(crate) async fn response_range(url:&str, values:&BTreeMap<String,String>, or
         if let Some(origins)=origins {
             if !origins.iter().any(|allowed| allowed==&url.origin().ascii_serialization()) { return Err(invalid()); }
         }
+        if let Ok(ip)=hostname.trim_matches(['[',']']).parse::<IpAddr>(){if !test_loopback&&!public(ip){return Err(invalid())}}
         let addresses:Vec<SocketAddr>=tokio::select! {
-            _=cancellation.cancelled()=>return cancellation.check().and_then(|_|Err(invalid())),
-            resolved=tokio::net::lookup_host((hostname.as_str(),url.port_or_known_default().ok_or_else(invalid)?))=>resolved.map_err(|_|HostError::new("network","Cannot resolve source download. Check the network, then retry."))?.collect(),
+            _=cancellation.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")),
+            resolved=tokio::time::timeout(Duration::from_secs(15),tokio::net::lookup_host((hostname.trim_matches(['[',']']),url.port_or_known_default().ok_or_else(invalid)?)))=>resolved.map_err(|_|HostError::new("network","Source DNS lookup timed out. Check the network, then retry."))?.map_err(|_|HostError::new("network","Cannot resolve source download. Check the network, then retry."))?.collect(),
         };
         if addresses.is_empty() || (!test_loopback && addresses.iter().any(|address|!public(address.ip()))) { return Err(invalid()); }
         let client=reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(120)).resolve_to_addrs(&hostname,&addresses).build().map_err(|_|HostError::new("network","Cannot prepare source download."))?;

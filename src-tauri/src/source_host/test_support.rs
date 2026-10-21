@@ -18,7 +18,7 @@ impl FixtureDistribution {
         HostConfig::fixture(data_root,"0.17.0".into(),format!("{}/index.json",self.server.url()),BTreeMap::from([("fixture-current".into(),self.key.public_key().as_ref().try_into().unwrap())]),RuntimePolicy::ChannelBundled{executable:runtime,version:"24.21.0".into(),target})
     }
     pub(crate) async fn publish(&mut self,packages:Vec<FixturePackage>) {
-        self.server.reset_async().await;self.generation+=1;
+        self.server.reset();self.generation+=1;
         let mut sources=Vec::new();
         for package in packages {
             let mut archive=tar::Builder::new(Vec::new());

@@ -38,7 +38,7 @@ impl Fixture {
         manifest
     }
     async fn publish(&mut self, version: &str, worker: &str, revoked: Vec<String>, sign_key: Option<&Ed25519KeyPair>) {
-        self.server.reset_async().await;
+        self.server.reset();
         self.generation+=1;
         let manifest = self.manifest(version);
         let mut archive = tar::Builder::new(Vec::new());
@@ -57,11 +57,18 @@ impl Fixture {
         self.server.mock("GET", "/index.json").with_body(serde_json::to_vec(&envelope).unwrap()).create_async().await;
     }
     async fn change_index(&mut self, next:bool, change:impl FnOnce(&mut Value)) {
-        self.server.reset_async().await;self.generation+=1;self.index["generation"]=json!(self.generation);change(&mut self.index);
+        self.server.reset();self.generation+=1;self.index["generation"]=json!(self.generation);change(&mut self.index);
         for (path,bytes) in &self.assets{self.server.mock("GET",path.as_str()).with_body(bytes.clone()).create_async().await;}
         let payload=serde_json::to_vec(&self.index).unwrap();let key=if next{&self.next_key}else{&self.key};
         let envelope=json!({"key_id":if next{"test-next"}else{"test-current"},"payload":base64::engine::general_purpose::STANDARD.encode(&payload),"signature":base64::engine::general_purpose::STANDARD.encode(key.sign(&payload).as_ref())});
         self.server.mock("GET","/index.json").with_body(serde_json::to_vec(&envelope).unwrap()).create_async().await;
+    }
+    async fn append_package(&mut self,extra:impl FnOnce(&mut tar::Builder<Vec<u8>>)) {
+        let (path,old)=self.assets.iter().next().map(|(path,bytes)|(path.clone(),bytes.clone())).unwrap();
+        let mut archive=tar::Archive::new(old.as_slice());let mut output=tar::Builder::new(Vec::new());
+        for entry in archive.entries().unwrap(){let mut entry=entry.unwrap();let header=entry.header().clone();output.append(&header,&mut entry).unwrap();}
+        extra(&mut output);let bytes=output.into_inner().unwrap();let size=bytes.len();let sha256=digest(&bytes);self.assets.insert(path,bytes);
+        self.change_index(false,|index|{index["sources"][0]["releases"][0]["archive"]["size"]=json!(size);index["sources"][0]["releases"][0]["archive"]["sha256"]=json!(sha256);}).await;
     }
 }
 
@@ -98,7 +105,7 @@ async fn pinned_revoked_release_stays_stopped_after_offline_restart() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(!host.snapshot("fixture").unwrap().running);
     assert_eq!(host.request("fixture","describe",json!({})).await.unwrap_err().code,"incompatible_plugin");
-    drop(host);fixture.server.reset_async().await;
+    drop(host);fixture.server.reset();
     let host=SourceHost::new(fixture.config()).await.unwrap();assert!(host.refresh().await.is_err());
     let snapshot=host.snapshot("fixture").unwrap();assert_eq!(snapshot.state,SourceState::UpdateRequired);assert_eq!(snapshot.pinned_version.as_deref(),Some("1.0.0"));assert!(snapshot.enabled);
     assert_eq!(host.request("fixture","describe",json!({})).await.unwrap_err().code,"incompatible_plugin");
@@ -252,4 +259,39 @@ async fn corrupt_source_state_can_be_reported_without_overwriting_it_or_blocking
     let root=tempfile::tempdir().unwrap();let config=HostConfig::production(root.path().to_path_buf(),root.path().to_path_buf(),"0.17.0".into());fs::create_dir_all(&config.data_root).unwrap();let path=config.data_root.join("state.json");fs::write(&path,b"corrupt source state").unwrap();
     let error=SourceHost::new(config.clone()).await.err().unwrap();let host=SourceHost::unavailable(config,error.clone());
     assert!(host.snapshots().is_empty());assert_eq!(host.refresh().await.unwrap_err(),error);assert_eq!(host.install("fixture",None).await.unwrap_err(),error);assert_eq!(host.request("fixture","describe",json!({})).await.unwrap_err(),error);assert_eq!(fs::read(path).unwrap(),b"corrupt source state");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_do_not_replace_it() {
+    let mut fixture=Fixture::new().await;let worker=include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs"));fixture.publish("1.0.0",worker,vec![],None).await;
+    fixture.append_package(|archive|{for index in 0..700{let mut header=tar::Header::new_gnu();header.set_size(1);header.set_mode(0o644);header.set_cksum();archive.append_data(&mut header,format!("node_modules/dependency/lib-{index}.mjs"),b"x".as_slice()).unwrap();}}).await;
+    let host=SourceHost::new(fixture.config()).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();
+    fixture.publish("1.1.0",worker,vec![],None).await;fixture.append_package(|archive|{let mut header=tar::Header::new_gnu();header.set_size(0);header.set_mode(0o777);header.set_entry_type(tar::EntryType::Symlink);header.set_link_name("../../worker.mjs").unwrap();header.set_cksum();archive.append_data(&mut header,"node_modules/unsafe",std::io::empty()).unwrap();}).await;host.refresh().await.unwrap();assert_eq!(host.install("fixture",None).await.unwrap_err().code,"invalid_package");
+    fixture.publish("1.2.0",worker,vec![],None).await;fixture.append_package(|archive|{let data=b"{\"scripts\":{\"postinstall\":\"touch host\"}}";let mut header=tar::Header::new_gnu();header.set_size(data.len() as u64);header.set_mode(0o644);header.set_cksum();archive.append_data(&mut header,"package.json",data.as_slice()).unwrap();}).await;host.refresh().await.unwrap();assert_eq!(host.install("fixture",None).await.unwrap_err().code,"invalid_package");assert_eq!(host.snapshot("fixture").unwrap().installed_version.as_deref(),Some("1.0.0"));
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn injected_public_transport_still_enforces_origin_headers_and_dns_policy() {
+    let mut fixture=Fixture::new().await;fixture.publish("1.0.0",include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")),vec![],None).await;
+    let mut config=fixture.config();let url="https://streaming-fixture.openkara.test:9443/tone-1.wav";
+    config.add_fixture_resource(url.into(),vec!["93.184.216.34".parse().unwrap()],b"0123456789".to_vec());config.add_fixture_resource("https://streaming-fixture.openkara.test:9443/private.wav".into(),vec!["127.0.0.1".parse().unwrap()],b"private".to_vec());
+    let host=SourceHost::new(config).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();let descriptor=ResourceDescriptor{url:url.into(),headers:BTreeMap::new(),expires_at:None};
+    let mut response=host.open_media("fixture",&descriptor,Some((3,Some(5))),Cancellation::new()).await.unwrap();assert_eq!(response.status,206);assert_eq!(response.content_range.as_deref(),Some("bytes 3-5/10"));assert_eq!(response.chunk().await.unwrap().unwrap(),b"345");assert!(response.chunk().await.unwrap().is_none());
+    let mut private=descriptor.clone();private.url="https://streaming-fixture.openkara.test:9443/private.wav".into();assert_eq!(host.open_media("fixture",&private,None,Cancellation::new()).await.err().unwrap().code,"invalid_resource");
+    let mut header=descriptor;header.headers.insert("Host".into(),"localhost".into());assert_eq!(host.open_media("fixture",&header,None,Cancellation::new()).await.err().unwrap().code,"invalid_resource");
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn auth_cancel_and_sign_out_remain_available_at_normal_request_limit() {
+    let mut fixture=Fixture::new().await;
+    let worker=include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../fixtures/streaming-source/worker.mjs")).replace("track.id === \"3\" ? 250 : 5","track.id === \"3\" ? 5000 : 5");
+    fixture.publish("1.0.0",&worker,vec![],None).await;let mut config=fixture.config();config.operation_timeout=Duration::from_secs(5);let host=SourceHost::new(config).await.unwrap();host.refresh().await.unwrap();host.install("fixture",None).await.unwrap();host.set_enabled("fixture",true,false).await.unwrap();let lease=host.acquire_work("fixture",WorkKind::Authentication).unwrap();
+    host.request("fixture","session.restore",json!({"credentials":{"fixture_session":"fixture-account-v1"}})).await.unwrap();let auth=host.request("fixture","auth.start",json!({})).await.unwrap();
+    let mut handles=Vec::new();for _ in 0..16 {handles.push(host.start_request("fixture","media.resolve",json!({"track_id":"3","purpose":"import"})).await.unwrap());}
+    assert_eq!(host.request("fixture","auth.cancel",json!({"challenge":auth["challenge"]})).await.unwrap()["state"],"cancelled");
+    assert_eq!(host.request("fixture","auth.sign_out",json!({})).await.unwrap()["state"],"signed_out");
+    for handle in handles {assert_eq!(handle.result().await.unwrap_err().code,"cancelled");}drop(lease);
 }
