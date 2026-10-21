@@ -43,6 +43,7 @@ pub struct HostConfig {
     pub(crate) backoff_unit: Duration,
     #[cfg(test)] pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)] pub(crate) fixture_resources:BTreeMap<String,(Vec<std::net::IpAddr>,Vec<u8>)>,
+    #[cfg(test)] pub(crate) fixture_statuses:BTreeMap<String,u16>,
 }
 impl HostConfig {
     pub fn production(data_root: PathBuf, resource_root: PathBuf, host_version: String) -> Self {
@@ -52,7 +53,7 @@ impl HostConfig {
             RuntimePolicy::ChannelBundled { executable: PathBuf::from("/app/bin/openkara-source-node"), version:"24.21.0".into(), target:target.clone() }
         } else { RuntimePolicy::Downloaded };
         let trusted_keys = [("7fcb203630edc3e8","eu2mb5fTNPBl1I8GKPGCwacULUQ851xExUO9caYcrXw="),("cda981e9c4c32a5f","eavnSx5nC4WImQimF9uV3OGCsju4wZC6KLL9USfc3cg=")].into_iter().map(|(id,key)| (id.into(), base64::engine::general_purpose::STANDARD.decode(key).expect("embedded source public key").try_into().expect("32-byte source public key"))).collect();
-        Self { data_root:data_root.join("streaming-sources"), resource_root, host_version, runtime_policy, index_url:"https://github.com/thedavidweng/openkara-sources/releases/latest/download/source-index.json".into(),trusted_keys,target,current_protocol:1,idle_timeout:Duration::from_secs(60),operation_timeout:Duration::from_secs(30),backoff_unit:Duration::from_secs(1), #[cfg(test)] allow_test_distribution_http:false, #[cfg(test)] fixture_resources:BTreeMap::new() }
+        Self { data_root:data_root.join("streaming-sources"), resource_root, host_version, runtime_policy, index_url:"https://github.com/thedavidweng/openkara-sources/releases/latest/download/source-index.json".into(),trusted_keys,target,current_protocol:1,idle_timeout:Duration::from_secs(60),operation_timeout:Duration::from_secs(30),backoff_unit:Duration::from_secs(1), #[cfg(test)] allow_test_distribution_http:false, #[cfg(test)] fixture_resources:BTreeMap::new(), #[cfg(test)] fixture_statuses:BTreeMap::new() }
     }
     #[cfg(test)]
     pub(crate) fn fixture(data_root:PathBuf,host_version:String,index_url:String,trusted_keys:BTreeMap<String,[u8;32]>,runtime_policy:RuntimePolicy)->Self {
@@ -61,6 +62,8 @@ impl HostConfig {
     }
     #[cfg(test)]
     pub(crate) fn add_fixture_resource(&mut self,url:String,addresses:Vec<std::net::IpAddr>,bytes:Vec<u8>) {self.fixture_resources.insert(url,(addresses,bytes));}
+    #[cfg(test)]
+    pub(crate) fn set_fixture_status(&mut self,url:String,status:u16){self.fixture_statuses.insert(url,status);}
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProtocolDeclaration { pub majors: Vec<u32>, pub minor: u32 }
@@ -100,7 +103,11 @@ pub(crate) struct Artifact { pub url:String, pub size:u64, pub sha256:String, pu
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct RuntimeRelease { pub version:String, pub targets:BTreeMap<String,Artifact> }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Release { pub manifest:SourceManifest, pub archive:Artifact, pub runtime:RuntimeRelease }
+pub(crate) struct Release {
+    pub manifest:SourceManifest,pub archive:Artifact,pub runtime:RuntimeRelease,
+    #[serde(default,skip_serializing_if="Option::is_none")] pub installed_package:Option<String>,
+    #[serde(default,skip_serializing_if="Option::is_none")] pub installed_runtime:Option<String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct IndexSource { pub source_id:String, pub publisher:String, pub package_id:String, pub releases:Vec<Release>, pub revoked_versions:Vec<String> }
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -67,6 +67,10 @@ before it reads credentials. Plugin stdout never selects a credential key.
 The host caches the signed envelope and persists verified revocations. It merges
 revocations across index generations. Discovery failure does not remove usable
 installed code or verified revocations. Revocation overrides a version pin.
+Verified revocations apply in memory even if local settings cannot be saved.
+The host cancels affected work and reports the storage error. An unusable
+discovery cache, including a retired signing root, does not block a new trusted
+refresh. Corrupt installation state remains a separate actionable failure.
 
 ## Installation and runtime
 
@@ -108,6 +112,10 @@ A candidate passes byte verification, manifest checks, runtime validation, and
 an identity-matched handshake before it can become active. Failed or cancelled
 candidates do not replace active code. A successful update waits for all work
 leases and requests to finish. The old tree is never overwritten in place.
+The host checks revocation again before candidate execution. It checks package
+and runtime records after handshake and before delayed activation. Explicit
+reinstall repairs a damaged cache in a fresh digest-qualified generation. It
+does not overwrite files used by a running process.
 Uninstall removes activation and enablement. It retains verified immutable
 artifact cache bytes for reinstall; it does not touch library files or credentials.
 The application presents the credential retention choice separately.
@@ -120,6 +128,9 @@ stop_work)`, and `uninstall(source_id, stop_work)`. `install` is also the manual
 update action. Without an explicit version it honors a pin, then selects the
 newest compatible non-revoked release. It never performs an automatic update.
 A first installation is disabled until the user enables it.
+If initialization fails, `SourceHost::unavailable(config, error)` retains that
+failure without file writes or processes. The application can keep local
+workflows available and report the original source error.
 
 Synchronous operations are `snapshots`, `snapshot`, `description`,
 `cancel_install`, `set_pin`, `acquire_work`, and `subscribe`. Pins apply to the
@@ -175,6 +186,8 @@ The handshake deadline is ten seconds. Normal requests have a thirty-second
 deadline from dispatch, even if the consumer has not awaited their result.
 Cancellation sends `request.cancel`. The process has at most two seconds to
 settle before termination. A dropped request handle also cancels its request.
+The settlement deadline includes cancellation dispatch and stdin backpressure.
+Aborted dispatch removes an unsent request or terminates a partial frame.
 Idle processes stop after sixty seconds without requests or work leases.
 Crashes restart only on the next request. Backoff is one, two, then four seconds;
 four failures require explicit Retry or an update. No request is replayed.
@@ -188,6 +201,10 @@ range, and async `chunk()`. The preview consumer retains progressive sequential
 download, chunk cache, seek, and bounded descriptor refresh. `download_media`
 streams to a temporary file and atomically publishes the destination.
 `load_resource` limits artwork to 16 MiB.
+`open_media` preserves HTTP status, including 403 and 410. A known expired
+RFC 3339 `expires_at` returns `media_expired` before a request. Preview uses
+these signals for its existing bounded descriptor refresh. File downloads and
+artwork reject unsuccessful responses.
 
 Descriptors contain `url`, `headers`, and optional `expires_at`. The host checks
 HTTPS, exact declared media/resource origin, no userinfo, and the case-insensitive

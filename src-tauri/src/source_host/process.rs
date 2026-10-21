@@ -5,9 +5,22 @@ use tokio::{io::{AsyncBufReadExt,AsyncWriteExt,BufReader},process::{Child,ChildS
 
 const MAX_LINE:usize=1024*1024;
 struct Pending { result:oneshot::Sender<HostResult<Value>>, progress:broadcast::Sender<Value>, settled:Cancellation, failure:Option<HostError> }
+struct DispatchGuard {process:std::sync::Weak<Process>,id:String,writing:bool,armed:bool}
+impl Drop for DispatchGuard {
+    fn drop(&mut self){
+        if !self.armed{return}
+        let Some(process)=self.process.upgrade()else{return};
+        if self.writing {
+            process.alive.store(false,Ordering::Release);
+            tokio::spawn(async move{process.stop().await;});
+        }else if let Some(request)=process.pending.lock().unwrap().remove(&self.id){
+            request.settled.cancel();let _=request.result.send(Err(HostError::new("cancelled","Source dispatch cancelled before transmission.")));
+        }
+    }
+}
 pub(crate) struct Process {
     input:tokio::sync::Mutex<ChildStdin>, child:tokio::sync::Mutex<Child>,
-    pending:Mutex<BTreeMap<String,Pending>>, sequence:AtomicU64, alive:AtomicBool,
+    pending:Mutex<BTreeMap<String,Pending>>, sequence:AtomicU64, alive:AtomicBool, terminating:AtomicBool,
     last_used:Mutex<Instant>, stopped:Cancellation, timeout:Duration,
 }
 pub struct RequestHandle {
@@ -38,7 +51,7 @@ impl Process {
         let mut child=command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).kill_on_drop(true).spawn().map_err(|_|unavailable())?;
         let input=child.stdin.take().ok_or_else(unavailable)?;
         let output=child.stdout.take().ok_or_else(unavailable)?;
-        let process=Arc::new(Self { input:tokio::sync::Mutex::new(input),child:tokio::sync::Mutex::new(child),pending:Mutex::new(BTreeMap::new()),sequence:AtomicU64::new(1),alive:AtomicBool::new(true),last_used:Mutex::new(Instant::now()),stopped:Cancellation::new(),timeout:config.operation_timeout });
+        let process=Arc::new(Self { input:tokio::sync::Mutex::new(input),child:tokio::sync::Mutex::new(child),pending:Mutex::new(BTreeMap::new()),sequence:AtomicU64::new(1),alive:AtomicBool::new(true),terminating:AtomicBool::new(false),last_used:Mutex::new(Instant::now()),stopped:Cancellation::new(),timeout:config.operation_timeout });
         let weak=Arc::downgrade(&process);
         tokio::spawn(async move {
             let mut reader=BufReader::new(output);
@@ -63,7 +76,7 @@ impl Process {
     pub(crate) fn alive(&self)->bool { self.alive.load(Ordering::Acquire) }
     pub(crate) fn idle_for(&self)->Duration { self.last_used.lock().unwrap().elapsed() }
     pub(crate) fn pending_count(&self)->usize { self.pending.lock().unwrap().len() }
-    async fn enqueue(&self,method:&str,params:Value,control:bool)->HostResult<(String,oneshot::Receiver<HostResult<Value>>,broadcast::Sender<Value>,broadcast::Receiver<Value>,Cancellation)> {
+    async fn enqueue(self:&Arc<Self>,method:&str,params:Value,control:bool,deadline:Instant)->HostResult<(String,oneshot::Receiver<HostResult<Value>>,broadcast::Sender<Value>,broadcast::Receiver<Value>,Cancellation)> {
         if !self.alive(){return Err(unavailable())}
         let id=format!("h{}",self.sequence.fetch_add(1,Ordering::Relaxed));
         let (sender,receiver)=oneshot::channel();let (progress,first_progress)=broadcast::channel(32);let settled=Cancellation::new();
@@ -74,27 +87,35 @@ impl Process {
             if pending.len()>=16&&!control{return Err(HostError::new("busy","Source is busy. Wait for another request to finish."))}
             pending.insert(id.clone(),Pending{result:sender,progress:progress.clone(),settled:settled.clone(),failure:None});
         }
-        let mut input=self.input.lock().await;
-        if tokio::time::timeout(Duration::from_secs(2),input.write_all(&bytes)).await.map_or(true,|result|result.is_err()){drop(input);self.stop().await;return Err(unavailable())}
+        let mut dispatch=DispatchGuard{process:Arc::downgrade(self),id:id.clone(),writing:false,armed:true};
+        let write=async {
+            let mut input=self.input.lock().await;dispatch.writing=true;
+            if !self.alive(){return Err(unavailable())}
+            input.write_all(&bytes).await.map_err(|_|unavailable())
+        };
+        tokio::time::timeout(deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(2)),write).await.map_err(|_|unavailable())??;
+        dispatch.armed=false;
         *self.last_used.lock().unwrap()=Instant::now();
         Ok((id,receiver,progress,first_progress,settled))
     }
     pub(crate) async fn send(self:&Arc<Self>,method:&str,params:Value,control:bool)->HostResult<RequestHandle> {
-        let (id,receiver,progress,first_progress,settled)=self.enqueue(method,params,control).await?;
+        let handshake=method=="handshake";let timeout=if handshake{Duration::from_secs(10)}else{self.timeout};let deadline=Instant::now()+timeout;
+        let (id,receiver,progress,first_progress,settled)=self.enqueue(method,params,control,deadline).await?;
         let cancellation=Cancellation::new();let cancel=cancellation.clone();let weak=Arc::downgrade(self);let request_id=id.clone();
-        let handshake=method=="handshake";let timeout=if handshake{Duration::from_secs(10)}else{self.timeout};
         tokio::spawn(async move {
             let error=tokio::select!{
                 _=settled.cancelled()=>return,
                 _=cancel.cancelled()=>HostError::new("cancelled","Source request cancelled."),
-                _=tokio::time::sleep(timeout)=>HostError::new("source_unavailable","Source request timed out. Retry the operation."),
+                _=tokio::time::sleep(deadline.saturating_duration_since(Instant::now()))=>HostError::new("source_unavailable","Source request timed out. Retry the operation."),
             };
             let Some(process)=weak.upgrade()else{return};
             {let mut pending=process.pending.lock().unwrap();let Some(request)=pending.get_mut(&request_id)else{return};request.failure=Some(error);}
             if handshake{process.stop().await;return}
-            if let Ok((_,response,_,_,_))=process.enqueue("request.cancel",json!({"request_id":request_id}),true).await {
-                if tokio::time::timeout(Duration::from_secs(2),async {let _=response.await;settled.cancelled().await;}).await.is_err(){process.stop().await;}
-            }else{process.stop().await;}
+            let grace=async {
+                let (_,response,_,_,_)=process.enqueue("request.cancel",json!({"request_id":request_id}),true,Instant::now()+Duration::from_secs(2)).await?;
+                let _=response.await;settled.cancelled().await;Ok::<(),HostError>(())
+            };
+            if tokio::time::timeout(Duration::from_secs(2),grace).await.map_or(true,|result|result.is_err()){process.stop().await;}
         });
         Ok(RequestHandle{id,receiver:Some(receiver),progress,cancellation,first_progress:Mutex::new(Some(first_progress))})
     }
@@ -124,7 +145,8 @@ impl Process {
         Ok(())
     }
     pub(crate) async fn stop(&self) {
-        if self.alive.swap(false,Ordering::AcqRel) {
+        self.alive.store(false,Ordering::Release);
+        if !self.terminating.swap(true,Ordering::AcqRel) {
             self.stopped.cancel();
             let pending=std::mem::take(&mut *self.pending.lock().unwrap());
             for request in pending.into_values() {request.settled.cancel();let _=request.result.send(Err(request.failure.unwrap_or_else(unavailable)));}
