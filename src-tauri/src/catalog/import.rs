@@ -58,6 +58,7 @@ pub struct StreamingImportSession {
     playlist_id: Option<String>,
     paused: Option<PausedConflict>,
     job: Option<Arc<StreamingImportJob>>,
+    work_lease: Option<crate::source_host::WorkLease>,
 }
 
 struct PausedConflict {
@@ -79,7 +80,22 @@ impl StreamingImportSession {
             playlist_id: None,
             paused: None,
             job: None,
+            work_lease: None,
         }
+    }
+    pub fn source_id(&self) -> &str {
+        &self.source_id
+    }
+    pub fn cancellation(&self) -> crate::source_host::Cancellation {
+        self.work_lease
+            .as_ref()
+            .map(|lease| lease.cancellation())
+            .unwrap_or_else(crate::source_host::Cancellation::new)
+    }
+
+    pub fn with_work_lease(mut self, lease: crate::source_host::WorkLease) -> Self {
+        self.work_lease = Some(lease);
+        self
     }
 
     /// Attaches the shared progress and cancel handle of this import.
@@ -102,6 +118,10 @@ impl StreamingImportSession {
 
     fn is_cancelled(&self) -> bool {
         self.job.as_ref().is_some_and(|job| job.is_cancelled())
+            || self
+                .work_lease
+                .as_ref()
+                .is_some_and(|lease| lease.cancellation().is_cancelled())
     }
 
     fn cancel_item(&mut self, item: &StreamingImportItem) {
@@ -627,6 +647,7 @@ fn progress_of(
     conflict: Option<ImportConflictPrompt>,
 ) -> StreamingImportProgress {
     StreamingImportProgress {
+        source_id: session.source_id.clone(),
         status,
         imported_song_ids: session.imported_song_ids.clone(),
         failed: session.failures.clone(),
@@ -746,9 +767,10 @@ mod tests {
         add_file_track(&source, &copies, "t2", "metadata", "fixture.flac");
         source.insert_playlist(
             crate::catalog::types::StreamingPlaylistSummary {
+                source_id: "netease".to_owned(),
                 remote_id: "pl-1".to_owned(),
                 name: "Night set".to_owned(),
-                track_count: 2,
+                track_count: Some(2),
                 cover_url: None,
             },
             vec!["t1".to_owned(), "t2".to_owned()],
@@ -944,6 +966,7 @@ mod tests {
         let sink = events.clone();
         let job = StreamingImportJob::new(
             "job-1".to_owned(),
+            "netease".to_owned(),
             ids.iter()
                 .map(|id| ((*id).to_owned(), (*id).to_owned(), "Artist".to_owned()))
                 .collect(),

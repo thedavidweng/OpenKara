@@ -22,6 +22,13 @@ pub enum ErrorCode {
     OnlineSourceDisabled,
     StreamingAuthFailed,
     StreamingSessionExpired,
+    StreamingSourceUnavailable,
+    StreamingUnsupportedOperation,
+    StreamingSourceNotFound,
+    StreamingChallengeExpired,
+    StreamingInvalidCursor,
+    StreamingWorkActive,
+    StreamingCancelled,
     VideoSourceUnavailable,
     Internal,
 }

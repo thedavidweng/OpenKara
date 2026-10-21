@@ -67,7 +67,6 @@ const BASE_SETTINGS: AppSettings = {
   theme_preference: "dark",
   update_policy: "notify",
   youtube_source_enabled: false,
-  netease_source_enabled: false,
 };
 
 function appSettings(patch: Partial<AppSettings> = {}): AppSettings {
@@ -785,13 +784,11 @@ describe("preferences", () => {
       return stored;
     });
     const setOnlineSourceEnabled = vi.fn(
-      async (sourceId: "youtube" | "netease", enabled: boolean) => {
+      async (sourceId: "youtube", enabled: boolean) => {
         stored = {
           ...stored,
           youtube_source_enabled:
             sourceId === "youtube" ? enabled : stored.youtube_source_enabled,
-          netease_source_enabled:
-            sourceId === "netease" ? enabled : stored.netease_source_enabled,
         };
         return stored;
       },
@@ -812,7 +809,7 @@ describe("preferences", () => {
     await harness.controller.preferences.set({ hideUpgradeAll: true });
     await harness.controller.preferences.set({ coverArtBackdrop: false });
     await harness.controller.preferences.set({ lyricsBlurInactive: true });
-    await harness.controller.preferences.set({ neteaseSourceEnabled: true });
+    await harness.controller.preferences.set({ youtubeSourceEnabled: true });
 
     expect(setHideBatchSeparate).toHaveBeenCalledWith(true);
     expect(setHideUpgradeAll).toHaveBeenCalledWith(true);
@@ -822,8 +819,8 @@ describe("preferences", () => {
     expect(harness.view().preferences.hideUpgradeAll).toBe(true);
     expect(harness.view().preferences.coverArtBackdrop).toBe(false);
     expect(harness.view().preferences.lyricsBlurInactive).toBe(true);
-    expect(setOnlineSourceEnabled).toHaveBeenCalledWith("netease", true);
-    expect(harness.view().preferences.neteaseSourceEnabled).toBe(true);
+    expect(setOnlineSourceEnabled).toHaveBeenCalledWith("youtube", true);
+    expect(harness.view().preferences.youtubeSourceEnabled).toBe(true);
   });
 
   test("a rejected lyrics blur write restores the previous preference", async () => {

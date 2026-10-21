@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
-import { NeteaseCover } from "./NeteaseCover";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { StreamingCover } from "./StreamingCover";
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset://localhost${path}`,
+}));
 
 afterEach(cleanup);
 
-describe("NeteaseCover", () => {
-  test("requests a sized lazy thumbnail", () => {
+describe("StreamingCover", () => {
+  test("loads the host-managed asset lazily without modifying its path", () => {
     const { container } = render(
-      <NeteaseCover url="https://p1.music.126.net/a.jpg" size={200} />,
+      <StreamingCover url="/source-artwork/alpha/cover.img" size={200} />,
     );
     const img = container.querySelector("img");
     expect(img?.getAttribute("src")).toBe(
-      "https://p1.music.126.net/a.jpg?param=200y200",
+      "asset://localhost/source-artwork/alpha/cover.img",
     );
     expect(img?.getAttribute("loading")).toBe("lazy");
     expect(img?.getAttribute("decoding")).toBe("async");
@@ -20,10 +23,12 @@ describe("NeteaseCover", () => {
 
   test("falls back to the neutral tile without a url or after an error", () => {
     const { container, rerender } = render(
-      <NeteaseCover url={null} size={200} />,
+      <StreamingCover url={null} size={200} />,
     );
     expect(container.querySelector("img")).toBeNull();
-    rerender(<NeteaseCover url="https://p1.music.126.net/a.jpg" size={200} />);
+    rerender(
+      <StreamingCover url="/source-artwork/alpha/cover.img" size={200} />,
+    );
     fireEvent.error(container.querySelector("img")!);
     expect(container.querySelector("img")).toBeNull();
   });

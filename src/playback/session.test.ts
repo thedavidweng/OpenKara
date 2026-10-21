@@ -6,7 +6,7 @@ import type {
 import {
   isOnlinePreviewQueueId,
   onlinePreviewQueueId,
-  onlinePreviewRemoteId,
+  onlinePreviewReference,
   createPlaybackSession,
   type PlaybackSessionDeps,
   type PlaybackTransport,
@@ -862,10 +862,27 @@ describe("YouTube video transport", () => {
 
 describe("online preview queue ids", () => {
   test("round-trip the remote id and reject other ids", () => {
-    expect(onlinePreviewQueueId("42")).toBe("ne:42");
-    expect(isOnlinePreviewQueueId("ne:42")).toBe(true);
+    expect(onlinePreviewQueueId("alpha", "42")).toBe("stream:alpha:42");
+    expect(isOnlinePreviewQueueId("stream:alpha:42")).toBe(true);
     expect(isOnlinePreviewQueueId("yt:42")).toBe(false);
-    expect(onlinePreviewRemoteId("ne:42")).toBe("42");
-    expect(onlinePreviewRemoteId("abc123")).toBeNull();
+    expect(onlinePreviewReference("stream:alpha:42")).toEqual({
+      sourceId: "alpha",
+      remoteTrackId: "42",
+    });
+    expect(onlinePreviewReference("abc123")).toBeNull();
+  });
+  test("keeps equal opaque ids distinct across sources and rejects malformed references", () => {
+    expect(onlinePreviewQueueId("alpha", "same:/id%雪")).toBe(
+      "stream:alpha:same%3A%2Fid%25%E9%9B%AA",
+    );
+    expect(onlinePreviewQueueId("beta", "same:/id%雪")).not.toBe(
+      onlinePreviewQueueId("alpha", "same:/id%雪"),
+    );
+    expect(
+      onlinePreviewReference("stream:alpha:same%3A%2Fid%25%E9%9B%AA"),
+    ).toEqual({ sourceId: "alpha", remoteTrackId: "same:/id%雪" });
+    expect(onlinePreviewReference("stream:alpha:%ZZ")).toBeNull();
+    expect(onlinePreviewReference("stream:unknown:")).toBeNull();
+    expect(onlinePreviewReference("stream:Bad:id")).toBeNull();
   });
 });

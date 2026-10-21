@@ -16,6 +16,13 @@ export type ErrorCode =
   | "online_source_disabled"
   | "streaming_auth_failed"
   | "streaming_session_expired"
+  | "streaming_source_unavailable"
+  | "streaming_unsupported_operation"
+  | "streaming_source_not_found"
+  | "streaming_challenge_expired"
+  | "streaming_invalid_cursor"
+  | "streaming_work_active"
+  | "streaming_cancelled"
   | "video_source_unavailable"
   | "internal";
 
@@ -41,7 +48,7 @@ export type CoverArtSize = "thumb" | "preview" | "original";
 
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
 
-export type OnlineSourceId = "youtube" | "netease";
+export type OnlineSourceId = string;
 
 export type OnlineSourceKind = "video" | "streaming";
 
@@ -66,6 +73,85 @@ export interface StreamingSessionSnapshot {
   expired: boolean;
 }
 
+export interface HostError {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export type SourceState =
+  | "not_installed"
+  | "installing"
+  | "ready"
+  | "disabled"
+  | "update_required"
+  | "unavailable"
+  | "waiting_for_idle"
+  | "cancelling";
+export interface InstallProgress {
+  phase: string;
+  completed: number;
+  total: number | null;
+}
+export interface ActiveWork {
+  id: number;
+  kind: "authentication" | "preview" | "import";
+  cancelling: boolean;
+}
+export interface SourceManifest {
+  manifest_version: number;
+  source_id: string;
+  package_id: string;
+  publisher: string;
+  version: string;
+  minimum_host_version: string;
+  protocol: { majors: number[]; minor: number };
+  runtime: { kind: string; major: number };
+  entry: string;
+  name: string;
+  description: string;
+  license: string;
+  capabilities: string[];
+  authentication: unknown;
+  requires_authentication: string[];
+  resource_origins: string[];
+  media_origins: string[];
+}
+export interface SourceSnapshot {
+  source_id: string;
+  owner_binding: string;
+  name: string;
+  description: string;
+  license: string;
+  installed_version: string | null;
+  available_version: string | null;
+  staged_version: string | null;
+  pinned_version: string | null;
+  enabled: boolean;
+  runtime_ready: boolean;
+  running: boolean;
+  state: SourceState;
+  progress: InstallProgress | null;
+  last_error: HostError | null;
+  active_work: ActiveWork[];
+  manifest: SourceManifest | null;
+}
+export interface AuthChallenge {
+  source_id: string;
+  challenge: string;
+  expires_at: string;
+  poll_after_ms: number | null;
+  presentation:
+    | { kind: "web" }
+    | { kind: "qr"; content: string; text: string }
+    | { kind: "text"; text: string };
+}
+export interface AuthPollResult {
+  state: "pending" | "complete" | "expired" | "cancelled";
+  poll_after_ms?: number;
+  session?: StreamingSessionSnapshot;
+}
+
 export type YoutubeWatchAction =
   | { type: "play" }
   | { type: "pause" }
@@ -81,7 +167,11 @@ export interface YoutubeWatchMediaState {
   duration_ms: number | null;
 }
 
-export type ImportRefusalReason = "no_play_rights" | "trial_clip" | "empty_url";
+export type ImportRefusalReason =
+  | "no_play_rights"
+  | "trial_clip"
+  | "empty_url"
+  | "unavailable";
 
 export interface ImportRefusal {
   reason: ImportRefusalReason;
@@ -98,11 +188,12 @@ export interface StreamingTrack {
   duration_ms: number | null;
   refusal: ImportRefusal | null;
   library_song_id: string | null;
-  /** HTTPS album cover, unsized; append a size parameter before use. */
+  /** Host-managed artwork resource URL. */
   cover_url: string | null;
 }
 
 export interface StreamingPlaylistSummary {
+  source_id: OnlineSourceId;
   remote_id: string;
   name: string;
   track_count: number;
@@ -110,26 +201,26 @@ export interface StreamingPlaylistSummary {
 }
 
 export interface StreamingPlaylistDetail {
+  source_id: OnlineSourceId;
   remote_id: string;
   name: string;
   tracks: StreamingTrack[];
   cover_url: string | null;
-  creator: string | null;
   description: string | null;
-  track_count: number;
-  /** Milliseconds since the Unix epoch, when known. */
+  track_count: number | null;
+  creator: string | null;
   updated_at_ms: number | null;
-  /** Every track id, in order; ids missing from `tracks` load by id. */
-  track_ids: string[];
-  /** True while `tracks` holds only the first batch of `track_ids`. */
-  partial: boolean;
+  next_cursor: string | null;
 }
 
-/** A track list whose first batch is loaded and the rest loads by id. */
 export interface StreamingTrackListing {
   tracks: StreamingTrack[];
-  track_ids: string[];
-  partial: boolean;
+  next_cursor: string | null;
+}
+
+export interface StreamingPlaylistListing {
+  items: StreamingPlaylistSummary[];
+  next_cursor: string | null;
 }
 
 export interface LibraryDecisionMeta {
@@ -172,6 +263,7 @@ export interface StreamingImportFailure {
 export type StreamingImportStatus = "awaiting_decision" | "completed";
 
 export interface StreamingImportProgress {
+  source_id: OnlineSourceId;
   status: StreamingImportStatus;
   imported_song_ids: string[];
   failed: StreamingImportFailure[];
@@ -188,6 +280,7 @@ export type StreamingImportTrackState =
   | { kind: "failed"; reason: StreamingImportFailureReason };
 
 export interface StreamingImportEvent {
+  source_id: OnlineSourceId;
   job_id: string;
   remote_track_id: string;
   title: string;
@@ -210,6 +303,7 @@ export interface StreamingImportTrackSnapshot {
 }
 
 export interface StreamingImportJobSnapshot {
+  source_id: OnlineSourceId;
   job_id: string;
   phase: StreamingImportJobPhase;
   completed: number;
@@ -217,7 +311,7 @@ export interface StreamingImportJobSnapshot {
   tracks: StreamingImportTrackSnapshot[];
 }
 
-/** Display data for a NetEase track played as a preview (`ne:` queue id). */
+/** Display data for a source-bound streaming preview. */
 export interface PreviewQueueItem {
   id: string;
   remote_track_id: string;
@@ -455,7 +549,6 @@ export interface AppSettings {
   theme_preference: ThemePreference;
   update_policy: UpdatePolicy;
   youtube_source_enabled: boolean;
-  netease_source_enabled: boolean;
 }
 
 export interface DebugInfo {

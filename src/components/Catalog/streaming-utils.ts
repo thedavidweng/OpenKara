@@ -21,20 +21,6 @@ export function formatDuration(durationMs: number | null): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-/**
- * NetEase image CDN thumbnail URL. The CDN resizes server-side with
- * `?param=<w>y<h>`, which keeps list rows and grids from downloading
- * full-size art. Squares only; returns null when there is no cover.
- */
-export function sizedCoverUrl(
-  url: string | null | undefined,
-  edgePx: number,
-): string | null {
-  if (!url) return null;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}param=${edgePx}y${edgePx}`;
-}
-
 /** Localized medium date for a millisecond timestamp; null when unknown. */
 export function formatUpdated(
   updatedAtMs: number | null | undefined,

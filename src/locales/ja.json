@@ -109,11 +109,8 @@
       "message": "すべての楽曲を4ステムモードで再分離します。ステムのディスク使用量は約2倍になります。",
       "confirm": "すべてアップグレード"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "オンラインソース",
-    "youtubeLink": "YouTube リンク",
-    "neteaseSignedIn": "サインイン済み",
-    "neteaseSignIn": "サインイン"
+    "youtubeLink": "YouTube リンク"
   },
   "toolbar": {
     "import": "インポート",
@@ -342,6 +339,55 @@
     "failedToLoad": "プロパティの読み込みに失敗しました"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "環境設定",
     "library": {
       "label": "カラオケライブラリ",
@@ -699,9 +745,7 @@
       "label": "オンラインソース",
       "description": "音楽または動画の提供元をオンにします。選ぶまでどちらもオフのままです。",
       "youtube": "YouTube",
-      "youtubeDescription": "公開動画またはプレイリストのリンクをキューに貼り付けます。OpenKara は YouTube 音声をダウンロードしません。",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "サインインして再生できる曲を取り込みます。取り込んだファイルは OpenKara が管理します。"
+      "youtubeDescription": "公開動画またはプレイリストのリンクをキューに貼り付けます。OpenKara は YouTube 音声をダウンロードしません。"
     }
   },
   "bootstrap": {
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "このシンガーはキュー内の曲に割り当てられています。削除すると、それらの曲もキューから削除されます。"
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "データベースエラー",
     "media_read_failed": "インポートに失敗しました",
     "song_not_found": "曲が見つかりません",
@@ -779,25 +830,25 @@
     "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "サインアウト",
       "sessionExpired": "セッションの期限が切れました。もう一度サインインしてください。",
       "liked": "お気に入りの曲",
       "playlists": "プレイリスト",
-      "searchPlaceholder": "NetEase の曲を検索",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "取り込む",
       "importPlaylist": "プレイリストを取り込む",
-      "connect": "NetEase でサインイン",
+      "connect": "Sign in",
       "clearSearch": "検索をクリア",
-      "tabsLabel": "NetEase ライブラリのセクション",
+      "tabsLabel": "Source library sections",
       "resultsTab": "「{{query}}」の検索結果",
       "accountMenu": "アカウントメニュー",
       "importTrackLabel": "「{{title}}」を取り込む",
       "statusNoRights": "再生権限なし",
-      "statusNoRightsHint": "NetEase ではこのアカウントにこの曲の再生権限がないため、取り込めません。",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "試聴クリップのみ",
-      "statusTrialHint": "NetEase ではこの曲の短い試聴クリップしか提供されないため、取り込めません。",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "取り込み中…",
       "statusImported": "ライブラリにあります",
       "statusFailed": "取り込み失敗",
@@ -815,9 +866,9 @@
         "import_failed": "取り込み失敗"
       },
       "importProgressLabel": "取り込み中",
-      "connectTitle": "NetEase Cloud Music に接続",
+      "connectTitle": "Connect your account",
       "connectBody": "サインインすると、お気に入りの曲やプレイリストを閲覧し、再生できる曲を取り込めます。取り込んだファイルはあなたのライブラリのものになります。",
-      "connectHintWindow": "サインインすると NetEase のウィンドウが開きます。OpenKara があなたのパスワードを見ることはありません。",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "再生権限のない曲や試聴クリップのみの曲は取り込めません。",
       "signInFailed": "サインインに失敗しました：{{message}}",
       "songCount_other": "{{count}} 曲",
@@ -844,13 +895,22 @@
       "importingProgress": "{{total}} 曲中 {{completed}} 曲をインポート中",
       "loadingMore": "さらに曲を読み込み中…",
       "refusalReason": {
-        "trial_clip": "VIP 限定 — NetEase は 30 秒のプレビューのみ提供",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "再生権がありません",
-        "empty_url": "音声を取得できません"
+        "empty_url": "音声を取得できません",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "「{{title}}」は再生できません",
       "importToSing": "取り込んで歌う",
-      "previewHint": "ストリーミングのプレビューです。曲を取り込むと、歌唱、ボーカル分離、歌詞の追加ができます。"
+      "previewHint": "ストリーミングのプレビューです。曲を取り込むと、歌唱、ボーカル分離、歌詞の追加ができます。",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

@@ -48,7 +48,7 @@ const { mockLibraryState, mockSettingsState, mockPlaylistState } = vi.hoisted(
       hideBatchSeparate: false,
       hideUpgradeAll: false,
       stemMode: "two_stem",
-      neteaseSourceEnabled: false,
+      youtubeSourceEnabled: false,
     },
     mockPlaylistState: {
       playlists: [
@@ -85,12 +85,20 @@ vi.mock("@/stores/settings-store", () => ({
 vi.mock("@/stores/catalog-store", () => ({
   useCatalogStore: (
     selector: (state: {
-      activeView: "library" | "netease";
-      setActiveView: (view: "library" | "netease") => void;
+      activeView: string;
+      activeSourceId: string | null;
+      setActiveSource: (sourceId: string) => void;
+      sources: never[];
+      sourceStates: Record<string, never>;
+      setActiveView: (view: string) => void;
     }) => unknown,
   ) =>
     selector({
       activeView: "library",
+      activeSourceId: null,
+      setActiveSource: vi.fn(),
+      sources: [],
+      sourceStates: {},
       setActiveView: vi.fn(),
     }),
 }));

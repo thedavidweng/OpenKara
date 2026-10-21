@@ -1,0 +1,231 @@
+// @vitest-environment jsdom
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import {
+  createCatalogStore,
+  type CatalogStore,
+  type CatalogState,
+} from "@/stores/catalog-store";
+import type { SourceSnapshot } from "@/types/ipc";
+import { StreamingSignIn } from "./StreamingSignIn";
+const shared = vi.hoisted(() => ({ store: null as CatalogStore | null }));
+vi.mock("@/stores/catalog-store", async (original) => ({
+  ...(await original<{ createCatalogStore: typeof createCatalogStore }>()),
+  useCatalogStore: (selector: (state: CatalogState) => unknown) =>
+    shared.store!(selector),
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+const source = {
+  source_id: "alpha",
+  name: "Alpha",
+  enabled: true,
+  installed_version: "1",
+  runtime_ready: true,
+  state: "ready",
+} as SourceSnapshot;
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+beforeEach(() => vi.useFakeTimers());
+
+test("plugin text is data, completion is verified by polling, and source switching cannot redirect the result", async () => {
+  const backend = createMockBackend({
+    overrides: {
+      catalog: {
+        openStreamingSignIn: async (source_id) => ({
+          source_id,
+          challenge: "challenge-alpha",
+          expires_at: "2099-01-01T00:00:00Z",
+          poll_after_ms: 250,
+          presentation: {
+            kind: "text",
+            text: "<script>never execute</script>",
+          },
+        }),
+        pollStreamingSignIn: async () => ({
+          state: "complete",
+          session: {
+            source_id: "alpha",
+            signed_in: true,
+            display_name: "Alice",
+            expired: false,
+          },
+        }),
+      },
+    },
+  });
+  const store = createCatalogStore(backend);
+  shared.store = store;
+  store
+    .getState()
+    .applySources([source, { ...source, source_id: "beta", name: "Beta" }]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn sourceId="alpha" />);
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "catalog.streaming.connect" }),
+    ),
+  );
+  expect(screen.getByText("<script>never execute</script>")).toBeTruthy();
+  expect(document.querySelector("script")).toBeNull();
+  act(() => store.getState().setActiveSource("beta"));
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  act(() => store.getState().setActiveSource("alpha"));
+  expect(screen.queryByText("<script>never execute</script>")).toBeNull();
+  expect(screen.getByText("Alice")).toBeTruthy();
+});
+
+test("QR challenges render a local QR code and cancel without opening plugin-supplied markup", async () => {
+  const cancel = vi.fn().mockResolvedValue(undefined);
+  const store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: "qr-alpha",
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 1000,
+            presentation: {
+              kind: "qr",
+              content: "https://example.invalid/auth?id=opaque",
+              text: "Scan with the service app",
+            },
+          }),
+          cancelStreamingSignIn: cancel,
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn />);
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "catalog.streaming.connect" }),
+    ),
+  );
+  expect(screen.getByTitle("catalog.streaming.scanCode").tagName).toBe("title");
+  expect(document.querySelector("img")).toBeNull();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "common.cancel" })),
+  );
+  expect(cancel).toHaveBeenCalledWith("alpha", "qr-alpha");
+  expect(screen.queryByText("Scan with the service app")).toBeNull();
+});
+
+test("web authentication presents the controlled-window status and accepts only its original source completion", async () => {
+  const store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: "web-alpha",
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 1000,
+            presentation: { kind: "web" },
+          }),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn sourceId="alpha" />);
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "catalog.streaming.connect" }),
+    ),
+  );
+  expect(screen.getByText("catalog.streaming.connectHintWindow")).toBeTruthy();
+  act(() =>
+    store
+      .getState()
+      .acceptSignIn({
+        source_id: "other",
+        signed_in: true,
+        display_name: "Wrong account",
+        expired: false,
+      }),
+  );
+  expect(screen.queryByText("Wrong account")).toBeNull();
+  act(() =>
+    store
+      .getState()
+      .acceptSignIn({
+        source_id: "alpha",
+        signed_in: true,
+        display_name: "Verified Alice",
+        expired: false,
+      }),
+  );
+  expect(screen.getByText("Verified Alice")).toBeTruthy();
+});
+
+test("late authentication completion cannot restore a disabled source", async () => {
+  const { promise, resolve } = Promise.withResolvers<{
+    state: "complete";
+    session: {
+      source_id: string;
+      signed_in: boolean;
+      display_name: string;
+      expired: boolean;
+    };
+  }>();
+  const store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: "late-alpha",
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 250,
+            presentation: { kind: "text", text: "Waiting" },
+          }),
+          pollStreamingSignIn: () => promise,
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingSignIn sourceId="alpha" />);
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "catalog.streaming.connect" }),
+    ),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  act(() =>
+    store
+      .getState()
+      .applySource({ ...source, enabled: false, state: "disabled" }),
+  );
+  await act(async () =>
+    resolve({
+      state: "complete",
+      session: {
+        source_id: "alpha",
+        signed_in: true,
+        display_name: "Late account",
+        expired: false,
+      },
+    }),
+  );
+  expect(screen.queryByText("Late account")).toBeNull();
+});

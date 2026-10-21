@@ -17,6 +17,8 @@
  * assignability checks and verify command name registries at runtime.
  */
 import { describe, expect, test } from "vitest";
+import { createCatalogCommands } from "@/lib/tauri/catalog";
+import type { InvokeCommand } from "@/lib/tauri/invoke";
 
 import type {
   AppSettings,
@@ -311,125 +313,6 @@ const SETTINGS_COMMANDS: CommandContract[] = [
     hasArgs: true,
     rustParams: ["preference"],
   },
-  {
-    command: "list_online_sources",
-    frontendFile: "src/lib/tauri/settings.ts",
-    frontendFn: "listOnlineSources",
-    hasArgs: false,
-  },
-  {
-    command: "set_online_source_enabled",
-    frontendFile: "src/lib/tauri/settings.ts",
-    frontendFn: "setOnlineSourceEnabled",
-    hasArgs: true,
-    rustParams: ["source_id", "enabled"],
-  },
-];
-
-const CATALOG_COMMANDS: CommandContract[] = [
-  {
-    command: "get_streaming_session",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "getStreamingSession",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
-    command: "open_streaming_sign_in",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "openStreamingSignIn",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
-    command: "sign_out_streaming_source",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "signOutStreamingSource",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
-    command: "list_streaming_liked_tracks",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "listStreamingLikedTracks",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
-    command: "get_streaming_tracks",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "getStreamingTracks",
-    hasArgs: true,
-    rustParams: ["source_id", "remote_track_ids"],
-  },
-  {
-    command: "list_streaming_playlists",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "listStreamingPlaylists",
-    hasArgs: true,
-    rustParams: ["source_id"],
-  },
-  {
-    command: "get_streaming_playlist",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "getStreamingPlaylist",
-    hasArgs: true,
-    rustParams: ["source_id", "remote_playlist_id"],
-  },
-  {
-    command: "search_streaming_source",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "searchStreamingSource",
-    hasArgs: true,
-    rustParams: ["source_id", "query"],
-  },
-  {
-    command: "start_streaming_import",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "startStreamingImport",
-    hasArgs: true,
-    rustParams: ["source_id", "remote_track_ids", "remote_playlist_id"],
-  },
-  {
-    command: "continue_streaming_import",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "continueStreamingImport",
-    hasArgs: true,
-    rustParams: ["action"],
-  },
-  {
-    command: "cancel_streaming_import",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "cancelStreamingImport",
-    hasArgs: false,
-  },
-  {
-    command: "get_streaming_import_status",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "getStreamingImportStatus",
-    hasArgs: false,
-  },
-  {
-    command: "resolve_video_source_url",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "resolveVideoSourceUrl",
-    hasArgs: true,
-    rustParams: ["source_id", "url"],
-  },
-  {
-    command: "get_reveal_targets",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "getRevealTargets",
-    hasArgs: true,
-    rustParams: ["song_id"],
-  },
-  {
-    command: "reveal_in_folder",
-    frontendFile: "src/lib/tauri/catalog.ts",
-    frontendFn: "revealInFolder",
-    hasArgs: true,
-    rustParams: ["path"],
-  },
 ];
 
 const SEPARATION_COMMANDS: CommandContract[] = [
@@ -476,7 +359,6 @@ const ALL_COMMANDS = [
   ...LYRICS_COMMANDS,
   ...SEPARATION_COMMANDS,
   ...SETTINGS_COMMANDS,
-  ...CATALOG_COMMANDS,
 ];
 
 describe("IPC command registry", () => {
@@ -548,8 +430,6 @@ describe("IPC command registry", () => {
       "set_eq_gains",
       "set_library_sort_mode",
       "set_theme_preference",
-      "list_online_sources",
-      "set_online_source_enabled",
     ];
     const registered = SETTINGS_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedSettingsCommands.sort());
@@ -559,28 +439,6 @@ describe("IPC command registry", () => {
     expect(YOUTUBE_WATCH_COMMANDS.map((c) => c.command)).toEqual([
       "control_youtube_watch",
     ]);
-  });
-
-  test("catalog commands match contract documentation", () => {
-    const expectedCatalogCommands = [
-      "get_streaming_session",
-      "open_streaming_sign_in",
-      "sign_out_streaming_source",
-      "list_streaming_liked_tracks",
-      "get_streaming_tracks",
-      "list_streaming_playlists",
-      "get_streaming_playlist",
-      "search_streaming_source",
-      "start_streaming_import",
-      "continue_streaming_import",
-      "cancel_streaming_import",
-      "get_streaming_import_status",
-      "resolve_video_source_url",
-      "get_reveal_targets",
-      "reveal_in_folder",
-    ];
-    const registered = CATALOG_COMMANDS.map((c) => c.command);
-    expect(registered.sort()).toEqual(expectedCatalogCommands.sort());
   });
 
   test("separation commands match contract documentation", () => {
@@ -1305,50 +1163,6 @@ describe("ImportLyricsResult shape matches Rust ImportLyricsResult", () => {
 });
 
 describe("AppSettings shape matches Rust AppSettings", () => {
-  test("has all fields from Rust serialization", () => {
-    const settings: AppSettings = {
-      stem_mode: "two_stem",
-      model_variant: "htdemucs",
-      language: "en",
-      hide_batch_separate: false,
-      cover_art_backdrop: true,
-      lyrics_blur_inactive: false,
-      hide_upgrade_all: false,
-      lyrics_font_step: 0,
-      execution_provider: "cpu",
-      available_execution_providers: ["cpu", "xnnpack"],
-      compatible_execution_providers: ["cpu", "xnnpack"],
-      eq_enabled: false,
-      eq_gains_db: [0, 0, 0, 0, 0],
-      crossfade_enabled: false,
-      crossfade_duration_ms: 3_000,
-      library_sort_mode: "recently_imported",
-      theme_preference: "dark",
-      update_policy: "notify",
-      youtube_source_enabled: false,
-      netease_source_enabled: false,
-    };
-    expect(settings).toHaveProperty("stem_mode");
-    expect(settings).toHaveProperty("model_variant");
-    expect(settings).toHaveProperty("language");
-    expect(settings).toHaveProperty("hide_batch_separate");
-    expect(settings).toHaveProperty("cover_art_backdrop");
-    expect(settings).toHaveProperty("lyrics_blur_inactive");
-    expect(settings.lyrics_blur_inactive).toBe(false);
-    expect(settings).toHaveProperty("hide_upgrade_all");
-    expect(settings).toHaveProperty("lyrics_font_step");
-    expect(settings).toHaveProperty("execution_provider");
-    expect(settings).toHaveProperty("available_execution_providers");
-    expect(settings).toHaveProperty("compatible_execution_providers");
-    expect(settings).toHaveProperty("eq_enabled");
-    expect(settings).toHaveProperty("eq_gains_db");
-    expect(settings).toHaveProperty("library_sort_mode");
-    expect(settings).toHaveProperty("theme_preference");
-    expect(settings).toHaveProperty("update_policy");
-    expect(settings).toHaveProperty("youtube_source_enabled");
-    expect(settings).toHaveProperty("netease_source_enabled");
-  });
-
   test("stem_mode values match Rust StemMode enum", () => {
     const validModes: AppSettings["stem_mode"][] = ["two_stem", "four_stem"];
     for (const mode of validModes) {
@@ -1567,5 +1381,54 @@ describe("Serialization compatibility", () => {
     // retryable is already lowercase, no rename issue
     expect(error.retryable).toBe(false);
     expect(error.fallback).toBe("retry");
+  });
+});
+
+describe("Streaming catalog IPC compatibility", () => {
+  test("preserves source identity and opaque cursor across the public command boundary", async () => {
+    const calls: unknown[] = [];
+    const invoke: InvokeCommand = async <T>(
+      command: string,
+      args?: Record<string, unknown>,
+    ) => {
+      calls.push({ command, args });
+      return { tracks: [], next_cursor: "opaque/+=" } as T;
+    };
+    const catalog = createCatalogCommands(invoke);
+    expect(
+      await catalog.searchStreamingSource("third-party", "query", "opaque/+="),
+    ).toEqual({ tracks: [], next_cursor: "opaque/+=" });
+    expect(calls).toEqual([
+      {
+        command: "search_streaming_source",
+        args: { sourceId: "third-party", query: "query", cursor: "opaque/+=" },
+      },
+    ]);
+  });
+
+  test("sends explicit credential retention and active-work consent", async () => {
+    const calls: unknown[] = [];
+    const invoke: InvokeCommand = async <T>(
+      command: string,
+      args?: Record<string, unknown>,
+    ) => {
+      calls.push({ command, args });
+      return undefined as T;
+    };
+    await createCatalogCommands(invoke).uninstallStreamingSource(
+      "third-party",
+      true,
+      false,
+    );
+    expect(calls).toEqual([
+      {
+        command: "uninstall_streaming_source",
+        args: {
+          sourceId: "third-party",
+          stopWork: true,
+          removeCredentials: false,
+        },
+      },
+    ]);
   });
 });

@@ -14,8 +14,7 @@ export function useLyricsAutoFetch(enabled = true) {
       return;
     }
     if (songId && songId !== previousSongId.current) {
-      // Streamed previews (`ne:`) are resolved by the backend from the
-      // NetEase metadata, without a library row.
+      // Streamed previews use source-bound metadata without a library row.
       fetchLyrics(songId);
     }
     previousSongId.current = songId;

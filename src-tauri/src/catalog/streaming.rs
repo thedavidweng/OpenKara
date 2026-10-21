@@ -1,7 +1,7 @@
 use super::types::{
     CatalogError, ImportRefusal, ImportRefusalReason, ResolvedStreamingFile, StreamingCredentials,
     StreamingPlaylistDetail, StreamingPlaylistSummary, StreamingPreviewOutcome,
-    StreamingResolveOutcome, StreamingSessionSnapshot, StreamingTrack, StreamingTrackListing,
+    StreamingResolveOutcome, StreamingSessionSnapshot, StreamingTrack,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -29,27 +29,9 @@ pub trait StreamingSource: Send + Sync {
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError>;
     fn liked_tracks(&self) -> Result<Vec<StreamingTrack>, CatalogError>;
-    /// The liked list as a fast first batch plus every id; the rest is
-    /// fetched with [`StreamingSource::tracks`].
-    fn liked_head(&self) -> Result<StreamingTrackListing, CatalogError> {
-        let tracks = self.liked_tracks()?;
-        Ok(StreamingTrackListing {
-            track_ids: tracks
-                .iter()
-                .map(|track| track.remote_track_id.clone())
-                .collect(),
-            tracks,
-            partial: false,
-        })
-    }
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError>;
     /// The complete playlist (every track), used by import.
     fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError>;
-    /// The playlist as the provider returns it immediately: the first batch of
-    /// tracks plus every id. The rest is fetched with [`StreamingSource::tracks`].
-    fn playlist_head(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
-        self.playlist(remote_id)
-    }
     /// Tracks for `ids`, in order; unknown ids are dropped.
     fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError>;
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError>;
@@ -107,19 +89,14 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
         self.inner.liked_tracks()
     }
 
-    fn liked_head(&self) -> Result<StreamingTrackListing, CatalogError> {
-        self.require_enabled()?;
-        self.inner.liked_head()
-    }
-
     fn playlists(&self) -> Result<Vec<StreamingPlaylistSummary>, CatalogError> {
         self.require_enabled()?;
         self.inner.playlists()
     }
 
-    fn playlist_head(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
+    fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
         self.require_enabled()?;
-        self.inner.playlist_head(remote_id)
+        self.inner.playlist(remote_id)
     }
 
     fn tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError> {
@@ -220,10 +197,10 @@ impl FakeStreamingSource {
 
     pub fn authenticate(&self) {
         let mut inner = self.inner.lock().expect("fake source lock");
-        inner.credentials = Some(StreamingCredentials {
-            music_u: "fixture-session".to_owned(),
-            csrf: "fixture-csrf".to_owned(),
-        });
+        inner.credentials = Some(StreamingCredentials::from([(
+            "fixture_session".into(),
+            "fixture-session".into(),
+        )]));
         inner.display_name = Some("Ada".to_owned());
         inner.expired = false;
     }
@@ -330,20 +307,16 @@ impl StreamingSource for FakeStreamingSource {
             .filter_map(|id| inner.tracks.get(id).map(|spec| self.track_from_spec(spec)))
             .collect();
         Ok(StreamingPlaylistDetail {
+            source_id: self.source_id.clone(),
             remote_id: summary.remote_id,
             name: summary.name,
-            track_count: tracks.len() as u32,
+            track_count: Some(tracks.len() as u32),
             tracks,
             cover_url: summary.cover_url,
             creator: None,
             description: None,
             updated_at_ms: None,
-            track_ids: inner
-                .playlist_tracks
-                .get(remote_id)
-                .cloned()
-                .unwrap_or_default(),
-            partial: false,
+            next_cursor: None,
         })
     }
 

@@ -40,10 +40,11 @@ pub async fn fetch_lyrics(
 ) -> CommandResult<LyricsPayload> {
     let state = state.inner().clone();
     let app_handle = app_handle.clone();
-    if let Some(remote_track_id) = crate::catalog::netease_preview_remote_id(&song_id) {
-        let remote_track_id = remote_track_id.to_owned();
+    if let Some((source_id, remote_track_id)) =
+        crate::catalog::streaming_preview_reference(&song_id)
+    {
         return tauri::async_runtime::spawn_blocking(move || {
-            fetch_preview_lyrics(&state, &app_handle, song_id, &remote_track_id)
+            fetch_preview_lyrics(&state, &app_handle, song_id, &source_id, &remote_track_id)
         })
         .await
         .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")));
@@ -55,19 +56,27 @@ pub async fn fetch_lyrics(
     .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
 }
 
-/// Lyrics for a streamed NetEase preview. The track has no library row, so
-/// the lookup uses the metadata NetEase returned, goes through the same
-/// providers as library songs, and is neither cached nor persisted.
+/// Preview lyrics use source-bound metadata without a library row or persistence.
 fn fetch_preview_lyrics(
     state: &AppState,
     app_handle: &AppHandle,
     song_id: String,
+    source_id: &str,
     remote_track_id: &str,
 ) -> LyricsPayload {
     use tauri::Manager;
+    let available = app_handle
+        .try_state::<crate::source_host::SourceHost>()
+        .and_then(|host| host.snapshot(source_id).ok())
+        .is_some_and(|source| {
+            source.installed_version.is_some() && source.enabled && source.runtime_ready
+        });
+    if !available {
+        return empty_lyrics_payload(song_id);
+    }
     let track = app_handle
-        .try_state::<std::sync::Arc<crate::catalog::NeteaseSongCache>>()
-        .and_then(|cache| cache.get(remote_track_id));
+        .try_state::<std::sync::Arc<crate::catalog::TrackMetadataCache>>()
+        .and_then(|cache| cache.get(source_id, remote_track_id));
     let Some(track) = track else {
         return empty_lyrics_payload(song_id);
     };
@@ -556,7 +565,7 @@ pub async fn fetch_lyrics_online(
 ) -> CommandResult<LyricsPayload> {
     // A streamed preview already got the full provider chain from
     // `fetch_lyrics`; there is no stored row to upgrade.
-    if crate::catalog::netease_preview_remote_id(&song_id).is_some() {
+    if crate::catalog::streaming_preview_reference(&song_id).is_some() {
         return Ok(empty_lyrics_payload(song_id));
     }
     let state = state.inner().clone();

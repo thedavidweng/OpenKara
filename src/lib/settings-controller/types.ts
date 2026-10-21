@@ -142,7 +142,6 @@ export interface WritablePreferences {
   themePreference: ThemePreference;
   updatePolicy: UpdatePolicy;
   youtubeSourceEnabled: boolean;
-  neteaseSourceEnabled: boolean;
 }
 
 export type SettingsPreferencePatch = Partial<WritablePreferences>;

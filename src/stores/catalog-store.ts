@@ -1,666 +1,889 @@
-import { create } from "zustand";
+import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { tauriBackend, type Backend } from "@/lib/backend";
 import { notifyError } from "@/lib/errors";
 import { onlinePreviewQueueId } from "@/playback";
 import type {
+  AuthChallenge,
   CommandError,
   ImportConflictPrompt,
   LibraryDecisionAction,
   PreviewQueueItem,
+  SourceSnapshot,
   StreamingImportEvent,
   StreamingImportFailure,
   StreamingImportProgress,
+  StreamingImportTrackState,
   StreamingPlaylistDetail,
   StreamingPlaylistSummary,
-  StreamingImportTrackState,
   StreamingSessionSnapshot,
   StreamingTrack,
   VideoQueueItem,
 } from "@/types/ipc";
 
-type CatalogView = "library" | "netease";
-export type NeteaseTab = "liked" | "playlists" | "results";
+export type StreamingTab = "liked" | "playlists" | "results";
 export type LoadStatus = "idle" | "loading" | "ready" | "error";
-
-/** The most recent Streaming Import. While `running`, `completed` follows the
- * backend's per-track progress events. */
 export interface ImportRun {
+  sourceId: string;
   jobId: string | null;
   phase: "running" | "done";
   total: number;
   completed: number;
   imported: number;
   skipped: number;
-  /** Playlist or track name shown in the progress bar; null for a bare batch. */
   label: string | null;
   cancelling: boolean;
 }
-
-interface CatalogState {
-  activeView: CatalogView;
+export interface SourceBrowseState {
   session: StreamingSessionSnapshot | null;
+  sessionStatus: LoadStatus;
+  authStatus: LoadStatus;
   liked: StreamingTrack[];
   playlists: StreamingPlaylistSummary[];
   playlistDetail: StreamingPlaylistDetail | null;
-  /** Loaded playlist details by remote id, so reopening one is instant. */
   playlistDetails: Record<string, StreamingPlaylistDetail>;
-  /** Hide tracks the account cannot import (default on). */
   hideUnavailable: boolean;
   searchResults: StreamingTrack[];
-  importFailures: StreamingImportFailure[];
-  pendingConflict: ImportConflictPrompt | null;
-  videoItems: Record<string, VideoQueueItem>;
-  /** NetEase tracks played as previews, by `ne:` queue id. */
-  previewItems: Record<string, PreviewQueueItem>;
-  browserTab: NeteaseTab;
+  browserTab: StreamingTab;
   searchQuery: string;
+  searchDraft: string;
   likedStatus: LoadStatus;
-  /** True while the rest of the liked list is still loading by id. */
   likedLoadingMore: boolean;
   playlistsStatus: LoadStatus;
   searchStatus: LoadStatus;
   playlistDetailStatus: LoadStatus;
   selectedPlaylistId: string | null;
-  /** Latest import state per remote track id. */
+  likedCursor: string | null;
+  playlistsCursor: string | null;
+  searchCursor: string | null;
+  selected: Set<string>;
+  selecting: boolean;
+  signInError: CommandError | null;
+  challenge: AuthChallenge | null;
+  errors: Partial<Record<string, string>>;
+}
+export interface CatalogState extends SourceBrowseState {
+  activeView: "library" | "streaming";
+  activeSourceId: string | null;
+  sources: SourceSnapshot[];
+  sourceStates: Record<string, SourceBrowseState>;
+  sourcesStatus: LoadStatus;
+  sourcesError: string | null;
+  importFailures: StreamingImportFailure[];
+  pendingConflict: ImportConflictPrompt | null;
+  videoItems: Record<string, VideoQueueItem>;
+  previewItems: Record<string, PreviewQueueItem>;
   trackStates: Record<string, StreamingImportTrackState>;
   importRun: ImportRun | null;
   activeImportIds: string[];
-  signInError: CommandError | null;
   youtubeLinkOpen: boolean;
-  setActiveView: (view: CatalogView) => void;
-  setBrowserTab: (tab: NeteaseTab) => void;
+  applySources: (sources: SourceSnapshot[]) => void;
+  loadSources: (refresh?: boolean) => Promise<void>;
+  applySource: (source: SourceSnapshot) => void;
+  setActiveView: (view: "library") => void;
+  setActiveSource: (sourceId: string) => void;
+  setBrowserTab: (tab: StreamingTab) => void;
   setHideUnavailable: (hide: boolean) => void;
+  setSelection: (selected: Set<string>) => void;
+  setSelecting: (selecting: boolean) => void;
   closePlaylist: () => void;
+  setSearchDraft: (draft: string) => void;
   clearSearch: () => void;
   dismissImportRun: () => void;
-  setSignInError: (error: CommandError) => void;
+  setSignInError: (sourceId: string, error: CommandError) => void;
   clearSignInError: () => void;
   setYoutubeLinkOpen: (open: boolean) => void;
   rememberVideoItems: (items: VideoQueueItem[]) => void;
   getVideoItem: (id: string) => VideoQueueItem | undefined;
   rememberPreviewTracks: (tracks: StreamingTrack[]) => void;
-  loadSession: () => Promise<void>;
-  openSignIn: () => Promise<void>;
+  loadSession: (sourceId?: string) => Promise<void>;
+  openSignIn: (sourceId?: string) => Promise<void>;
+  cancelSignIn: (sourceId?: string) => Promise<void>;
   acceptSignIn: (session: StreamingSessionSnapshot) => void;
-  signOut: () => Promise<void>;
-  loadLiked: () => Promise<void>;
-  loadPlaylists: () => Promise<void>;
-  openPlaylist: (remoteId: string) => Promise<void>;
-  search: (query: string) => Promise<void>;
+  signOut: (sourceId?: string, stopWork?: boolean) => Promise<void>;
+  loadLiked: (more?: boolean) => Promise<void>;
+  loadPlaylists: (more?: boolean) => Promise<void>;
+  openPlaylist: (remoteId: string, more?: boolean) => Promise<void>;
+  search: (query: string, more?: boolean) => Promise<void>;
+  importPlaylist: () => Promise<void>;
   importTracks: (
-    remoteTrackIds: string[],
-    remotePlaylistId?: string | null,
+    ids: string[],
+    playlistId?: string | null,
     label?: string | null,
+    sourceId?: string,
   ) => Promise<void>;
   resolveConflict: (action: LibraryDecisionAction) => Promise<void>;
   applyImportEvent: (event: StreamingImportEvent) => void;
   cancelImport: () => Promise<void>;
   recoverImportJob: () => Promise<void>;
 }
-
-const EMPTY_BROWSE_STATE = {
-  liked: [] as StreamingTrack[],
-  playlists: [] as StreamingPlaylistSummary[],
+export type CatalogStore = UseBoundStore<StoreApi<CatalogState>>;
+const emptyBrowse = (): SourceBrowseState => ({
+  session: null,
+  sessionStatus: "idle",
+  authStatus: "idle",
+  liked: [],
+  playlists: [],
   playlistDetail: null,
-  playlistDetails: {} as Record<string, StreamingPlaylistDetail>,
-  searchResults: [] as StreamingTrack[],
-  browserTab: "playlists" as NeteaseTab,
+  playlistDetails: {},
+  hideUnavailable: true,
+  searchResults: [],
+  browserTab: "playlists",
   searchQuery: "",
-  likedStatus: "idle" as LoadStatus,
+  searchDraft: "",
+  likedStatus: "idle",
   likedLoadingMore: false,
-  playlistsStatus: "idle" as LoadStatus,
-  searchStatus: "idle" as LoadStatus,
-  playlistDetailStatus: "idle" as LoadStatus,
+  playlistsStatus: "idle",
+  searchStatus: "idle",
+  playlistDetailStatus: "idle",
   selectedPlaylistId: null,
-  trackStates: {} as Record<string, StreamingImportTrackState>,
-  importRun: null as ImportRun | null,
-  activeImportIds: [] as string[],
-  importFailures: [] as StreamingImportFailure[],
-};
-
-/** Ids per follow-up page, and pages in flight at once. */
-const TRACK_PAGE_SIZE = 500;
-const TRACK_PAGE_CONCURRENCY = 3;
-
-const isTerminal = (state: StreamingImportTrackState | undefined) =>
-  state?.kind === "imported" ||
-  state?.kind === "skipped" ||
-  state?.kind === "failed";
-
-function failureFromState(
-  remoteTrackId: string,
-  title: string,
-  artist: string,
-  state: StreamingImportTrackState,
-): StreamingImportFailure | null {
-  if (state.kind === "skipped") {
-    return {
-      remote_track_id: remoteTrackId,
-      title,
-      artist,
-      reason: "refusal",
-      refusal: state.refusal,
-    };
-  }
-  if (state.kind === "failed") {
-    return {
-      remote_track_id: remoteTrackId,
-      title,
-      artist,
-      reason: state.reason,
-      refusal: null,
-    };
-  }
-  return null;
+  likedCursor: null,
+  playlistsCursor: null,
+  searchCursor: null,
+  selected: new Set(),
+  selecting: false,
+  signInError: null,
+  challenge: null,
+  errors: {},
+});
+const message = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : typeof error === "object" && error !== null && "message" in error
+      ? String(error.message)
+      : String(error);
+const terminal = (state?: StreamingImportTrackState) =>
+  state && ["imported", "skipped", "failed"].includes(state.kind);
+export function sourceAllows(
+  source: SourceSnapshot | undefined,
+  capability: string,
+  session?: StreamingSessionSnapshot | null,
+) {
+  return (
+    !!source?.installed_version &&
+    source.enabled &&
+    source.runtime_ready &&
+    ![
+      "not_installed",
+      "disabled",
+      "update_required",
+      "unavailable",
+      "cancelling",
+    ].includes(source.state) &&
+    !!source.manifest?.capabilities.includes(capability) &&
+    (!source.manifest.requires_authentication.includes(
+      capability === "track_details"
+        ? "tracks.get"
+        : capability === "playlist_tracks"
+          ? "playlist.tracks"
+          : capability === "preview" || capability === "import"
+            ? "media.resolve"
+            : capability,
+    ) ||
+      (!!session?.signed_in && !session.expired))
+  );
 }
-
-export function createCatalogStore(backend: Backend = tauriBackend) {
-  /** Bumped when browse state is reset so in-flight page loads stop. */
-  let browseEpoch = 0;
-
-  /**
-   * Loads the ids missing from `initial` in pages, a few at a time, and calls
-   * `apply` after each page with the loaded tracks in `ids` order. Stops
-   * quietly when the browse state is reset.
-   */
-  const loadRemainingTracks = async (
-    ids: string[],
-    initial: StreamingTrack[],
-    apply: (tracks: StreamingTrack[], done: boolean) => void,
-  ) => {
-    const epoch = browseEpoch;
-    const byId = new Map(
-      initial.map((track) => [track.remote_track_id, track]),
-    );
-    const missing = ids.filter((id) => !byId.has(id));
-    const pages: string[][] = [];
-    for (let start = 0; start < missing.length; start += TRACK_PAGE_SIZE) {
-      pages.push(missing.slice(start, start + TRACK_PAGE_SIZE));
-    }
-    const ordered = () => ids.flatMap((id) => byId.get(id) ?? []);
-    let next = 0;
-    const worker = async () => {
-      while (epoch === browseEpoch) {
-        const page = pages[next++];
-        if (!page) return;
-        const tracks = await backend.catalog.getStreamingTracks(
-          "netease",
-          page,
-        );
-        if (epoch !== browseEpoch) return;
-        for (const track of tracks) byId.set(track.remote_track_id, track);
-        apply(ordered(), false);
-      }
-    };
-    try {
-      await Promise.all(
-        Array.from(
-          { length: Math.min(TRACK_PAGE_CONCURRENCY, pages.length) },
-          worker,
-        ),
-      );
-    } catch (error) {
-      if (epoch === browseEpoch) {
-        apply(ordered(), true);
-        reportError(error);
-      }
-      return;
-    }
-    if (epoch === browseEpoch) apply(ordered(), true);
+export function createCatalogStore(
+  backend: Backend = tauriBackend,
+): CatalogStore {
+  const generations = new Map<string, number>();
+  const authTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const generation = (id: string, operation: string) => {
+    const key = `${id}:${operation}`;
+    const next = (generations.get(key) ?? 0) + 1;
+    generations.set(key, next);
+    return () => generations.get(key) === next;
   };
-
-  const reportError = (error: unknown) => {
+  const invalidate = (id: string) => {
+    for (const key of generations.keys())
+      if (key.startsWith(`${id}:`))
+        generations.set(key, (generations.get(key) ?? 0) + 1);
+    clearTimeout(authTimers.get(id));
+    authTimers.delete(id);
+  };
+  const browse = (id: string): SourceBrowseState =>
+    Object.hasOwn(store.getState().sourceStates, id)
+      ? store.getState().sourceStates[id]
+      : emptyBrowse();
+  const patch = (id: string, update: Partial<SourceBrowseState>) =>
+    store.setState((state) => {
+      const next = { ...browse(id), ...update };
+      return {
+        sourceStates: Object.assign(
+          Object.create(null) as Record<string, SourceBrowseState>,
+          state.sourceStates,
+          { [id]: next },
+        ),
+        ...(state.activeView === "streaming" && state.activeSourceId === id
+          ? next
+          : {}),
+      };
+    });
+  const activePatch = (update: Partial<SourceBrowseState>) =>
+    patch(store.getState().activeSourceId ?? "", update);
+  const fail = (id: string, operation: string, error: unknown) => {
+    const old = browse(id);
+    patch(id, { errors: { ...old.errors, [operation]: message(error) } });
     if (
       typeof error === "object" &&
       error !== null &&
       "code" in error &&
-      error.code === "streaming_session_expired"
+      ["streaming_session_expired", "session_expired"].includes(
+        String(error.code),
+      )
     ) {
-      browseEpoch += 1;
-      store.setState({
+      invalidate(id);
+      patch(id, {
+        ...emptyBrowse(),
+        sessionStatus: "ready",
         session: {
-          source_id: "netease",
+          source_id: id,
           signed_in: false,
-          display_name: null,
           expired: true,
+          display_name: null,
         },
-        ...EMPTY_BROWSE_STATE,
       });
     }
-    notifyError(error);
   };
-
-  const findTrack = (remoteTrackId: string) => {
-    const state = store.getState();
+  const findTrack = (id: string, remote: string) => {
+    const state = browse(id);
     return [
       ...state.liked,
       ...state.searchResults,
-      ...(state.playlistDetail?.tracks ?? []),
-    ].find((track) => track.remote_track_id === remoteTrackId);
+      ...Object.values(state.playlistDetails).flatMap(
+        (detail) => detail.tracks,
+      ),
+    ].find((track) => track.remote_track_id === remote);
   };
-
-  /** Backend events can carry empty titles (bare id imports); fill from the
-   * lists the user is looking at. */
-  const describeTrack = (
-    remoteTrackId: string,
-    title: string,
-    artist: string,
-  ) => {
-    if (title) return { title, artist };
-    const known = findTrack(remoteTrackId);
-    return { title: known?.title ?? "", artist: known?.artist ?? artist };
-  };
-
-  const countRun = (
+  const count = (
+    id: string,
     ids: string[],
-    trackStates: Record<string, StreamingImportTrackState>,
+    states: CatalogState["trackStates"],
   ) => {
-    let imported = 0;
-    let skipped = 0;
-    for (const id of ids) {
-      const kind = trackStates[id]?.kind;
-      if (kind === "imported") imported += 1;
-      else if (kind === "skipped" || kind === "failed") skipped += 1;
+    let imported = 0,
+      skipped = 0;
+    for (const remote of ids) {
+      const kind = states[onlinePreviewQueueId(id, remote)]?.kind;
+      if (kind === "imported") imported++;
+      if (kind === "skipped" || kind === "failed") skipped++;
     }
     return { imported, skipped, completed: imported + skipped };
   };
-
-  /** Fold the backend's final response into the run summary. */
-  const applyImportProgress = (progress: StreamingImportProgress) => {
+  const applyProgress = (
+    progress: StreamingImportProgress,
+    jobId: string | null,
+  ) => {
+    const state = store.getState(),
+      run = state.importRun;
+    if (!run || run.jobId !== jobId || progress.source_id !== run.sourceId)
+      return;
     if (progress.status === "awaiting_decision") {
       store.setState({
-        importFailures: progress.failed,
         pendingConflict: progress.conflict,
+        importFailures: progress.failed,
       });
       return;
     }
-    const state = store.getState();
-    const requested = state.activeImportIds;
-    const failed = new Map(progress.failed.map((f) => [f.remote_track_id, f]));
-    const trackStates = { ...state.trackStates };
-    // Events normally settle every track; cover any the backend did not report.
-    for (const id of requested) {
-      if (isTerminal(trackStates[id])) continue;
-      const failure = failed.get(id);
-      trackStates[id] = failure
+    const states = { ...state.trackStates };
+    for (const remote of state.activeImportIds) {
+      const key = onlinePreviewQueueId(run.sourceId, remote);
+      if (terminal(states[key])) continue;
+      const failure = progress.failed.find(
+        (item) => item.remote_track_id === remote,
+      );
+      states[key] = failure
         ? failure.refusal
           ? { kind: "skipped", refusal: failure.refusal }
           : { kind: "failed", reason: failure.reason }
         : { kind: "imported", song_id: "" };
     }
-    const counts = countRun(requested, trackStates);
     store.setState({
-      trackStates,
-      importFailures: progress.failed,
+      trackStates: states,
       pendingConflict: progress.conflict,
+      importFailures: progress.failed,
       activeImportIds: [],
-      importRun: state.importRun
-        ? {
-            ...state.importRun,
-            phase: "done",
-            total: requested.length || state.importRun.total,
-            completed: counts.completed,
-            imported: counts.imported,
-            skipped: Math.max(counts.skipped, progress.failed.length),
-            cancelling: false,
-          }
-        : null,
+      importRun: {
+        ...run,
+        ...count(run.sourceId, state.activeImportIds, states),
+        phase: "done",
+        cancelling: false,
+      },
     });
   };
-
-  const failImport = (error: unknown) => {
-    const state = store.getState();
-    const requested = state.activeImportIds;
-    const trackStates = { ...state.trackStates };
-    for (const id of requested) {
-      if (!isTerminal(trackStates[id])) {
-        trackStates[id] = { kind: "failed", reason: "import_failed" };
+  const failImport = (error: unknown, jobId: string | null) => {
+    const state = store.getState(),
+      run = state.importRun;
+    if (!run || run.jobId !== jobId) return;
+    const states = { ...state.trackStates };
+    for (const remote of state.activeImportIds) {
+      const key = onlinePreviewQueueId(run.sourceId, remote);
+      if (!terminal(states[key]))
+        states[key] = { kind: "failed", reason: "import_failed" };
+    }
+    store.setState({
+      trackStates: states,
+      activeImportIds: [],
+      pendingConflict: null,
+      importRun: {
+        ...run,
+        ...count(run.sourceId, state.activeImportIds, states),
+        phase: "done",
+        cancelling: false,
+      },
+    });
+    notifyError(error);
+  };
+  const poll = async (
+    id: string,
+    challenge: AuthChallenge,
+    current: () => boolean,
+  ) => {
+    if (!current() || browse(id).challenge?.challenge !== challenge.challenge)
+      return;
+    try {
+      const result = await backend.catalog.pollStreamingSignIn(
+        id,
+        challenge.challenge,
+      );
+      if (!current()) return;
+      if (result.state === "complete" && result.session) {
+        store.getState().acceptSignIn({ ...result.session, source_id: id });
+        return;
+      }
+      if (result.state === "pending") {
+        authTimers.set(
+          id,
+          setTimeout(
+            () => void poll(id, challenge, current),
+            Math.max(
+              250,
+              result.poll_after_ms ?? challenge.poll_after_ms ?? 1000,
+            ),
+          ),
+        );
+      } else
+        patch(id, {
+          challenge: null,
+          errors: { ...browse(id).errors, auth: result.state },
+        });
+    } catch (error) {
+      if (current()) {
+        patch(id, { challenge: null, authStatus: "idle" });
+        fail(id, "auth", error);
       }
     }
-    const counts = countRun(requested, trackStates);
-    store.setState({
-      trackStates,
-      activeImportIds: [],
-      importRun: state.importRun
-        ? {
-            ...state.importRun,
-            phase: "done",
-            completed: counts.completed,
-            imported: counts.imported,
-            skipped: counts.skipped,
-            cancelling: false,
-          }
-        : null,
-    });
-    reportError(error);
   };
-  const store = create<CatalogState>((set, get) => ({
+  const store: CatalogStore = create<CatalogState>((set, get) => ({
+    ...emptyBrowse(),
     activeView: "library",
-    session: null,
-    liked: [],
-    playlists: [],
-    playlistDetail: null,
-    playlistDetails: {},
-    hideUnavailable: true,
-    searchResults: [],
+    activeSourceId: null,
+    sources: [],
+    sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
+    sourcesStatus: "idle",
+    sourcesError: null,
     importFailures: [],
     pendingConflict: null,
     videoItems: {},
     previewItems: {},
-    browserTab: "playlists",
-    searchQuery: "",
-    likedStatus: "idle",
-    likedLoadingMore: false,
-    playlistsStatus: "idle",
-    searchStatus: "idle",
-    playlistDetailStatus: "idle",
-    selectedPlaylistId: null,
     trackStates: {},
     importRun: null,
     activeImportIds: [],
-    signInError: null,
     youtubeLinkOpen: false,
-
-    setActiveView: (view) => set({ activeView: view }),
-    setBrowserTab: (tab) => set({ browserTab: tab }),
-    setHideUnavailable: (hide) => set({ hideUnavailable: hide }),
-    closePlaylist: () =>
+    applySources: (sources) => {
+      for (const source of sources) get().applySource(source);
+    },
+    applySource: (source) => {
+      const previous = get().sources.find(
+        (item) => item.source_id === source.source_id,
+      );
+      if (
+        previous &&
+        (!source.installed_version ||
+          (!source.enabled && previous.enabled) ||
+          source.state === "unavailable" ||
+          source.state === "update_required")
+      ) {
+        invalidate(source.source_id);
+        patch(source.source_id, emptyBrowse());
+      }
+      set((state) => ({
+        sources: state.sources.some(
+          (item) => item.source_id === source.source_id,
+        )
+          ? state.sources.map((item) =>
+              item.source_id === source.source_id ? source : item,
+            )
+          : [...state.sources, source],
+      }));
+    },
+    loadSources: async (refresh = false) => {
+      const current = generation("_host", "sources");
+      set({ sourcesStatus: "loading", sourcesError: null });
+      try {
+        const sources = await (refresh
+          ? backend.catalog.refreshStreamingSources()
+          : backend.catalog.listStreamingSources());
+        if (!current()) return;
+        get().applySources(sources);
+        set({ sourcesStatus: "ready" });
+      } catch (error) {
+        if (current())
+          set({ sourcesStatus: "error", sourcesError: message(error) });
+      }
+    },
+    setActiveView: () =>
+      set({ activeView: "library", activeSourceId: null, ...emptyBrowse() }),
+    setActiveSource: (activeSourceId) =>
       set({
+        activeView: "streaming",
+        activeSourceId,
+        ...browse(activeSourceId),
+      }),
+    setBrowserTab: (browserTab) =>
+      activePatch({ browserTab, selected: new Set(), selecting: false }),
+    setHideUnavailable: (hideUnavailable) => activePatch({ hideUnavailable }),
+    setSelection: (selected) => activePatch({ selected }),
+    setSelecting: (selecting) =>
+      activePatch({ selecting, selected: new Set() }),
+    closePlaylist: () =>
+      activePatch({
         playlistDetail: null,
         selectedPlaylistId: null,
         playlistDetailStatus: "idle",
+        selected: new Set(),
+        selecting: false,
       }),
-    clearSearch: () =>
-      set((state) => ({
+    setSearchDraft: (searchDraft) => activePatch({ searchDraft }),
+    clearSearch: () => {
+      generation(get().activeSourceId ?? "", "search");
+      activePatch({
         searchQuery: "",
+        searchDraft: "",
         searchResults: [],
+        searchCursor: null,
         searchStatus: "idle",
-        browserTab:
-          state.browserTab === "results" ? "playlists" : state.browserTab,
-      })),
+        browserTab: "playlists",
+        selected: new Set(),
+      });
+    },
     dismissImportRun: () => {
-      if (get().importRun?.phase === "running") return;
-      set({ importRun: null, importFailures: [] });
+      if (get().importRun?.phase !== "running")
+        set({ importRun: null, importFailures: [] });
     },
-    setSignInError: (error) => set({ signInError: error }),
-    clearSignInError: () => set({ signInError: null }),
-    setYoutubeLinkOpen: (open) => set({ youtubeLinkOpen: open }),
-
-    rememberVideoItems: (items) => {
-      const next = { ...get().videoItems };
-      for (const item of items) {
-        next[item.id] = item;
-      }
-      set({ videoItems: next });
+    setSignInError: (id, signInError) => {
+      const source = get().sources.find((item) => item.source_id === id);
+      if (
+        !source?.enabled ||
+        !source.installed_version ||
+        (!browse(id).challenge && browse(id).authStatus !== "loading")
+      )
+        return;
+      invalidate(id);
+      patch(id, { signInError, challenge: null, authStatus: "error" });
     },
-
+    clearSignInError: () => activePatch({ signInError: null }),
+    setYoutubeLinkOpen: (youtubeLinkOpen) => set({ youtubeLinkOpen }),
+    rememberVideoItems: (items) =>
+      set((state) => ({
+        videoItems: {
+          ...state.videoItems,
+          ...Object.fromEntries(items.map((item) => [item.id, item])),
+        },
+      })),
     getVideoItem: (id) => get().videoItems[id],
-
-    rememberPreviewTracks: (tracks) => {
-      const next = { ...get().previewItems };
-      for (const track of tracks) {
-        const id = onlinePreviewQueueId(track.remote_track_id);
-        next[id] = {
+    rememberPreviewTracks: (tracks) =>
+      set((state) => ({
+        previewItems: {
+          ...state.previewItems,
+          ...Object.fromEntries(
+            tracks.map((track) => {
+              const id = onlinePreviewQueueId(
+                track.source_id,
+                track.remote_track_id,
+              );
+              return [id, { ...track, id }];
+            }),
+          ),
+        },
+      })),
+    loadSession: async (id = get().activeSourceId ?? "") => {
+      const current = generation(id, "session");
+      patch(id, { sessionStatus: "loading" });
+      try {
+        const session = await backend.catalog.getStreamingSession(id);
+        if (current())
+          patch(id, {
+            session: { ...session, source_id: id },
+            sessionStatus: "ready",
+          });
+      } catch (error) {
+        if (current()) {
+          patch(id, { sessionStatus: "error" });
+          fail(id, "session", error);
+        }
+      }
+    },
+    openSignIn: async (id = get().activeSourceId ?? "") => {
+      await get().cancelSignIn(id);
+      if (browse(id).challenge) return;
+      const current = generation(id, "auth");
+      patch(id, {
+        authStatus: "loading",
+        signInError: null,
+        errors: { ...browse(id).errors, auth: undefined },
+      });
+      try {
+        const challenge = await backend.catalog.openStreamingSignIn(id);
+        if (!current()) {
+          await backend.catalog.cancelStreamingSignIn(id, challenge.challenge);
+          return;
+        }
+        patch(id, { challenge, authStatus: "ready" });
+        authTimers.set(
           id,
-          remote_track_id: track.remote_track_id,
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration_ms: track.duration_ms,
-          cover_url: track.cover_url,
-        };
-      }
-      set({ previewItems: next });
-    },
-
-    loadSession: async () => {
-      try {
-        const session = await backend.catalog.getStreamingSession("netease");
-        set({ session });
+          setTimeout(
+            () => void poll(id, challenge, current),
+            Math.max(250, challenge.poll_after_ms ?? 1000),
+          ),
+        );
       } catch (error) {
-        reportError(error);
+        if (current()) {
+          patch(id, { authStatus: "error" });
+          fail(id, "auth", error);
+        }
       }
     },
-
-    openSignIn: async () => {
-      set({ signInError: null });
+    cancelSignIn: async (id = get().activeSourceId ?? "") => {
+      generation(id, "auth");
+      clearTimeout(authTimers.get(id));
+      const challenge = browse(id).challenge;
+      if (!challenge) {
+        patch(id, { authStatus: "idle" });
+        return;
+      }
       try {
-        await backend.catalog.openStreamingSignIn("netease");
+        await backend.catalog.cancelStreamingSignIn(id, challenge.challenge);
+        patch(id, { challenge: null, authStatus: "idle" });
       } catch (error) {
-        reportError(error);
+        fail(id, "auth", error);
       }
     },
     acceptSignIn: (session) => {
-      browseEpoch += 1;
-      set({
-        session,
-        signInError: null,
-        ...EMPTY_BROWSE_STATE,
-      });
-    },
-
-    signOut: async () => {
-      try {
-        const session = await backend.catalog.signOutStreamingSource("netease");
-        browseEpoch += 1;
-        set({ session, ...EMPTY_BROWSE_STATE });
-      } catch (error) {
-        reportError(error);
-      }
-    },
-
-    loadLiked: async () => {
-      set({ likedStatus: "loading" });
-      try {
-        const epoch = browseEpoch;
-        const listing =
-          await backend.catalog.listStreamingLikedTracks("netease");
-        if (epoch !== browseEpoch) return;
-        set({
-          liked: listing.tracks,
-          likedStatus: "ready",
-          likedLoadingMore: listing.partial,
-        });
-        if (listing.partial) {
-          void loadRemainingTracks(
-            listing.track_ids,
-            listing.tracks,
-            (liked, done) => set({ liked, likedLoadingMore: !done }),
-          );
-        }
-      } catch (error) {
-        set({ likedStatus: "error" });
-        reportError(error);
-      }
-    },
-
-    loadPlaylists: async () => {
-      set({ playlistsStatus: "loading" });
-      try {
-        const playlists =
-          await backend.catalog.listStreamingPlaylists("netease");
-        set({ playlists, playlistsStatus: "ready" });
-      } catch (error) {
-        set({ playlistsStatus: "error" });
-        reportError(error);
-      }
-    },
-
-    openPlaylist: async (remoteId) => {
-      const cached = get().playlistDetails[remoteId];
-      if (cached) {
-        set({
-          selectedPlaylistId: remoteId,
-          playlistDetail: cached,
-          playlistDetailStatus: "ready",
-        });
+      if (
+        !browse(session.source_id).challenge &&
+        browse(session.source_id).authStatus !== "loading"
+      )
         return;
-      }
-      set({
-        selectedPlaylistId: remoteId,
-        playlistDetail: null,
-        playlistDetailStatus: "loading",
+      if (
+        !get().sources.some(
+          (source) =>
+            source.source_id === session.source_id &&
+            source.enabled &&
+            source.installed_version,
+        )
+      )
+        return;
+      invalidate(session.source_id);
+      patch(session.source_id, {
+        ...emptyBrowse(),
+        session,
+        sessionStatus: "ready",
       });
+    },
+    signOut: async (id = get().activeSourceId ?? "", stopWork = false) => {
       try {
-        const playlistDetail = await backend.catalog.getStreamingPlaylist(
-          "netease",
-          remoteId,
+        const session = await backend.catalog.signOutStreamingSource(
+          id,
+          stopWork,
         );
-        if (get().selectedPlaylistId !== remoteId) return;
-        set((state) => ({
-          playlistDetail,
-          playlistDetailStatus: "ready",
-          playlistDetails: {
-            ...state.playlistDetails,
-            [remoteId]: playlistDetail,
-          },
-        }));
-        if (playlistDetail.partial) {
-          void loadRemainingTracks(
-            playlistDetail.track_ids,
-            playlistDetail.tracks,
-            (tracks, done) =>
-              set((state) => {
-                const detail = {
-                  ...(state.playlistDetails[remoteId] ?? playlistDetail),
-                  tracks,
-                  partial: !done,
-                };
-                return {
-                  playlistDetails: {
-                    ...state.playlistDetails,
-                    [remoteId]: detail,
-                  },
-                  playlistDetail:
-                    state.selectedPlaylistId === remoteId
-                      ? detail
-                      : state.playlistDetail,
-                };
-              }),
-          );
-        }
+        invalidate(id);
+        patch(id, {
+          ...emptyBrowse(),
+          session: { ...session, source_id: id },
+          sessionStatus: "ready",
+        });
       } catch (error) {
-        if (get().selectedPlaylistId === remoteId) {
-          set({ playlistDetailStatus: "error" });
-        }
-        reportError(error);
+        fail(id, "auth", error);
       }
     },
-
-    search: async (query) => {
-      const trimmed = query.trim();
+    loadLiked: async (more = false) => {
+      const id = get().activeSourceId ?? "",
+        old = browse(id);
+      if (old.likedStatus === "loading" || (more && !old.likedCursor)) return;
+      const current = generation(id, "liked");
+      patch(id, { likedStatus: "loading", likedLoadingMore: more });
+      try {
+        const page = await backend.catalog.listStreamingLikedTracks(
+          id,
+          more ? old.likedCursor : null,
+        );
+        if (current())
+          patch(id, {
+            liked: more ? [...old.liked, ...page.tracks] : page.tracks,
+            likedCursor: page.next_cursor,
+            likedStatus: "ready",
+            likedLoadingMore: false,
+          });
+      } catch (error) {
+        if (current()) {
+          patch(id, { likedStatus: "error", likedLoadingMore: false });
+          fail(id, "liked", error);
+        }
+      }
+    },
+    loadPlaylists: async (more = false) => {
+      const id = get().activeSourceId ?? "",
+        old = browse(id);
+      if (old.playlistsStatus === "loading" || (more && !old.playlistsCursor))
+        return;
+      const current = generation(id, "playlists");
+      patch(id, { playlistsStatus: "loading" });
+      try {
+        const page = await backend.catalog.listStreamingPlaylists(
+          id,
+          more ? old.playlistsCursor : null,
+        );
+        if (current())
+          patch(id, {
+            playlists: more ? [...old.playlists, ...page.items] : page.items,
+            playlistsCursor: page.next_cursor,
+            playlistsStatus: "ready",
+          });
+      } catch (error) {
+        if (current()) {
+          patch(id, { playlistsStatus: "error" });
+          fail(id, "playlists", error);
+        }
+      }
+    },
+    openPlaylist: async (remote, more = false) => {
+      const id = get().activeSourceId ?? "",
+        old = browse(id),
+        cached = Object.hasOwn(old.playlistDetails, remote)
+          ? old.playlistDetails[remote]
+          : undefined;
+      if (more && !cached?.next_cursor) return;
+      patch(id, {
+        selectedPlaylistId: remote,
+        selected: old.selectedPlaylistId === remote ? old.selected : new Set(),
+        selecting: old.selectedPlaylistId === remote && old.selecting,
+        playlistDetail: cached ?? null,
+        playlistDetailStatus: cached && !more ? "ready" : "loading",
+      });
+      if (cached && !more && old.playlistDetailStatus !== "error") return;
+      const current = generation(id, `playlist:${remote}`);
+      try {
+        const page = await backend.catalog.getStreamingPlaylist(
+          id,
+          remote,
+          more ? (cached?.next_cursor ?? null) : null,
+        );
+        if (!current()) return;
+        const detail = {
+          ...page,
+          tracks: more
+            ? [...(cached?.tracks ?? []), ...page.tracks]
+            : page.tracks,
+        };
+        patch(id, {
+          playlistDetails: { ...browse(id).playlistDetails, [remote]: detail },
+          ...(browse(id).selectedPlaylistId === remote
+            ? { playlistDetail: detail, playlistDetailStatus: "ready" }
+            : {}),
+        });
+      } catch (error) {
+        if (current()) {
+          if (browse(id).selectedPlaylistId === remote)
+            patch(id, { playlistDetailStatus: "error" });
+          fail(id, "playlist", error);
+        }
+      }
+    },
+    search: async (query, more = false) => {
+      const id = get().activeSourceId ?? "",
+        old = browse(id),
+        trimmed = query.trim();
       if (!trimmed) {
         get().clearSearch();
         return;
       }
-      set({
+      if (more && (!old.searchCursor || old.searchStatus === "loading")) return;
+      const current = generation(id, "search");
+      patch(id, {
         searchQuery: trimmed,
         searchStatus: "loading",
         browserTab: "results",
+        selected: more ? old.selected : new Set(),
+        selecting: more && old.selecting,
       });
       try {
-        const searchResults = await backend.catalog.searchStreamingSource(
-          "netease",
+        const page = await backend.catalog.searchStreamingSource(
+          id,
           trimmed,
+          more ? old.searchCursor : null,
         );
-        if (get().searchQuery !== trimmed) return;
-        set({ searchResults, searchStatus: "ready" });
+        if (current())
+          patch(id, {
+            searchResults: more
+              ? [...old.searchResults, ...page.tracks]
+              : page.tracks,
+            searchCursor: page.next_cursor,
+            searchStatus: "ready",
+          });
       } catch (error) {
-        if (get().searchQuery === trimmed) set({ searchStatus: "error" });
-        reportError(error);
+        if (current()) {
+          patch(id, { searchStatus: "error" });
+          fail(id, "search", error);
+        }
       }
     },
-
-    importTracks: async (remoteTrackIds, remotePlaylistId, label) => {
-      if (get().importRun?.phase === "running" || remoteTrackIds.length === 0) {
-        return;
-      }
-      const first =
-        remoteTrackIds.length === 1 ? findTrack(remoteTrackIds[0]) : undefined;
-      set((state) => {
-        const trackStates = { ...state.trackStates };
-        for (const id of remoteTrackIds) trackStates[id] = { kind: "queued" };
-        return {
-          trackStates,
-          activeImportIds: remoteTrackIds,
-          importFailures: [],
-          importRun: {
-            jobId: null,
-            phase: "running",
-            total: remoteTrackIds.length,
-            completed: 0,
-            imported: 0,
-            skipped: 0,
-            label: label ?? first?.title ?? null,
-            cancelling: false,
-          },
-        };
-      });
+    importPlaylist: async () => {
+      const id = get().activeSourceId ?? "";
+      const initial = browse(id).playlistDetail;
+      if (!initial || get().importRun?.phase === "running") return;
+      const current = generation(id, `playlist:${initial.remote_id}`);
+      patch(id, { playlistDetailStatus: "loading" });
       try {
-        const progress = await backend.catalog.startStreamingImport(
-          "netease",
-          remoteTrackIds,
-          remotePlaylistId,
+        let detail = initial;
+        while (detail.next_cursor) {
+          const page = await backend.catalog.getStreamingPlaylist(
+            id,
+            detail.remote_id,
+            detail.next_cursor,
+          );
+          if (!current()) return;
+          detail = { ...page, tracks: [...detail.tracks, ...page.tracks] };
+          patch(id, {
+            playlistDetails: {
+              ...browse(id).playlistDetails,
+              [detail.remote_id]: detail,
+            },
+            ...(browse(id).selectedPlaylistId === detail.remote_id
+              ? { playlistDetail: detail }
+              : {}),
+          });
+        }
+        patch(id, { playlistDetailStatus: "ready" });
+        await get().importTracks(
+          detail.tracks
+            .filter((track) => !track.refusal)
+            .map((track) => track.remote_track_id),
+          detail.remote_id,
+          detail.name,
+          id,
         );
-        applyImportProgress(progress);
       } catch (error) {
-        failImport(error);
+        if (current()) {
+          patch(id, { playlistDetailStatus: "error" });
+          fail(id, "playlist", error);
+        }
       }
     },
-
-    resolveConflict: async (action) => {
-      set({ pendingConflict: null });
-      try {
-        const progress = await backend.catalog.continueStreamingImport(action);
-        applyImportProgress(progress);
-      } catch (error) {
-        failImport(error);
-      }
-    },
-
-    applyImportEvent: (event) => {
-      const state = get();
-      const run = state.importRun;
-      if (!run || run.phase !== "running") return;
-      if (run.jobId && run.jobId !== event.job_id) return;
-      const trackStates = {
-        ...state.trackStates,
-        [event.remote_track_id]: event.state,
-      };
-      const { title, artist } = describeTrack(
-        event.remote_track_id,
-        event.title,
-        event.artist,
-      );
-      const failure = failureFromState(
-        event.remote_track_id,
-        title,
-        artist,
-        event.state,
-      );
-      const failures = failure
-        ? [
-            ...state.importFailures.filter(
-              (f) => f.remote_track_id !== event.remote_track_id,
-            ),
-            failure,
-          ]
-        : state.importFailures;
-      const counts = countRun(state.activeImportIds, trackStates);
+    importTracks: async (ids, playlist, label, boundSource) => {
+      if (get().importRun?.phase === "running" || ids.length === 0) return;
+      const sourceId = boundSource ?? get().activeSourceId ?? "";
+      const jobId = crypto.randomUUID();
+      const trackStates = { ...get().trackStates };
+      for (const id of ids)
+        trackStates[onlinePreviewQueueId(sourceId, id)] = { kind: "queued" };
       set({
         trackStates,
-        importFailures: failures,
+        activeImportIds: ids,
+        importFailures: [],
+        importRun: {
+          sourceId,
+          jobId,
+          phase: "running",
+          total: ids.length,
+          completed: 0,
+          imported: 0,
+          skipped: 0,
+          label:
+            label ??
+            (ids.length === 1 ? findTrack(sourceId, ids[0])?.title : null) ??
+            null,
+          cancelling: false,
+        },
+      });
+      try {
+        applyProgress(
+          await backend.catalog.startStreamingImport(
+            sourceId,
+            ids,
+            playlist ?? null,
+            jobId,
+          ),
+          jobId,
+        );
+      } catch (error) {
+        failImport(error, jobId);
+      }
+    },
+    resolveConflict: async (action) => {
+      const jobId = get().importRun?.jobId ?? null;
+      set({ pendingConflict: null });
+      try {
+        applyProgress(
+          await backend.catalog.continueStreamingImport(action),
+          jobId,
+        );
+      } catch (error) {
+        failImport(error, jobId);
+      }
+    },
+    applyImportEvent: (event) => {
+      const state = get(),
+        run = state.importRun;
+      if (
+        !run ||
+        run.phase !== "running" ||
+        run.sourceId !== event.source_id ||
+        run.jobId !== event.job_id ||
+        !state.activeImportIds.includes(event.remote_track_id)
+      )
+        return;
+      const trackStates = {
+        ...state.trackStates,
+        [onlinePreviewQueueId(event.source_id, event.remote_track_id)]:
+          event.state,
+      };
+      const known = findTrack(event.source_id, event.remote_track_id);
+      const failure: StreamingImportFailure | null =
+        event.state.kind === "skipped"
+          ? {
+              remote_track_id: event.remote_track_id,
+              title: event.title || known?.title || "",
+              artist: event.artist || known?.artist || "",
+              reason: "refusal",
+              refusal: event.state.refusal,
+            }
+          : event.state.kind === "failed"
+            ? {
+                remote_track_id: event.remote_track_id,
+                title: event.title || known?.title || "",
+                artist: event.artist || known?.artist || "",
+                reason: event.state.reason,
+                refusal: null,
+              }
+            : null;
+      set({
+        trackStates,
+        importFailures: failure
+          ? [
+              ...state.importFailures.filter(
+                (item) => item.remote_track_id !== event.remote_track_id,
+              ),
+              failure,
+            ]
+          : state.importFailures,
         importRun: {
           ...run,
+          ...count(run.sourceId, state.activeImportIds, trackStates),
           jobId: event.job_id,
           total: event.total,
           completed: event.completed,
-          imported: counts.imported,
-          skipped: counts.skipped,
         },
       });
     },
-
     cancelImport: async () => {
       const run = get().importRun;
       if (!run || run.phase !== "running" || run.cancelling) return;
@@ -668,60 +891,47 @@ export function createCatalogStore(backend: Backend = tauriBackend) {
       try {
         await backend.catalog.cancelStreamingImport();
       } catch (error) {
-        reportError(error);
+        if (get().importRun?.jobId === run.jobId)
+          set({ importRun: { ...run, cancelling: false } });
+        notifyError(error);
       }
     },
-
     recoverImportJob: async () => {
       if (get().importRun) return;
       try {
         const snapshot = await backend.catalog.getStreamingImportStatus();
-        if (!snapshot || snapshot.phase === "completed" || get().importRun) {
+        if (!snapshot || snapshot.phase === "completed" || get().importRun)
           return;
-        }
-        const trackStates: Record<string, StreamingImportTrackState> = {};
-        const failures: StreamingImportFailure[] = [];
-        for (const track of snapshot.tracks) {
-          trackStates[track.remote_track_id] = track.state;
-          const failure = failureFromState(
-            track.remote_track_id,
-            track.title,
-            track.artist,
-            track.state,
-          );
-          if (failure) failures.push(failure);
-        }
+        const trackStates = { ...get().trackStates };
+        for (const track of snapshot.tracks)
+          trackStates[
+            onlinePreviewQueueId(snapshot.source_id, track.remote_track_id)
+          ] = track.state;
         const ids = snapshot.tracks.map((track) => track.remote_track_id);
-        const counts = countRun(ids, trackStates);
-        set((state) => ({
-          trackStates: { ...state.trackStates, ...trackStates },
+        set({
+          trackStates,
           activeImportIds: ids,
-          importFailures: failures,
           importRun: {
+            sourceId: snapshot.source_id,
             jobId: snapshot.job_id,
             phase: "running",
+            ...count(snapshot.source_id, ids, trackStates),
             total: snapshot.total,
             completed: snapshot.completed,
-            imported: counts.imported,
-            skipped: counts.skipped,
             label: null,
             cancelling: false,
           },
-        }));
-        if (snapshot.phase === "awaiting_decision") {
-          // The decision prompt did not survive the reload; stop the paused
-          // import so a new one can start.
-          const progress =
-            await backend.catalog.continueStreamingImport("cancel");
-          applyImportProgress(progress);
-        }
+        });
+        if (snapshot.phase === "awaiting_decision")
+          applyProgress(
+            await backend.catalog.continueStreamingImport("cancel"),
+            snapshot.job_id,
+          );
       } catch (error) {
-        reportError(error);
+        notifyError(error);
       }
     },
   }));
-
   return store;
 }
-
 export const useCatalogStore = createCatalogStore();

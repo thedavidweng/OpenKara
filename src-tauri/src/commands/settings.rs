@@ -32,7 +32,6 @@ pub struct AppSettings {
     pub theme_preference: String,
     pub update_policy: String,
     pub youtube_source_enabled: bool,
-    pub netease_source_enabled: bool,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -65,7 +64,6 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         theme_preference: config.effective_theme_preference().as_str().to_owned(),
         update_policy: config.effective_update_policy().as_str().to_owned(),
         youtube_source_enabled: config.effective_youtube_source_enabled(),
-        netease_source_enabled: config.effective_netease_source_enabled(),
     }
 }
 
@@ -1103,18 +1101,15 @@ mod tests {
     fn settings_snapshot_defaults_online_sources_to_off() {
         let settings = settings_from_config(&AppConfig::default());
         assert!(!settings.youtube_source_enabled);
-        assert!(!settings.netease_source_enabled);
     }
 
     #[test]
     fn settings_snapshot_reflects_enabled_online_sources() {
         let settings = settings_from_config(&AppConfig {
             youtube_source_enabled: Some(true),
-            netease_source_enabled: Some(true),
             ..AppConfig::default()
         });
         assert!(settings.youtube_source_enabled);
-        assert!(settings.netease_source_enabled);
     }
 
     #[test]
