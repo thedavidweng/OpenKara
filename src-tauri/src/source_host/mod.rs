@@ -253,7 +253,7 @@ impl SourceHost {
         let capability=match method {"search"=>Some("search"),"liked_tracks"=>Some("liked_tracks"),"playlists"=>Some("playlists"),"playlist.tracks"=>Some("playlist_tracks"),"tracks.get"=>Some("track_details"),"media.resolve"=>Some(if params["purpose"]=="preview"{"preview"}else{"import"}),"describe"|"session.restore"|"auth.start"|"auth.poll"|"auth.complete"|"auth.cancel"|"auth.sign_out"=>None,_=>return Err(HostError::new("unsupported_operation","This source operation is not supported."))};
         if capability.is_some_and(|capability|!description.manifest.capabilities.iter().any(|value|value==capability)){return Err(HostError::new("unsupported_operation","This source does not provide this capability."))}
         let gate=self.inner.gate(id,false);let _guard=gate.lock().await;
-        self.running_locked(id).await?.send(method,params,false).await
+        self.running_locked(id).await?.send(method,params,matches!(method,"auth.cancel"|"auth.sign_out")).await
     }
     pub async fn request(&self,id:&str,method:&str,params:Value)->HostResult<Value>{self.start_request(id,method,params).await?.result().await}
     pub async fn retry(&self,id:&str)->HostResult<SourceSnapshot>{
