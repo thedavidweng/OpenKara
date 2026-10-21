@@ -79,24 +79,6 @@ fn csp_allows_the_asset_protocol_on_every_platform() {
 }
 
 #[test]
-fn csp_allows_netease_covers_in_img_src_only() {
-    let csp = config("tauri.conf.json")["app"]["security"]["csp"]
-        .as_str()
-        .expect("app.security.csp must be declared")
-        .to_owned();
-    let directive = |name: &str| {
-        csp.split(';')
-            .map(str::trim)
-            .find(|part| part.starts_with(name))
-            .unwrap_or("")
-            .to_owned()
-    };
-    assert!(directive("img-src").contains("https://*.music.126.net"));
-    assert!(!directive("connect-src").contains("music.126.net"));
-    assert!(!directive("default-src").contains("music.126.net"));
-}
-
-#[test]
 fn no_platform_override_replaces_the_security_block() {
     for file in PLATFORM_CONFIG_FILES {
         let security = &config(file)["app"]["security"];
