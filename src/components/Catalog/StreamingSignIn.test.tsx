@@ -276,14 +276,12 @@ test("an older web challenge error cannot dismiss the current challenge", async 
     await store.getState().openSignIn();
   });
   act(() =>
-    store
-      .getState()
-      .setSignInError("alpha", "challenge-1", {
-        code: "streaming_auth_failed",
-        message: "Old window closed",
-        retryable: true,
-        fallback: "retry",
-      }),
+    store.getState().setSignInError("alpha", "challenge-1", {
+      code: "streaming_auth_failed",
+      message: "Old window closed",
+      retryable: true,
+      fallback: "retry",
+    }),
   );
   expect(screen.getByText("Prompt 2")).toBeTruthy();
   expect(screen.queryByText(/Old window closed/)).toBeNull();

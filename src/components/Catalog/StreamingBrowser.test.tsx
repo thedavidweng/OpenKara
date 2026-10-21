@@ -17,6 +17,9 @@ import {
   vi,
 } from "vitest";
 import { createMockBackend } from "@/lib/backend/mock-backend";
+import { BackendProvider } from "@/lib/backend";
+import { ToastContainer } from "@/components/Layout/ToastContainer";
+import { useNotificationStore } from "@/stores/notification-store";
 import {
   createCatalogStore,
   type CatalogStore,
@@ -85,6 +88,7 @@ const source = (id: string, capabilities: string[]): SourceSnapshot => ({
 });
 let store: CatalogStore;
 beforeEach(() => {
+  useNotificationStore.setState({ notifications: [] });
   store = createCatalogStore(
     createMockBackend({
       overrides: {
@@ -649,20 +653,18 @@ test("playlist import exposes its global cancellable job before backend paginati
   });
   const start = vi.fn().mockReturnValue(preparing);
   const cancel = vi.fn().mockResolvedValue(undefined);
-  const detail = vi
-    .fn()
-    .mockResolvedValue({
-      source_id: "alpha",
-      remote_id: "playlist",
-      name: "Long collection",
-      track_count: null,
-      tracks: [],
-      cover_url: null,
-      creator: null,
-      updated_at_ms: null,
-      description: null,
-      next_cursor: "host-owned-continuation",
-    });
+  const detail = vi.fn().mockResolvedValue({
+    source_id: "alpha",
+    remote_id: "playlist",
+    name: "Long collection",
+    track_count: null,
+    tracks: [],
+    cover_url: null,
+    creator: null,
+    updated_at_ms: null,
+    description: null,
+    next_cursor: "host-owned-continuation",
+  });
   store = createCatalogStore(
     createMockBackend({
       overrides: {
@@ -732,4 +734,160 @@ test("playlist import exposes its global cancellable job before backend paginati
     }),
   );
   expect(screen.getByRole("button", { name: "common.close" })).toBeTruthy();
+});
+
+test("failed account sign-out shows the backend error and retains the verified account", async () => {
+  const backend = createMockBackend({
+    overrides: {
+      catalog: {
+        getStreamingSession: async (source_id) => ({
+          source_id,
+          signed_in: true,
+          display_name: "Alice",
+          expired: false,
+        }),
+        signOutStreamingSource: async () => {
+          throw new Error("Sign-out could not stop the source");
+        },
+      },
+    },
+  });
+  store = createCatalogStore(backend);
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(
+    <BackendProvider backend={backend}>
+      <StreamingBrowser />
+      <ToastContainer />
+    </BackendProvider>,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "catalog.streaming.accountMenu",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "catalog.streaming.signOut" }),
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Sign-out could not stop the source",
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "catalog.streaming.accountMenu" })
+      .getAttribute("title"),
+  ).toBe("Alice");
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("account sign-out requires a stop decision for active work and permits declining it", async () => {
+  const signOut = vi.fn().mockResolvedValue({
+    source_id: "alpha",
+    signed_in: false,
+    display_name: null,
+    expired: false,
+  });
+  const backend = createMockBackend({
+    overrides: {
+      catalog: {
+        getStreamingSession: async (source_id) => ({
+          source_id,
+          signed_in: true,
+          display_name: "Alice",
+          expired: false,
+        }),
+        signOutStreamingSource: signOut,
+      },
+    },
+  });
+  store = createCatalogStore(backend);
+  shared.store = store;
+  const fixture = source("alpha", ["search"]);
+  fixture.active_work = [{ id: 7, kind: "preview", cancelling: false }];
+  if (!fixture.manifest) throw new Error("Fixture requires a manifest");
+  fixture.manifest.authentication = { flow: "web" };
+  store.getState().applySources([fixture]);
+  store.getState().setActiveSource("alpha");
+  render(
+    <BackendProvider backend={backend}>
+      <StreamingBrowser />
+    </BackendProvider>,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "catalog.streaming.accountMenu",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "catalog.streaming.signOut" }),
+  );
+  expect(screen.getByRole("dialog").textContent).toContain(
+    "settings.streaming.work.preview",
+  );
+  expect(signOut).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "catalog.streaming.accountMenu" })
+      .getAttribute("title"),
+  ).toBe("Alice");
+  expect(signOut).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.accountMenu" }),
+  );
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "catalog.streaming.signOut" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "settings.streaming.stopWork" }),
+  );
+  await screen.findByRole("button", { name: "catalog.streaming.connect" });
+  expect(
+    screen.queryByRole("button", { name: "catalog.streaming.accountMenu" }),
+  ).toBeNull();
+  expect(signOut).toHaveBeenCalledWith("alpha", true);
+});
+
+test("account menu focuses its action, restores focus on Escape, and dismisses on Tab or outside pointer", async () => {
+  const backend = createMockBackend({
+    overrides: {
+      catalog: {
+        getStreamingSession: async (source_id) => ({
+          source_id,
+          signed_in: true,
+          display_name: "Alice",
+          expired: false,
+        }),
+      },
+    },
+  });
+  store = createCatalogStore(backend);
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(
+    <BackendProvider backend={backend}>
+      <StreamingBrowser />
+    </BackendProvider>,
+  );
+  const trigger = await screen.findByRole("button", {
+    name: "catalog.streaming.accountMenu",
+  });
+  fireEvent.click(trigger);
+  const action = screen.getByRole("menuitem", {
+    name: "catalog.streaming.signOut",
+  });
+  expect(document.activeElement).toBe(action);
+  fireEvent.keyDown(action, { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByRole("menuitem"), { key: "Tab" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  fireEvent.click(trigger);
+  fireEvent.mouseDown(screen.getByRole("textbox"));
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
