@@ -121,7 +121,6 @@ const CATEGORY_PATTERNS = {
   ],
 
   deps_js: [
-    "sidecars/netease/**",
     "package.json",
     "pnpm-lock.yaml",
     "packaging/flatpak/generated/node-sources.0.json",
@@ -177,8 +176,7 @@ const CATEGORY_PATTERNS = {
 
   packaging_inputs: [
     "packaging/**",
-    "sidecars/netease/**",
-    "scripts/prepare-netease-sidecar.mjs",
+    "scripts/ci/build-backend-without-node.sh",
     "src-tauri/build.rs",
     "src-tauri/tauri.conf.json",
     "src-tauri/tauri.linux.conf.json",
@@ -189,7 +187,6 @@ const CATEGORY_PATTERNS = {
     "scripts/render-winget-manifests.mjs",
     "scripts/generate-flatpak-cargo-sources.mjs",
     "scripts/generate-flatpak-node-sources.mjs",
-    "scripts/generate-flatpak-netease-sources.mjs",
     "scripts/clean-macos-bundle.mjs",
     "tests/flatpak-packaging.test.ts",
     "tests/onnx-runtime-packaging.test.ts",

@@ -606,7 +606,6 @@ jobs:
       - name: Audit dependencies
         run: |
           pnpm audit --audit-level=high
-          npm audit --prefix sidecars/netease --omit=dev --audit-level=high
 
       - name: Download tested Release Candidate
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

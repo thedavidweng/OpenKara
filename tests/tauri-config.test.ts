@@ -1,6 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import baseConfig from "../src-tauri/tauri.conf.json";
 import linuxConfig from "../src-tauri/tauri.linux.conf.json";
 import macosConfig from "../src-tauri/tauri.macos.conf.json";
@@ -49,24 +47,5 @@ describe("Tauri window config", () => {
     expect(window?.minWidth).toBe(680);
     expect(window?.height).toBe(800);
     expect(window?.resizable).toBe(true);
-  });
-
-  test("macOS bundle permits ONNX Runtime libraries and NetEase Node JIT", () => {
-    expect(baseConfig.bundle?.macOS?.entitlements).toBe("Entitlements.plist");
-
-    const entitlements = readFileSync(
-      resolve("src-tauri", "Entitlements.plist"),
-      "utf8",
-    );
-
-    expect(entitlements).toContain(
-      "<key>com.apple.security.cs.disable-library-validation</key>",
-    );
-    expect(entitlements).toContain(
-      "<key>com.apple.security.cs.allow-jit</key>",
-    );
-    expect(entitlements).not.toContain(
-      "<key>com.apple.security.cs.allow-unsigned-executable-memory</key>",
-    );
   });
 });
