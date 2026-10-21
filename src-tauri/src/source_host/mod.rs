@@ -123,10 +123,21 @@ fn save(config: &HostConfig, state: &StoredState) -> HostResult<()> {
     fs::rename(temp, path)?;
     Ok(())
 }
+const INVALID_INDEX: &str =
+    "Source index signature or release data is invalid. Keep the installed version and retry discovery later.";
+const CACHED_OWNER_MISMATCH: &str =
+    "Cached source identity conflicts with the installed publisher. Restore source settings from backup.";
+const CHANGED_OWNER: &str =
+    "Source publisher ownership changed. The existing installation and credentials remain protected.";
+const WORK_APPROVAL_REQUIRED: &str =
+    "This source has active sign-in, preview, or import work. Choose Stop Work to continue.";
+const WORK_STOP_TIMEOUT: &str =
+    "Source work has not stopped. Close the active sign-in, preview, or import, then retry.";
+const MISSING_RUNTIME: &str =
+    "Source runtime is missing. Reinstall this source to restore verified runtime files.";
+
 fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
-    let error = || {
-        HostError::new("untrusted_index","Source index signature or release data is invalid. Keep the installed version and retry discovery later.")
-    };
+    let error = || HostError::new("untrusted_index", INVALID_INDEX);
     let envelope: SignedIndex = serde_json::from_slice(bytes).map_err(|_| error())?;
     let key = config
         .trusted_keys
@@ -433,7 +444,7 @@ impl SourceHost {
                 let owner = binding(&source.publisher, &source.package_id);
                 let entry = stored.sources.entry(source.source_id.clone()).or_default();
                 if !entry.owner_binding.is_empty() && entry.owner_binding != owner {
-                    return Err(HostError::new("owner_mismatch","Cached source identity conflicts with the installed publisher. Restore source settings from backup."));
+                    return Err(HostError::new("owner_mismatch", CACHED_OWNER_MISMATCH));
                 }
                 entry.owner_binding = owner;
                 for version in &source.revoked_versions {
@@ -511,25 +522,83 @@ impl SourceHost {
     }
     pub async fn refresh(&self) -> HostResult<Vec<SourceSnapshot>> {
         self.inner.check()?;
-        let result:HostResult<Vec<SourceSnapshot>>=async {
-            let config=&self.inner.config;let cancel=Cancellation::new();
-            let response=network::response(&config.index_url,&BTreeMap::new(),None,test_http(config),&cancel).await?;
-            let bytes=network::read_bounded(response,8*1024*1024,&cancel).await?;
-            let index=verify_index(config,&bytes)?;
+        let result: HostResult<Vec<SourceSnapshot>> = async {
+            let config = &self.inner.config;
+            let cancel = Cancellation::new();
+            let response = network::response(
+                &config.index_url,
+                &BTreeMap::new(),
+                None,
+                test_http(config),
+                &cancel,
+            )
+            .await?;
+            let bytes = network::read_bounded(response, 8 * 1024 * 1024, &cancel).await?;
+            let index = verify_index(config, &bytes)?;
             {
-                let mut state=self.inner.state.lock().unwrap();
-                if index.generation<state.stored.generation{return Err(HostError::new("untrusted_index","Source index is older than the last verified index. Retry later."))}
-                for source in &index.sources {if state.stored.sources.get(&source.source_id).is_some_and(|stored|stored.owner_binding!=binding(&source.publisher,&source.package_id)){return Err(HostError::new("owner_mismatch","Source publisher ownership changed. The existing installation and credentials remain protected."))}}
-                let mut stored=state.stored.clone();stored.generation=index.generation;
-                for source in &index.sources {let entry=stored.sources.entry(source.source_id.clone()).or_default();entry.owner_binding=binding(&source.publisher,&source.package_id);for version in &source.revoked_versions {if !entry.revoked.contains(version){entry.revoked.push(version.clone());}}}
-                state.stored=stored;state.index=Some(index);
-                let revoked_ids:Vec<_>=state.stored.sources.iter().filter(|(_,source)|source.active.as_ref().is_some_and(|release|source.revoked.contains(&release.manifest.version))).map(|(id,_)|id.clone()).collect();
-                for id in revoked_ids{if let Some(live)=state.sources.get(&id){for (_,cancel) in live.work.values(){cancel.cancel();}}}
-                let temp=config.data_root.join("verified-index.json.tmp");let cached=(||{fs::write(&temp,&bytes)?;fs::rename(temp,config.data_root.join("verified-index.json"))?;Ok::<(),std::io::Error>(())})();
-                let saved=save(config,&state.stored);cached?;saved?;
+                let mut state = self.inner.state.lock().unwrap();
+                if index.generation < state.stored.generation {
+                    return Err(HostError::new(
+                        "untrusted_index",
+                        "Source index is older than the last verified index. Retry later.",
+                    ));
+                }
+                for source in &index.sources {
+                    if state
+                        .stored
+                        .sources
+                        .get(&source.source_id)
+                        .is_some_and(|stored| {
+                            stored.owner_binding != binding(&source.publisher, &source.package_id)
+                        })
+                    {
+                        return Err(HostError::new("owner_mismatch", CHANGED_OWNER));
+                    }
+                }
+                let mut stored = state.stored.clone();
+                stored.generation = index.generation;
+                for source in &index.sources {
+                    let entry = stored.sources.entry(source.source_id.clone()).or_default();
+                    entry.owner_binding = binding(&source.publisher, &source.package_id);
+                    for version in &source.revoked_versions {
+                        if !entry.revoked.contains(version) {
+                            entry.revoked.push(version.clone());
+                        }
+                    }
+                }
+                state.stored = stored;
+                state.index = Some(index);
+                let revoked_ids: Vec<_> = state
+                    .stored
+                    .sources
+                    .iter()
+                    .filter(|(_, source)| {
+                        source.active.as_ref().is_some_and(|release| {
+                            source.revoked.contains(&release.manifest.version)
+                        })
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in revoked_ids {
+                    if let Some(live) = state.sources.get(&id) {
+                        for (_, cancel) in live.work.values() {
+                            cancel.cancel();
+                        }
+                    }
+                }
+                let temp = config.data_root.join("verified-index.json.tmp");
+                let cached = (|| {
+                    fs::write(&temp, &bytes)?;
+                    fs::rename(temp, config.data_root.join("verified-index.json"))?;
+                    Ok::<(), std::io::Error>(())
+                })();
+                let saved = save(config, &state.stored);
+                cached?;
+                saved?;
             }
             Ok(self.snapshots())
-        }.await;
+        }
+        .await;
         self.maintain().await;
         if let Err(error) = &result {
             let mut state = self.inner.state.lock().unwrap();
@@ -680,12 +749,21 @@ impl SourceHost {
         }
         cancel.check()?;
         let candidate = tokio::select! {
-            _=cancel.cancelled()=>return cancel.check(),
-            candidate=Process::start(&executable,&package,release,config,|command|{
-                let state=self.inner.state.lock().unwrap();let source=state.stored.sources.get(id).ok_or_else(unknown)?;cancel.check()?;
-                if source.revoked.contains(&release.manifest.version)||!compatible(config,release){return Err(incompatible())}
-                command.spawn().map_err(|_|HostError::new("source_unavailable","Source process cannot start. Retry or update this source."))
-            })=>candidate?
+            _ = cancel.cancelled() => return cancel.check(),
+            candidate = Process::start(&executable, &package, release, config, |command| {
+                let state = self.inner.state.lock().unwrap();
+                let source = state.stored.sources.get(id).ok_or_else(unknown)?;
+                cancel.check()?;
+                if source.revoked.contains(&release.manifest.version) || !compatible(config, release) {
+                    return Err(incompatible());
+                }
+                command.spawn().map_err(|_| {
+                    HostError::new(
+                        "source_unavailable",
+                        "Source process cannot start. Retry or update this source.",
+                    )
+                })
+            }) => candidate?,
         };
         candidate.stop().await;
         cancel.check()?;
@@ -844,7 +922,7 @@ impl SourceHost {
             let mut state = self.inner.state.lock().unwrap();
             let live = state.sources.entry(id.into()).or_default();
             if !live.work.is_empty() && !approved {
-                return Err(HostError::new("active_work","This source has active sign-in, preview, or import work. Choose Stop Work to continue."));
+                return Err(HostError::new("active_work", WORK_APPROVAL_REQUIRED));
             }
             live.stopping = true;
             for (_, cancel) in live.work.values() {
@@ -875,7 +953,7 @@ impl SourceHost {
                     .or_default()
                     .stopping = false;
                 self.inner.publish(id);
-                return Err(HostError::new("active_work","Source work has not stopped. Close the active sign-in, preview, or import, then retry."));
+                return Err(HostError::new("active_work", WORK_STOP_TIMEOUT));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1003,18 +1081,41 @@ impl SourceHost {
         if let Some(retry_at) = retry_at {
             tokio::time::sleep(retry_at.saturating_duration_since(Instant::now())).await;
         }
-        let result=async {
-            let package=install::package_path(&self.inner.config,&release);install::verify_seal(&package)?;install::validate_package(&package,&release)?;
-            if let RuntimePolicy::Downloaded=&self.inner.config.runtime_policy {
-                if !install::runtime_path(&self.inner.config,&release)?.exists(){return Err(HostError::new("source_unavailable","Source runtime is missing. Reinstall this source to restore verified runtime files."))}
+        let result = async {
+            let package = install::package_path(&self.inner.config, &release);
+            install::verify_seal(&package)?;
+            install::validate_package(&package, &release)?;
+            if let RuntimePolicy::Downloaded = &self.inner.config.runtime_policy {
+                if !install::runtime_path(&self.inner.config, &release)?.exists() {
+                    return Err(HostError::new("source_unavailable", MISSING_RUNTIME));
+                }
             }
-            let executable={let _guard=self.inner.runtime_install.lock().await;install::runtime(&self.inner.config,&release,&Cancellation::new(),|_|{}).await?};
-            Process::start(&executable,&package,&release,&self.inner.config,|command|{
-                let state=self.inner.state.lock().unwrap();let source=state.stored.sources.get(id).ok_or_else(unknown)?;
-                if !source.enabled||source.revoked.contains(&release.manifest.version){return Err(incompatible())}
-                command.spawn().map_err(|_|HostError::new("source_unavailable","Source process cannot start. Retry or update this source."))
-            }).await
-        }.await;
+            let executable = {
+                let _guard = self.inner.runtime_install.lock().await;
+                install::runtime(&self.inner.config, &release, &Cancellation::new(), |_| {}).await?
+            };
+            Process::start(
+                &executable,
+                &package,
+                &release,
+                &self.inner.config,
+                |command| {
+                    let state = self.inner.state.lock().unwrap();
+                    let source = state.stored.sources.get(id).ok_or_else(unknown)?;
+                    if !source.enabled || source.revoked.contains(&release.manifest.version) {
+                        return Err(incompatible());
+                    }
+                    command.spawn().map_err(|_| {
+                        HostError::new(
+                            "source_unavailable",
+                            "Source process cannot start. Retry or update this source.",
+                        )
+                    })
+                },
+            )
+            .await
+        }
+        .await;
         let still_allowed = {
             let state = self.inner.state.lock().unwrap();
             state.stored.sources.get(id).is_some_and(|source| {
