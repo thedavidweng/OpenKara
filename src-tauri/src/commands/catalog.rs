@@ -407,22 +407,21 @@ pub async fn poll_streaming_sign_in(
     source_id: String,
     challenge: String,
 ) -> CommandResult<Value> {
-    if let Some((_, session)) = app_handle
-        .state::<SourceAuthentication>()
-        .completed
-        .lock()
-        .map_err(|_| state_lock_error("authentication result lock"))?
-        .get(&source_id)
-        .filter(|(token, _)| token == &challenge)
-    {
-        return Ok(json!({"state":"complete","session":session}));
-    }
     let lease = {
         let state = app_handle.state::<SourceAuthentication>();
         let guard = state
             .inner
             .lock()
             .map_err(|_| state_lock_error("authentication state lock"))?;
+        if let Some((_, session)) = state
+            .completed
+            .lock()
+            .map_err(|_| state_lock_error("authentication result lock"))?
+            .get(&source_id)
+            .filter(|(token, _)| token == &challenge)
+        {
+            return Ok(json!({"state":"complete","session":session}));
+        }
         let work = guard
             .get(&source_id)
             .filter(|w| w.challenge == challenge)
