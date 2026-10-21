@@ -104,11 +104,6 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
         self.inner.tracks(ids)
     }
 
-    fn playlist(&self, remote_id: &str) -> Result<StreamingPlaylistDetail, CatalogError> {
-        self.require_enabled()?;
-        self.inner.playlist(remote_id)
-    }
-
     fn search(&self, query: &str) -> Result<Vec<StreamingTrack>, CatalogError> {
         self.require_enabled()?;
         self.inner.search(query)

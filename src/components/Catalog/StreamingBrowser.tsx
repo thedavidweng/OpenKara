@@ -22,6 +22,7 @@ export function StreamingBrowser() {
     (item) => item.source_id === state.activeSourceId,
   );
   const capabilities = source?.manifest?.capabilities ?? [];
+  const supportsSearch = capabilities.includes("search");
   const tabs: StreamingTab[] = [];
   if (capabilities.includes("liked_tracks")) tabs.push("liked");
   if (
@@ -62,32 +63,37 @@ export function StreamingBrowser() {
   const tabRefs = useRef<
     Partial<Record<StreamingTab, HTMLButtonElement | null>>
   >({});
+  const {
+    activeSourceId,
+    likedStatus,
+    playlistsStatus,
+    sessionStatus,
+    loadLiked,
+    loadPlaylists,
+    loadSession,
+  } = state;
   useEffect(() => {
     if (!ready || !available) return;
-    if (active === "liked" && state.likedStatus === "idle")
-      void state.loadLiked();
-    if (active === "playlists" && state.playlistsStatus === "idle")
-      void state.loadPlaylists();
+    if (active === "liked" && likedStatus === "idle") void loadLiked();
+    if (active === "playlists" && playlistsStatus === "idle")
+      void loadPlaylists();
   }, [
     ready,
     available,
     active,
-    state.activeSourceId,
-    state.likedStatus,
-    state.playlistsStatus,
-    state.loadLiked,
-    state.loadPlaylists,
+    activeSourceId,
+    likedStatus,
+    playlistsStatus,
+    loadLiked,
+    loadPlaylists,
   ]);
   useEffect(() => {
-    if (!ready || state.sessionStatus !== "idle") return;
-    void state.loadSession();
-  }, [ready, state.activeSourceId, state.sessionStatus, state.loadSession]);
+    if (!ready || sessionStatus !== "idle") return;
+    void loadSession();
+  }, [ready, activeSourceId, sessionStatus, loadSession]);
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
-      if (
-        capabilities.includes("search") &&
-        matchesShortcut(APP_SHORTCUTS.findInView, event)
-      ) {
+      if (supportsSearch && matchesShortcut(APP_SHORTCUTS.findInView, event)) {
         event.preventDefault();
         input.current?.focus();
         input.current?.select();
@@ -95,7 +101,7 @@ export function StreamingBrowser() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [capabilities]);
+  }, [supportsSearch]);
   const tabKey = (event: KeyboardEvent, tab: StreamingTab) => {
     let index = tabs.indexOf(tab);
     if (event.key === "ArrowRight") index = (index + 1) % tabs.length;
