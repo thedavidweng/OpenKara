@@ -188,7 +188,6 @@ function RowAction({
 interface RowProps {
   track: StreamingTrack;
   index: number;
-  count: number;
   top: number;
   selecting: boolean;
   checked: boolean;
@@ -201,7 +200,6 @@ interface RowProps {
 const StreamingTrackRow = memo(function StreamingTrackRow({
   track,
   index,
-  count,
   top,
   selecting,
   checked,
@@ -241,10 +239,9 @@ const StreamingTrackRow = memo(function StreamingTrackRow({
 
   return (
     <div
-      role="option"
-      aria-selected={playing}
-      aria-posinset={index + 1}
-      aria-setsize={count}
+      role="row"
+      aria-selected={selecting ? checked : undefined}
+      aria-rowindex={index + 1}
       data-testid="streaming-track-row"
       data-unavailable={unavailable ? "true" : undefined}
       data-playing={playing ? "true" : undefined}
@@ -275,19 +272,24 @@ const StreamingTrackRow = memo(function StreamingTrackRow({
       style={{ height: ROW_HEIGHT_PX, transform: `translateY(${top}px)` }}
     >
       {selecting ? (
-        <input
-          type="checkbox"
-          aria-label={t("catalog.streaming.selectRow", { title: track.title })}
-          checked={checked}
-          disabled={!canSelect}
-          onChange={() => {}}
-          onClick={(event) =>
-            onToggle(index, event.currentTarget.checked, event.shiftKey)
-          }
-          className={`size-4 shrink-0 accent-[var(--color-accent)] ${focusRing}`}
-        />
+        <div role="gridcell" className="flex shrink-0 items-center">
+          <input
+            type="checkbox"
+            aria-label={t("catalog.streaming.selectRow", {
+              title: track.title,
+            })}
+            checked={checked}
+            disabled={!canSelect}
+            onChange={() => {}}
+            onClick={(event) =>
+              onToggle(index, event.currentTarget.checked, event.shiftKey)
+            }
+            className={`size-4 shrink-0 accent-[var(--color-accent)] ${focusRing}`}
+          />
+        </div>
       ) : null}
       <div
+        role="gridcell"
         className={`flex min-w-0 flex-1 items-center gap-3.5 ${unavailable ? "opacity-30" : ""}`}
       >
         <StreamingCover
@@ -318,7 +320,10 @@ const StreamingTrackRow = memo(function StreamingTrackRow({
           {formatDuration(track.duration_ms)}
         </div>
       </div>
-      <div className="flex w-16 shrink-0 items-center justify-end">
+      <div
+        role="gridcell"
+        className="flex w-16 shrink-0 items-center justify-end"
+      >
         {canImport ? (
           <RowAction track={track} state={state} busy={busy} />
         ) : null}
@@ -528,9 +533,11 @@ export function StreamingTrackList({
       ) : null}
       <div
         ref={listRef}
-        role="listbox"
+        role="grid"
         aria-label={t("catalog.streaming.trackListLabel")}
         aria-multiselectable={selection ? true : undefined}
+        aria-rowcount={visible.length}
+        aria-colcount={selection ? 3 : 2}
         className="relative mx-4"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
@@ -542,7 +549,6 @@ export function StreamingTrackList({
               key={onlinePreviewQueueId(track.source_id, track.remote_track_id)}
               track={track}
               index={item.index}
-              count={visible.length}
               top={item.start - scrollMargin}
               selecting={!!selection}
               checked={!!selection?.selected.has(track.remote_track_id)}

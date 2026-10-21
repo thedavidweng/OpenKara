@@ -277,11 +277,21 @@ describe("StreamingTrackList", () => {
         tracks={[track("1"), track("2"), track("3"), track("4")]}
       />,
     );
+    const grid = screen.getByRole("grid", {
+      name: "catalog.streaming.trackListLabel",
+    });
+    expect(grid.getAttribute("aria-multiselectable")).toBe("true");
     const boxes = screen.getAllByRole("checkbox");
     // boxes[0] is select-all
     fireEvent.click(boxes[1]);
     fireEvent.click(boxes[3], { shiftKey: true });
     expect([...onSelect.mock.lastCall![0]].sort()).toEqual(["1", "2", "3"]);
+    expect(
+      screen
+        .getAllByRole("row")
+        .slice(0, 3)
+        .map((row) => row.getAttribute("aria-selected")),
+    ).toEqual(["true", "true", "true"]);
 
     fireEvent.click(boxes[0]);
     expect([...onSelect.mock.lastCall![0]].sort()).toEqual([
@@ -321,10 +331,17 @@ describe("StreamingTrackList", () => {
 
   test("Enter on a focused row plays it", () => {
     render(<Harness tracks={[track("1"), track("2")]} />);
-    const rows = screen.getAllByTestId("streaming-track-row");
+    const rows = screen.getAllByRole("row");
     fireEvent.keyDown(rows[1]!, { key: "Enter" });
     expect(playNow).toHaveBeenCalledWith("stream:alpha:2");
     expect(setQueue).toHaveBeenCalledWith([]);
+    expect(screen.getAllByRole("gridcell")).toHaveLength(4);
+    const importButton = screen.getByRole("button", {
+      name: 'catalog.streaming.importTrackLabel|{"title":"Song 2"}',
+    });
+    expect(importButton.closest('[role="gridcell"]')).not.toBeNull();
+    fireEvent.click(importButton);
+    expect(importTracks).toHaveBeenCalledWith(["2"]);
   });
 
   test("an unavailable track explains itself instead of playing", () => {
