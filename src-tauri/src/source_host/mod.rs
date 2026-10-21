@@ -1314,10 +1314,12 @@ impl SourceHost {
         &self,
         id: &str,
         descriptor: ResourceDescriptor,
+        cancellation: Cancellation,
     ) -> HostResult<Vec<u8>> {
         let description = self.description(id)?;
         self.ensure_download(id)?;
-        let cancel = Cancellation::new();
+        let cancel = cancellation;
+        cancel.check()?;
         network::check_expiry(&descriptor)?;
         #[cfg(test)]
         if let Some(response) = network::fixture_media(

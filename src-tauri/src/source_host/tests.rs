@@ -1251,7 +1251,7 @@ async fn known_expired_media_is_refused_before_transport_for_bounded_preview_ref
         "media_expired"
     );
     assert_eq!(
-        host.load_resource("fixture", descriptor)
+        host.load_resource("fixture", descriptor, Cancellation::new())
             .await
             .unwrap_err()
             .code,
@@ -1636,4 +1636,53 @@ async fn revocation_during_download_prevents_candidate_execution() {
             .as_deref(),
         Some("1.0.0")
     );
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
+async fn cancelled_artwork_work_refuses_transfer_and_releases_stop_acknowledgment() {
+    let mut fixture = Fixture::new().await;
+    fixture
+        .publish(
+            "1.0.0",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../fixtures/streaming-source/worker.mjs"
+            )),
+            vec![],
+            None,
+        )
+        .await;
+    let mut config = fixture.config();
+    let url = "https://streaming-fixture.openkara.test:9443/artwork.png";
+    config.add_fixture_resource(
+        url.into(),
+        vec!["93.184.216.34".parse().unwrap()],
+        b"artwork".to_vec(),
+    );
+    let host = SourceHost::new(config).await.unwrap();
+    host.refresh().await.unwrap();
+    host.install("fixture", None).await.unwrap();
+    host.set_enabled("fixture", true, false).await.unwrap();
+    let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
+    let cancellation = lease.cancellation();
+    let stop = host.clone();
+    let stopping = tokio::spawn(async move { stop.set_enabled("fixture", false, true).await });
+    tokio::time::timeout(Duration::from_secs(3), cancellation.cancelled())
+        .await
+        .unwrap();
+    let descriptor = ResourceDescriptor {
+        url: url.into(),
+        headers: BTreeMap::new(),
+        expires_at: None,
+    };
+    assert_eq!(
+        host.load_resource("fixture", descriptor, cancellation)
+            .await
+            .unwrap_err()
+            .code,
+        "cancelled"
+    );
+    drop(lease);
+    assert!(!stopping.await.unwrap().unwrap().enabled);
 }

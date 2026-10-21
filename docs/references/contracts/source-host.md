@@ -200,7 +200,9 @@ The host does not return a naked validated URL for another client to fetch.
 range, and async `chunk()`. The preview consumer retains progressive sequential
 download, chunk cache, seek, and bounded descriptor refresh. `download_media`
 streams to a temporary file and atomically publishes the destination.
-`load_resource` limits artwork to 16 MiB.
+`load_resource(source_id, descriptor, cancellation)` limits artwork to 16 MiB.
+The consumer supplies its work token. Cancellation interrupts DNS resolution,
+connection, redirects, and body reads before the consumer releases its work lease.
 `open_media` preserves HTTP status, including 403 and 410. A known expired
 RFC 3339 `expires_at` returns `media_expired` before a request. Preview uses
 these signals for its existing bounded descriptor refresh. File downloads and
