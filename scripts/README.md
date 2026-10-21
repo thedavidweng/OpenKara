@@ -100,9 +100,13 @@ this rule when the test executable runs inside the installed sandbox.
 
 Run `pnpm build` and prepare the platform ONNX Runtime before this scenario.
 Then run `bash scripts/ci/build-backend-without-node.sh` with the normal Rust
-toolchain, linker, and system development libraries available. The script creates
-an isolated executable search path without Node or JavaScript package managers.
-It forces the application build script to run and executes
+toolchain, linker, and system development libraries available. The script selects
+the toolchain's real Cargo, rustc, and rustdoc through rustup. It creates an
+isolated executable search path without Node or JavaScript package managers,
+and bypasses compiler wrappers. Build output uses a temporary directory unless
+`CARGO_TARGET_DIR` names an absolute directory outside the checkout. This avoids
+checkout-local cache symlinks and leaves their targets unchanged. The script
+forces the application build script to run and executes
 `cargo build --locked --release --bin openkara`. It does not install a source
 plugin or fetch the neutral runtime pin. Linux CI runs this after frontend and
 ONNX Runtime preparation. Complete frontend builds and application packaging

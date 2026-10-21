@@ -193,7 +193,9 @@ describe("Flatpak packaging", () => {
           "license-fixture",
         );
         const commands = Array.from(
-          manifest.matchAll(/^\s+- (install .*source-runtime\/.*)$/gm),
+          manifest.matchAll(
+            /^\s+- ((?:mkdir|install) .*source-runtime\/.*)$/gm,
+          ),
           (match) => match[1],
         );
         expect(commands).toHaveLength(2);

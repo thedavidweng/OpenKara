@@ -8,8 +8,25 @@ test -f "$root/dist/index.html" || {
 }
 test -f "$root/packaging/source-runtime.json"
 
+cd "$root/src-tauri"
+cargo_executable="$(rustup which cargo)"
+export RUSTC="$(rustup which rustc)"
+export RUSTDOC="$(rustup which rustdoc)"
+unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER
+
 isolated_path="$(mktemp -d)"
 trap 'rm -rf "$isolated_path"' EXIT
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$isolated_path/target}"
+[[ "$CARGO_TARGET_DIR" = /* ]] || {
+  echo "CARGO_TARGET_DIR must be an absolute path outside the checkout." >&2
+  exit 1
+}
+case "$CARGO_TARGET_DIR/" in
+  "$root/"*)
+    echo "CARGO_TARGET_DIR must be outside the checkout." >&2
+    exit 1
+    ;;
+esac
 IFS=: read -r -a search_paths <<< "$PATH"
 for directory in "${search_paths[@]}"; do
   [[ "$directory" = /* && -d "$directory" ]] || continue
@@ -30,7 +47,6 @@ for command in node nodejs npm pnpm; do
   fi
 done
 
-cd "$root/src-tauri"
 # Force the application build script to execute even with a restored Rust cache.
-cargo clean --package openkara --release
-cargo build --locked --release --bin openkara
+"$cargo_executable" clean --package openkara --release
+"$cargo_executable" build --locked --release --bin openkara
