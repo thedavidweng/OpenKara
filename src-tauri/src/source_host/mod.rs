@@ -1137,7 +1137,7 @@ impl SourceHost {
     }
     async fn maintain(&self) {
         let ids = {
-            let mut state = self.inner.state.lock().unwrap();
+            let state = self.inner.state.lock().unwrap();
             let ids: Vec<_> = state.stored.sources.keys().cloned().collect();
             for id in &ids {
                 let source = &state.stored.sources[id];

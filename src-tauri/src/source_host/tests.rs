@@ -476,7 +476,13 @@ async fn real_stdio_multiplexes_progress_errors_cancellation_idle_and_restart() 
         .await
         .unwrap();
     assert_eq!(listing.result().await.unwrap()["items"][0]["id"], "42");
-    assert_eq!(progress.recv().await.unwrap()["phase"], "resolve");
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(3), progress.recv())
+            .await
+            .unwrap()
+            .unwrap()["phase"],
+        "resolve"
+    );
     slow.cancel();
     assert_eq!(slow.result().await.unwrap_err().code, "cancelled");
     assert_eq!(
@@ -532,7 +538,9 @@ async fn approved_stop_waits_for_lease_acknowledgment_and_never_removes_other_so
     let token = lease.cancellation();
     let stop = host.clone();
     let pending = tokio::spawn(async move { stop.set_enabled("fixture", false, true).await });
-    token.cancelled().await;
+    tokio::time::timeout(Duration::from_secs(3), token.cancelled())
+        .await
+        .unwrap();
     assert!(host.snapshot("fixture").unwrap().enabled);
     assert!(!pending.is_finished());
     drop(lease);
@@ -765,7 +773,13 @@ async fn cancelled_update_preserves_code_and_explicit_retry_retries_the_candidat
     host.refresh().await.unwrap();
     let installer = host.clone();
     let install = tokio::spawn(async move { installer.install("fixture", None).await });
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
+        assert!(
+            Instant::now() < deadline,
+            "candidate never reached handshake: {:?}",
+            host.snapshot("fixture").unwrap()
+        );
         if host
             .snapshot("fixture")
             .unwrap()
@@ -1555,7 +1569,6 @@ async fn explicit_reinstall_repairs_damaged_package_without_overwriting_running_
 #[tokio::test]
 #[ignore = "requires explicitly prepared pinned Node via OPENKARA_SOURCE_TEST_NODE"]
 async fn revocation_during_download_prevents_candidate_execution() {
-    use std::io::Write;
     let mut fixture = Fixture::new().await;
     let marker = fixture.root.path().join("candidate-executed");
     let worker = include_str!(concat!(
@@ -1585,7 +1598,13 @@ async fn revocation_during_download_prevents_candidate_execution() {
         .await;
     let installer = host.clone();
     let install = tokio::spawn(async move { installer.install("fixture", None).await });
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
+        assert!(
+            Instant::now() < deadline,
+            "candidate never reached download: {:?}",
+            host.snapshot("fixture").unwrap()
+        );
         if host
             .snapshot("fixture")
             .unwrap()
