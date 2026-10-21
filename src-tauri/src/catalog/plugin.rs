@@ -277,9 +277,12 @@ impl PluginStreamingSource {
         let Some(descriptor) = descriptor else {
             return Ok(None);
         };
-        let bytes =
-            tauri::async_runtime::block_on(self.host.load_resource(&self.source_id, descriptor))
-                .map_err(host_error)?;
+        let bytes = match tauri::async_runtime::block_on(
+            self.host.load_resource(&self.source_id, descriptor),
+        ) {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(None),
+        };
         let path = self
             .data_root
             .join("source-artwork")
@@ -406,24 +409,36 @@ impl PluginStreamingSource {
         })
     }
     pub fn import_tracks(&self, ids: &[String]) -> Result<Vec<StreamingTrack>, CatalogError> {
-        if self
-            .host
-            .description(&self.source_id)
-            .map_err(host_error)?
-            .manifest
-            .capabilities
+        let missing = ids
             .iter()
-            .any(|capability| capability == "track_details")
-        {
-            return self.tracks(ids);
+            .filter(|id| self.cache.get(&self.source_id, id).is_none())
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            let declaration = self.host.description(&self.source_id).map_err(host_error)?;
+            if !declaration
+                .manifest
+                .capabilities
+                .iter()
+                .any(|capability| capability == "track_details")
+            {
+                return Err(CatalogError::Internal(
+                    "reload the source listing before importing this track".into(),
+                ));
+            }
+            self.tracks(&missing)?;
         }
         ids.iter()
             .map(|id| {
-                self.cache.get(&self.source_id, id).ok_or_else(|| {
-                    CatalogError::Internal(
-                        "reload the source listing before importing this track".into(),
-                    )
-                })
+                self.cache
+                    .get(&self.source_id, id)
+                    .ok_or_else(|| CatalogError::SourceFailure {
+                        code: "not_found".into(),
+                        message:
+                            "A requested track is no longer available. Reload the source listing."
+                                .into(),
+                        retryable: false,
+                    })
             })
             .collect()
     }
@@ -529,7 +544,19 @@ impl StreamingSource for PluginStreamingSource {
         let mut tracks = Vec::with_capacity(ids.len());
         for batch in ids.chunks(100) {
             let page: Details = decode(self.request("tracks.get", json!({"track_ids":batch}))?)?;
-            tracks.extend(self.tracks_from(page.items)?);
+            let fetched = self.tracks_from(page.items)?;
+            if batch
+                .iter()
+                .any(|id| !fetched.iter().any(|track| &track.remote_track_id == id))
+            {
+                return Err(CatalogError::SourceFailure {
+                    code: "not_found".into(),
+                    message: "A requested track is no longer available. Reload the source listing."
+                        .into(),
+                    retryable: false,
+                });
+            }
+            tracks.extend(fetched);
         }
         Ok(tracks)
     }

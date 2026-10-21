@@ -22,7 +22,11 @@ const tracks = ["1", "3"].map((id) => ({
   artists: [`${manifest.name} artist`],
   album: null,
   duration_ms: 1000,
-  artwork: null,
+  artwork: {
+    url: "https://127.0.0.1/private-image.png",
+    headers: {},
+    expires_at: null,
+  },
   refusal: null,
 }));
 const playlist = {
@@ -139,14 +143,14 @@ async function dispatch(method, params) {
         kind: "refusal",
         refusal: { reason: "trial_clip", message: "Fixture trial clip" },
       };
-    const extension = web ? "wav" : "ogg";
+    const extension = "wav";
     return {
       kind: "media",
       media: {
-        url: `https://raw.githubusercontent.com/thedavidweng/OpenKara/f439d2d94edff292b2f38b10bbe279a2e355e7dc/src-tauri/tests/fixtures/audio/fixture.${extension}`,
+        url: `https://raw.githubusercontent.com/thedavidweng/OpenKara/f439d2d94edff292b2f38b10bbe279a2e355e7dc/src-tauri/tests/fixtures/audio/fixture.${extension}${web ? "" : "?source=challenge"}`,
         headers: { "User-Agent": "OpenKara-Fixture" },
         expires_at: null,
-        content_type: web ? "audio/wav" : "audio/ogg",
+        content_type: "audio/wav",
         file_extension: extension,
         size_bytes: null,
         duration_ms: 1000,

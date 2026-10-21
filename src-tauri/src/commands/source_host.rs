@@ -115,33 +115,15 @@ pub(crate) async fn stop_import_work(
             && job.snapshot().phase != catalog::StreamingImportJobPhase::Completed
     }) {
         job.cancel();
-        let session = state
-            .catalog
-            .import_session
-            .lock()
-            .map_err(|_| state_lock_error("import session lock"))?
-            .take();
-        if let Some(mut session) = session {
-            let state = state.clone();
-            let app = app.clone();
-            let id = source_id.to_owned();
-            tauri::async_runtime::spawn_blocking(move || -> CommandResult<()> {
-                let source = source(&app, &id)?;
-                let library = state.library_root()?;
-                let mut connection = crate::cache::open_database(&library.database_path())
-                    .map_err(crate::commands::error::database_error)?;
-                catalog::advance_import_session(
-                    &mut connection,
-                    &library,
-                    &source,
-                    &mut session,
-                    Some(catalog::LibraryDecisionAction::Cancel),
-                )?;
-                Ok(())
-            })
-            .await
-            .map_err(|_| internal_error("could not cancel paused source import"))??;
-        }
+        let state = state.clone();
+        let app = app.clone();
+        let id = source_id.to_owned();
+        tauri::async_runtime::spawn_blocking(move || -> CommandResult<()> {
+            let source = source(&app, &id)?;
+            crate::commands::catalog::settle_cancelled_import(&state, &app, &source, &job)
+        })
+        .await
+        .map_err(|_| internal_error("could not cancel paused source import"))??;
     }
     Ok(())
 }

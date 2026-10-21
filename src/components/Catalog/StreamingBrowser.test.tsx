@@ -121,8 +121,10 @@ test("renders only supported operations and keyboard tab navigation", () => {
 });
 
 test("delayed searches stay bound to the original source and preserve each query", async () => {
-  const { promise, resolve: finish } =
-    Promise.withResolvers<StreamingTrackListing>();
+  let finish!: (page: StreamingTrackListing) => void;
+  const promise = new Promise<StreamingTrackListing>((resolve) => {
+    finish = resolve;
+  });
   const backend = createMockBackend({
     overrides: {
       catalog: {
@@ -196,7 +198,10 @@ test("a loading error offers recovery without presenting an empty collection", a
 });
 
 test("shared import remains visible after navigation and rejects another source or job's progress", async () => {
-  const { promise, resolve } = Promise.withResolvers<StreamingImportProgress>();
+  let resolve!: (progress: StreamingImportProgress) => void;
+  const promise = new Promise<StreamingImportProgress>((complete) => {
+    resolve = complete;
+  });
   const start = vi.fn().mockReturnValue(promise);
   store = createCatalogStore(
     createMockBackend({
@@ -402,4 +407,241 @@ test("a valid source named library is distinct from local library navigation", (
   expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
     "Source draft",
   );
+});
+
+test("protected playlist detail keeps Back available to return to public playlists", async () => {
+  const fixture = source("alpha", ["playlists", "playlist_tracks"]);
+  if (!fixture.manifest) throw new Error("Fixture requires a manifest");
+  fixture.manifest.requires_authentication = ["playlist.tracks"];
+  fixture.manifest.authentication = { flow: "web" };
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            expired: false,
+            display_name: null,
+          }),
+          listStreamingPlaylists: async () => ({
+            items: [
+              {
+                source_id: "alpha",
+                remote_id: "playlist",
+                name: "Public collection",
+                track_count: 1,
+                cover_url: null,
+              },
+            ],
+            next_cursor: null,
+          }),
+          getStreamingPlaylist: async () => {
+            throw new Error("Authentication required");
+          },
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([fixture]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Public collection/ }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.back" }),
+  );
+  expect(
+    screen.getByRole("button", { name: /Public collection/ }),
+  ).toBeTruthy();
+});
+
+test("a failed new search cannot reuse the previous query's continuation", async () => {
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            expired: false,
+            display_name: null,
+          }),
+          searchStreamingSource: async (_id, query) => {
+            if (query === "first")
+              return { tracks: [], next_cursor: "first-only-cursor" };
+            throw new Error("Search offline");
+          },
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "first" } });
+  fireEvent.submit(screen.getByRole("search"));
+  await screen.findByRole("button", { name: "catalog.streaming.loadMore" });
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "second" },
+  });
+  fireEvent.submit(screen.getByRole("search"));
+  await screen.findByRole("alert");
+  expect(
+    screen.queryByRole("button", { name: "catalog.streaming.loadMore" }),
+  ).toBeNull();
+});
+
+test("importing selected liked songs after viewing a playlist does not inherit its origin", async () => {
+  const track = {
+    source_id: "alpha",
+    remote_track_id: "liked-only",
+    title: "Liked song",
+    artist: "Artist",
+    album: null,
+    duration_ms: 1000,
+    refusal: null,
+    library_song_id: null,
+    cover_url: null,
+  };
+  const start = vi
+    .fn()
+    .mockResolvedValue({
+      source_id: "alpha",
+      status: "completed",
+      imported_song_ids: ["local-song"],
+      failed: [],
+      playlist_id: null,
+      conflict: null,
+    });
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            expired: false,
+            display_name: null,
+          }),
+          listStreamingPlaylists: async () => ({
+            items: [
+              {
+                source_id: "alpha",
+                remote_id: "playlist",
+                name: "Other collection",
+                track_count: 0,
+                cover_url: null,
+              },
+            ],
+            next_cursor: null,
+          }),
+          getStreamingPlaylist: async () => ({
+            source_id: "alpha",
+            remote_id: "playlist",
+            name: "Other collection",
+            track_count: 0,
+            tracks: [],
+            cover_url: null,
+            creator: null,
+            updated_at_ms: null,
+            description: null,
+            next_cursor: null,
+          }),
+          listStreamingLikedTracks: async () => ({
+            tracks: [track],
+            next_cursor: null,
+          }),
+          startStreamingImport: start,
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store
+    .getState()
+    .applySources([
+      source("alpha", [
+        "liked_tracks",
+        "playlists",
+        "playlist_tracks",
+        "import",
+      ]),
+    ]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Other collection/ }),
+  );
+  await screen.findByRole("heading", { name: "Other collection" });
+  fireEvent.click(screen.getByRole("tab", { name: "catalog.streaming.liked" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "catalog.streaming.select" }),
+  );
+  fireEvent.click(screen.getAllByRole("checkbox")[1]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.importSelected" }),
+  );
+  await waitFor(() => expect(start).toHaveBeenCalled());
+  expect(start.mock.calls[0].slice(0, 3)).toEqual([
+    "alpha",
+    ["liked-only"],
+    null,
+  ]);
+});
+
+test("web sign-in failure does not abandon an in-flight public collection", async () => {
+  let finish!: (page: StreamingTrackListing) => void;
+  const pending = new Promise<StreamingTrackListing>((resolve) => {
+    finish = resolve;
+  });
+  const fixture = source("alpha", ["liked_tracks"]);
+  if (!fixture.manifest) throw new Error("Fixture requires a manifest");
+  fixture.manifest.authentication = { flow: "web" };
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            expired: false,
+            display_name: null,
+          }),
+          listStreamingLikedTracks: () => pending,
+          openStreamingSignIn: async (source_id) => ({
+            source_id,
+            challenge: "web-alpha",
+            expires_at: "2099-01-01T00:00:00Z",
+            poll_after_ms: 60000,
+            presentation: { kind: "web" },
+          }),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([fixture]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "catalog.streaming.connect" }),
+    ),
+  );
+  act(() =>
+    store
+      .getState()
+      .setSignInError("alpha", {
+        code: "internal",
+        message: "Window closed",
+        retryable: true,
+        fallback: "retry",
+      }),
+  );
+  await act(async () => finish({ tracks: [], next_cursor: null }));
+  expect(screen.getByText("catalog.streaming.likedEmpty")).toBeTruthy();
 });

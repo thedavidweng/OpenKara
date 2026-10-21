@@ -10,6 +10,7 @@ import type {
   PreviewQueueItem,
   SourceSnapshot,
   StreamingImportEvent,
+  StreamingImportCompleteEvent,
   StreamingImportFailure,
   StreamingImportProgress,
   StreamingImportTrackState,
@@ -113,6 +114,7 @@ export interface CatalogState extends SourceBrowseState {
   ) => Promise<void>;
   resolveConflict: (action: LibraryDecisionAction) => Promise<void>;
   applyImportEvent: (event: StreamingImportEvent) => void;
+  applyImportComplete: (event: StreamingImportCompleteEvent) => void;
   cancelImport: () => Promise<void>;
   recoverImportJob: () => Promise<void>;
 }
@@ -201,7 +203,7 @@ export function createCatalogStore(
     authTimers.delete(id);
   };
   const browse = (id: string): SourceBrowseState =>
-    Object.hasOwn(store.getState().sourceStates, id)
+    Object.prototype.hasOwnProperty.call(store.getState().sourceStates, id)
       ? store.getState().sourceStates[id]
       : emptyBrowse();
   const patch = (id: string, update: Partial<SourceBrowseState>) =>
@@ -274,7 +276,12 @@ export function createCatalogStore(
   ) => {
     const state = store.getState(),
       run = state.importRun;
-    if (!run || run.jobId !== jobId || progress.source_id !== run.sourceId)
+    if (
+      !run ||
+      run.phase !== "running" ||
+      run.jobId !== jobId ||
+      progress.source_id !== run.sourceId
+    )
       return;
     if (progress.status === "awaiting_decision") {
       store.setState({
@@ -298,7 +305,7 @@ export function createCatalogStore(
     }
     store.setState({
       trackStates: states,
-      pendingConflict: progress.conflict,
+      pendingConflict: null,
       importFailures: progress.failed,
       activeImportIds: [],
       importRun: {
@@ -312,7 +319,7 @@ export function createCatalogStore(
   const failImport = (error: unknown, jobId: string | null) => {
     const state = store.getState(),
       run = state.importRun;
-    if (!run || run.jobId !== jobId) return;
+    if (!run || run.phase !== "running" || run.jobId !== jobId) return;
     const states = { ...state.trackStates };
     for (const remote of state.activeImportIds) {
       const key = onlinePreviewQueueId(run.sourceId, remote);
@@ -477,7 +484,9 @@ export function createCatalogStore(
         (!browse(id).challenge && browse(id).authStatus !== "loading")
       )
         return;
-      invalidate(id);
+      generation(id, "auth");
+      clearTimeout(authTimers.get(id));
+      authTimers.delete(id);
       patch(id, { signInError, challenge: null, authStatus: "error" });
     },
     clearSignInError: () => activePatch({ signInError: null }),
@@ -658,7 +667,10 @@ export function createCatalogStore(
     openPlaylist: async (remote, more = false) => {
       const id = get().activeSourceId ?? "",
         old = browse(id),
-        cached = Object.hasOwn(old.playlistDetails, remote)
+        cached = Object.prototype.hasOwnProperty.call(
+          old.playlistDetails,
+          remote,
+        )
           ? old.playlistDetails[remote]
           : undefined;
       if (more && !cached?.next_cursor) return;
@@ -711,6 +723,8 @@ export function createCatalogStore(
       patch(id, {
         searchQuery: trimmed,
         searchStatus: "loading",
+        searchResults: more ? old.searchResults : [],
+        searchCursor: more ? old.searchCursor : null,
         browserTab: "results",
         selected: more ? old.selected : new Set(),
         selecting: more && old.selecting,
@@ -829,6 +843,18 @@ export function createCatalogStore(
       } catch (error) {
         failImport(error, jobId);
       }
+    },
+    applyImportComplete: (event) => {
+      const run = get().importRun;
+      if (
+        !run ||
+        run.sourceId !== event.source_id ||
+        run.jobId !== event.job_id ||
+        event.progress.source_id !== event.source_id ||
+        event.progress.status !== "completed"
+      )
+        return;
+      applyProgress(event.progress, event.job_id);
     },
     applyImportEvent: (event) => {
       const state = get(),

@@ -258,18 +258,17 @@ export function StreamingBrowser() {
                 id="streaming-panel"
                 aria-labelledby={`streaming-tab-${active}`}
               >
+                {isDetail ? (
+                  <button className={button} onClick={state.closePlaylist}>
+                    {t("catalog.streaming.back")}
+                  </button>
+                ) : null}
                 {!available ? (
                   <StreamingSignIn />
                 ) : (
                   <>
                     {isDetail ? (
                       <div className="mb-4 flex items-center gap-4">
-                        <button
-                          className={button}
-                          onClick={state.closePlaylist}
-                        >
-                          {t("catalog.streaming.back")}
-                        </button>
                         <h2 className="text-lg font-semibold">
                           {detail?.name}
                         </h2>
@@ -390,8 +389,8 @@ export function StreamingBrowser() {
                                         ),
                                       )
                                       .map((track) => track.remote_track_id),
-                                    detail?.remote_id,
-                                    detail?.name,
+                                    isDetail ? detail?.remote_id : null,
+                                    isDetail ? detail?.name : null,
                                   )
                                 }
                               >

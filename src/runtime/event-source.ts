@@ -15,6 +15,7 @@ import type {
   SeparationErrorEvent,
   SeparationProgressEvent,
   StreamingImportEvent,
+  StreamingImportCompleteEvent,
   StreamingSessionSnapshot,
   SourceSnapshot,
   TrackTransitionedEvent,
@@ -51,6 +52,7 @@ export interface RuntimeEventMap {
   "streaming-sign-in-error": { source_id: string; error: CommandError };
   "streaming-source-status": SourceSnapshot;
   "streaming-import-progress": StreamingImportEvent;
+  "streaming-import-complete": StreamingImportCompleteEvent;
 }
 
 export type RuntimeEventName = keyof RuntimeEventMap;
@@ -121,6 +123,7 @@ export function createRecordingRuntimeEventSource(): RuntimeEventSource & {
     "streaming-sign-in-error": new Set(),
     "streaming-source-status": new Set(),
     "streaming-import-progress": new Set(),
+    "streaming-import-complete": new Set(),
   };
 
   return {

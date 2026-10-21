@@ -279,6 +279,12 @@ export type StreamingImportTrackState =
   | { kind: "skipped"; refusal: ImportRefusal }
   | { kind: "failed"; reason: StreamingImportFailureReason };
 
+export interface StreamingImportCompleteEvent {
+  source_id: OnlineSourceId;
+  job_id: string;
+  progress: StreamingImportProgress;
+}
+
 export interface StreamingImportEvent {
   source_id: OnlineSourceId;
   job_id: string;
@@ -314,6 +320,7 @@ export interface StreamingImportJobSnapshot {
 /** Display data for a source-bound streaming preview. */
 export interface PreviewQueueItem {
   id: string;
+  source_id: string;
   remote_track_id: string;
   title: string;
   artist: string;

@@ -12,6 +12,7 @@ const STREAMING_IMPORT_PROGRESS_EVENT: &str = "streaming-import-progress";
 #[derive(Default)]
 pub struct SourceAuthentication {
     inner: Mutex<HashMap<String, AuthenticationWork>>,
+    completed: Mutex<HashMap<String, (String, catalog::StreamingSessionSnapshot)>>,
 }
 struct AuthenticationWork {
     challenge: String,
@@ -95,6 +96,12 @@ pub async fn open_streaming_sign_in(
     source_id: String,
 ) -> CommandResult<Value> {
     cancel_authentication(&app_handle, &source_id).await?;
+    app_handle
+        .state::<SourceAuthentication>()
+        .completed
+        .lock()
+        .map_err(|_| state_lock_error("authentication result lock"))?
+        .remove(&source_id);
     let host = app_handle.state::<SourceHost>().inner().clone();
     let description = host.description(&source_id).map_err(host_error)?;
     let lease = Arc::new(
@@ -362,18 +369,36 @@ async fn watch_web_sign_in(
         break;
     }
     let _ = window.close();
-    let matching = app
-        .state::<SourceAuthentication>()
-        .inner
-        .lock()
-        .map(|guard| {
-            guard
-                .get(&id)
-                .is_some_and(|work| work.challenge == challenge)
-        })
-        .unwrap_or(false);
-    if matching {
-        let _ = cancel_authentication(&app, &id).await;
+    let completed_work = {
+        let auth = app.state::<SourceAuthentication>();
+        let mut guard = match auth.inner.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        if !guard
+            .get(&id)
+            .is_some_and(|work| work.challenge == challenge)
+        {
+            None
+        } else {
+            let work = guard.remove(&id);
+            if let Some(session) = work.as_ref().and_then(|work| work.completed.clone()) {
+                if let Ok(mut terminal) = auth.completed.lock() {
+                    terminal.insert(id.clone(), (challenge.clone(), session));
+                }
+            }
+            work
+        }
+    };
+    if let Some(work) = completed_work {
+        work.lease.cancellation().cancel();
+        if work.completed.is_none() {
+            let _ = app
+                .state::<SourceHost>()
+                .request(&id, "auth.cancel", json!({"challenge":challenge}))
+                .await;
+        }
+        drop(work);
     }
 }
 #[tauri::command]
@@ -382,6 +407,16 @@ pub async fn poll_streaming_sign_in(
     source_id: String,
     challenge: String,
 ) -> CommandResult<Value> {
+    if let Some((_, session)) = app_handle
+        .state::<SourceAuthentication>()
+        .completed
+        .lock()
+        .map_err(|_| state_lock_error("authentication result lock"))?
+        .get(&source_id)
+        .filter(|(token, _)| token == &challenge)
+    {
+        return Ok(json!({"state":"complete","session":session}));
+    }
     let lease = {
         let state = app_handle.state::<SourceAuthentication>();
         let guard = state
@@ -491,6 +526,12 @@ pub async fn sign_out_streaming_source(
     source_id: String,
     stop_work: Option<bool>,
 ) -> CommandResult<catalog::StreamingSessionSnapshot> {
+    app_handle
+        .state::<SourceAuthentication>()
+        .completed
+        .lock()
+        .map_err(|_| state_lock_error("authentication result lock"))?
+        .remove(&source_id);
     let host = app_handle.state::<SourceHost>().inner().clone();
     let snapshot = match host.snapshot(&source_id) {
         Ok(snapshot) => snapshot,
@@ -692,7 +733,7 @@ pub async fn start_streaming_import(
             let mut session = catalog::StreamingImportSession::new(request)
                 .with_job(job.clone())
                 .with_work_lease(lease);
-            run_import_on_library(&state, &source, &mut session, None)
+            run_import_on_library(&state, &app_handle, &source, &mut session, None)
         })();
         if result.is_err() {
             job.set_phase(catalog::StreamingImportJobPhase::Completed);
@@ -718,7 +759,8 @@ pub async fn continue_streaming_import(
             .ok_or_else(|| internal_error("no streaming import is waiting"))?;
         let source =
             source(&app_handle, session.source_id())?.with_cancellation(session.cancellation());
-        let result = run_import_on_library(&state, &source, &mut session, Some(action));
+        let result =
+            run_import_on_library(&state, &app_handle, &source, &mut session, Some(action));
         if result.is_err() {
             if let Some(job) = state
                 .catalog
@@ -765,6 +807,7 @@ pub fn get_streaming_import_status(
 }
 fn run_import_on_library(
     state: &AppState,
+    app: &AppHandle,
     source: &catalog::PluginStreamingSource,
     session: &mut catalog::StreamingImportSession,
     action: Option<catalog::LibraryDecisionAction>,
@@ -773,6 +816,7 @@ fn run_import_on_library(
     let mut connection = cache::open_database(&library.database_path()).map_err(database_error)?;
     let progress =
         catalog::advance_import_session(&mut connection, &library, source, session, action)?;
+    let job = session.job();
     if progress.status == catalog::StreamingImportStatus::AwaitingDecision {
         let id = session.source_id().to_owned();
         *state
@@ -787,8 +831,83 @@ fn run_import_on_library(
                 playlist: None,
             }),
         ));
+        if let Some(job) = job {
+            let cancellation = state
+                .catalog
+                .import_session
+                .lock()
+                .map_err(|_| state_lock_error("import session lock"))?
+                .as_ref()
+                .filter(|session| session.job().is_some_and(|owner| Arc::ptr_eq(&owner, &job)))
+                .map(|session| session.cancellation());
+            if let Some(cancellation) = cancellation {
+                let state = state.clone();
+                let app = app.clone();
+                let source = source.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            _ = cancellation.cancelled() => break,
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                                let waiting = state.catalog.import_session.lock().ok()
+                                    .is_some_and(|parked| parked.as_ref().is_some_and(|session| {
+                                        session.job().is_some_and(|owner| Arc::ptr_eq(&owner, &job))
+                                    }));
+                                if !waiting { return; }
+                            }
+                        }
+                    }
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        settle_cancelled_import(&state, &app, &source, &job)
+                    })
+                    .await;
+                });
+            }
+        }
+    } else if let Some(job) = job {
+        let _ = app.emit_to(
+            "main",
+            "streaming-import-complete",
+            json!({
+                "source_id": progress.source_id,
+                "job_id": job.job_id(),
+                "progress": progress,
+            }),
+        );
     }
     Ok(progress)
+}
+
+pub(crate) fn settle_cancelled_import(
+    state: &AppState,
+    app: &AppHandle,
+    source: &catalog::PluginStreamingSource,
+    job: &Arc<catalog::StreamingImportJob>,
+) -> CommandResult<()> {
+    let mut session = {
+        let mut parked = state
+            .catalog
+            .import_session
+            .lock()
+            .map_err(|_| state_lock_error("import session lock"))?;
+        let matches = parked.as_ref().is_some_and(|session| {
+            session.source_id() == job.snapshot().source_id
+                && session.job().is_some_and(|owner| Arc::ptr_eq(&owner, job))
+        });
+        if !matches {
+            return Ok(());
+        }
+        parked.take().expect("matching parked import")
+    };
+    job.cancel();
+    run_import_on_library(
+        state,
+        app,
+        source,
+        &mut session,
+        Some(catalog::LibraryDecisionAction::Cancel),
+    )?;
+    Ok(())
 }
 #[tauri::command]
 pub async fn resolve_video_source_url(

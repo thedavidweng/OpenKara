@@ -31,6 +31,9 @@ export function startStreamingRuntime() {
       )
         void useCatalogStore.getState().loadSession(source.source_id);
     }),
+    eventSubscription("streaming-import-complete", (event) =>
+      useCatalogStore.getState().applyImportComplete(event),
+    ),
     eventSubscription("streaming-import-progress", (event) => {
       const state = useCatalogStore.getState();
       const run = state.importRun;

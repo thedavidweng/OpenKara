@@ -86,6 +86,10 @@ impl StreamingImportSession {
     pub fn source_id(&self) -> &str {
         &self.source_id
     }
+    pub fn job(&self) -> Option<Arc<StreamingImportJob>> {
+        self.job.clone()
+    }
+
     pub fn cancellation(&self) -> crate::source_host::Cancellation {
         self.work_lease
             .as_ref()
@@ -140,8 +144,9 @@ impl StreamingImportSession {
         }
     }
 
-    fn finish(&self, conflict: Option<ImportConflictPrompt>) -> StreamingImportProgress {
+    fn finish(&mut self, conflict: Option<ImportConflictPrompt>) -> StreamingImportProgress {
         self.set_phase(StreamingImportJobPhase::Completed);
+        self.work_lease.take();
         progress_of(self, StreamingImportStatus::Completed, conflict)
     }
 }
@@ -178,6 +183,14 @@ pub fn advance_import_session<S: StreamingSource>(
     session: &mut StreamingImportSession,
     incoming_action: Option<LibraryDecisionAction>,
 ) -> Result<StreamingImportProgress, CatalogError> {
+    if session.is_cancelled() {
+        if let Some(paused) = session.paused.take() {
+            session.cancel_item(&paused.item);
+            let _ = std::fs::remove_file(&paused.incoming_path);
+        }
+        session.cancel_remaining();
+        return Ok(session.finish(None));
+    }
     if let Some(action) = incoming_action {
         if let Some(paused) = session.paused.take() {
             match resolve_action(action, &mut session.apply_remaining) {
@@ -1061,6 +1074,60 @@ mod tests {
         assert_eq!(events.lock().expect("events").len(), 2);
     }
 
+    #[test]
+    fn cancelling_a_parked_conflict_discards_a_late_replace_and_remaining_tracks() {
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "a", 3);
+        let original = run_streaming_import(
+            &mut connection,
+            &library,
+            &source,
+            StreamingImportRequest {
+                source_id: "netease".to_owned(),
+                items: vec![item("a")],
+                playlist: None,
+            },
+            |_| panic!("initial import has no conflict"),
+        )
+        .expect("seed");
+        add_tone_track(&source, &copies, "a", 5);
+        add_tone_track(&source, &copies, "b", 7);
+        let (job, _) = job_for(&["a", "b"]);
+        let mut session = StreamingImportSession::new(StreamingImportRequest {
+            source_id: "netease".to_owned(),
+            items: vec![item("a"), item("b")],
+            playlist: None,
+        })
+        .with_job(job.clone());
+        let paused = advance_import_session(&mut connection, &library, &source, &mut session, None)
+            .expect("pause");
+        assert_eq!(paused.status, StreamingImportStatus::AwaitingDecision);
+        job.cancel();
+        let terminal = advance_import_session(
+            &mut connection,
+            &library,
+            &source,
+            &mut session,
+            Some(LibraryDecisionAction::Replace),
+        )
+        .expect("settle cancellation");
+        assert_eq!(terminal.status, StreamingImportStatus::Completed);
+        assert!(terminal.conflict.is_none());
+        assert_eq!(terminal.failed.len(), 2);
+        assert!(terminal
+            .failed
+            .iter()
+            .all(|failure| failure.reason == StreamingImportFailureReason::Cancelled));
+        let mut annotated = vec![source_track("a"), source_track("b")];
+        crate::catalog::annotate_library_songs(&connection, "netease", &mut annotated)
+            .expect("library matches");
+        assert_eq!(
+            annotated[0].library_song_id.as_deref(),
+            Some(original.imported_song_ids[0].as_str())
+        );
+        assert!(annotated[1].library_song_id.is_none());
+        assert_eq!(job.snapshot().phase, StreamingImportJobPhase::Completed);
+    }
     #[test]
     fn imported_tracks_are_annotated_with_library_song_id() {
         let (_tmp, library, mut connection, source, copies) = setup();

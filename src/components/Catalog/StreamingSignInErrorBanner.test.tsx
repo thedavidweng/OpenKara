@@ -22,7 +22,8 @@ vi.mock("@/lib/errors", async (importOriginal) => ({
 beforeEach(() => {
   copyDebugInfo.mockReset();
   copyDebugInfo.mockResolvedValue(undefined);
-  useCatalogStore.setState({ signInError: null });
+  useCatalogStore.setState({ signInError: null, sourceStates: {} });
+  useCatalogStore.getState().setActiveSource("alpha");
 });
 
 afterEach(cleanup);
@@ -45,7 +46,7 @@ describe("StreamingSignInErrorBanner", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByRole("alert").textContent).toContain("window closed");
     fireEvent.click(screen.getByRole("button", { name: "common.close" }));
-    expect(useCatalogStore.getState().signInError).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   test("copies debug info", async () => {

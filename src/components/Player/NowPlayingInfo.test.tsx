@@ -33,6 +33,7 @@ const { mockPlayerState, mockLibraryState } = vi.hoisted(() => ({
 }));
 
 vi.mock("react-i18next", () => ({
+  initReactI18next: { type: "3rdParty", init: () => {} },
   useTranslation: () => ({
     t: (key: string) => key,
   }),
@@ -53,12 +54,41 @@ const mockCatalogState = vi.hoisted(() => ({
   sources: [
     {
       source_id: "alpha",
+      owner_binding: "test/alpha",
+      name: "Alpha",
+      description: "Fixture source",
+      license: "MIT",
       installed_version: "1",
+      available_version: "1",
+      staged_version: null,
+      pinned_version: null,
       enabled: true,
       runtime_ready: true,
+      running: false,
       state: "ready",
-      manifest: { capabilities: ["import"], requires_authentication: [] },
-    } as SourceSnapshot,
+      progress: null,
+      last_error: null,
+      active_work: [],
+      manifest: {
+        manifest_version: 1,
+        source_id: "alpha",
+        package_id: "alpha",
+        publisher: "test",
+        version: "1",
+        minimum_host_version: "0.1.0",
+        protocol: { majors: [1], minor: 0 },
+        runtime: { kind: "node", major: 24 },
+        entry: "index.js",
+        name: "Alpha",
+        description: "Fixture source",
+        license: "MIT",
+        capabilities: ["import"],
+        authentication: { flow: "none" },
+        requires_authentication: [],
+        resource_origins: [],
+        media_origins: [],
+      },
+    } satisfies SourceSnapshot,
   ],
   sourceStates: {},
   previewItems: {} as Record<

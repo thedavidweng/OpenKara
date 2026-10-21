@@ -1,5 +1,9 @@
 import type { InvokeCommand } from "@/lib/tauri/invoke";
-import type { SourceSnapshot, StreamingImportJobSnapshot } from "@/types/ipc";
+import type {
+  SourceSnapshot,
+  StreamingImportJobSnapshot,
+  StreamingImportProgress,
+} from "@/types/ipc";
 
 export interface MockData {
   songs: MockSong[];
@@ -988,9 +992,7 @@ export function createTauriMock(data: any): TauriMockResult {
       s.state = "installing";
       s.progress = { phase: "download", completed: 0, total: 100 };
       changed(args.sourceId);
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 20);
-      await promise;
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
       installations.delete(args.sourceId);
       if (operation.cancelled)
         throw {
@@ -1240,9 +1242,7 @@ export function createTauriMock(data: any): TauriMockResult {
         cancelling: false,
       });
       changed(args.sourceId);
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 20);
-      await promise;
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
       for (const track of job.tracks) {
         track.state = {
           kind: "failed",
@@ -1263,7 +1263,7 @@ export function createTauriMock(data: any): TauriMockResult {
         args.sourceId,
       ).active_work.filter((work) => work.kind !== "import");
       changed(args.sourceId);
-      return {
+      const progress: StreamingImportProgress = {
         source_id: args.sourceId,
         status: "completed",
         imported_song_ids: [],
@@ -1277,6 +1277,12 @@ export function createTauriMock(data: any): TauriMockResult {
         playlist_id: null,
         conflict: null,
       };
+      emitMockEvent("streaming-import-complete", {
+        source_id: args.sourceId,
+        job_id: job.job_id,
+        progress,
+      });
+      return progress;
     },
     continue_streaming_import: () => {
       throw {

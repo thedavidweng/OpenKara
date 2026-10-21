@@ -33,6 +33,11 @@ fn workflow_package(id: &str, web: bool) -> FixturePackage {
     ]
     .map(str::to_owned)
     .to_vec();
+    if web {
+        manifest
+            .requires_authentication
+            .retain(|method| method != "media.resolve");
+    }
     if !web {
         manifest
             .capabilities
@@ -68,10 +73,27 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         vec!["93.184.216.34".parse().unwrap()],
         include_bytes!("../../tests/fixtures/audio/fixture.wav").to_vec(),
     );
+    let mut second_audio = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(
+            &mut second_audio,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 8000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for index in 0..8000i16 {
+            writer.write_sample(index.wrapping_mul(17)).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
     config.add_fixture_resource(
-        format!("{MEDIA_ROOT}.ogg"),
+        format!("{MEDIA_ROOT}.wav?source=challenge"),
         vec!["93.184.216.34".parse().unwrap()],
-        include_bytes!("../../tests/fixtures/audio/fixture.ogg").to_vec(),
+        second_audio.into_inner(),
     );
     let host = SourceHost::new(config).await.expect("open real host");
     assert_eq!(host.refresh().await.expect("verified discovery").len(), 2);
@@ -90,6 +112,13 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         let challenge=PluginStreamingSource::open(worker_host.clone(),"challenge".into(),root.clone()).unwrap().with_cache(metadata.clone());
         assert!(!official.session().unwrap().signed_in);
         assert!(!challenge.session().unwrap().signed_in);
+        let public=official.track_page("search",json!({"query":"public","cursor":null})).unwrap();
+        assert_eq!(public.tracks[0].remote_track_id,"1");
+        assert!(public.tracks[0].cover_url.is_none());
+        assert!(official.tracks(&["1".into()]).is_err());
+        assert_eq!(official.import_tracks(&["1".into()]).unwrap()[0].title,"Official fixture 1");
+        let public_media=official.resolve("1",&NoResolveProgress).unwrap();
+        match public_media{super::types::StreamingResolveOutcome::File(file)=>std::fs::remove_file(file.path).unwrap(),_=>panic!("accepted public import media")};
         let start=official.request("auth.start",json!({})).unwrap();
         assert_eq!(start["presentation"]["kind"],"web");
         let failed=official.request("auth.complete",json!({"challenge":start["challenge"],"credentials":{"official_cookie":"wrong"}}));
@@ -110,6 +139,7 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         assert!(challenge.playlist_tracks_page("42",first.next_cursor.as_deref()).is_err());
         assert_eq!(official.playlist_tracks_page("42",first.next_cursor.as_deref()).unwrap().tracks[0].remote_track_id,"3");
         assert!(challenge.search("public").is_err());
+        assert!(official.tracks(&["missing".into()]).is_err());
         assert_eq!(metadata.get("official","1").unwrap().artist,"Official fixture artist");
         assert_eq!(metadata.get("challenge","1").unwrap().artist,"Challenge fixture artist");
         let preview=match official.preview("1").unwrap(){StreamingPreviewOutcome::Stream(resolved)=>resolved,_=>panic!("accepted preview")};

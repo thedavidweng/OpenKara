@@ -56,6 +56,8 @@ Cursors are opaque and bound to the source and listing. A null next cursor ends 
 
 Progress, job snapshots and `streaming-import-progress` events all contain `source_id`. Progress contains `status` (`awaiting_decision` or `completed`), `imported_song_ids`, `failed`, nullable `playlist_id`, and nullable `conflict`. Job snapshots contain `job_id`, `phase` (`running`, `awaiting_decision`, `completed`), `completed`, `total`, and `tracks`. Events contain `job_id`, `remote_track_id`, `title`, `artist`, `state`, `completed`, and `total`.
 
+`streaming-import-complete` carries `{source_id,job_id,progress:StreamingImportProgress}` for terminal outcomes, including cancellation of a parked decision and source revocation. The global consumer must match both identifiers, clear the pending conflict, and finish the import run even when another source or view is active. A late event from another source or job must not change the current import.
+
 Track states are `queued`, `downloading` (optional percent), `importing`, `imported` (song_id), `skipped` (refusal), or `failed` (reason). Failure reasons are `refusal`, `cancelled`, and `import_failed`. Refusal reasons are `no_play_rights`, `trial_clip`, `empty_url`, and `unavailable`. Protocol `no_media` maps to `empty_url`. A refusal never substitutes another source. Successful imports become ordinary library songs. Playlist origin and track identity include the source id. Conflict actions are `keep`, `replace`, `apply_keep`, `apply_replace`, or `cancel`.
 
 Online Preview queue ids are `stream:${source_id}:${encodeURIComponent(remote_id)}`. Metadata maps use the complete canonical id. Preview ids are not library songs and do not gain library lyrics, stems, or history. Host lyric lookup uses source-bound metadata. Preview work belongs to its source and must stop before source removal.
@@ -82,6 +84,22 @@ and request generations. Delayed results update the source that started the
 request. Navigation does not cancel an import or move its task subscriptions.
 The import bar and Library Decision dialog remain available outside a source
 browser. Import events must match both source and caller-created job id.
+
+`streaming-import-complete` carries `{source_id,job_id,progress}` after a running
+or paused import reaches its terminal result. Runtime subscriptions consume it
+outside navigation and clear the matching Library Decision. Cancellation from
+revocation settles a paused conflict before the work lease is released. A late
+Keep or Replace decision cannot override completed cancellation.
+
+Import uses metadata already returned by that source before it requests optional
+track details. A public import does not gain a sign-in requirement from an
+optional protected detail method. Missing requested track details fail explicitly;
+the host does not report omitted identities as imported. Failed or rejected
+artwork remains unavailable artwork after host validation, not a failed track.
+
+Official-page completion retains the source/challenge terminal result for polling
+after the host closes its window and releases active work. New sign-in and
+sign-out clear the retained result.
 
 Load More forwards the exact opaque cursor. Playlist import follows remaining
 playlist cursors before it sends the complete selection to shared Streaming

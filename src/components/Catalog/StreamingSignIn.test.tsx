@@ -23,15 +23,27 @@ vi.mock("@/stores/catalog-store", async (original) => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
 }));
-const source = {
+const source: SourceSnapshot = {
   source_id: "alpha",
+  owner_binding: "test/alpha",
   name: "Alpha",
-  enabled: true,
+  description: "Fixture source",
+  license: "MIT",
   installed_version: "1",
+  available_version: "1",
+  staged_version: null,
+  pinned_version: null,
+  enabled: true,
   runtime_ready: true,
+  running: false,
   state: "ready",
-} as SourceSnapshot;
+  progress: null,
+  last_error: null,
+  active_work: [],
+  manifest: null,
+};
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -172,7 +184,7 @@ test("web authentication presents the controlled-window status and accepts only 
 });
 
 test("late authentication completion cannot restore a disabled source", async () => {
-  const { promise, resolve } = Promise.withResolvers<{
+  let resolve!: (result: {
     state: "complete";
     session: {
       source_id: string;
@@ -180,7 +192,18 @@ test("late authentication completion cannot restore a disabled source", async ()
       display_name: string;
       expired: boolean;
     };
-  }>();
+  }) => void;
+  const promise = new Promise<{
+    state: "complete";
+    session: {
+      source_id: string;
+      signed_in: boolean;
+      display_name: string;
+      expired: boolean;
+    };
+  }>((complete) => {
+    resolve = complete;
+  });
   const store = createCatalogStore(
     createMockBackend({
       overrides: {
