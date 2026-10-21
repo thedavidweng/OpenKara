@@ -143,7 +143,25 @@ impl HostConfig {
             )
         })
         .collect();
-        Self { data_root:data_root.join("streaming-sources"), resource_root, host_version, runtime_policy, index_url:"https://github.com/thedavidweng/openkara-sources/releases/latest/download/source-index.json".into(),trusted_keys,target,current_protocol:1,idle_timeout:Duration::from_secs(60),operation_timeout:Duration::from_secs(30),backoff_unit:Duration::from_secs(1), #[cfg(test)] allow_test_distribution_http:false, #[cfg(test)] fixture_resources:BTreeMap::new(), #[cfg(test)] fixture_statuses:BTreeMap::new() }
+        Self {
+            data_root: data_root.join("streaming-sources"),
+            resource_root,
+            host_version,
+            runtime_policy,
+            index_url: "https://github.com/thedavidweng/openkara-sources/releases/latest/download/source-index.json".into(),
+            trusted_keys,
+            target,
+            current_protocol: 1,
+            idle_timeout: Duration::from_secs(60),
+            operation_timeout: Duration::from_secs(30),
+            backoff_unit: Duration::from_secs(1),
+            #[cfg(test)]
+            allow_test_distribution_http: false,
+            #[cfg(test)]
+            fixture_resources: BTreeMap::new(),
+            #[cfg(test)]
+            fixture_statuses: BTreeMap::new(),
+        }
     }
     #[cfg(test)]
     pub(crate) fn fixture(

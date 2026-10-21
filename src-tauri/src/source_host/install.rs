@@ -6,6 +6,17 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+const DOWNLOAD_MISMATCH: &str =
+    "Downloaded source bytes do not match the signed release. Retry or report the release.";
+const BUNDLED_RUNTIME_INCOMPATIBLE: &str =
+    "The bundled runtime cannot run this release. Update OpenKara or select a compatible source version.";
+const RUNTIME_VALIDATION_TIMEOUT: &str =
+    "Runtime validation timed out. Update OpenKara or reinstall the runtime.";
+const RUNTIME_EXECUTION_FAILED: &str =
+    "The pinned runtime cannot execute on this platform. Update OpenKara or reinstall the runtime.";
+const RUNTIME_IDENTITY_MISMATCH: &str =
+    "The runtime version or platform does not match the signed release. Update OpenKara or reinstall the runtime.";
+
 pub(crate) fn relative(path: &str) -> HostResult<PathBuf> {
     if path.is_empty() || path.contains(['\\', ':', '\0']) {
         return Err(invalid());
@@ -126,15 +137,37 @@ pub(crate) async fn artifact(
     let directory = staging.join(uuid::Uuid::new_v4().to_string());
     fs::create_dir(&directory)?;
     let archive = directory.join("archive");
-    let result=async {
-        let response=network::response(&artifact.url,&Default::default(),None,super::test_http(config),cancel).await?;
-        let (size,sha256)=network::download(response,&archive,artifact.size,cancel,progress).await?;
-        if size!=artifact.size || sha256!=artifact.sha256 {return Err(HostError::new("invalid_package","Downloaded source bytes do not match the signed release. Retry or report the release."))}
-        let output=directory.join("files"); fs::create_dir(&output)?;
-        extract(&archive,&output,&artifact.format,cancel,if artifact.executable.is_empty(){None}else{Some(artifact.executable.as_str())})?;
+    let result = async {
+        let response = network::response(
+            &artifact.url,
+            &Default::default(),
+            None,
+            super::test_http(config),
+            cancel,
+        )
+        .await?;
+        let (size, sha256) =
+            network::download(response, &archive, artifact.size, cancel, progress).await?;
+        if size != artifact.size || sha256 != artifact.sha256 {
+            return Err(HostError::new("invalid_package", DOWNLOAD_MISMATCH));
+        }
+        let output = directory.join("files");
+        fs::create_dir(&output)?;
+        extract(
+            &archive,
+            &output,
+            &artifact.format,
+            cancel,
+            if artifact.executable.is_empty() {
+                None
+            } else {
+                Some(artifact.executable.as_str())
+            },
+        )?;
         fs::remove_file(&archive)?;
         Ok(output)
-    }.await;
+    }
+    .await;
     if result.is_err() {
         let _ = fs::remove_dir_all(&directory);
     }
@@ -372,7 +405,10 @@ pub(crate) async fn runtime(
             target,
         } => {
             if version != &release.runtime.version || target != &config.target {
-                return Err(HostError::new("incompatible_plugin","The bundled runtime cannot run this release. Update OpenKara or select a compatible source version."));
+                return Err(HostError::new(
+                    "incompatible_plugin",
+                    BUNDLED_RUNTIME_INCOMPATIBLE,
+                ));
             }
             executable.clone()
         }
@@ -404,15 +440,25 @@ pub(crate) async fn runtime(
     };
     cancel.check()?;
     let mut command = tokio::process::Command::new(&executable);
-    command.arg("-p").arg("JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})").env_clear().kill_on_drop(true);
+    command
+        .arg("-p")
+        .arg("JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})")
+        .env_clear()
+        .kill_on_drop(true);
     for key in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);
         }
     }
     let output = tokio::select! {
-        _=cancel.cancelled()=>return Err(HostError::new("cancelled","Runtime validation cancelled. Retry when ready.")),
-        output=tokio::time::timeout(std::time::Duration::from_secs(10),command.output())=>output.map_err(|_|HostError::new("incompatible_plugin","Runtime validation timed out. Update OpenKara or reinstall the runtime."))?.map_err(|_|HostError::new("incompatible_plugin","The pinned runtime cannot execute on this platform. Update OpenKara or reinstall the runtime."))?,
+        _ = cancel.cancelled() => {
+            return Err(HostError::new("cancelled", "Runtime validation cancelled. Retry when ready."));
+        }
+        output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output()) => {
+            output
+                .map_err(|_| HostError::new("incompatible_plugin", RUNTIME_VALIDATION_TIMEOUT))?
+                .map_err(|_| HostError::new("incompatible_plugin", RUNTIME_EXECUTION_FAILED))?
+        }
     };
     let info: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| invalid())?;
     let platform = match std::env::consts::OS {
@@ -430,7 +476,10 @@ pub(crate) async fn runtime(
         || info["platform"] != platform
         || info["arch"] != arch
     {
-        return Err(HostError::new("incompatible_plugin","The runtime version or platform does not match the signed release. Update OpenKara or reinstall the runtime."));
+        return Err(HostError::new(
+            "incompatible_plugin",
+            RUNTIME_IDENTITY_MISMATCH,
+        ));
     }
     Ok(executable)
 }

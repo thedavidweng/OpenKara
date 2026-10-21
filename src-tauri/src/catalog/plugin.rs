@@ -609,7 +609,14 @@ impl StreamingSource for PluginStreamingSource {
                     );
                     tokio::pin!(download);
                     loop {
-                        tokio::select! { result=&mut download=>break result.map_err(host_error), _=tokio::time::sleep(std::time::Duration::from_millis(50))=>if progress.is_cancelled(){cancellation.cancel();} }
+                        tokio::select! {
+                            result = &mut download => break result.map_err(host_error),
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                                if progress.is_cancelled() {
+                                    cancellation.cancel();
+                                }
+                            }
+                        }
                     }
                 })?;
                 progress.downloading(Some(100));
