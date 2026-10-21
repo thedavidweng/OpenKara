@@ -70,6 +70,7 @@ impl Drop for WorkLease {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn digest(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     digest_hex(Sha256::digest(bytes))

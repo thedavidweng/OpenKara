@@ -23,13 +23,6 @@ pub(crate) fn fixture_manifest(source_id: &str, version: &str) -> SourceManifest
     manifest.version = version.into();
     manifest
 }
-pub(crate) fn fixture_worker() -> String {
-    include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../fixtures/streaming-source/worker.mjs"
-    ))
-    .into()
-}
 impl FixtureDistribution {
     pub(crate) async fn new() -> Self {
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
