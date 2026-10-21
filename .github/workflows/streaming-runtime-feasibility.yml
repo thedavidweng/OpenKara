@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - feat/551-streaming-source-plugins
+    paths:
+      - .github/workflows/streaming-runtime-feasibility.yml
+      - .github/workflows/reusable-*-installed-app*.yml
+      - src-tauri/src/streaming_runtime_smoke.rs
+      - src-tauri/tests/streaming_runtime_smoke.rs
+      - scripts/ci/observe-linux-streaming-runtime.mjs
   workflow_dispatch:
 
 permissions:
