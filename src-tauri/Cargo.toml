@@ -55,6 +55,8 @@ rand = "0.10.2"
 rayon = "1.12.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "form", "json", "query", "rustls"] }
 ringbuf = "0.5"
+ring = "0.17.14"
+semver = "1.0.28"
 rubato = "5.0.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -80,7 +82,8 @@ unicode-normalization = "0.1"
 flate2 = "1.1.9"
 tar = "0.4"
 httpdate = "1.0.3"
-tokio = { version = "1.53", features = ["sync"] }
+time = { version = "0.3.55", features = ["parsing"] }
+tokio = { version = "1.53", features = ["sync", "rt", "macros", "process", "io-util", "time", "net"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 realfft = "3.5.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
