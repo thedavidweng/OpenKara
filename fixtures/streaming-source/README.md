@@ -60,6 +60,30 @@ browse/resolve only after authentication, so the host can distinguish upstream
 failure from expiry. Environment scenarios are test setup, not protocol
 capabilities or a user-facing vendor setting.
 
+## Installed application workflow tests
+
+`workflow-worker.mjs` implements two manifest-driven test packages. The official-page
+package declares search, liked tracks, preview and import. The challenge package
+declares playlist browsing and import, with QR polling. Both use track `1` and
+playlist `42`, but return different metadata, cursors, accounts and audio.
+Neither package is a production discovery entry.
+
+The catalog consumer test builds both archives, signs an index with independent
+ephemeral keys, installs them through `SourceHost`, and runs their real stdio
+processes. Its exact public HTTPS media URLs use constructor-injected public DNS
+addresses and fixture bytes. It does not permit loopback media in production.
+Prepare the exact Node 24.21.0 runtime, then run from `src-tauri`:
+
+```sh
+OPENKARA_SOURCE_TEST_NODE=/absolute/path/to/node \
+  cargo test --lib catalog::plugin_tests -- --ignored --nocapture
+```
+
+This proves source-domain authentication verification, capability failures,
+source-bound opaque pages and metadata, verified-owner credential isolation,
+and the shared library writer with different accepted audio. It does not prove
+native official-window cookie capture, rendered UI, or distributed-app policy.
+
 ## Real media smoke
 
 The default manifest declares `https://streaming-fixture.openkara.test:9443`.

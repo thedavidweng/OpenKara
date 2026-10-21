@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Music2 } from "lucide-react";
-import { sizedCoverUrl } from "@/components/Catalog/netease-utils";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
-interface NeteaseCoverProps {
+interface StreamingCoverProps {
   url: string | null;
   /** Requested thumbnail edge in CSS pixels (doubled for dense displays). */
   size: number;
@@ -18,17 +18,17 @@ interface NeteaseCoverProps {
  * Square cover with a fixed aspect box, so nothing reflows while art loads.
  * Falls back to a neutral tile when there is no URL or the image fails.
  */
-export function NeteaseCover({
+export function StreamingCover({
   url,
   size,
   className = "",
   muted = false,
   glow = false,
   eager = false,
-}: NeteaseCoverProps) {
+}: StreamingCoverProps) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
-  const src = failed ? null : sizedCoverUrl(url, size);
+  const src = failed || !url ? null : convertFileSrc(url);
 
   return (
     <div className={`relative aspect-square shrink-0 ${className}`}>

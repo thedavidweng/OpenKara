@@ -73,7 +73,7 @@ A switchable music or video origin inside OpenKara. A **Streaming Source** or a 
 _Avoid_: Provider, catalog, integration, remote provider, online lyrics source as a synonym
 
 **Streaming Source (流媒体源)**:
-An account-backed online music service. The user can browse it and import audio into the local library. NetEase Cloud Music is one. Later ones include Kugou and QQ Music.
+A separately installed, trusted music-service package. Its verified description declares supported browsing, authentication, preview, and import operations. A source can serve public operations without an account. NetEase Cloud Music is one source; deterministic fixtures are not production services.
 _Avoid_: Catalog, provider, catalog import source, scrobbler, video source, UNM
 
 **China Client Address (国内客户端地址)**:
@@ -81,7 +81,7 @@ The client address the NetEase **Streaming Source** sends as `X-Real-IP`. NetEas
 _Avoid_: UNM, unblock, real IP as a user identity, VPN, proxy server
 
 **Streaming Credentials (流媒体凭据)**:
-The session cookies that let OpenKara call a **Streaming Source** as the signed-in user. For NetEase they are `MUSIC_U` and `__csrf`. They are not the password and not **Repository Credentials**.
+An opaque string map that a **Streaming Source** verifies for a signed-in user. OpenKara stores it under that source's verified publisher/package ownership. Official-page cookies or a plugin challenge can produce it. It is not **Repository Credentials**.
 _Avoid_: Login, account, password, repository credentials, MUSIC_U as the user
 
 **Streaming Playlist (流媒体歌单)**:
@@ -97,7 +97,7 @@ A track on a **Streaming Playlist** that OpenKara will not import. The user can 
 _Avoid_: Grey song as the generic name, skip, unblock, UNM
 
 **Online Preview (在线试听)**:
-Playback of a full-length **Streaming Source** track straight from its stream, with no library song behind it. It has a queue id of the form `ne:<id>`, no lyrics, and no stems. Trial clips and tracks under an **Import Refusal** are never previewed. **Streaming Import** turns it into a library song.
+Playback of a permitted full-length **Streaming Source** track through the shared progressive stream player, with no library song behind it. Its queue id includes the source and encoded remote id: `stream:<source>:<id>`. Host lyric lookup uses source-bound metadata; stems and library lyric storage do not apply. Trial clips and tracks under an **Import Refusal** are never previewed. **Streaming Import** turns accepted media into a library song.
 _Avoid_: Temporary song, cached track, trial play
 
 **Playlist Origin Stamp (歌单来源印记)**:
@@ -216,8 +216,8 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - A **Streaming Source** is not a **Remote Provider**. It does not host a **Remote Repository**.
 - A **China Client Address** belongs only to the NetEase **Streaming Source** adapter. It does not add engines, search other platforms, or change **Import Refusal**.
 - **Streaming Credentials** live in the keychain under a streaming service name. They never share storage with **Repository Credentials**.
-- NetEase sign-in offers QR, phone and password, or email and password, as YesPlayMusic does. OpenKara sends the password once. It stores only **Streaming Credentials**. It does not store the password or its hash.
-- Turning a **Streaming Source** off hides it. It does not clear **Streaming Credentials**. Sign-out clears them.
+- Source sign-in uses either an isolated official web page with declared cookie capture or a plugin QR/text challenge. The source verifies the result before OpenKara stores **Streaming Credentials**. OpenKara does not persist partial challenges or official-page passwords.
+- Turning a **Streaming Source** off hides it and retains **Streaming Credentials**. Sign-out removes them. Uninstall offers an explicit retention choice. Active sign-in, preview, and import must stop by user decision before disable, sign-out, or uninstall completes.
 - A **Video Source** does not import audio. It only supplies videos for the queue.
 - YouTube playback loads the public watch page in a WebView. It does not call `/player` stream URLs. It does not store Google cookies.
 - Age-restricted, private, or unlisted YouTube items fail visibly. They do not prompt for Google sign-in in this version.
@@ -261,5 +261,5 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - A **Streaming Import** can hit many **Import Conflicts**. Resolved: ask for the current song, and offer **Apply to Remaining**, like a file-manager copy conflict.
 - Grey songs and trial clips are **Import Refusals**. The user can see them. OpenKara does not import them and does not fetch a replacement from another service.
 - Overseas NetEase access is not UNM. Resolved: the NetEase adapter always sends a **China Client Address**, as YesPlayMusic does. This version has no UNM engines and no Real-IP setting.
-- People asked whether a password login must persist the password. Resolved: match YesPlayMusic. Offer QR, phone, and email. Persist only **Streaming Credentials**.
+- A source's account flow does not create another import pipeline. The host stores only verified opaque **Streaming Credentials** under verified ownership; a different package cannot acquire them by claiming the same source id.
 - YouTube guest playback must not use `/player` stream URLs. Kaset verified those as UNPLAYABLE when signed out. Resolved: play the watch page in a WebView. No Google login in this version.

@@ -109,11 +109,8 @@
       "message": "Bu, tüm şarkıları 4 katman modunu kullanarak yeniden ayırır. Katmanlar için disk alanı kullanımı yaklaşık iki katına çıkar.",
       "confirm": "Tümünü Yükselt"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "ÇEVRİMİÇİ KAYNAKLAR",
-    "youtubeLink": "YouTube bağlantısı",
-    "neteaseSignedIn": "Oturum açık",
-    "neteaseSignIn": "Oturum aç"
+    "youtubeLink": "YouTube bağlantısı"
   },
   "toolbar": {
     "import": "İçe Aktar",
@@ -342,6 +339,55 @@
     "failedToLoad": "Özellikler yüklenemedi"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "Tercihler",
     "library": {
       "label": "Karaoke Kitaplığı",
@@ -699,9 +745,7 @@
       "label": "Çevrimiçi kaynaklar",
       "description": "Bir müzik veya video kaynağını açın. Siz seçene kadar ikisi de kapalı kalır.",
       "youtube": "YouTube",
-      "youtubeDescription": "Herkese açık bir video veya oynatma listesi bağlantısını kuyruğa yapıştırın. OpenKara YouTube sesini indirmez.",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Çalabileceğiniz şarkıları içe aktarmak için oturum açın. OpenKara sonra içe aktarılan dosyaları yönetir."
+      "youtubeDescription": "Herkese açık bir video veya oynatma listesi bağlantısını kuyruğa yapıştırın. OpenKara YouTube sesini indirmez."
     }
   },
   "bootstrap": {
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "Bu şarkıcı, kuyruktaki şarkılara atanmış. Şarkıcıyı kaldırmak, bu şarkıları da kuyruktan kaldırır."
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "Veritabanı Hatası",
     "media_read_failed": "İçe Aktarma Başarısız",
     "song_not_found": "Şarkı Bulunamadı",
@@ -779,25 +830,25 @@
     "failed": "Güncelleme başarısız — en son sürümü elle indirin"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "Oturumu kapat",
       "sessionExpired": "Oturumun süresi doldu. Yeniden oturum açın.",
       "liked": "Beğenilen şarkılar",
       "playlists": "Çalma listeleri",
-      "searchPlaceholder": "NetEase şarkılarında ara",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "Aktar",
       "importPlaylist": "Çalma listesini aktar",
-      "connect": "NetEase ile oturum aç",
+      "connect": "Sign in",
       "clearSearch": "Aramayı temizle",
-      "tabsLabel": "NetEase kitaplık bölümleri",
+      "tabsLabel": "Source library sections",
       "resultsTab": "“{{query}}” için sonuçlar",
       "accountMenu": "Hesap menüsü",
       "importTrackLabel": "“{{title}}” şarkısını aktar",
       "statusNoRights": "Çalma hakkı yok",
-      "statusNoRightsHint": "NetEase bu şarkı için hesabına çalma hakkı vermiyor, bu yüzden aktarılamaz.",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "Yalnızca deneme klibi",
-      "statusTrialHint": "NetEase bu şarkının yalnızca kısa bir deneme klibini sunuyor, bu yüzden aktarılamaz.",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "Aktarılıyor…",
       "statusImported": "Kitaplıkta",
       "statusFailed": "Aktarma başarısız",
@@ -815,9 +866,9 @@
         "import_failed": "Aktarma başarısız"
       },
       "importProgressLabel": "Aktarma sürüyor",
-      "connectTitle": "NetEase Cloud Music’e bağlan",
+      "connectTitle": "Connect your account",
       "connectBody": "Beğendiğin şarkılara ve çalma listelerine göz atmak, çalabildiklerini aktarmak için oturum aç. Aktarılan dosyalar kitaplığına aittir.",
-      "connectHintWindow": "Oturum açma bir NetEase penceresi açar. OpenKara parolanı asla görmez.",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "Çalma hakkı olmayan veya yalnızca deneme klibi bulunan şarkılar aktarılamaz.",
       "signInFailed": "Oturum açılamadı: {{message}}",
       "songCount_one": "{{count}} şarkı",
@@ -845,13 +896,22 @@
       "importingProgress": "{{total}} şarkıdan {{completed}} içe aktarılıyor",
       "loadingMore": "Daha fazla şarkı yükleniyor…",
       "refusalReason": {
-        "trial_clip": "Yalnızca VIP — NetEase yalnızca 30 saniyelik önizleme sunar",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "Çalma hakkı yok",
-        "empty_url": "Ses kullanılamıyor"
+        "empty_url": "Ses kullanılamıyor",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "“{{title}}” oynatılamıyor",
       "importToSing": "Söylemek için içe aktar",
-      "previewHint": "Akış önizlemesi. Şarkıyı söylemek, vokali ayırmak veya söz eklemek için içe aktarın."
+      "previewHint": "Akış önizlemesi. Şarkıyı söylemek, vokali ayırmak veya söz eklemek için içe aktarın.",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

@@ -3,7 +3,7 @@ export {
   isOnlinePreviewQueueId,
   isVideoSourceQueueId,
   onlinePreviewQueueId,
-  onlinePreviewRemoteId,
+  onlinePreviewReference,
   shouldEnqueueInsteadOfReplacingCurrentSong,
   shouldLoadSeparatedStems,
   selectCurrentPositionMs,

@@ -1,18 +1,16 @@
-use super::types::{OnlineSourceCapabilities, NETEASE_SOURCE_ID, YOUTUBE_SOURCE_ID};
+use super::types::{OnlineSourceCapabilities, YOUTUBE_SOURCE_ID};
 use crate::config::AppConfig;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnlineSourceKind {
     Video,
-    Streaming,
 }
 
 impl OnlineSourceKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Video => "video",
-            Self::Streaming => "streaming",
         }
     }
 }
@@ -31,18 +29,11 @@ pub struct UnknownOnlineSource {
 }
 
 pub fn list_online_sources(config: &AppConfig) -> Vec<OnlineSourceSnapshot> {
-    vec![
-        snapshot(
-            YOUTUBE_SOURCE_ID,
-            OnlineSourceKind::Video,
-            config.effective_youtube_source_enabled(),
-        ),
-        snapshot(
-            NETEASE_SOURCE_ID,
-            OnlineSourceKind::Streaming,
-            config.effective_netease_source_enabled(),
-        ),
-    ]
+    vec![snapshot(
+        YOUTUBE_SOURCE_ID,
+        OnlineSourceKind::Video,
+        config.effective_youtube_source_enabled(),
+    )]
 }
 
 pub fn set_online_source_enabled(
@@ -52,7 +43,6 @@ pub fn set_online_source_enabled(
 ) -> Result<(), UnknownOnlineSource> {
     match source_id {
         YOUTUBE_SOURCE_ID => config.youtube_source_enabled = Some(enabled),
-        NETEASE_SOURCE_ID => config.netease_source_enabled = Some(enabled),
         _ => {
             return Err(UnknownOnlineSource {
                 source_id: source_id.to_owned(),
@@ -94,42 +84,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_to_both_sources_off() {
+    fn builtin_registry_contains_only_disabled_video_source() {
         let sources = list_online_sources(&AppConfig::default());
+        assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].id, "youtube");
         assert_eq!(sources[0].kind, "video");
         assert!(!sources[0].enabled);
         assert!(!sources[0].capabilities.resolve_video);
-        assert_eq!(sources[1].id, "netease");
-        assert_eq!(sources[1].kind, "streaming");
-        assert!(!sources[1].enabled);
-        assert!(!sources[1].capabilities.browse);
     }
 
     #[test]
-    fn enabled_source_reports_capabilities() {
+    fn enabled_video_source_reports_capabilities() {
         let mut config = AppConfig::default();
         set_online_source_enabled(&mut config, "youtube", true).expect("known");
-        set_online_source_enabled(&mut config, "netease", true).expect("known");
-        let sources = list_online_sources(&config);
-        assert!(sources[0].capabilities.resolve_video);
-        assert!(sources[1].capabilities.sign_in);
-        assert!(sources[1].capabilities.browse);
-        assert!(sources[1].capabilities.import);
-        assert!(!sources[1].capabilities.resolve_video);
+        let source = require_enabled(&config, "youtube").expect("enabled");
+        assert!(source.capabilities.resolve_video);
+        assert!(!source.capabilities.browse);
     }
 
     #[test]
-    fn disabled_source_is_rejected() {
-        let config = AppConfig::default();
+    fn disabled_video_source_is_rejected() {
         assert!(matches!(
-            require_enabled(&config, "netease"),
+            require_enabled(&AppConfig::default(), "youtube"),
             Err(crate::catalog::CatalogError::SourceDisabled { .. })
         ));
     }
 
     #[test]
-    fn flags_persist_across_settings_reload() {
+    fn video_flag_persists_across_settings_reload() {
         let tmp = tempfile::tempdir().expect("tmp");
         let mut config = AppConfig::default();
         set_online_source_enabled(&mut config, "youtube", true).expect("known");
@@ -137,25 +119,18 @@ mod tests {
         let loaded = crate::config::load_config(tmp.path())
             .expect("load")
             .expect("present");
-        let sources = list_online_sources(&loaded);
-        assert!(sources[0].enabled);
-        assert!(!sources[1].enabled);
+        assert!(require_enabled(&loaded, "youtube").is_ok());
     }
 
     #[test]
-    fn enabling_one_source_does_not_enable_the_other() {
+    fn plugin_sources_never_fall_through_to_builtin_dispatch() {
         let mut config = AppConfig::default();
-        set_online_source_enabled(&mut config, "netease", true).expect("known source");
-        let sources = list_online_sources(&config);
-        assert!(!sources[0].enabled);
-        assert!(sources[1].enabled);
-    }
-
-    #[test]
-    fn unknown_source_is_rejected() {
-        let mut config = AppConfig::default();
-        let error = set_online_source_enabled(&mut config, "kugou", true).unwrap_err();
-        assert_eq!(error.source_id, "kugou");
-        assert!(!config.effective_netease_source_enabled());
+        let error = set_online_source_enabled(&mut config, "fixture", true).unwrap_err();
+        assert_eq!(error.source_id, "fixture");
+        assert!(matches!(
+            require_enabled(&config, "fixture"),
+            Err(crate::catalog::CatalogError::UnknownSource { .. })
+        ));
+        assert!(!config.effective_youtube_source_enabled());
     }
 }

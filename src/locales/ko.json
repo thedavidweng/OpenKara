@@ -109,11 +109,8 @@
       "message": "모든 노래를 4스템 모드로 다시 분리해요. 스템의 디스크 사용량이 약 2배로 늘어나요.",
       "confirm": "전체 업그레이드"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "온라인 소스",
-    "youtubeLink": "YouTube 링크",
-    "neteaseSignedIn": "로그인됨",
-    "neteaseSignIn": "로그인"
+    "youtubeLink": "YouTube 링크"
   },
   "toolbar": {
     "import": "가져오기",
@@ -342,6 +339,55 @@
     "failedToLoad": "속성을 불러오지 못했어요"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "환경설정",
     "library": {
       "label": "노래방 라이브러리",
@@ -699,9 +745,7 @@
       "label": "온라인 소스",
       "description": "음악 또는 동영상 출처를 켭니다. 선택하기 전까지 둘 다 꺼져 있습니다.",
       "youtube": "YouTube",
-      "youtubeDescription": "공개 동영상이나 재생목록 링크를 대기열에 붙여넣습니다. OpenKara는 YouTube 오디오를 다운로드하지 않습니다.",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "로그인한 뒤 재생할 수 있는 곡을 가져옵니다. 가져온 파일은 OpenKara가 관리합니다."
+      "youtubeDescription": "공개 동영상이나 재생목록 링크를 대기열에 붙여넣습니다. OpenKara는 YouTube 오디오를 다운로드하지 않습니다."
     }
   },
   "bootstrap": {
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "이 가수는 대기열의 노래에 지정되어 있어요. 가수를 제거하면 해당 노래도 대기열에서 함께 제거돼요."
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "데이터베이스 오류",
     "media_read_failed": "가져오기 실패",
     "song_not_found": "노래를 찾을 수 없음",
@@ -779,25 +830,25 @@
     "failed": "업데이트 실패 — 최신 릴리스를 직접 다운로드하세요"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "로그아웃",
       "sessionExpired": "세션이 만료되었습니다. 다시 로그인하세요.",
       "liked": "좋아요 표시한 곡",
       "playlists": "재생목록",
-      "searchPlaceholder": "NetEase 곡 검색",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "가져오기",
       "importPlaylist": "재생목록 가져오기",
-      "connect": "NetEase로 로그인",
+      "connect": "Sign in",
       "clearSearch": "검색어 지우기",
-      "tabsLabel": "NetEase 라이브러리 섹션",
+      "tabsLabel": "Source library sections",
       "resultsTab": "“{{query}}” 검색 결과",
       "accountMenu": "계정 메뉴",
       "importTrackLabel": "“{{title}}” 가져오기",
       "statusNoRights": "재생 권한 없음",
-      "statusNoRightsHint": "NetEase에서 이 계정에 이 곡의 재생 권한을 제공하지 않아 가져올 수 없습니다.",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "미리듣기만 가능",
-      "statusTrialHint": "NetEase에서 이 곡의 짧은 미리듣기만 제공하므로 가져올 수 없습니다.",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "가져오는 중…",
       "statusImported": "라이브러리에 있음",
       "statusFailed": "가져오기 실패",
@@ -815,9 +866,9 @@
         "import_failed": "가져오기 실패"
       },
       "importProgressLabel": "가져오기 진행 중",
-      "connectTitle": "NetEase Cloud Music 연결",
+      "connectTitle": "Connect your account",
       "connectBody": "로그인하면 좋아요 표시한 곡과 재생목록을 둘러보고 재생할 수 있는 곡을 가져올 수 있습니다. 가져온 파일은 내 라이브러리에 속합니다.",
-      "connectHintWindow": "로그인하면 NetEase 창이 열립니다. OpenKara는 비밀번호를 볼 수 없습니다.",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "재생 권한이 없거나 미리듣기만 가능한 곡은 가져올 수 없습니다.",
       "signInFailed": "로그인 실패: {{message}}",
       "songCount_other": "{{count}}곡",
@@ -844,13 +895,22 @@
       "importingProgress": "{{total}}곡 중 {{completed}}곡 가져오는 중",
       "loadingMore": "곡을 더 불러오는 중…",
       "refusalReason": {
-        "trial_clip": "VIP 전용 — NetEase는 30초 미리 듣기만 제공합니다",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "재생 권한 없음",
-        "empty_url": "오디오를 사용할 수 없음"
+        "empty_url": "오디오를 사용할 수 없음",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "“{{title}}”을(를) 재생할 수 없습니다",
       "importToSing": "가져와서 부르기",
-      "previewHint": "스트리밍 미리듣기입니다. 곡을 가져오면 노래하기, 보컬 분리, 가사 추가를 할 수 있습니다."
+      "previewHint": "스트리밍 미리듣기입니다. 곡을 가져오면 노래하기, 보컬 분리, 가사 추가를 할 수 있습니다.",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

@@ -13,7 +13,9 @@ type Emitter = Box<dyn Fn(&StreamingImportEvent) + Send + Sync>;
 /// and flips the cancel flag.
 pub struct StreamingImportJob {
     job_id: String,
+    source_id: String,
     cancel: AtomicBool,
+    cancellation: Mutex<Option<crate::source_host::Cancellation>>,
     snapshot: Mutex<StreamingImportJobSnapshot>,
     emit: Emitter,
 }
@@ -21,11 +23,13 @@ pub struct StreamingImportJob {
 impl StreamingImportJob {
     pub fn new(
         job_id: String,
+        source_id: String,
         tracks: Vec<(String, String, String)>,
         emit: impl Fn(&StreamingImportEvent) + Send + Sync + 'static,
     ) -> Arc<Self> {
         let total = tracks.len() as u32;
         let snapshot = StreamingImportJobSnapshot {
+            source_id: source_id.clone(),
             job_id: job_id.clone(),
             phase: StreamingImportJobPhase::Running,
             completed: 0,
@@ -44,7 +48,9 @@ impl StreamingImportJob {
         };
         Arc::new(Self {
             job_id,
+            source_id,
             cancel: AtomicBool::new(false),
+            cancellation: Mutex::new(None),
             snapshot: Mutex::new(snapshot),
             emit: Box::new(emit),
         })
@@ -53,9 +59,42 @@ impl StreamingImportJob {
     pub fn job_id(&self) -> &str {
         &self.job_id
     }
+    pub fn set_tracks(&self, tracks: Vec<(String, String, String)>) {
+        let mut snapshot = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        snapshot.total = tracks.len() as u32;
+        snapshot.tracks = tracks
+            .into_iter()
+            .map(
+                |(remote_track_id, title, artist)| StreamingImportTrackSnapshot {
+                    remote_track_id,
+                    title,
+                    artist,
+                    state: StreamingImportTrackState::Queued,
+                },
+            )
+            .collect();
+    }
+
+    pub fn bind_cancellation(&self, cancellation: crate::source_host::Cancellation) {
+        *self
+            .cancellation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cancellation);
+    }
 
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
+        if let Some(cancellation) = self
+            .cancellation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+        {
+            cancellation.cancel();
+        }
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -99,6 +138,7 @@ impl StreamingImportJob {
                 .count() as u32;
             StreamingImportEvent {
                 job_id: self.job_id.clone(),
+                source_id: self.source_id.clone(),
                 remote_track_id: remote_track_id.to_owned(),
                 title,
                 artist,

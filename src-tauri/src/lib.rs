@@ -94,8 +94,8 @@ pub fn derive_startup_model_bootstrap(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .manage(catalog::NeteaseSidecar::default())
-        .manage(std::sync::Arc::new(catalog::NeteaseSongCache::default()))
+        .manage(std::sync::Arc::new(catalog::TrackMetadataCache::default()))
+        .manage(commands::catalog::SourceAuthentication::default())
         // First plugin: short-circuit a second launch before any state init
         // (single SQLite writer + remote outbox assume one process).
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -212,6 +212,15 @@ pub fn run() {
             commands::catalog::get_streaming_session,
             commands::catalog::open_streaming_sign_in,
             commands::catalog::sign_out_streaming_source,
+            commands::catalog::poll_streaming_sign_in,
+            commands::catalog::cancel_streaming_sign_in,
+            commands::source_host::list_streaming_sources,
+            commands::source_host::refresh_streaming_sources,
+            commands::source_host::install_streaming_source,
+            commands::source_host::cancel_streaming_source_install,
+            commands::source_host::set_streaming_source_enabled,
+            commands::source_host::uninstall_streaming_source,
+            commands::source_host::pin_streaming_source,
             commands::catalog::list_streaming_liked_tracks,
             commands::catalog::list_streaming_playlists,
             commands::catalog::get_streaming_playlist,

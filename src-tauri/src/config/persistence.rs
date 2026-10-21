@@ -174,7 +174,6 @@ mod tests {
             theme_preference: None,
             update_policy: None,
             youtube_source_enabled: None,
-            netease_source_enabled: None,
             library_path: None,
             eq_enabled: None,
             eq_gains_db: None,

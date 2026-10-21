@@ -29,7 +29,10 @@ import type {
   StreamingImportJobSnapshot,
   StreamingImportProgress,
   StreamingPlaylistDetail,
-  StreamingPlaylistSummary,
+  StreamingPlaylistListing,
+  SourceSnapshot,
+  AuthChallenge,
+  AuthPollResult,
   StreamingTrackListing,
   StreamingSessionSnapshot,
   StreamingTrack,
@@ -331,36 +334,70 @@ export interface PlaylistBackend {
 }
 
 export interface CatalogBackend {
+  listStreamingSources(): Promise<SourceSnapshot[]>;
+  refreshStreamingSources(): Promise<SourceSnapshot[]>;
+  installStreamingSource(
+    sourceId: OnlineSourceId,
+    version?: string | null,
+  ): Promise<SourceSnapshot>;
+  cancelStreamingSourceInstall(sourceId: OnlineSourceId): Promise<void>;
+  setStreamingSourceEnabled(
+    sourceId: OnlineSourceId,
+    enabled: boolean,
+    stopWork?: boolean,
+  ): Promise<SourceSnapshot>;
+  uninstallStreamingSource(
+    sourceId: OnlineSourceId,
+    stopWork: boolean,
+    removeCredentials: boolean,
+  ): Promise<SourceSnapshot>;
+  pinStreamingSource(
+    sourceId: OnlineSourceId,
+    version?: string | null,
+  ): Promise<SourceSnapshot>;
   getStreamingSession(
     sourceId: OnlineSourceId,
   ): Promise<StreamingSessionSnapshot>;
-  openStreamingSignIn(sourceId: OnlineSourceId): Promise<void>;
+  openStreamingSignIn(sourceId: OnlineSourceId): Promise<AuthChallenge>;
+  pollStreamingSignIn(
+    sourceId: OnlineSourceId,
+    challenge: string,
+  ): Promise<AuthPollResult>;
+  cancelStreamingSignIn(
+    sourceId: OnlineSourceId,
+    challenge: string,
+  ): Promise<void>;
   signOutStreamingSource(
     sourceId: OnlineSourceId,
+    stopWork?: boolean,
   ): Promise<StreamingSessionSnapshot>;
   listStreamingLikedTracks(
     sourceId: OnlineSourceId,
+    cursor?: string | null,
   ): Promise<StreamingTrackListing>;
-  /** One follow-up page of a partial listing, in `remoteTrackIds` order. */
   getStreamingTracks(
     sourceId: OnlineSourceId,
     remoteTrackIds: string[],
   ): Promise<StreamingTrack[]>;
   listStreamingPlaylists(
     sourceId: OnlineSourceId,
-  ): Promise<StreamingPlaylistSummary[]>;
+    cursor?: string | null,
+  ): Promise<StreamingPlaylistListing>;
   getStreamingPlaylist(
     sourceId: OnlineSourceId,
     remotePlaylistId: string,
+    cursor?: string | null,
   ): Promise<StreamingPlaylistDetail>;
   searchStreamingSource(
     sourceId: OnlineSourceId,
     query: string,
-  ): Promise<StreamingTrack[]>;
+    cursor?: string | null,
+  ): Promise<StreamingTrackListing>;
   startStreamingImport(
     sourceId: OnlineSourceId,
     remoteTrackIds: string[],
-    remotePlaylistId?: string | null,
+    remotePlaylistId: string | null,
+    jobId: string,
   ): Promise<StreamingImportProgress>;
   continueStreamingImport(
     action: LibraryDecisionAction,

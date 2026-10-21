@@ -3,10 +3,9 @@ import {
   firstGrapheme,
   formatDuration,
   formatUpdated,
-  sizedCoverUrl,
-} from "./netease-utils";
+} from "./streaming-utils";
 
-describe("netease-utils", () => {
+describe("streaming-utils", () => {
   test("firstGrapheme keeps whole characters", () => {
     expect(firstGrapheme("night")).toBe("N");
     expect(firstGrapheme("周杰伦")).toBe("周");
@@ -17,16 +16,6 @@ describe("netease-utils", () => {
   test("formatDuration renders m:ss and a dash when unknown", () => {
     expect(formatDuration(65000)).toBe("1:05");
     expect(formatDuration(null)).toBe("—");
-  });
-
-  test("sizedCoverUrl appends the CDN size parameter", () => {
-    expect(sizedCoverUrl("https://p1.music.126.net/a.jpg", 200)).toBe(
-      "https://p1.music.126.net/a.jpg?param=200y200",
-    );
-    expect(sizedCoverUrl("https://p1.music.126.net/a.jpg?x=1", 512)).toBe(
-      "https://p1.music.126.net/a.jpg?x=1&param=512y512",
-    );
-    expect(sizedCoverUrl(null, 200)).toBeNull();
   });
 
   test("formatUpdated formats a date and tolerates unknown values", () => {

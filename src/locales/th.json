@@ -109,11 +109,8 @@
       "message": "การดำเนินการนี้จะแยกเสียงทุกเพลงใหม่โดยใช้โหมด 4สเต็ม การใช้พื้นที่ดิสก์สำหรับสเต็มจะเพิ่มขึ้นราวสองเท่า",
       "confirm": "อัปเกรดทั้งหมด"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "แหล่งออนไลน์",
-    "youtubeLink": "ลิงก์ YouTube",
-    "neteaseSignedIn": "ลงชื่อเข้าใช้แล้ว",
-    "neteaseSignIn": "ลงชื่อเข้าใช้"
+    "youtubeLink": "ลิงก์ YouTube"
   },
   "toolbar": {
     "import": "นำเข้า",
@@ -342,6 +339,55 @@
     "failedToLoad": "โหลดคุณสมบัติล้มเหลว"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "การตั้งค่า",
     "library": {
       "label": "คลังเพลงคาราโอเกะ",
@@ -699,9 +745,7 @@
       "label": "แหล่งออนไลน์",
       "description": "เปิดแหล่งเพลงหรือวิดีโอ ทั้งสองจะปิดอยู่จนกว่าคุณจะเลือก",
       "youtube": "YouTube",
-      "youtubeDescription": "วางลิงก์วิดีโอหรือเพลย์ลิสต์สาธารณะลงในคิว OpenKara ไม่ดาวน์โหลดเสียง YouTube",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "ลงชื่อเข้าใช้เพื่อเรียกดูและนำเข้าเพลงที่เล่นได้ จากนั้น OpenKara จะจัดการไฟล์ที่นำเข้า"
+      "youtubeDescription": "วางลิงก์วิดีโอหรือเพลย์ลิสต์สาธารณะลงในคิว OpenKara ไม่ดาวน์โหลดเสียง YouTube"
     }
   },
   "bootstrap": {
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "นักร้องคนนี้ถูกกำหนดให้กับเพลงในคิว การลบออกจะลบเพลงเหล่านั้นออกจากคิวด้วย"
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "ข้อผิดพลาดฐานข้อมูล",
     "media_read_failed": "นำเข้าล้มเหลว",
     "song_not_found": "ไม่พบเพลง",
@@ -779,25 +830,25 @@
     "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "ออกจากระบบ",
       "sessionExpired": "เซสชันหมดอายุ ลงชื่อเข้าใช้อีกครั้ง",
       "liked": "เพลงที่ถูกใจ",
       "playlists": "เพลย์ลิสต์",
-      "searchPlaceholder": "ค้นหาเพลง NetEase",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "นำเข้า",
       "importPlaylist": "นำเข้าเพลย์ลิสต์",
-      "connect": "ลงชื่อเข้าใช้ด้วย NetEase",
+      "connect": "Sign in",
       "clearSearch": "ล้างการค้นหา",
-      "tabsLabel": "ส่วนต่าง ๆ ของคลัง NetEase",
+      "tabsLabel": "Source library sections",
       "resultsTab": "ผลลัพธ์สำหรับ “{{query}}”",
       "accountMenu": "เมนูบัญชี",
       "importTrackLabel": "นำเข้า “{{title}}”",
       "statusNoRights": "ไม่มีสิทธิ์เล่น",
-      "statusNoRightsHint": "NetEase ไม่ให้สิทธิ์เล่นเพลงนี้กับบัญชีของคุณ จึงนำเข้าไม่ได้",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "ฟังตัวอย่างเท่านั้น",
-      "statusTrialHint": "NetEase มีเพียงคลิปตัวอย่างสั้น ๆ ของเพลงนี้ จึงนำเข้าไม่ได้",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "กำลังนำเข้า…",
       "statusImported": "อยู่ในคลังแล้ว",
       "statusFailed": "นำเข้าไม่สำเร็จ",
@@ -815,9 +866,9 @@
         "import_failed": "นำเข้าไม่สำเร็จ"
       },
       "importProgressLabel": "กำลังนำเข้า",
-      "connectTitle": "เชื่อมต่อ NetEase Cloud Music",
+      "connectTitle": "Connect your account",
       "connectBody": "ลงชื่อเข้าใช้เพื่อดูเพลงที่ถูกใจและเพลย์ลิสต์ แล้วนำเข้าเพลงที่เล่นได้ ไฟล์ที่นำเข้าจะเป็นของคลังเพลงของคุณ",
-      "connectHintWindow": "การลงชื่อเข้าใช้จะเปิดหน้าต่าง NetEase OpenKara จะไม่เห็นรหัสผ่านของคุณ",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "เพลงที่ไม่มีสิทธิ์เล่นหรือมีเพียงคลิปตัวอย่างจะนำเข้าไม่ได้",
       "signInFailed": "ลงชื่อเข้าใช้ไม่สำเร็จ: {{message}}",
       "songCount_other": "{{count}} เพลง",
@@ -844,13 +895,22 @@
       "importingProgress": "กำลังนำเข้า {{completed}} จาก {{total}}",
       "loadingMore": "กำลังโหลดเพลงเพิ่มเติม…",
       "refusalReason": {
-        "trial_clip": "เฉพาะ VIP — NetEase ให้ฟังตัวอย่างเพียง 30 วินาที",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "ไม่มีสิทธิ์เล่นเพลง",
-        "empty_url": "ไม่มีเสียงให้ใช้งาน"
+        "empty_url": "ไม่มีเสียงให้ใช้งาน",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "เล่น “{{title}}” ไม่ได้",
       "importToSing": "นำเข้าเพื่อร้อง",
-      "previewHint": "ตัวอย่างแบบสตรีม นำเข้าเพลงเพื่อร้อง แยกเสียงร้อง หรือเพิ่มเนื้อเพลง"
+      "previewHint": "ตัวอย่างแบบสตรีม นำเข้าเพลงเพื่อร้อง แยกเสียงร้อง หรือเพิ่มเนื้อเพลง",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

@@ -16,6 +16,7 @@ import type {
   SeparationProgressEvent,
   StreamingImportEvent,
   StreamingSessionSnapshot,
+  SourceSnapshot,
   TrackTransitionedEvent,
   UploadCompleteEvent,
   UploadErrorEvent,
@@ -46,8 +47,9 @@ export interface RuntimeEventMap {
   "remote-playback-reconnect": RemotePlaybackReconnectEvent;
   "remote-playback-resync": RemotePlaybackResyncEvent;
   "remote-playback-failed": RemotePlaybackFailedEvent;
-  "netease-sign-in-complete": StreamingSessionSnapshot;
-  "netease-sign-in-error": CommandError;
+  "streaming-sign-in-complete": StreamingSessionSnapshot;
+  "streaming-sign-in-error": { source_id: string; error: CommandError };
+  "streaming-source-status": SourceSnapshot;
   "streaming-import-progress": StreamingImportEvent;
 }
 
@@ -115,8 +117,9 @@ export function createRecordingRuntimeEventSource(): RuntimeEventSource & {
     "remote-playback-reconnect": new Set(),
     "remote-playback-resync": new Set(),
     "remote-playback-failed": new Set(),
-    "netease-sign-in-complete": new Set(),
-    "netease-sign-in-error": new Set(),
+    "streaming-sign-in-complete": new Set(),
+    "streaming-sign-in-error": new Set(),
+    "streaming-source-status": new Set(),
     "streaming-import-progress": new Set(),
   };
 

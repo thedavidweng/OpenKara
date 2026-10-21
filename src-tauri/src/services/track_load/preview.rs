@@ -1,16 +1,12 @@
-//! Preview playback: stream an online track that is not in the library.
+//! Source-bound Online Preview through the shared playback coordinator.
 //!
-//! A preview has no `Song` row. It shares the playback coordinator with
-//! library tracks (same request ids, staleness, transport controls) but its
-//! audio comes straight from a provider URL through the chunked cache, filled
-//! by the sequential downloader in `preview_stream` (one GET at link speed
-//! rather than a round trip per chunk). Previews are never preloaded and never
-//! go through the library-backed mid-song reconnect: when the URL expires or
-//! the network keeps failing, the URL is re-resolved once and the
-//! source swapped, and a second failure is reported instead of retried.
+//! SourceHost validates every media request and redirect. One sequential GET
+//! fills a seekable chunk cache. A preview has no library row and refreshes
+//! its descriptor at most once. The work lease survives until playback and
+//! all decoder/download workers stop.
 
 use super::{
-    preview_stream::{self, Alive, PreviewSource},
+    preview_stream::{self, Alive, PreviewMedia, PreviewSource},
     request::PlaybackRequest,
     streaming::playback_position_for_reconnect,
 };
@@ -23,13 +19,14 @@ use crate::{
         remote_source::FetchEvent,
         streaming::{self, StreamMetadata, StreamingTrack},
     },
-    catalog::{netease_preview_queue_id, ImportRefusalReason, StreamingPreviewOutcome},
+    catalog::{streaming_preview_queue_id, ImportRefusalReason, StreamingPreviewOutcome},
     commands::{
-        catalog::resolve_netease_preview,
+        catalog::resolve_streaming_preview,
         error::{CommandError, ErrorCode, FallbackAction},
     },
     remote::content::probe_remote_source,
     services::playback::PlaybackErrorEvent,
+    source_host::{Cancellation, SourceHost, WorkKind, WorkLease},
     state::AppState,
 };
 use std::{
@@ -37,10 +34,9 @@ use std::{
     sync::{mpsc, Arc},
     time::Duration,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const PREVIEW_CACHE_DIR: &str = "preview-cache";
-const SIZE_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Longest wait for the startup buffer before decoding starts anyway.
 const STARTUP_BUFFER_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -50,13 +46,26 @@ struct PreviewContext {
     app_handle: AppHandle,
     request: PlaybackRequest,
     song_id: String,
+    source_id: String,
+    host: SourceHost,
+    work: Arc<WorkLease>,
+    cancellation: Cancellation,
     remote_track_id: String,
 }
 
 impl PreviewContext {
+    fn is_active(&self) -> bool {
+        self.request.guard().is_current() && !self.cancellation.is_cancelled()
+    }
+
     fn alive(&self) -> Alive {
         let guard = self.request.guard();
-        Arc::new(move || guard.is_current())
+        let cancellation = self.cancellation.clone();
+        let work = Arc::clone(&self.work);
+        Arc::new(move || {
+            let _work = &work;
+            guard.is_current() && !cancellation.is_cancelled()
+        })
     }
 
     fn send(&self, command: PlaybackCommand) -> Result<(), PlaybackError> {
@@ -93,21 +102,30 @@ impl PreviewContext {
     }
 }
 
-/// Begin streaming NetEase track `remote_track_id`. Returns the loading
-/// snapshot; resolution, download and installation continue on a background
-/// thread, and a later play call supersedes it.
+/// Begin a source-bound preview without creating a library song.
 pub(crate) fn start(
     state: &AppState,
     app_handle: &AppHandle,
+    source_id: &str,
     remote_track_id: &str,
 ) -> Result<PlaybackStateSnapshot, PlaybackError> {
+    let host = app_handle.state::<SourceHost>().inner().clone();
+    let work = Arc::new(
+        host.acquire_work(source_id, WorkKind::Preview)
+            .map_err(|error| PlaybackError::Internal(error.message))?,
+    );
+    let cancellation = work.cancellation();
     let request = PlaybackRequest::begin(&state.playback)?;
     let ctx = PreviewContext {
         state: state.clone(),
         app_handle: app_handle.clone(),
         request,
-        song_id: netease_preview_queue_id(remote_track_id),
+        song_id: streaming_preview_queue_id(source_id, remote_track_id),
         remote_track_id: remote_track_id.to_owned(),
+        source_id: source_id.to_owned(),
+        host,
+        work,
+        cancellation,
     };
 
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
@@ -120,6 +138,7 @@ pub(crate) fn start(
         .blocking_recv()
         .map_err(|_| PlaybackError::Internal("playback coordinator dropped reply".to_owned()))??;
 
+    supervise_preview(ctx.clone());
     std::thread::spawn(move || {
         if ctx.request.is_cancelled() {
             return;
@@ -133,20 +152,28 @@ pub(crate) fn start(
 }
 
 fn run(ctx: &PreviewContext) -> Result<(), PlaybackError> {
-    let (url, extension) = resolve_url(ctx)?;
-    if ctx.request.is_cancelled() {
+    let mut refreshed = false;
+    let (cache, pipeline) = loop {
+        if !ctx.is_active() {
+            return Ok(());
+        }
+        let (media, extension) = resolve_url(ctx)?;
+        let attempt = (|| {
+            let file_size = content_length(&media, &ctx.alive())?;
+            let cache_dir = ctx.state.shell.app_data_dir.join(PREVIEW_CACHE_DIR);
+            let cache = open_cache(&cache_dir, &ctx.song_id, ctx.request.id(), file_size)?;
+            let pipeline = open_pipeline(&cache, media, &extension, ctx.alive())?;
+            Ok::<_, PlaybackError>((cache, pipeline))
+        })();
+        match attempt {
+            Ok(ready) => break ready,
+            Err(_) if !refreshed && ctx.is_active() => refreshed = true,
+            Err(error) => return Err(error),
+        }
+    };
+    if !ctx.is_active() {
         return Ok(());
     }
-
-    let file_size = content_length(&url)?;
-    let cache_dir = ctx.state.shell.app_data_dir.join(PREVIEW_CACHE_DIR);
-    let cache = open_cache(&cache_dir, &ctx.song_id, ctx.request.id(), file_size)?;
-
-    let pipeline = open_pipeline(&cache, &url, &extension, ctx.alive())?;
-    if ctx.request.is_cancelled() {
-        return Ok(());
-    }
-
     ctx.send(PlaybackCommand::InstallReady {
         request_id: ctx.request.id(),
         song_id: ctx.song_id.clone(),
@@ -160,58 +187,98 @@ fn run(ctx: &PreviewContext) -> Result<(), PlaybackError> {
             cdg_error: None,
         }),
     })?;
-
-    spawn_fetch_listener(ctx.clone(), cache, extension, pipeline.fetch_event_rx);
+    spawn_fetch_listener(ctx.clone(), cache, pipeline.fetch_event_rx, refreshed);
     std::thread::spawn(move || {
         let _ = pipeline.decode_handle.join();
+        let _ = pipeline.download_handle.join();
+        drop(pipeline.stop);
     });
     Ok(())
 }
 
+fn supervise_preview(ctx: PreviewContext) {
+    std::thread::spawn(move || loop {
+        let snapshot = match ctx.state.playback.playback.lock() {
+            Ok(mut playback) => playback.snapshot(),
+            Err(_) => return,
+        };
+        let active = snapshot.song_id.as_deref() == Some(ctx.song_id.as_str());
+        let finished = active
+            && !snapshot.is_playing
+            && snapshot
+                .duration_ms
+                .is_some_and(|duration| snapshot.position_ms >= duration);
+        if finished {
+            ctx.cancellation.cancel();
+            return;
+        }
+        if ctx.cancellation.is_cancelled() {
+            ctx.cancellation.cancel();
+            let (reply, receiver) = tokio::sync::oneshot::channel();
+            if ctx
+                .send(PlaybackCommand::CancelPreview {
+                    request_id: ctx.request.id(),
+                    song_id: ctx.song_id.clone(),
+                    reply,
+                })
+                .is_ok()
+            {
+                let _ = receiver.blocking_recv();
+            }
+            return;
+        }
+        if !ctx.request.guard().is_current() || !active {
+            ctx.cancellation.cancel();
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    });
+}
+
 /// The current audio URL and container extension for the context's track.
-fn resolve_url(ctx: &PreviewContext) -> Result<(String, String), PlaybackError> {
-    let outcome = resolve_netease_preview(&ctx.app_handle, &ctx.remote_track_id)
-        .map_err(|error| PlaybackError::Internal(error.message))?;
+fn resolve_url(ctx: &PreviewContext) -> Result<(PreviewMedia, String), PlaybackError> {
+    let outcome = resolve_streaming_preview(
+        &ctx.app_handle,
+        &ctx.source_id,
+        &ctx.remote_track_id,
+        ctx.cancellation.clone(),
+    )
+    .map_err(|error| PlaybackError::Internal(error.message))?;
     match outcome {
-        StreamingPreviewOutcome::Stream(resolved) => Ok((resolved.url, resolved.extension)),
+        StreamingPreviewOutcome::Stream(resolved) => Ok((
+            PreviewMedia::Host {
+                host: ctx.host.clone(),
+                source_id: ctx.source_id.clone(),
+                descriptor: resolved.descriptor,
+                cancellation: ctx.cancellation.clone(),
+            },
+            resolved.extension,
+        )),
         StreamingPreviewOutcome::Refusal(refusal) => Err(PlaybackError::Internal(
             match refusal.reason {
                 ImportRefusalReason::TrialClip => {
-                    "NetEase only serves a 30-second preview of this track (VIP only)"
+                    "the source serves only a trial clip for this track"
                 }
-                ImportRefusalReason::NoPlayRights => "NetEase has no play rights for this track",
-                ImportRefusalReason::EmptyUrl => "NetEase returned no audio URL for this track",
+                ImportRefusalReason::NoPlayRights => "the source has no play rights for this track",
+                ImportRefusalReason::EmptyUrl => "the source returned no audio for this track",
+                ImportRefusalReason::Unavailable => "this track is unavailable from the source",
             }
             .to_owned(),
         )),
     }
 }
 
-/// Total size of the file at `url`, from a one-byte ranged request.
-fn content_length(url: &str) -> Result<u64, PlaybackError> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(SIZE_PROBE_TIMEOUT)
-        .build()
-        .map_err(|error| PlaybackError::Internal(format!("preview client failed: {error}")))?;
-    let response = client
-        .get(url)
-        .header("Range", "bytes=0-0")
-        .send()
-        .map_err(|error| {
-            PlaybackError::Internal(format!("could not reach the audio host: {error}"))
-        })?;
-    let status = response.status();
-    if status.as_u16() != 206 {
-        return Err(PlaybackError::Internal(if status.is_success() {
-            "the audio host does not support ranged streaming".to_owned()
-        } else {
-            format!("the audio host answered {status}")
-        }));
+fn content_length(media: &PreviewMedia, alive: &Alive) -> Result<u64, PlaybackError> {
+    let response = media
+        .open(0, Some(0), alive)
+        .map_err(|error| PlaybackError::Internal(error.message))?;
+    if response.status() != 206 {
+        return Err(PlaybackError::Internal(
+            "the audio host does not support ranged streaming".to_owned(),
+        ));
     }
     response
-        .headers()
-        .get("content-range")
-        .and_then(|value| value.to_str().ok())
+        .content_range()
         .and_then(total_from_content_range)
         .filter(|size| *size > 0)
         .ok_or_else(|| PlaybackError::Internal("the audio host did not report a size".to_owned()))
@@ -226,7 +293,7 @@ fn total_from_content_range(value: &str) -> Option<u64> {
 /// first so previews never accumulate on disk.
 fn open_cache(
     dir: &Path,
-    song_id: &str,
+    _song_id: &str,
     request_id: u64,
     file_size: u64,
 ) -> Result<Arc<ChunkedCache>, PlaybackError> {
@@ -237,7 +304,7 @@ fn open_cache(
             let _ = std::fs::remove_file(entry.path());
         }
     }
-    let key = format!("{}-{request_id}", song_id.replace(':', "-"));
+    let key = format!("preview-{request_id}");
     ChunkedCache::open(dir, &key, file_size)
         .map(Arc::new)
         .map_err(|error| PlaybackError::Internal(format!("preview cache unavailable: {error}")))
@@ -247,7 +314,17 @@ struct Pipeline {
     track: StreamingTrack,
     metadata: StreamMetadata,
     decode_handle: std::thread::JoinHandle<Result<(), crate::audio::decode::DecodeError>>,
+    download_handle: std::thread::JoinHandle<()>,
     fetch_event_rx: mpsc::Receiver<FetchEvent>,
+    stop: PipelineStop,
+}
+
+struct PipelineStop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for PipelineStop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// Downloader + probe + decode producer over `cache`, downloading `url`.
@@ -255,12 +332,21 @@ struct Pipeline {
 /// Returns once about three seconds of audio are buffered.
 fn open_pipeline(
     cache: &Arc<ChunkedCache>,
-    url: &str,
+    media: PreviewMedia,
     extension: &str,
     alive: Alive,
 ) -> Result<Pipeline, PlaybackError> {
-    let download = preview_stream::spawn(url.to_owned(), Arc::clone(cache), Arc::clone(&alive));
-    let probe_source = PreviewSource::new(Arc::clone(cache), download.wanted.clone());
+    let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop = PipelineStop(Arc::clone(&stopped));
+    let local_stop = Arc::clone(&stopped);
+    let alive: Alive =
+        Arc::new(move || !local_stop.load(std::sync::atomic::Ordering::SeqCst) && alive());
+    let download = preview_stream::spawn(media, Arc::clone(cache), Arc::clone(&alive));
+    let probe_source = PreviewSource::with_alive(
+        Arc::clone(cache),
+        download.wanted.clone(),
+        Arc::clone(&alive),
+    );
     let metadata = probe_remote_source(probe_source, Some(extension))
         .map_err(|error| PlaybackError::AudioDecodeFailed(error.to_string()))?;
 
@@ -283,7 +369,8 @@ fn open_pipeline(
         )
     })?;
 
-    let decode_source = PreviewSource::new(Arc::clone(cache), download.wanted);
+    let decode_source =
+        PreviewSource::with_alive(Arc::clone(cache), download.wanted, alive).stop_on_drop(stopped);
     let (consumer, decode_handle) = streaming::spawn_decode_producer_from_source(
         Box::new(decode_source),
         Some(extension),
@@ -296,6 +383,8 @@ fn open_pipeline(
         metadata,
         decode_handle,
         fetch_event_rx: download.events,
+        download_handle: download.handle,
+        stop,
     })
 }
 
@@ -305,13 +394,20 @@ fn open_pipeline(
 fn spawn_fetch_listener(
     ctx: PreviewContext,
     cache: Arc<ChunkedCache>,
-    extension: String,
     fetch_event_rx: mpsc::Receiver<FetchEvent>,
+    mut refreshed: bool,
 ) {
     std::thread::spawn(move || {
         let mut events = fetch_event_rx;
-        let mut refreshed = false;
-        while let Ok(event) = events.recv() {
+        loop {
+            if !ctx.is_active() {
+                return;
+            }
+            let event = match events.recv_timeout(Duration::from_millis(50)) {
+                Ok(event) => event,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            };
             if !ctx.request.guard().is_current() {
                 return;
             }
@@ -320,6 +416,7 @@ fn spawn_fetch_listener(
                     ctx.report_stream_failure(
                         "the audio host does not support ranged streaming".to_owned(),
                     );
+                    ctx.cancellation.cancel();
                     return;
                 }
                 FetchEvent::ConsecutiveFailures { .. } | FetchEvent::UrlExpired => {
@@ -327,16 +424,18 @@ fn spawn_fetch_listener(
                         ctx.report_stream_failure(
                             "the preview stream failed again after refreshing its link".to_owned(),
                         );
+                        ctx.cancellation.cancel();
                         return;
                     }
                     refreshed = true;
-                    match swap_source(&ctx, &cache, &extension) {
+                    match swap_source(&ctx, &cache) {
                         Ok(Some(next_events)) => events = next_events,
                         Ok(None) => return,
                         Err(error) => {
                             ctx.report_stream_failure(format!(
                                 "could not refresh the preview link: {error}"
                             ));
+                            ctx.cancellation.cancel();
                             return;
                         }
                     }
@@ -351,7 +450,6 @@ fn spawn_fetch_listener(
 fn swap_source(
     ctx: &PreviewContext,
     cache: &Arc<ChunkedCache>,
-    extension: &str,
 ) -> Result<Option<mpsc::Receiver<FetchEvent>>, PlaybackError> {
     let position_ms = {
         let playback = ctx.state.playback.playback.lock().map_err(|_| {
@@ -363,11 +461,11 @@ fn swap_source(
         return Ok(None);
     };
 
-    let (url, _) = resolve_url(ctx)?;
+    let (media, next_extension) = resolve_url(ctx)?;
     if !ctx.request.guard().is_current() {
         return Ok(None);
     }
-    let pipeline = open_pipeline(cache, &url, extension, ctx.alive())?;
+    let pipeline = open_pipeline(cache, media, &next_extension, ctx.alive())?;
     ctx.send(PlaybackCommand::ReplaceStreamingSource {
         request_id: ctx.request.id(),
         song_id: ctx.song_id.clone(),
@@ -376,6 +474,8 @@ fn swap_source(
     })?;
     std::thread::spawn(move || {
         let _ = pipeline.decode_handle.join();
+        let _ = pipeline.download_handle.join();
+        drop(pipeline.stop);
     });
     Ok(Some(pipeline.fetch_event_rx))
 }
@@ -461,12 +561,14 @@ mod tests {
         let body = wav(44_100, 44_100);
         let url = serve(body.clone());
 
-        let size = content_length(&url).expect("size");
+        let alive: Alive = Arc::new(|| true);
+        let size = content_length(&PreviewMedia::Http(url.clone()), &alive).expect("size");
         assert_eq!(size, body.len() as u64);
 
         let dir = tempfile::tempdir().expect("dir");
-        let cache = open_cache(dir.path(), "ne:7", 1, size).expect("cache");
-        let pipeline = open_pipeline(&cache, &url, "wav", Arc::new(|| true)).expect("pipeline");
+        let cache = open_cache(dir.path(), "stream:fixture:7", 1, size).expect("cache");
+        let pipeline = open_pipeline(&cache, PreviewMedia::Http(url), "wav", Arc::new(|| true))
+            .expect("pipeline");
         assert_eq!(pipeline.metadata.sample_rate_hz, 44_100);
         assert_eq!(pipeline.metadata.channels, 2);
         pipeline
@@ -480,10 +582,10 @@ mod tests {
     #[test]
     fn opening_a_cache_clears_earlier_previews() {
         let dir = tempfile::tempdir().expect("dir");
-        let first = open_cache(dir.path(), "ne:1", 1, 64).expect("first");
+        let first = open_cache(dir.path(), "stream:fixture:1", 1, 64).expect("first");
         let first_path = first.path().to_path_buf();
         drop(first);
-        let _second = open_cache(dir.path(), "ne:2", 2, 64).expect("second");
+        let _second = open_cache(dir.path(), "stream:fixture:2", 2, 64).expect("second");
         assert!(!first_path.exists());
     }
 }

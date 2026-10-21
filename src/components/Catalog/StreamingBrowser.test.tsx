@@ -1,0 +1,405 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  act,
+} from "@testing-library/react";
+import {
+  afterEach,
+  beforeEach,
+  beforeAll,
+  afterAll,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import { createMockBackend } from "@/lib/backend/mock-backend";
+import {
+  createCatalogStore,
+  type CatalogStore,
+  type CatalogState,
+} from "@/stores/catalog-store";
+import type { SourceSnapshot, StreamingTrackListing } from "@/types/ipc";
+import { StreamingBrowser } from "./StreamingBrowser";
+import { StreamingImportBar } from "./StreamingImportBar";
+import type { StreamingImportProgress } from "@/types/ipc";
+
+const shared = vi.hoisted(() => ({ store: null as unknown }));
+vi.mock("@/stores/catalog-store", async (original) => {
+  const actual = await original<{
+    useCatalogStore: CatalogStore;
+    createCatalogStore: typeof createCatalogStore;
+  }>();
+  return {
+    ...actual,
+    useCatalogStore: Object.assign(
+      (selector: (state: CatalogState) => unknown) =>
+        (shared.store as CatalogStore)(selector),
+      { getState: () => (shared.store as CatalogStore).getState() },
+    ),
+  };
+});
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en" } }),
+  initReactI18next: { type: "3rdParty", init() {} },
+}));
+const source = (id: string, capabilities: string[]): SourceSnapshot => ({
+  source_id: id,
+  owner_binding: `test/${id}`,
+  name: id,
+  description: "Test source",
+  license: "MIT",
+  installed_version: "1.0.0",
+  available_version: "1.0.0",
+  staged_version: null,
+  pinned_version: null,
+  enabled: true,
+  runtime_ready: true,
+  running: false,
+  state: "ready",
+  progress: null,
+  last_error: null,
+  active_work: [],
+  manifest: {
+    manifest_version: 1,
+    source_id: id,
+    package_id: id,
+    publisher: "test",
+    version: "1.0.0",
+    minimum_host_version: "0.1.0",
+    protocol: { majors: [1], minor: 0 },
+    runtime: { kind: "node", major: 24 },
+    entry: "index.js",
+    name: id,
+    description: "Test source",
+    license: "MIT",
+    capabilities,
+    authentication: { flow: "none" },
+    requires_authentication: [],
+    resource_origins: [],
+    media_origins: [],
+  },
+});
+let store: CatalogStore;
+beforeEach(() => {
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            display_name: null,
+            expired: false,
+          }),
+          listStreamingLikedTracks: async () => ({
+            tracks: [],
+            next_cursor: null,
+          }),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+});
+afterEach(cleanup);
+
+test("renders only supported operations and keyboard tab navigation", () => {
+  store.getState().applySources([source("alpha", ["liked_tracks", "search"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  expect(
+    screen.queryByRole("tab", { name: "catalog.streaming.playlists" }),
+  ).toBeNull();
+  const liked = screen.getByRole("tab", { name: "catalog.streaming.liked" });
+  fireEvent.keyDown(liked, { key: "Home" });
+  expect(document.activeElement).toBe(liked);
+  expect(screen.getByRole("search")).toBeTruthy();
+});
+
+test("delayed searches stay bound to the original source and preserve each query", async () => {
+  const { promise, resolve: finish } =
+    Promise.withResolvers<StreamingTrackListing>();
+  const backend = createMockBackend({
+    overrides: {
+      catalog: {
+        getStreamingSession: async (source_id) => ({
+          source_id,
+          signed_in: false,
+          display_name: null,
+          expired: false,
+        }),
+        searchStreamingSource: (id) =>
+          id === "alpha"
+            ? promise
+            : Promise.resolve({ tracks: [], next_cursor: null }),
+      },
+    },
+  });
+  store = createCatalogStore(backend);
+  shared.store = store;
+  store
+    .getState()
+    .applySources([source("alpha", ["search"]), source("beta", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Alpha query" },
+  });
+  fireEvent.submit(screen.getByRole("search"));
+  act(() => store.getState().setActiveSource("beta"));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("");
+  await act(async () => finish({ tracks: [], next_cursor: "opaque-next" }));
+  expect(
+    screen.queryByRole("button", { name: "catalog.streaming.loadMore" }),
+  ).toBeNull();
+  act(() => store.getState().setActiveSource("alpha"));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
+    "Alpha query",
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "catalog.streaming.loadMore" }),
+    ).toBeTruthy(),
+  );
+});
+
+test("a loading error offers recovery without presenting an empty collection", async () => {
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            display_name: null,
+            expired: false,
+          }),
+          listStreamingLikedTracks: vi
+            .fn()
+            .mockRejectedValueOnce(new Error("offline"))
+            .mockResolvedValue({ tracks: [], next_cursor: null }),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["liked_tracks"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "common.retry" }));
+  await screen.findByText("catalog.streaming.likedEmpty");
+});
+
+test("shared import remains visible after navigation and rejects another source or job's progress", async () => {
+  const { promise, resolve } = Promise.withResolvers<StreamingImportProgress>();
+  const start = vi.fn().mockReturnValue(promise);
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: { catalog: { startStreamingImport: start } },
+    }),
+  );
+  shared.store = store;
+  store
+    .getState()
+    .applySources([source("alpha", ["import"]), source("beta", ["import"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingImportBar />);
+  act(() => {
+    void store.getState().importTracks(["same-id"], null, "Alpha track");
+  });
+  const jobId = start.mock.calls[0][3];
+  act(() => store.getState().setActiveSource("beta"));
+  expect(screen.getByText("alpha · Alpha track")).toBeTruthy();
+  act(() =>
+    store.getState().applyImportEvent({
+      source_id: "beta",
+      job_id: jobId,
+      remote_track_id: "same-id",
+      title: "Wrong",
+      artist: "Wrong",
+      state: { kind: "imported", song_id: "wrong-song" },
+      completed: 1,
+      total: 1,
+    }),
+  );
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+    "0",
+  );
+  act(() =>
+    store.getState().applyImportEvent({
+      source_id: "alpha",
+      job_id: "stale-job",
+      remote_track_id: "same-id",
+      title: "Wrong",
+      artist: "Wrong",
+      state: { kind: "imported", song_id: "wrong-song" },
+      completed: 1,
+      total: 1,
+    }),
+  );
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+    "0",
+  );
+  act(() =>
+    store.getState().applyImportEvent({
+      source_id: "alpha",
+      job_id: jobId,
+      remote_track_id: "same-id",
+      title: "Alpha track",
+      artist: "A",
+      state: { kind: "imported", song_id: "alpha-song" },
+      completed: 1,
+      total: 1,
+    }),
+  );
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+    "1",
+  );
+  await act(async () =>
+    resolve({
+      source_id: "alpha",
+      status: "completed",
+      imported_song_ids: ["alpha-song"],
+      failed: [],
+      playlist_id: null,
+      conflict: null,
+    }),
+  );
+  expect(screen.getByRole("button", { name: "common.close" })).toBeTruthy();
+});
+
+test("load more forwards an opaque continuation rather than treating it as track ids", async () => {
+  const listing = vi
+    .fn()
+    .mockImplementation(async (_id: string, cursor: string | null) => ({
+      tracks: [],
+      next_cursor: cursor === null ? "signed opaque cursor/?=2" : null,
+    }));
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            display_name: null,
+            expired: false,
+          }),
+          listStreamingLikedTracks: listing,
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["liked_tracks"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "catalog.streaming.loadMore" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "catalog.streaming.loadMore" }),
+    ).toBeNull(),
+  );
+  expect(listing.mock.calls[1]).toEqual(["alpha", "signed opaque cursor/?=2"]);
+});
+
+const originalHeight = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "offsetHeight",
+);
+beforeAll(() =>
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 600,
+  }),
+);
+afterAll(() => {
+  if (originalHeight)
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "offsetHeight",
+      originalHeight,
+    );
+});
+
+test("selection stays with its source when equal remote ids appear elsewhere", async () => {
+  store = createCatalogStore(
+    createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingSession: async (source_id) => ({
+            source_id,
+            signed_in: false,
+            display_name: null,
+            expired: false,
+          }),
+          listStreamingLikedTracks: async (source_id) => ({
+            tracks: [
+              {
+                source_id,
+                remote_track_id: "same-id",
+                title: `${source_id} song`,
+                artist: "Artist",
+                album: null,
+                duration_ms: 60000,
+                refusal: null,
+                library_song_id: null,
+                cover_url: null,
+              },
+            ],
+            next_cursor: null,
+          }),
+        },
+      },
+    }),
+  );
+  shared.store = store;
+  store
+    .getState()
+    .applySources([
+      source("alpha", ["liked_tracks", "import"]),
+      source("beta", ["liked_tracks", "import"]),
+    ]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "catalog.streaming.select" }),
+  );
+  fireEvent.click(screen.getAllByRole("checkbox")[1]);
+  expect((screen.getAllByRole("checkbox")[1] as HTMLInputElement).checked).toBe(
+    true,
+  );
+  act(() => store.getState().setActiveSource("beta"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "catalog.streaming.select" }),
+  );
+  expect((screen.getAllByRole("checkbox")[1] as HTMLInputElement).checked).toBe(
+    false,
+  );
+  act(() => store.getState().setActiveSource("alpha"));
+  expect((screen.getAllByRole("checkbox")[1] as HTMLInputElement).checked).toBe(
+    true,
+  );
+});
+
+test("a valid source named library is distinct from local library navigation", () => {
+  store.getState().applySources([source("library", ["search"])]);
+  store.getState().setActiveSource("library");
+  render(<StreamingBrowser />);
+  expect(screen.getByRole("heading", { name: "library" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Source draft" },
+  });
+  act(() => store.getState().setActiveView("library"));
+  act(() => store.getState().setActiveSource("library"));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
+    "Source draft",
+  );
+});

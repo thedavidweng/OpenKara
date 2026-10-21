@@ -10,7 +10,7 @@ const COPIED_RESET_MS = 2000;
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]";
 
-export function NeteaseSignInErrorBanner() {
+export function StreamingSignInErrorBanner() {
   const { settings } = useBackend();
   const { t } = useTranslation();
   const error = useCatalogStore((s) => s.signInError);
@@ -26,7 +26,7 @@ export function NeteaseSignInErrorBanner() {
   );
 
   if (!error) return null;
-  const message = t("catalog.netease.signInFailed", {
+  const message = t("catalog.streaming.signInFailed", {
     message: getErrorMessage(error),
   });
 
@@ -50,7 +50,7 @@ export function NeteaseSignInErrorBanner() {
   return (
     <div
       role="alert"
-      data-testid="netease-sign-in-error"
+      data-testid="streaming-sign-in-error"
       className="mx-5 mt-4 flex items-start gap-2.5 rounded-lg border border-[var(--color-destructive)] bg-[var(--color-surface-muted)] px-3 py-2.5"
     >
       <AlertCircle

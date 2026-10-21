@@ -109,11 +109,8 @@
       "message": "Все песни будут разделены заново в режиме 4 дорожек. Занимаемое дорожками место на диске примерно удвоится.",
       "confirm": "Повысить все"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "ОНЛАЙН-ИСТОЧНИКИ",
-    "youtubeLink": "Ссылка YouTube",
-    "neteaseSignedIn": "Вход выполнен",
-    "neteaseSignIn": "Войти"
+    "youtubeLink": "Ссылка YouTube"
   },
   "toolbar": {
     "import": "Импорт",
@@ -344,6 +341,55 @@
     "failedToLoad": "Не удалось загрузить свойства"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "Настройки",
     "library": {
       "label": "Караоке-библиотека",
@@ -701,9 +747,7 @@
       "label": "Онлайн-источники",
       "description": "Включите музыкальный или видеоисточник. Оба остаются выключенными, пока вы их не выберете.",
       "youtube": "YouTube",
-      "youtubeDescription": "Вставьте публичную ссылку на видео или плейлист в очередь. OpenKara не скачивает звук с YouTube.",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Войдите, чтобы просматривать и импортировать песни, которые можно воспроизвести. Дальше файлами управляет OpenKara."
+      "youtubeDescription": "Вставьте публичную ссылку на видео или плейлист в очередь. OpenKara не скачивает звук с YouTube."
     }
   },
   "bootstrap": {
@@ -747,6 +791,13 @@
     "confirmRemoveSingerMessage": "Этот певец назначен на песни в очереди. При его удалении эти песни также будут убраны из очереди."
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "Ошибка базы данных",
     "media_read_failed": "Ошибка импорта",
     "song_not_found": "Песня не найдена",
@@ -781,25 +832,25 @@
     "failed": "Не удалось обновить — загрузите последний выпуск вручную"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "Выйти",
       "sessionExpired": "Сеанс истёк. Войдите снова.",
       "liked": "Понравившиеся треки",
       "playlists": "Плейлисты",
-      "searchPlaceholder": "Поиск треков NetEase",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "Импорт",
       "importPlaylist": "Импортировать плейлист",
-      "connect": "Войти через NetEase",
+      "connect": "Sign in",
       "clearSearch": "Очистить поиск",
-      "tabsLabel": "Разделы библиотеки NetEase",
+      "tabsLabel": "Source library sections",
       "resultsTab": "Результаты по запросу «{{query}}»",
       "accountMenu": "Меню аккаунта",
       "importTrackLabel": "Импортировать «{{title}}»",
       "statusNoRights": "Нет прав на воспроизведение",
-      "statusNoRightsHint": "NetEase не даёт вашему аккаунту прав на воспроизведение этого трека, поэтому его нельзя импортировать.",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "Только пробный фрагмент",
-      "statusTrialHint": "NetEase предлагает только короткий пробный фрагмент этого трека, поэтому его нельзя импортировать.",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "Импорт…",
       "statusImported": "В библиотеке",
       "statusFailed": "Не удалось импортировать",
@@ -817,9 +868,9 @@
         "import_failed": "Не удалось импортировать"
       },
       "importProgressLabel": "Идёт импорт",
-      "connectTitle": "Подключить NetEase Cloud Music",
+      "connectTitle": "Connect your account",
       "connectBody": "Войдите, чтобы просматривать понравившиеся треки и плейлисты и импортировать те, что можно воспроизвести. Импортированные файлы принадлежат вашей библиотеке.",
-      "connectHintWindow": "При входе откроется окно NetEase. OpenKara никогда не видит ваш пароль.",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "Треки без прав на воспроизведение или только с пробным фрагментом импортировать нельзя.",
       "signInFailed": "Не удалось войти: {{message}}",
       "songCount_one": "{{count}} трек",
@@ -849,13 +900,22 @@
       "importingProgress": "Импорт {{completed}} из {{total}}",
       "loadingMore": "Загрузка других треков…",
       "refusalReason": {
-        "trial_clip": "Только для VIP — NetEase отдаёт лишь 30-секундный фрагмент",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "Нет прав на воспроизведение",
-        "empty_url": "Аудио недоступно"
+        "empty_url": "Аудио недоступно",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "Не удаётся воспроизвести «{{title}}»",
       "importToSing": "Импортировать, чтобы петь",
-      "previewHint": "Потоковое превью. Импортируйте песню, чтобы петь, разделить вокал или добавить текст."
+      "previewHint": "Потоковое превью. Импортируйте песню, чтобы петь, разделить вокал или добавить текст.",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

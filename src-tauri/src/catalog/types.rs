@@ -6,27 +6,45 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const YOUTUBE_SOURCE_ID: &str = "youtube";
-pub const NETEASE_SOURCE_ID: &str = "netease";
 pub const YOUTUBE_QUEUE_PREFIX: &str = "yt:";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatalogError {
-    UnknownSource { source_id: String },
-    SourceDisabled { source_id: String },
-    AuthFailed { source_id: String, detail: String },
-    SessionExpired { source_id: String },
+    UnknownSource {
+        source_id: String,
+    },
+    SourceDisabled {
+        source_id: String,
+    },
+    AuthFailed {
+        source_id: String,
+        detail: String,
+    },
+    SessionExpired {
+        source_id: String,
+    },
+    SourceFailure {
+        code: String,
+        message: String,
+        retryable: bool,
+    },
     Network(String),
     Cancelled,
-    VideoUnavailable { reason: VideoUnavailableReason },
+    VideoUnavailable {
+        reason: VideoUnavailableReason,
+    },
     Internal(String),
 }
 
 impl From<CatalogError> for CommandError {
     fn from(error: CatalogError) -> Self {
         match error {
-            CatalogError::UnknownSource { source_id } => {
-                internal_error(format!("unknown online source: {source_id}"))
-            }
+            CatalogError::UnknownSource { source_id } => CommandError::new(
+                crate::commands::error::ErrorCode::StreamingSourceNotFound,
+                format!("unknown online source: {source_id}"),
+                false,
+                crate::commands::error::FallbackAction::KeepCurrentState,
+            ),
             CatalogError::SourceDisabled { source_id } => {
                 online_source_disabled(format!("online source {source_id} is off"))
             }
@@ -36,13 +54,52 @@ impl From<CatalogError> for CommandError {
             CatalogError::SessionExpired { source_id } => {
                 streaming_session_expired(format!("streaming session for {source_id} expired"))
             }
+            CatalogError::SourceFailure {
+                code,
+                message,
+                retryable,
+            } => CommandError::new(
+                match code.as_str() {
+                    "session_expired" => crate::commands::error::ErrorCode::StreamingSessionExpired,
+                    "authentication_required" => {
+                        crate::commands::error::ErrorCode::StreamingAuthFailed
+                    }
+                    "source_disabled" => crate::commands::error::ErrorCode::OnlineSourceDisabled,
+                    "not_found" => crate::commands::error::ErrorCode::StreamingSourceNotFound,
+                    "unsupported_operation" => {
+                        crate::commands::error::ErrorCode::StreamingUnsupportedOperation
+                    }
+                    "challenge_expired" => {
+                        crate::commands::error::ErrorCode::StreamingChallengeExpired
+                    }
+                    "invalid_cursor" => crate::commands::error::ErrorCode::StreamingInvalidCursor,
+                    "active_work" | "busy" => {
+                        crate::commands::error::ErrorCode::StreamingWorkActive
+                    }
+                    "cancelled" => crate::commands::error::ErrorCode::StreamingCancelled,
+                    "network" => crate::commands::error::ErrorCode::NetworkUnavailable,
+                    _ => crate::commands::error::ErrorCode::StreamingSourceUnavailable,
+                },
+                format!("{code}: {message}"),
+                retryable,
+                if retryable {
+                    crate::commands::error::FallbackAction::Retry
+                } else {
+                    crate::commands::error::FallbackAction::KeepCurrentState
+                },
+            ),
             CatalogError::Network(message) => CommandError::new(
                 crate::commands::error::ErrorCode::NetworkUnavailable,
                 message,
                 true,
                 crate::commands::error::FallbackAction::Retry,
             ),
-            CatalogError::Cancelled => internal_error("streaming import was cancelled"),
+            CatalogError::Cancelled => CommandError::new(
+                crate::commands::error::ErrorCode::StreamingCancelled,
+                "streaming operation was cancelled",
+                false,
+                crate::commands::error::FallbackAction::KeepCurrentState,
+            ),
             CatalogError::VideoUnavailable { reason } => {
                 video_source_unavailable(reason.as_str().to_owned())
             }
@@ -102,22 +159,12 @@ impl OnlineSourceCapabilities {
                 import: false,
                 resolve_video: true,
             },
-            NETEASE_SOURCE_ID => Self {
-                sign_in: true,
-                browse: true,
-                import: true,
-                resolve_video: false,
-            },
             _ => Self::none(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StreamingCredentials {
-    pub music_u: String,
-    pub csrf: String,
-}
+pub type StreamingCredentials = std::collections::BTreeMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingSessionSnapshot {
@@ -133,6 +180,7 @@ pub enum ImportRefusalReason {
     NoPlayRights,
     TrialClip,
     EmptyUrl,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,43 +203,43 @@ pub struct StreamingTrack {
     /// from the persisted Streaming Track Identity. Filled by the command
     /// layer; sources always return `None`.
     pub library_song_id: Option<String>,
-    /// HTTPS album cover URL (unsized; the UI appends a size parameter).
+    /// Host-managed artwork handle; never a source CDN URL.
     pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingPlaylistSummary {
+    pub source_id: String,
     pub remote_id: String,
     pub name: String,
-    pub track_count: u32,
-    /// HTTPS playlist cover URL (unsized).
+    pub track_count: Option<u32>,
     pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingPlaylistDetail {
+    pub source_id: String,
     pub remote_id: String,
     pub name: String,
     pub tracks: Vec<StreamingTrack>,
     pub cover_url: Option<String>,
     pub creator: Option<String>,
     pub description: Option<String>,
-    pub track_count: u32,
-    /// Last update time in milliseconds since the Unix epoch, when known.
+    pub track_count: Option<u32>,
     pub updated_at_ms: Option<u64>,
-    /// Every track id of the playlist, in order. Tracks not yet in `tracks`
-    /// are fetched by id with `get_streaming_tracks`.
-    pub track_ids: Vec<String>,
-    /// True when `tracks` holds only the first batch of `track_ids`.
-    pub partial: bool,
+    pub next_cursor: Option<String>,
 }
 
-/// A track listing whose first batch is loaded and the rest is fetched by id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingTrackListing {
     pub tracks: Vec<StreamingTrack>,
-    pub track_ids: Vec<String>,
-    pub partial: bool,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamingPlaylistListing {
+    pub items: Vec<StreamingPlaylistSummary>,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,15 +256,14 @@ pub enum StreamingResolveOutcome {
     Refusal(ImportRefusal),
 }
 
-/// A direct audio URL a track can be previewed from, without importing it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ResolvedStreamingUrl {
-    pub url: String,
+    pub descriptor: crate::source_host::ResourceDescriptor,
     /// Container extension (`mp3`, `flac`, ...), used as the decoder hint.
     pub extension: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum StreamingPreviewOutcome {
     Stream(ResolvedStreamingUrl),
     Refusal(ImportRefusal),
@@ -277,6 +324,7 @@ pub enum StreamingImportStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingImportProgress {
+    pub source_id: String,
     pub status: StreamingImportStatus,
     pub imported_song_ids: Vec<String>,
     pub failed: Vec<StreamingImportFailure>,
@@ -317,6 +365,7 @@ impl StreamingImportTrackState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingImportEvent {
+    pub source_id: String,
     pub job_id: String,
     pub remote_track_id: String,
     pub title: String,
@@ -344,6 +393,7 @@ pub struct StreamingImportTrackSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingImportJobSnapshot {
+    pub source_id: String,
     pub job_id: String,
     pub phase: StreamingImportJobPhase,
     pub completed: u32,
@@ -381,18 +431,41 @@ pub fn is_video_source_queue_id(id: &str) -> bool {
     id.starts_with(YOUTUBE_QUEUE_PREFIX)
 }
 
-const NETEASE_PREVIEW_PREFIX: &str = "ne:";
-
-/// Queue id of a NetEase track played as a preview, without being imported.
-pub fn netease_preview_queue_id(remote_track_id: &str) -> String {
-    format!("{NETEASE_PREVIEW_PREFIX}{remote_track_id}")
+pub fn streaming_preview_queue_id(source_id: &str, remote_track_id: &str) -> String {
+    let mut encoded = String::new();
+    for byte in remote_track_id.as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(byte) {
+            encoded.push(*byte as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    format!("stream:{source_id}:{encoded}")
 }
 
-/// The NetEase track id behind a preview queue id.
-pub fn netease_preview_remote_id(queue_id: &str) -> Option<&str> {
-    queue_id
-        .strip_prefix(NETEASE_PREVIEW_PREFIX)
-        .filter(|id| !id.is_empty())
+pub fn streaming_preview_reference(queue_id: &str) -> Option<(String, String)> {
+    let (source_id, encoded) = queue_id.strip_prefix("stream:")?.split_once(':')?;
+    if source_id.is_empty()
+        || !source_id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+        || encoded.is_empty()
+    {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut input = encoded.bytes();
+    while let Some(byte) = input.next() {
+        if byte == b'%' {
+            let high = (input.next()? as char).to_digit(16)?;
+            let low = (input.next()? as char).to_digit(16)?;
+            bytes.push((high * 16 + low) as u8);
+        } else {
+            bytes.push(byte);
+        }
+    }
+    Some((source_id.to_owned(), String::from_utf8(bytes).ok()?))
 }
 
 #[cfg(test)]
@@ -400,12 +473,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_queue_ids_use_prefix() {
-        assert_eq!(netease_preview_queue_id("42"), "ne:42");
-        assert_eq!(netease_preview_remote_id("ne:42"), Some("42"));
-        assert_eq!(netease_preview_remote_id("ne:"), None);
-        assert_eq!(netease_preview_remote_id("yt:42"), None);
-        assert_eq!(netease_preview_remote_id("deadbeef"), None);
+    fn preview_queue_ids_isolate_sources_and_opaque_remote_ids() {
+        let first = streaming_preview_queue_id("fixture", "42:/夜");
+        let second = streaming_preview_queue_id("other", "42:/夜");
+        assert_ne!(first, second);
+        assert_eq!(first, "stream:fixture:42%3A%2F%E5%A4%9C");
+        assert_eq!(
+            streaming_preview_reference(&first),
+            Some(("fixture".into(), "42:/夜".into()))
+        );
+        assert_eq!(streaming_preview_reference("stream:fixture:%ZZ"), None);
+        assert_eq!(streaming_preview_reference("ne:42"), None);
+        assert_eq!(streaming_preview_reference("deadbeef"), None);
     }
 
     #[test]

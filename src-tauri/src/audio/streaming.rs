@@ -850,6 +850,9 @@ fn decode_mss_into_producer(
 
         let mut offset = 0;
         while offset < push_samples.len() {
+            if !prod.prod.read_is_held() {
+                return Ok(());
+            }
             let pushed = prod.push_samples(&push_samples[offset..]);
             if pushed == 0 {
                 std::thread::yield_now();
@@ -1010,6 +1013,48 @@ mod tests {
             .expect("decode should succeed");
 
         assert!(consumer.is_eof());
+    }
+
+    #[test]
+    fn dropping_a_preview_consumer_stops_a_decoder_with_a_full_ring() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("preview.wav");
+        let frames = 44_100u32 * 30;
+        let data_size = frames * 4;
+        let mut bytes = Vec::with_capacity(data_size as usize + 44);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&44_100u32.to_le_bytes());
+        bytes.extend_from_slice(&(44_100u32 * 4).to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size.to_le_bytes());
+        bytes.resize(data_size as usize + 44, 0);
+        std::fs::write(&path, bytes).expect("audio fixture");
+        let (consumer, _, handle) = spawn_decode_producer(&path).expect("decoder");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while consumer.available_samples() < super::ring_capacity(44_100, 2) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "decoder did not fill its ring"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        drop(consumer);
+        let (finished, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = finished.send(handle.join());
+        });
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("decoder stops when playback drops its consumer")
+            .expect("decoder thread")
+            .expect("decoder stops cleanly");
     }
 
     #[test]

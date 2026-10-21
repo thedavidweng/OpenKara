@@ -61,22 +61,32 @@ export function isVideoSourceQueueId(songId: string): boolean {
   return songId.startsWith("yt:");
 }
 
-const ONLINE_PREVIEW_PREFIX = "ne:";
+export interface StreamingPreviewReference {
+  sourceId: string;
+  remoteTrackId: string;
+}
 
-/** Queue id of a NetEase track streamed as a preview, not imported. */
-export function onlinePreviewQueueId(remoteTrackId: string): string {
-  return `${ONLINE_PREVIEW_PREFIX}${remoteTrackId}`;
+export function onlinePreviewQueueId(
+  sourceId: string,
+  remoteTrackId: string,
+): string {
+  return `stream:${sourceId}:${encodeURIComponent(remoteTrackId)}`;
 }
 
 export function isOnlinePreviewQueueId(songId: string): boolean {
-  return songId.startsWith(ONLINE_PREVIEW_PREFIX);
+  return onlinePreviewReference(songId) !== null;
 }
 
-/** The NetEase track id behind a preview queue id. */
-export function onlinePreviewRemoteId(songId: string): string | null {
-  return isOnlinePreviewQueueId(songId)
-    ? songId.slice(ONLINE_PREVIEW_PREFIX.length)
-    : null;
+export function onlinePreviewReference(
+  songId: string,
+): StreamingPreviewReference | null {
+  const match = /^stream:([a-z][a-z0-9_-]{0,63}):(.+)$/.exec(songId);
+  if (!match) return null;
+  try {
+    return { sourceId: match[1], remoteTrackId: decodeURIComponent(match[2]) };
+  } catch {
+    return null;
+  }
 }
 
 export interface VideoPlaybackTransport {

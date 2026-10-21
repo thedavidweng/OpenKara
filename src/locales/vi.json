@@ -109,11 +109,8 @@
       "message": "Thao tác này sẽ tách lại toàn bộ bài hát bằng chế độ 4 bè. Dung lượng đĩa dùng cho các bè sẽ tăng khoảng gấp đôi.",
       "confirm": "Nâng tất cả"
     },
-    "netease": "NetEase Cloud Music",
     "onlineSources": "NGUỒN TRỰC TUYẾN",
-    "youtubeLink": "Liên kết YouTube",
-    "neteaseSignedIn": "Đã đăng nhập",
-    "neteaseSignIn": "Đăng nhập"
+    "youtubeLink": "Liên kết YouTube"
   },
   "toolbar": {
     "import": "Nhập",
@@ -342,6 +339,55 @@
     "failedToLoad": "Không tải được thuộc tính"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "Tùy chọn",
     "library": {
       "label": "Thư viện Karaoke",
@@ -699,9 +745,7 @@
       "label": "Nguồn trực tuyến",
       "description": "Bật nguồn nhạc hoặc video. Cả hai đều tắt cho đến khi bạn chọn.",
       "youtube": "YouTube",
-      "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube.",
-      "netease": "NetEase Cloud Music",
-      "neteaseDescription": "Đăng nhập để duyệt và nhập các bài bạn có thể phát. OpenKara sẽ quản lý các tệp đã nhập."
+      "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube."
     }
   },
   "bootstrap": {
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "Ca sĩ này đang được gán cho các bài hát trong hàng chờ. Xóa họ cũng sẽ xóa những bài hát đó khỏi hàng chờ."
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "Lỗi cơ sở dữ liệu",
     "media_read_failed": "Nhập thất bại",
     "song_not_found": "Không tìm thấy bài hát",
@@ -779,25 +830,25 @@
     "failed": "Cập nhật thất bại — hãy tải bản phát hành mới nhất theo cách thủ công"
   },
   "catalog": {
-    "netease": {
-      "title": "NetEase Cloud Music",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "Đăng xuất",
       "sessionExpired": "Phiên đã hết hạn. Đăng nhập lại.",
       "liked": "Bài hát đã thích",
       "playlists": "Danh sách phát",
-      "searchPlaceholder": "Tìm bài hát NetEase",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "Nhập",
       "importPlaylist": "Nhập danh sách phát",
-      "connect": "Đăng nhập bằng NetEase",
+      "connect": "Sign in",
       "clearSearch": "Xóa tìm kiếm",
-      "tabsLabel": "Các mục thư viện NetEase",
+      "tabsLabel": "Source library sections",
       "resultsTab": "Kết quả cho “{{query}}”",
       "accountMenu": "Menu tài khoản",
       "importTrackLabel": "Nhập “{{title}}”",
       "statusNoRights": "Không có quyền phát",
-      "statusNoRightsHint": "NetEase không cấp quyền phát bài này cho tài khoản của bạn nên không thể nhập.",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "Chỉ có đoạn nghe thử",
-      "statusTrialHint": "NetEase chỉ cung cấp một đoạn nghe thử ngắn của bài này nên không thể nhập.",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "Đang nhập…",
       "statusImported": "Đã có trong thư viện",
       "statusFailed": "Nhập thất bại",
@@ -815,9 +866,9 @@
         "import_failed": "Nhập thất bại"
       },
       "importProgressLabel": "Đang nhập",
-      "connectTitle": "Kết nối NetEase Cloud Music",
+      "connectTitle": "Connect your account",
       "connectBody": "Đăng nhập để duyệt bài hát đã thích và danh sách phát, rồi nhập những bài bạn có thể phát. Các tệp đã nhập thuộc về thư viện của bạn.",
-      "connectHintWindow": "Đăng nhập sẽ mở một cửa sổ NetEase. OpenKara không bao giờ thấy mật khẩu của bạn.",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "Không thể nhập bài hát không có quyền phát hoặc chỉ có đoạn nghe thử.",
       "signInFailed": "Đăng nhập thất bại: {{message}}",
       "songCount_other": "{{count}} bài hát",
@@ -844,13 +895,22 @@
       "importingProgress": "Đang nhập {{completed}} trên {{total}}",
       "loadingMore": "Đang tải thêm bài hát…",
       "refusalReason": {
-        "trial_clip": "Chỉ dành cho VIP — NetEase chỉ cung cấp bản nghe thử 30 giây",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "Không có quyền phát",
-        "empty_url": "Không có âm thanh"
+        "empty_url": "Không có âm thanh",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "Không thể phát “{{title}}”",
       "importToSing": "Nhập để hát",
-      "previewHint": "Nghe thử trực tuyến. Hãy nhập bài hát để hát, tách giọng hoặc thêm lời."
+      "previewHint": "Nghe thử trực tuyến. Hãy nhập bài hát để hát, tách giọng hoặc thêm lời.",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

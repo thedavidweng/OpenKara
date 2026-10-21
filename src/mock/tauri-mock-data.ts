@@ -101,7 +101,6 @@ export const MOCK_DATA: MockData = {
     theme_preference: "dark",
     update_policy: "notify",
     youtube_source_enabled: false,
-    netease_source_enabled: false,
   },
 
   playbackSnapshot: {

@@ -19,9 +19,139 @@ use std::{
 };
 use symphonia::core::io::MediaSource;
 
+#[derive(Clone)]
+pub(super) enum PreviewMedia {
+    Host {
+        host: crate::source_host::SourceHost,
+        source_id: String,
+        descriptor: crate::source_host::ResourceDescriptor,
+        cancellation: crate::source_host::Cancellation,
+    },
+    #[cfg(test)]
+    Http(String),
+    #[cfg(test)]
+    Expired,
+}
+
+pub(super) enum MediaResponse {
+    Host(crate::source_host::MediaResponse),
+    #[cfg(test)]
+    Http(reqwest::blocking::Response),
+}
+
+#[derive(Debug)]
+pub(super) struct MediaOpenError {
+    pub message: String,
+    expired: bool,
+}
+
+impl From<String> for MediaOpenError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            expired: false,
+        }
+    }
+}
+
+impl PreviewMedia {
+    pub(super) fn open(
+        &self,
+        start: u64,
+        end: Option<u64>,
+        alive: &Alive,
+    ) -> Result<MediaResponse, MediaOpenError> {
+        match self {
+            Self::Host {
+                host,
+                source_id,
+                descriptor,
+                cancellation,
+            } => tauri::async_runtime::block_on(async {
+                tokio::select! {
+                    result = host.open_media(source_id, descriptor, Some((start, end)), cancellation.clone()) => result.map(MediaResponse::Host).map_err(|error| MediaOpenError {
+                        expired: error.code == "media_expired", message: error.message,
+                    }),
+                    _ = wait_stopped(alive) => Err("preview stopped".to_owned().into()),
+                }
+            }),
+            #[cfg(test)]
+            Self::Http(url) => reqwest::blocking::Client::builder()
+                .connect_timeout(CONNECT_TIMEOUT)
+                .timeout(READ_TIMEOUT)
+                .build()
+                .map_err(|error| error.to_string())?
+                .get(url)
+                .header(
+                    "Range",
+                    format!(
+                        "bytes={start}-{}",
+                        end.map(|n| n.to_string()).unwrap_or_default()
+                    ),
+                )
+                .send()
+                .map(MediaResponse::Http)
+                .map_err(|error| error.to_string().into()),
+            #[cfg(test)]
+            Self::Expired => Err(MediaOpenError {
+                message: "media descriptor expired".to_owned(),
+                expired: true,
+            }),
+        }
+    }
+}
+
+impl MediaResponse {
+    pub(super) fn status(&self) -> u16 {
+        match self {
+            Self::Host(response) => response.status,
+            #[cfg(test)]
+            Self::Http(response) => response.status().as_u16(),
+        }
+    }
+
+    pub(super) fn content_range(&self) -> Option<&str> {
+        match self {
+            Self::Host(response) => response.content_range.as_deref(),
+            #[cfg(test)]
+            Self::Http(response) => response.headers().get("content-range")?.to_str().ok(),
+        }
+    }
+
+    fn chunk(&mut self, alive: &Alive) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            Self::Host(response) => tauri::async_runtime::block_on(async {
+                tokio::select! {
+                    result = response.chunk() => result.map_err(|error| error.message),
+                    _ = wait_stopped(alive) => Err("preview stopped".to_owned()),
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => Err("preview read timed out".to_owned()),
+                }
+            }),
+            #[cfg(test)]
+            Self::Http(response) => {
+                let mut bytes = vec![0; CHUNK];
+                let read = response
+                    .read(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+                bytes.truncate(read);
+                Ok((read > 0).then_some(bytes))
+            }
+        }
+    }
+}
+
+async fn wait_stopped(alive: &Alive) {
+    while alive() {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[cfg(test)]
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Idle timeout per read: a stalled connection fails instead of hanging.
+#[cfg(test)]
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(test)]
 const CHUNK: usize = 32 * 1024;
 /// A wanted offset this close ahead of the write position is reached by the
 /// running stream sooner than a new request would answer.
@@ -37,23 +167,18 @@ pub(super) type Alive = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(super) struct Download {
     pub wanted: mpsc::Sender<u64>,
     pub events: mpsc::Receiver<FetchEvent>,
+    pub handle: std::thread::JoinHandle<()>,
 }
 
 /// Start downloading `url` into `cache`. The thread ends when every sender of
 /// `wanted` is dropped, `alive` turns false, or a fatal event was reported.
-pub(super) fn spawn(url: String, cache: Arc<ChunkedCache>, alive: Alive) -> Download {
+pub(super) fn spawn(media: PreviewMedia, cache: Arc<ChunkedCache>, alive: Alive) -> Download {
     let (wanted, wanted_rx) = mpsc::channel();
     let (event_tx, events) = mpsc::channel();
-    std::thread::spawn(move || {
-        let client = reqwest::blocking::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(READ_TIMEOUT)
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+    let handle = std::thread::spawn(move || {
         Downloader {
-            url,
+            media,
             cache,
-            client,
             wanted_rx,
             event_tx,
             alive,
@@ -62,13 +187,16 @@ pub(super) fn spawn(url: String, cache: Arc<ChunkedCache>, alive: Alive) -> Down
         }
         .run();
     });
-    Download { wanted, events }
+    Download {
+        wanted,
+        events,
+        handle,
+    }
 }
 
 struct Downloader {
-    url: String,
+    media: PreviewMedia,
     cache: Arc<ChunkedCache>,
-    client: reqwest::blocking::Client,
     wanted_rx: mpsc::Receiver<u64>,
     event_tx: mpsc::Sender<FetchEvent>,
     alive: Alive,
@@ -97,12 +225,13 @@ impl Downloader {
             }
             let Some(start) = next_gap(&self.cache, self.want, size) else {
                 // Everything is on disk; wait for the senders to go away.
-                match self.wanted_rx.recv() {
+                match self.wanted_rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(offset) => {
                         self.want = offset;
                         continue;
                     }
-                    Err(_) => return,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 }
             };
             match self.stream_from(start, size) {
@@ -144,16 +273,15 @@ impl Downloader {
     }
 
     fn stream_from(&mut self, start: u64, size: u64) -> StreamEnd {
-        let mut response = match self
-            .client
-            .get(&self.url)
-            .header("Range", format!("bytes={start}-"))
-            .send()
-        {
+        let mut response = match self.media.open(start, None, &self.alive) {
             Ok(response) => response,
+            Err(error) if error.expired => {
+                let _ = self.event_tx.send(FetchEvent::UrlExpired);
+                return StreamEnd::Stop;
+            }
             Err(_) => return StreamEnd::Retry,
         };
-        match response.status().as_u16() {
+        match response.status() {
             206 => {}
             200 if start == 0 => {}
             200 | 416 => {
@@ -168,7 +296,6 @@ impl Downloader {
         }
 
         let mut position = start;
-        let mut buffer = vec![0u8; CHUNK];
         loop {
             if !(self.alive)() {
                 return StreamEnd::Stop;
@@ -192,15 +319,15 @@ impl Downloader {
                 self.want = size;
                 return StreamEnd::Finished;
             }
-            let room = (size - position).min(CHUNK as u64) as usize;
-            match response.read(&mut buffer[..room]) {
-                Ok(0) => {
+            match response.chunk(&self.alive) {
+                Ok(None) => {
                     // The body ended before the advertised size.
                     self.want = position;
                     return StreamEnd::Retry;
                 }
-                Ok(read) => {
-                    if self.cache.write_at(position, &buffer[..read]).is_err() {
+                Ok(Some(bytes)) => {
+                    let read = bytes.len().min((size - position) as usize);
+                    if self.cache.write_at(position, &bytes[..read]).is_err() {
                         let _ = self
                             .event_tx
                             .send(FetchEvent::ConsecutiveFailures { count: 1 });
@@ -245,14 +372,40 @@ pub(super) struct PreviewSource {
     cache: Arc<ChunkedCache>,
     position: u64,
     wanted: mpsc::Sender<u64>,
+    alive: Alive,
+    stop_on_drop: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl PreviewSource {
+    #[cfg(test)]
     pub(super) fn new(cache: Arc<ChunkedCache>, wanted: mpsc::Sender<u64>) -> Self {
+        Self::with_alive(cache, wanted, Arc::new(|| true))
+    }
+
+    pub(super) fn with_alive(
+        cache: Arc<ChunkedCache>,
+        wanted: mpsc::Sender<u64>,
+        alive: Alive,
+    ) -> Self {
         Self {
             cache,
             position: 0,
             wanted,
+            alive,
+            stop_on_drop: None,
+        }
+    }
+
+    pub(super) fn stop_on_drop(mut self, stop: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.stop_on_drop = Some(stop);
+        self
+    }
+}
+
+impl Drop for PreviewSource {
+    fn drop(&mut self) {
+        if let Some(stop) = &self.stop_on_drop {
+            stop.store(true, std::sync::atomic::Ordering::SeqCst);
         }
     }
 }
@@ -263,10 +416,27 @@ impl Read for PreviewSource {
         if buf.is_empty() || self.position >= size {
             return Ok(0);
         }
-        let length = (buf.len() as u64).min(size - self.position) as usize;
-        if self.cache.cached_length_from(self.position, 1) == 0 {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while self.cache.cached_length_from(self.position, 1) == 0 {
+            if !(self.alive)() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "preview stopped",
+                ));
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "preview buffer timed out",
+                ));
+            }
             let _ = self.wanted.send(self.position);
+            std::thread::sleep(Duration::from_millis(25));
         }
+        let length = self
+            .cache
+            .cached_length_from(self.position, (buf.len() as u64).min(size - self.position))
+            as usize;
         let read = self
             .cache
             .read_at(self.position, &mut buf[..length])
@@ -440,6 +610,36 @@ mod tests {
     }
 
     #[test]
+    fn an_expired_descriptor_requests_link_refresh_without_transfer_retries() {
+        let dir = tempfile::tempdir().expect("dir");
+        let download = spawn(PreviewMedia::Expired, open(dir.path(), 1024), always());
+        let event = download
+            .events
+            .recv_timeout(Duration::from_secs(1))
+            .expect("expiry event");
+        assert!(matches!(event, FetchEvent::UrlExpired));
+        download.handle.join().expect("expired transfer stops");
+        assert!(download.events.try_recv().is_err());
+    }
+
+    #[test]
+    fn stopping_a_preview_interrupts_a_blocked_decoder_read() {
+        let dir = tempfile::tempdir().expect("dir");
+        let cache = open(dir.path(), 1024);
+        let (wanted, _receiver) = mpsc::channel();
+        let live = Arc::new(AtomicBool::new(true));
+        let flag = Arc::clone(&live);
+        let mut source =
+            PreviewSource::with_alive(cache, wanted, Arc::new(move || flag.load(Ordering::SeqCst)));
+        let reader = std::thread::spawn(move || source.read(&mut [0; 16]));
+        live.store(false, Ordering::SeqCst);
+        assert_eq!(
+            reader.join().expect("reader").unwrap_err().kind(),
+            io::ErrorKind::Interrupted
+        );
+    }
+
+    #[test]
     fn startup_bytes_covers_three_seconds_with_a_floor() {
         // 320 kbps for 200 s is 8 MB: three seconds is 120 KB, below the floor.
         assert_eq!(startup_bytes(8_000_000, Some(200_000)), 256 * 1024);
@@ -468,7 +668,11 @@ mod tests {
         );
         let dir = tempfile::tempdir().expect("dir");
         let cache = open(dir.path(), data.len());
-        let download = spawn(server.url.clone(), Arc::clone(&cache), always());
+        let download = spawn(
+            PreviewMedia::Http(server.url.clone()),
+            Arc::clone(&cache),
+            always(),
+        );
         let mut source = PreviewSource::new(Arc::clone(&cache), download.wanted.clone());
 
         let startup = startup_bytes(data.len() as u64, Some(25_000));
@@ -517,7 +721,11 @@ mod tests {
         );
         let dir = tempfile::tempdir().expect("dir");
         let cache = open(dir.path(), data.len());
-        let download = spawn(server.url.clone(), Arc::clone(&cache), always());
+        let download = spawn(
+            PreviewMedia::Http(server.url.clone()),
+            Arc::clone(&cache),
+            always(),
+        );
         let mut source = PreviewSource::new(Arc::clone(&cache), download.wanted.clone());
         wait_buffered(
             &cache,
@@ -563,7 +771,11 @@ mod tests {
         );
         let dir = tempfile::tempdir().expect("dir");
         let cache = open(dir.path(), data.len());
-        let download = spawn(server.url.clone(), Arc::clone(&cache), always());
+        let download = spawn(
+            PreviewMedia::Http(server.url.clone()),
+            Arc::clone(&cache),
+            always(),
+        );
         let mut source = PreviewSource::new(Arc::clone(&cache), download.wanted.clone());
         io::Seek::seek(&mut source, SeekFrom::Start(550_000)).expect("seek");
         let mut buffer = [0u8; 100];
@@ -593,7 +805,7 @@ mod tests {
         );
         let dir = tempfile::tempdir().expect("dir");
         let cache = open(dir.path(), data.len());
-        let download = spawn(server.url.clone(), cache, always());
+        let download = spawn(PreviewMedia::Http(server.url.clone()), cache, always());
         let event = download
             .events
             .recv_timeout(Duration::from_secs(5))
@@ -618,7 +830,7 @@ mod tests {
         let live = Arc::new(AtomicBool::new(true));
         let flag = Arc::clone(&live);
         let _download = spawn(
-            server.url.clone(),
+            PreviewMedia::Http(server.url.clone()),
             Arc::clone(&cache),
             Arc::new(move || flag.load(Ordering::SeqCst)),
         );

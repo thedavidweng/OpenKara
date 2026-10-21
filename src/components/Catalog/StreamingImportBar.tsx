@@ -6,12 +6,13 @@ import { useCatalogStore } from "@/stores/catalog-store";
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]";
 
-export function NeteaseImportBar() {
+export function StreamingImportBar() {
   const { t } = useTranslation();
   const run = useCatalogStore((s) => s.importRun);
   const failures = useCatalogStore((s) => s.importFailures);
   const dismiss = useCatalogStore((s) => s.dismissImportRun);
   const cancel = useCatalogStore((s) => s.cancelImport);
+  const sources = useCatalogStore((s) => s.sources);
   const [showSkipped, setShowSkipped] = useState(false);
 
   if (!run) return null;
@@ -25,8 +26,8 @@ export function NeteaseImportBar() {
         className={`rounded px-1 text-[12px] text-[var(--color-accent)] hover:underline ${focusRing}`}
       >
         {showSkipped
-          ? t("catalog.netease.hideSkipped")
-          : t("catalog.netease.viewSkipped")}
+          ? t("catalog.streaming.hideSkipped")
+          : t("catalog.streaming.viewSkipped")}
       </button>
     ) : null;
   const skippedList =
@@ -39,8 +40,8 @@ export function NeteaseImportBar() {
             </span>
             {failure.artist ? ` — ${failure.artist}` : ""} ·{" "}
             {failure.refusal
-              ? t(`catalog.netease.refusalReason.${failure.refusal.reason}`)
-              : t(`catalog.netease.skipReason.${failure.reason}`)}
+              ? t(`catalog.streaming.refusalReason.${failure.refusal.reason}`)
+              : t(`catalog.streaming.skipReason.${failure.reason}`)}
           </li>
         ))}
       </ul>
@@ -48,9 +49,14 @@ export function NeteaseImportBar() {
 
   return (
     <div
-      data-testid="netease-import-bar"
+      data-testid="streaming-import-bar"
       className="absolute bottom-4 left-1/2 z-10 w-[min(440px,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-4 pb-2.5 pt-2 shadow-[var(--shadow-popover)]"
     >
+      <p className="truncate pb-1 text-[12px] text-[var(--color-text-dim)]">
+        {sources.find((source) => source.source_id === run.sourceId)?.name ??
+          run.sourceId}
+        {run.label ? ` · ${run.label}` : ""}
+      </p>
       {run.phase === "running" ? (
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
@@ -59,8 +65,8 @@ export function NeteaseImportBar() {
               className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]"
             >
               {run.cancelling
-                ? t("catalog.netease.cancelling")
-                : t("catalog.netease.importingProgress", {
+                ? t("catalog.streaming.cancelling")
+                : t("catalog.streaming.importingProgress", {
                     completed: run.completed,
                     total: run.total,
                   })}
@@ -68,7 +74,9 @@ export function NeteaseImportBar() {
             {run.skipped > 0 ? (
               <>
                 <span className="text-[12px] text-[var(--color-text-dim)]">
-                  {t("catalog.netease.skippedSoFar", { skipped: run.skipped })}
+                  {t("catalog.streaming.skippedSoFar", {
+                    skipped: run.skipped,
+                  })}
                 </span>
                 {skippedToggle}
               </>
@@ -79,12 +87,12 @@ export function NeteaseImportBar() {
               onClick={() => void cancel()}
               className={`rounded px-1 text-[12px] text-[var(--color-accent)] hover:underline disabled:opacity-50 ${focusRing}`}
             >
-              {t("catalog.netease.cancelImport")}
+              {t("catalog.streaming.cancelImport")}
             </button>
           </div>
           <div
             role="progressbar"
-            aria-label={t("catalog.netease.importProgressLabel")}
+            aria-label={t("catalog.streaming.importProgressLabel")}
             aria-valuemin={0}
             aria-valuemax={run.total}
             aria-valuenow={run.completed}
@@ -106,7 +114,7 @@ export function NeteaseImportBar() {
               role="status"
               className="min-w-0 flex-1 text-[13px] text-[var(--color-text)]"
             >
-              {t("catalog.netease.importDone", {
+              {t("catalog.streaming.importDone", {
                 imported: run.imported,
                 skipped: run.skipped,
               })}

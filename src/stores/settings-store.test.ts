@@ -81,7 +81,6 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     theme_preference: "dark",
     update_policy: "notify",
     youtube_source_enabled: false,
-    netease_source_enabled: false,
     ...overrides,
   };
 }
@@ -558,7 +557,6 @@ describe("settings-store actions", () => {
       themePreference: "dark",
       updatePolicy: "notify",
       youtubeSourceEnabled: false,
-      neteaseSourceEnabled: false,
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });

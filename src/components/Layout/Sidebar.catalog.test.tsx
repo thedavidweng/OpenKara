@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BackendProvider } from "@/lib/backend";
 import { createMockBackend } from "@/lib/backend/mock-backend";
 import { Sidebar } from "./Sidebar";
+import type { SourceSnapshot } from "@/types/ipc";
 
 const setFilter = vi.fn();
 const setActivePlaylist = vi.fn();
@@ -14,19 +15,27 @@ const settingsState = {
   hideBatchSeparate: true,
   hideUpgradeAll: true,
   stemMode: "two_stem",
-  neteaseSourceEnabled: true,
   youtubeSourceEnabled: true,
 };
 const catalogState: {
-  activeView: "library" | "netease";
+  activeView: string;
+  activeSourceId: string | null;
+  setActiveSource: typeof setCatalogView;
   setActiveView: typeof setCatalogView;
-  session: { signed_in: boolean; expired: boolean } | null;
+  sources: SourceSnapshot[];
+  sourceStates: Record<
+    string,
+    { session: { signed_in: boolean; expired: boolean } | null }
+  >;
   youtubeLinkOpen: boolean;
   setYoutubeLinkOpen: typeof setYoutubeLinkOpen;
 } = {
   activeView: "library",
+  activeSourceId: null,
+  setActiveSource: setCatalogView,
   setActiveView: setCatalogView,
-  session: null,
+  sources: [],
+  sourceStates: {},
   youtubeLinkOpen: false,
   setYoutubeLinkOpen,
 };
@@ -118,8 +127,8 @@ function rowByText(text: string): HTMLButtonElement | undefined {
   );
 }
 
-function neteaseRow(): HTMLButtonElement {
-  return rowByText("sidebar.netease") as HTMLButtonElement;
+function sourceRow(): HTMLButtonElement {
+  return rowByText("Alpha") as HTMLButtonElement;
 }
 
 describe("Sidebar catalog source rows", () => {
@@ -140,9 +149,19 @@ describe("Sidebar catalog source rows", () => {
     setCatalogView.mockReset();
     setYoutubeLinkOpen.mockReset();
     catalogState.activeView = "library";
-    catalogState.session = null;
+    catalogState.activeSourceId = null;
+    catalogState.sourceStates = { alpha: { session: null } };
+    catalogState.sources = [
+      {
+        source_id: "alpha",
+        name: "Alpha",
+        installed_version: "1",
+        enabled: true,
+        runtime_ready: true,
+        state: "ready",
+      } as SourceSnapshot,
+    ];
     catalogState.youtubeLinkOpen = false;
-    settingsState.neteaseSourceEnabled = true;
     settingsState.youtubeSourceEnabled = true;
   });
 
@@ -151,7 +170,7 @@ describe("Sidebar catalog source rows", () => {
     container.remove();
   });
 
-  test("All Tracks, Separated, and NetEase switch the catalog view", async () => {
+  test("All Tracks, Separated, and source switch the catalog view", async () => {
     const backend = createMockBackend();
     await act(async () => {
       root.render(
@@ -170,40 +189,47 @@ describe("Sidebar catalog source rows", () => {
         "[aria-label='sidebar.separated']",
       ) as HTMLButtonElement
     ).click();
-    neteaseRow().click();
+    sourceRow().click();
     expect(setCatalogView).toHaveBeenCalledWith("library");
-    expect(setCatalogView).toHaveBeenCalledWith("netease");
+    expect(setCatalogView).toHaveBeenCalledWith("alpha");
     expect(setActivePlaylist).toHaveBeenCalledWith(null);
   });
 
   test("shows the online sources header with sign-in hint when signed out", async () => {
     await renderSidebar(root);
     expect(container.textContent).toContain("sidebar.onlineSources");
-    expect(neteaseRow().textContent).toContain("sidebar.neteaseSignIn");
+    expect(sourceRow().textContent).toContain("Alpha");
     expect(
-      container.querySelector("[aria-label='sidebar.neteaseSignedIn']"),
+      container.querySelector("[aria-label='catalog.streaming.signedIn']"),
     ).toBeNull();
   });
 
   test("shows a signed-in dot instead of the sign-in hint", async () => {
-    catalogState.session = { signed_in: true, expired: false };
+    catalogState.sourceStates.alpha.session = {
+      signed_in: true,
+      expired: false,
+    };
     await renderSidebar(root);
     expect(
-      container.querySelector("[aria-label='sidebar.neteaseSignedIn']"),
+      container.querySelector("[aria-label='catalog.streaming.signedIn']"),
     ).not.toBeNull();
-    expect(neteaseRow().textContent).not.toContain("sidebar.neteaseSignIn");
+    expect(sourceRow().textContent).toContain("Alpha");
   });
 
   test("treats an expired session as signed out", async () => {
-    catalogState.session = { signed_in: true, expired: true };
+    catalogState.sourceStates.alpha.session = {
+      signed_in: true,
+      expired: true,
+    };
     await renderSidebar(root);
-    expect(neteaseRow().textContent).toContain("sidebar.neteaseSignIn");
+    expect(sourceRow().textContent).toContain("Alpha");
   });
 
-  test("marks the NetEase row as the current page when selected", async () => {
-    catalogState.activeView = "netease";
+  test("marks the source row as the current page when selected", async () => {
+    catalogState.activeView = "streaming";
+    catalogState.activeSourceId = "alpha";
     await renderSidebar(root);
-    expect(neteaseRow().getAttribute("aria-current")).toBe("page");
+    expect(sourceRow().getAttribute("aria-current")).toBe("page");
   });
 
   test("YouTube row toggles the link popover", async () => {
@@ -213,9 +239,9 @@ describe("Sidebar catalog source rows", () => {
   });
 
   test("hides disabled sources and the whole section when none are enabled", async () => {
-    settingsState.neteaseSourceEnabled = false;
+    catalogState.sources[0].enabled = false;
     await renderSidebar(root);
-    expect(rowByText("sidebar.netease")).toBeUndefined();
+    expect(rowByText("Alpha")).toBeUndefined();
     expect(rowByText("sidebar.youtubeLink")).toBeDefined();
     act(() => root.unmount());
     root = createRoot(container);

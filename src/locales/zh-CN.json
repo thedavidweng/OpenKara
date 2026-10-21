@@ -109,11 +109,8 @@
       "message": "这将使用4轨模式重新分离所有歌曲。音轨的磁盘占用将大约翻倍。",
       "confirm": "全部升级"
     },
-    "netease": "网易云音乐",
     "onlineSources": "在线音源",
-    "youtubeLink": "YouTube 链接",
-    "neteaseSignedIn": "已登录",
-    "neteaseSignIn": "登录"
+    "youtubeLink": "YouTube 链接"
   },
   "toolbar": {
     "import": "导入",
@@ -342,6 +339,55 @@
     "failedToLoad": "属性加载失败"
   },
   "settings": {
+    "streaming": {
+      "title": "Streaming Sources",
+      "refresh": "Check for sources and updates",
+      "trustNotice": "Install reviewed source packages only. Their code runs on your computer and can access credentials you provide. A signature identifies the publisher; it is not a sandbox.",
+      "empty": "No sources are available. Check for sources to try again.",
+      "publisher": "Publisher / package",
+      "license": "License",
+      "installed": "Installed version",
+      "notInstalled": "Not installed",
+      "available": "Available version",
+      "runtime": "Runtime",
+      "runtimeReady": "Ready",
+      "runtimeMissing": "Download required",
+      "state": "Source state",
+      "authentication": "Account",
+      "signedOut": "Signed out",
+      "staged": "Version {{version}} waits for active work to finish.",
+      "activeWork": "Active work",
+      "install": "Install",
+      "update": "Update",
+      "disable": "Disable",
+      "enable": "Enable",
+      "pin": "Pin installed version",
+      "unpin": "Remove pin",
+      "uninstall": "Uninstall",
+      "confirmUninstall": "Uninstall source",
+      "confirmDisable": "Disable source",
+      "libraryRetained": "Imported songs and playlists stay in your library.",
+      "stopWorkBody": "This action must stop the following work",
+      "stopWork": "Stop active source work",
+      "credentialsChoice": "Choose what to do with saved credentials",
+      "retainCredentials": "Keep saved credentials",
+      "removeCredentials": "Remove saved credentials",
+      "states": {
+        "not_installed": "Not installed",
+        "installing": "Installing",
+        "ready": "Ready",
+        "disabled": "Disabled",
+        "update_required": "Update required",
+        "unavailable": "Unavailable",
+        "waiting_for_idle": "Waiting for active work",
+        "cancelling": "Cancelling"
+      },
+      "work": {
+        "authentication": "Sign-in",
+        "preview": "Online preview",
+        "import": "Streaming import"
+      }
+    },
     "title": "偏好设置",
     "library": {
       "label": "卡拉OK曲库",
@@ -498,9 +544,7 @@
       "label": "在线来源",
       "description": "打开音乐或视频来源。未选择前两者都保持关闭。",
       "youtube": "YouTube",
-      "youtubeDescription": "把公开视频或播放列表链接加入队列。OpenKara 不会下载 YouTube 音频。",
-      "netease": "网易云音乐",
-      "neteaseDescription": "登录后浏览并导入你能播放的歌曲。导入后的文件由 OpenKara 管理。"
+      "youtubeDescription": "把公开视频或播放列表链接加入队列。OpenKara 不会下载 YouTube 音频。"
     },
     "hideBatchSeparate": {
       "hide": "隐藏“全部分离”按钮",
@@ -745,6 +789,13 @@
     "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },
   "errors": {
+    "streaming_source_unavailable": "Source unavailable",
+    "streaming_unsupported_operation": "Operation not supported",
+    "streaming_source_not_found": "Source not found",
+    "streaming_challenge_expired": "Sign-in challenge expired",
+    "streaming_invalid_cursor": "This page expired. Load it again.",
+    "streaming_work_active": "Source work is active",
+    "streaming_cancelled": "Source operation cancelled",
     "database_unavailable": "数据库错误",
     "media_read_failed": "导入失败",
     "song_not_found": "未找到歌曲",
@@ -779,25 +830,25 @@
     "failed": "更新失败 — 请手动下载最新版本"
   },
   "catalog": {
-    "netease": {
-      "title": "网易云音乐",
+    "streaming": {
+      "title": "Streaming Source",
       "signOut": "退出登录",
       "sessionExpired": "会话已过期，请重新登录。",
       "liked": "喜欢的歌曲",
       "playlists": "歌单",
-      "searchPlaceholder": "搜索网易云音乐歌曲",
+      "searchPlaceholder": "Search source songs",
       "importTrack": "导入",
       "importPlaylist": "导入歌单",
-      "connect": "使用网易云登录",
+      "connect": "Sign in",
       "clearSearch": "清除搜索",
-      "tabsLabel": "网易云音乐分区",
+      "tabsLabel": "Source library sections",
       "resultsTab": "“{{query}}”的搜索结果",
       "accountMenu": "账号菜单",
       "importTrackLabel": "导入“{{title}}”",
       "statusNoRights": "无播放权限",
-      "statusNoRightsHint": "网易云音乐未向你的账号开放这首歌的播放权限，因此无法导入。",
+      "statusNoRightsHint": "Your account cannot play this song, so it cannot be imported.",
       "statusTrial": "仅限试听片段",
-      "statusTrialHint": "网易云音乐只提供这首歌的试听片段，因此无法导入。",
+      "statusTrialHint": "Only a trial clip is available, so this song cannot be imported.",
       "statusImporting": "正在导入…",
       "statusImported": "已在曲库中",
       "statusFailed": "导入失败",
@@ -815,9 +866,9 @@
         "import_failed": "导入失败"
       },
       "importProgressLabel": "正在导入",
-      "connectTitle": "连接网易云音乐",
+      "connectTitle": "Connect your account",
       "connectBody": "登录后可浏览你喜欢的歌曲和歌单，并导入可以播放的歌曲。导入的文件归你的曲库所有。",
-      "connectHintWindow": "登录会打开网易云窗口，OpenKara 不会看到你的密码。",
+      "connectHintWindow": "Complete sign-in in the source window.",
       "connectHintRights": "没有播放权限或仅有试听片段的歌曲无法导入。",
       "signInFailed": "登录失败：{{message}}",
       "songCount_other": "{{count}} 首歌曲",
@@ -844,13 +895,22 @@
       "importingProgress": "正在导入第 {{completed}} / {{total}} 首",
       "loadingMore": "正在加载更多歌曲…",
       "refusalReason": {
-        "trial_clip": "仅限 VIP——网易云音乐只提供 30 秒试听",
+        "trial_clip": "Only a trial clip is available",
         "no_play_rights": "无播放权限",
-        "empty_url": "没有可用音频"
+        "empty_url": "没有可用音频",
+        "unavailable": "This source cannot provide this song"
       },
       "cantPlayTitle": "无法播放“{{title}}”",
       "importToSing": "导入后演唱",
-      "previewHint": "在线试听。导入歌曲后即可演唱、分离人声或添加歌词。"
+      "previewHint": "在线试听。导入歌曲后即可演唱、分离人声或添加歌词。",
+      "search": "Search",
+      "results": "Search results",
+      "loadMore": "Load more",
+      "importLoaded": "Import loaded songs",
+      "scanCode": "Scan to sign in",
+      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "noOperations": "This source has no supported browsing operations.",
+      "signedIn": "Signed in"
     }
   },
   "youtube": {

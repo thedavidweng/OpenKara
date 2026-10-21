@@ -9,15 +9,16 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Check, Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NeteaseCover } from "@/components/Catalog/NeteaseCover";
-import { formatDuration } from "@/components/Catalog/netease-utils";
+import { StreamingCover } from "@/components/Catalog/StreamingCover";
+import { formatDuration } from "@/components/Catalog/streaming-utils";
 import {
   playbackIdFor,
   usePlayPreview,
 } from "@/components/Catalog/use-play-preview";
-import { useCatalogStore } from "@/stores/catalog-store";
+import { sourceAllows, useCatalogStore } from "@/stores/catalog-store";
 import { usePlayerStore } from "@/stores/player-store";
 import type { StreamingImportTrackState, StreamingTrack } from "@/types/ipc";
+import { onlinePreviewQueueId } from "@/playback";
 
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]";
@@ -116,7 +117,7 @@ function RowAction({
       <ProgressRing
         percent={null}
         dim
-        label={t("catalog.netease.statusQueued")}
+        label={t("catalog.streaming.statusQueued")}
       />
     );
   }
@@ -127,8 +128,8 @@ function RowAction({
         percent={percent}
         label={
           percent === null
-            ? t("catalog.netease.statusDownloadingUnknown")
-            : t("catalog.netease.statusDownloading", { percent })
+            ? t("catalog.streaming.statusDownloadingUnknown")
+            : t("catalog.streaming.statusDownloading", { percent })
         }
       />
     );
@@ -137,7 +138,7 @@ function RowAction({
     return (
       <ProgressRing
         percent={null}
-        label={t("catalog.netease.statusImporting")}
+        label={t("catalog.streaming.statusImporting")}
       />
     );
   }
@@ -145,8 +146,8 @@ function RowAction({
     return (
       <span
         role="img"
-        aria-label={t("catalog.netease.statusImported")}
-        title={t("catalog.netease.statusImported")}
+        aria-label={t("catalog.streaming.statusImported")}
+        title={t("catalog.streaming.statusImported")}
         className="inline-flex size-8 items-center justify-center text-[var(--color-success)]"
       >
         <Check size={16} aria-hidden="true" />
@@ -156,17 +157,17 @@ function RowAction({
   const retry = state?.kind === "failed" || state?.kind === "skipped";
   const failedLabel =
     state?.kind === "failed" && state.reason === "cancelled"
-      ? t("catalog.netease.statusCancelled")
-      : t("catalog.netease.statusFailed");
+      ? t("catalog.streaming.statusCancelled")
+      : t("catalog.streaming.statusFailed");
   return (
     <button
       type="button"
       disabled={busy}
-      title={retry ? failedLabel : t("catalog.netease.importTrack")}
+      title={retry ? failedLabel : t("catalog.streaming.importTrack")}
       aria-label={
         retry
-          ? t("catalog.netease.retryImportLabel", { title: track.title })
-          : t("catalog.netease.importTrackLabel", { title: track.title })
+          ? t("catalog.streaming.retryImportLabel", { title: track.title })
+          : t("catalog.streaming.importTrackLabel", { title: track.title })
       }
       onClick={() => void importTracks([track.remote_track_id])}
       className={`${actionButton} ${
@@ -197,7 +198,7 @@ interface RowProps {
   tabbable: boolean;
 }
 
-const NeteaseTrackRow = memo(function NeteaseTrackRow({
+const StreamingTrackRow = memo(function StreamingTrackRow({
   track,
   index,
   count,
@@ -210,18 +211,33 @@ const NeteaseTrackRow = memo(function NeteaseTrackRow({
   tabbable,
 }: RowProps) {
   const { t } = useTranslation();
-  const state = useCatalogStore((s) => s.trackStates[track.remote_track_id]);
+  const state = useCatalogStore(
+    (s) =>
+      s.trackStates[
+        onlinePreviewQueueId(track.source_id, track.remote_track_id)
+      ],
+  );
   const busy = useCatalogStore((s) => s.importRun?.phase === "running");
+  const canImport = useCatalogStore((s) =>
+    sourceAllows(
+      s.sources.find((source) => source.source_id === track.source_id),
+      "import",
+      s.sourceStates[track.source_id]?.session,
+    ),
+  );
   const playing = usePlayerStore(
     (s) => s.snapshot?.song_id === playbackIdFor(track),
   );
-  const unavailable = !!track.refusal;
+  const unavailable = !!track.refusal && !track.library_song_id;
   const canSelect = isTrackSelectable(track, state);
-  const reason = track.refusal
-    ? track.refusal.reason === "trial_clip"
-      ? t("catalog.netease.statusTrialHint")
-      : t("catalog.netease.statusNoRightsHint")
-    : null;
+  const reason =
+    unavailable && track.refusal
+      ? track.refusal.reason === "trial_clip"
+        ? t("catalog.streaming.statusTrialHint")
+        : track.refusal.reason === "no_play_rights"
+          ? t("catalog.streaming.statusNoRightsHint")
+          : t(`catalog.streaming.refusalReason.${track.refusal.reason}`)
+      : null;
 
   return (
     <div
@@ -229,7 +245,7 @@ const NeteaseTrackRow = memo(function NeteaseTrackRow({
       aria-selected={playing}
       aria-posinset={index + 1}
       aria-setsize={count}
-      data-testid="netease-track-row"
+      data-testid="streaming-track-row"
       data-unavailable={unavailable ? "true" : undefined}
       data-playing={playing ? "true" : undefined}
       aria-current={playing ? "true" : undefined}
@@ -261,7 +277,7 @@ const NeteaseTrackRow = memo(function NeteaseTrackRow({
       {selecting ? (
         <input
           type="checkbox"
-          aria-label={t("catalog.netease.selectRow", { title: track.title })}
+          aria-label={t("catalog.streaming.selectRow", { title: track.title })}
           checked={checked}
           disabled={!canSelect}
           onChange={() => {}}
@@ -274,7 +290,7 @@ const NeteaseTrackRow = memo(function NeteaseTrackRow({
       <div
         className={`flex min-w-0 flex-1 items-center gap-3.5 ${unavailable ? "opacity-30" : ""}`}
       >
-        <NeteaseCover
+        <StreamingCover
           url={track.cover_url}
           size={80}
           muted={unavailable}
@@ -303,7 +319,9 @@ const NeteaseTrackRow = memo(function NeteaseTrackRow({
         </div>
       </div>
       <div className="flex w-16 shrink-0 items-center justify-end">
-        <RowAction track={track} state={state} busy={busy} />
+        {canImport ? (
+          <RowAction track={track} state={state} busy={busy} />
+        ) : null}
       </div>
     </div>
   );
@@ -314,7 +332,7 @@ export interface TrackSelection {
   onChange: (next: Set<string>) => void;
 }
 
-interface NeteaseTrackListProps {
+interface StreamingTrackListProps {
   tracks: StreamingTrack[];
   /** The element that scrolls this list; the list virtualizes against it. */
   scrollRef: RefObject<HTMLElement | null>;
@@ -324,12 +342,12 @@ interface NeteaseTrackListProps {
   loadingMore?: boolean;
 }
 
-export function NeteaseTrackList({
+export function StreamingTrackList({
   tracks,
   scrollRef,
   selection,
   loadingMore,
-}: NeteaseTrackListProps) {
+}: StreamingTrackListProps) {
   const { t } = useTranslation();
   const hideUnavailable = useCatalogStore((s) => s.hideUnavailable);
   const setHideUnavailable = useCatalogStore((s) => s.setHideUnavailable);
@@ -345,11 +363,11 @@ export function NeteaseTrackList({
   const headerBox = useRef<HTMLInputElement>(null);
 
   const unavailableCount = tracks.reduce(
-    (total, track) => total + (track.refusal ? 1 : 0),
+    (total, track) => total + (track.refusal && !track.library_song_id ? 1 : 0),
     0,
   );
   const visible = hideUnavailable
-    ? tracks.filter((track) => !track.refusal)
+    ? tracks.filter((track) => !track.refusal || track.library_song_id)
     : tracks;
 
   const virtualizer = useVirtualizer({
@@ -358,7 +376,12 @@ export function NeteaseTrackList({
     estimateSize: () => ROW_HEIGHT_PX,
     overscan: 10,
     scrollMargin,
-    getItemKey: (index) => visible[index]?.remote_track_id ?? index,
+    getItemKey: (index) => {
+      const track = visible[index];
+      return track
+        ? onlinePreviewQueueId(track.source_id, track.remote_track_id)
+        : index;
+    },
   });
 
   // The list sits below other content in the same scroller; keep its offset
@@ -380,7 +403,12 @@ export function NeteaseTrackList({
   const selectableIds = selection
     ? visible
         .filter((track) =>
-          isTrackSelectable(track, trackStates[track.remote_track_id]),
+          isTrackSelectable(
+            track,
+            trackStates[
+              onlinePreviewQueueId(track.source_id, track.remote_track_id)
+            ],
+          ),
         )
         .map((track) => track.remote_track_id)
     : [];
@@ -420,7 +448,12 @@ export function NeteaseTrackList({
       for (const track of range) {
         if (
           !track ||
-          !isTrackSelectable(track, states[track.remote_track_id])
+          !isTrackSelectable(
+            track,
+            states[
+              onlinePreviewQueueId(track.source_id, track.remote_track_id)
+            ],
+          )
         ) {
           continue;
         }
@@ -451,14 +484,14 @@ export function NeteaseTrackList({
                 }
                 className={`size-4 accent-[var(--color-accent)] ${focusRing}`}
               />
-              {t("catalog.netease.selectAll")}
+              {t("catalog.streaming.selectAll")}
             </label>
           ) : null}
           {unavailableCount > 0 ? (
             <div className="ml-auto flex items-center gap-2">
               {hideUnavailable ? (
-                <span id="netease-hidden-count">
-                  {t("catalog.netease.unavailableHidden", {
+                <span id="streaming-hidden-count">
+                  {t("catalog.streaming.unavailableHidden", {
                     hidden: unavailableCount,
                   })}
                 </span>
@@ -468,7 +501,7 @@ export function NeteaseTrackList({
                 role="switch"
                 aria-checked={hideUnavailable}
                 aria-describedby={
-                  hideUnavailable ? "netease-hidden-count" : undefined
+                  hideUnavailable ? "streaming-hidden-count" : undefined
                 }
                 onClick={() => setHideUnavailable(!hideUnavailable)}
                 className={`inline-flex min-h-7 items-center gap-2 rounded-full px-2 text-[var(--color-text)] hover:bg-[var(--color-ghost-hover)] ${focusRing}`}
@@ -487,7 +520,7 @@ export function NeteaseTrackList({
                     }`}
                   />
                 </span>
-                {t("catalog.netease.hideUnavailable")}
+                {t("catalog.streaming.hideUnavailable")}
               </button>
             </div>
           ) : null}
@@ -496,7 +529,8 @@ export function NeteaseTrackList({
       <div
         ref={listRef}
         role="listbox"
-        aria-label={t("catalog.netease.trackListLabel")}
+        aria-label={t("catalog.streaming.trackListLabel")}
+        aria-multiselectable={selection ? true : undefined}
         className="relative mx-4"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
@@ -504,8 +538,8 @@ export function NeteaseTrackList({
           const track = visible[item.index];
           if (!track) return null;
           return (
-            <NeteaseTrackRow
-              key={track.remote_track_id}
+            <StreamingTrackRow
+              key={onlinePreviewQueueId(track.source_id, track.remote_track_id)}
               track={track}
               index={item.index}
               count={visible.length}
@@ -525,7 +559,7 @@ export function NeteaseTrackList({
           role="status"
           className="mx-4 px-2 py-3 text-[12px] text-[var(--color-text-dim)]"
         >
-          {t("catalog.netease.loadingMore")}
+          {t("catalog.streaming.loadingMore")}
         </p>
       ) : null}
     </div>
