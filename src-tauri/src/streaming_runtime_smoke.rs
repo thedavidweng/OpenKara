@@ -8,7 +8,6 @@ use std::{
     process::Command,
 };
 
-const VERSION: &str = "24.21.0";
 const MAX_RUNTIME_BYTES: u64 = 256 * 1024 * 1024;
 
 pub fn maybe_run_from_cli() -> Result<bool> {
@@ -34,29 +33,32 @@ pub fn maybe_run_from_cli() -> Result<bool> {
 fn run(phase: &str, root: &Path) -> Result<()> {
     let target = crate::separator::catalog::current_target_triple();
     let pin: serde_json::Value =
-        serde_json::from_str(include_str!("../../sidecars/netease/runtime.json"))?;
-    let target_pin = pin["targets"][target]
-        .as_array()
+        serde_json::from_str(include_str!("../../packaging/source-runtime.json"))?;
+    let version = pin["version"].as_str().context("missing runtime version")?;
+    let target_pin = &pin["targets"][target];
+    let suffix = target_pin["archive_suffix"]
+        .as_str()
         .context("unsupported runtime smoke target")?;
-    let suffix = target_pin[0].as_str().context("missing archive suffix")?;
-    let digest = target_pin[1].as_str().context("missing archive digest")?;
-    let size = match suffix {
-        "darwin-arm64.tar.gz" => 52_909_993,
-        "darwin-x64.tar.gz" => 54_203_979,
-        "linux-x64.tar.gz" => 58_088_022,
-        "linux-arm64.tar.gz" => 57_824_078,
-        "win-x64.zip" => 37_618_919,
-        _ => bail!("unsupported archive"),
+    let digest = target_pin["archive_sha256"]
+        .as_str()
+        .context("missing archive digest")?;
+    let size = target_pin["archive_size"]
+        .as_u64()
+        .context("missing archive size")?;
+    let archive_name = format!("node-v{version}-{suffix}");
+    let url = format!("https://nodejs.org/dist/v{version}/{archive_name}");
+    let installed = root.join(format!("node-{version}-{target}"));
+    let bundled = std::env::var_os("FLATPAK_ID").is_some();
+    let executable = if bundled {
+        Path::new("/app/bin/openkara-source-node").to_owned()
+    } else {
+        installed.join(if cfg!(windows) { "node.exe" } else { "node" })
     };
-    let archive_name = format!("node-v{VERSION}-{suffix}");
-    let url = format!("https://nodejs.org/dist/v{VERSION}/{archive_name}");
-    let installed = root.join(format!("node-{VERSION}-{target}"));
-    let executable = installed.join(if cfg!(windows) { "node.exe" } else { "node" });
     let identity_path = installed.join("sha256");
     fs::create_dir_all(root)?;
     #[cfg(target_os = "macos")]
     let mut macos_quarantine = json!({});
-    if phase == "install" {
+    if phase == "install" && !bundled {
         if installed.exists() {
             bail!("install requires a fresh directory; use restart for an existing runtime");
         }
@@ -99,7 +101,7 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         result?;
     }
     let runtime_sha256 = artifacts::sha256_file(&executable)?;
-    if fs::read_to_string(&identity_path)? != runtime_sha256 {
+    if !bundled && fs::read_to_string(&identity_path)? != runtime_sha256 {
         bail!("installed runtime identity changed");
     }
     #[cfg(target_os = "macos")]
@@ -118,7 +120,7 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         .env_remove("NODE_PATH")
         .env_remove("NODE_EXTRA_CA_CERTS")
         .env_remove("NODE_REPL_EXTERNAL_MODULE")
-        .current_dir(&installed);
+        .current_dir(root);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -131,7 +133,7 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         bail!("downloaded runtime exited with {}", output.status);
     }
     let runtime: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    if runtime["version"] != format!("v{VERSION}") || runtime["parent_pid"] != std::process::id() {
+    if runtime["version"] != format!("v{version}") || runtime["parent_pid"] != std::process::id() {
         bail!("runtime did not report the expected version and app parent");
     }
     let report = json!({
@@ -141,6 +143,7 @@ fn run(phase: &str, root: &Path) -> Result<()> {
         "app_pid": std::process::id(),
         "target": target,
         "archive_url": url,
+        "runtime_delivery": if bundled { "channel-bundled" } else { "managed-download" },
         "archive_size": size,
         "archive_sha256": digest,
         "runtime_executable": fs::canonicalize(executable)?,

@@ -42,10 +42,12 @@ The `automation-smoke` application build accepts these commands:
 "/path/to/installed/openkara" --automation-streaming-runtime restart /path/to/fresh-app-data
 ```
 
-The application downloads Node 24.21.0 from nodejs.org, verifies the archive
-size and the digest in `sidecars/netease/runtime.json`, extracts only the
-runtime executable, and starts that executable as its child. The restart
-command verifies the installed executable digest and does not download it.
+On macOS, Windows, AppImage, and deb, this command downloads the pinned runtime
+from nodejs.org. It verifies the archive size and digest in
+`packaging/source-runtime.json`, extracts only the runtime executable, and starts
+it as an application child. Restart verifies the installed executable digest
+without another download. Flatpak uses only its bundled
+`/app/bin/openkara-source-node`; it must not download an executable runtime.
 The commands write `streaming-runtime-install.json` and
 `streaming-runtime-restart.json` in the supplied directory. These reports
 include the application and runtime hashes, target, version, and parent PID.
@@ -85,6 +87,32 @@ For the opt-in real-process test, run
 `cargo test --features automation-smoke --test streaming_runtime_smoke -- --ignored`
 on the target operating system with network access. Distributed candidates,
 not a development executable, are required for platform acceptance.
+
+For Flatpak, run the same installed-application commands inside the sandbox.
+The reports must show `runtime_delivery: "channel-bundled"` and
+`runtime_executable: "/app/bin/openkara-source-node"` for both phases. The
+application-data directory receives reports only, not an executable archive or
+runtime installation. The ignored Rust scenario
+`flatpak_reuses_its_bundled_runtime_without_installing_an_executable` exercises
+this rule when the test executable runs inside the installed sandbox.
+
+## Backend build without Node
+
+Run `pnpm build` and prepare the platform ONNX Runtime before this scenario.
+Then run `bash scripts/ci/build-backend-without-node.sh` with the normal Rust
+toolchain, linker, and system development libraries available. The script creates
+an isolated executable search path without Node or JavaScript package managers.
+It forces the application build script to run and executes
+`cargo build --locked --release --bin openkara`. It does not install a source
+plugin or fetch the neutral runtime pin. Linux CI runs this after frontend and
+ONNX Runtime preparation. Complete frontend builds and application packaging
+still require the JavaScript toolchain.
+
+`packaging/source-runtime.json` pins the runtime used by feasibility commands
+and the Flatpak channel. It does not override the signed source index used by
+the production managed-runtime installer. The Flatpak manifest renderer reads
+this file and emits architecture-specific archive sources. Flatpak bundles the
+runtime executable and its license, not a source package or npm dependency tree.
 
 ## `ci/observe-linux-streaming-runtime.mjs`
 

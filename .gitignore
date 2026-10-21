@@ -106,5 +106,3 @@ src-tauri/icons/OpenKara.icns
 tools/windows-accessibility/**/bin/
 tools/windows-accessibility/**/obj/
 
-src-tauri/generated/netease/
-src-tauri/generated/bin/

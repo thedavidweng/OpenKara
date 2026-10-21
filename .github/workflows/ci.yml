@@ -331,7 +331,6 @@ jobs:
           - name: Audit dependencies
             run: |
               pnpm audit --audit-level=high
-              npm audit --prefix sidecars/netease --omit=dev --audit-level=high
 
           - name: Verify formatting
             run: node --run format
@@ -886,6 +885,10 @@ jobs:
         run: pnpm tauri build --ci --bundles deb
         shell: bash
 
+      - name: Build backend without Node or a source plugin
+        shell: bash
+        run: bash scripts/ci/build-backend-without-node.sh
+
   # Full 3-platform Tauri build for Rust/deps/workflows/unknown changes.
   # Waits for cheap checks (dependency-checks, windows-compile) before
   # starting the expensive matrix so failures surface faster.
@@ -1030,6 +1033,11 @@ jobs:
             pnpm tauri build --debug --no-bundle --ci
           fi
         shell: bash
+
+      - name: Build backend without Node or a source plugin
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/ci/build-backend-without-node.sh
 
       - name: Verify Linux glibc floor
         if: runner.os == 'Linux'

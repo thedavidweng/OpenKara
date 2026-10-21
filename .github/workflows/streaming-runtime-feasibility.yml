@@ -10,6 +10,9 @@ on:
       - src-tauri/src/streaming_runtime_smoke.rs
       - src-tauri/tests/streaming_runtime_smoke.rs
       - scripts/ci/observe-linux-streaming-runtime.mjs
+      - packaging/source-runtime.json
+      - packaging/flatpak/**
+      - scripts/render-flatpak-manifest.mjs
   workflow_dispatch:
 
 permissions:

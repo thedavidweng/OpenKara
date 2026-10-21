@@ -304,7 +304,7 @@ async function observe(launch, output, report) {
   const root = path.join(output, "app-data");
   const pin = JSON.parse(
     readFileSync(
-      new URL("../../sidecars/netease/runtime.json", import.meta.url),
+      new URL("../../packaging/source-runtime.json", import.meta.url),
       "utf8",
     ),
   );
@@ -323,16 +323,16 @@ async function observe(launch, output, report) {
       "app reported the wrong phase",
     );
     requireObservation(
-      targetPin?.[0] === `linux-${process.arch}.tar.gz`,
+      targetPin?.archive_suffix === `linux-${process.arch}.tar.gz`,
       "app reported the wrong Linux target",
     );
     requireObservation(
-      observation.archive_sha256 === targetPin[1],
+      observation.archive_sha256 === targetPin.archive_sha256,
       "archive digest differs from the committed runtime pin",
     );
     requireObservation(
       observation.archive_url ===
-        `https://nodejs.org/dist/v${pin.version}/node-v${pin.version}-${targetPin[0]}`,
+        `https://nodejs.org/dist/v${pin.version}/node-v${pin.version}-${targetPin.archive_suffix}`,
       "runtime download URL differs from the pin",
     );
     requireObservation(

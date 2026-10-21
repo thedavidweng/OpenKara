@@ -39,27 +39,6 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=UniformTypeIdentifiers");
     }
 
-    let target = std::env::var("TARGET").expect("missing Rust target");
-    let sidecar_script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../scripts/prepare-netease-sidecar.mjs");
-    let prepared = std::process::Command::new("node")
-        .arg(sidecar_script)
-        .arg("--target")
-        .arg(target)
-        .status()
-        .expect("failed to prepare NetEase sidecar");
-    assert!(prepared.success(), "NetEase sidecar preparation failed");
-    println!("cargo:rerun-if-changed=../scripts/prepare-netease-sidecar.mjs");
-    for file in [
-        "package.json",
-        "package-lock.json",
-        "protocol.mjs",
-        "worker.mjs",
-        "runtime.json",
-    ] {
-        println!("cargo:rerun-if-changed=../sidecars/netease/{file}");
-    }
-
     tauri_build::build();
 
     // Tauri's build script links the Common Controls v6 manifest into [[bin]]

@@ -5,9 +5,9 @@
   "identifier": "com.openkara.desktop",
   "mainBinaryName": "openkara",
   "build": {
-    "beforeDevCommand": "node scripts/prepare-netease-sidecar.mjs && pnpm dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node scripts/prepare-netease-sidecar.mjs && pnpm build",
+    "beforeBuildCommand": "pnpm build",
     "beforeBundleCommand": "node scripts/prepare-bundled-oauth-client.mjs && node scripts/clean-macos-bundle.mjs && node scripts/generate-macos-liquid-glass-icon.mjs",
     "frontendDist": "../dist"
   },
@@ -52,8 +52,7 @@
     ],
     "resources": {
       "generated/oauth": "oauth",
-      "icons/Assets.car": "Assets.car",
-      "generated/netease": "netease"
+      "icons/Assets.car": "Assets.car"
     },
     "macOS": {
       "signingIdentity": "-",
@@ -72,10 +71,7 @@
           "height": 400
         }
       }
-    },
-    "externalBin": [
-      "generated/bin/netease-node"
-    ]
+    }
   },
   "plugins": {
     "updater": {
