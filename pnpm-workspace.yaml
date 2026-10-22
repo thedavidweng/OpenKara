@@ -3,7 +3,7 @@ overrides:
   undici: ">=7.29.1 <8.0.0"
   nanoid: ">=3.3.17"
   postcss: ">=8.5.23"
-  toml: ">=4.1.2"
+  toml: ">=5.0.1"
 
 onlyBuiltDependencies:
   - esbuild

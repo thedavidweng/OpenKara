@@ -10,8 +10,11 @@
 //   4. CI Gate reads the classifier's expected-jobs output.
 //   5. Packaging build jobs and aggregate gates agree for every trigger.
 //   6. The Playwright config and workflow agree on report generation.
+//   7. The Playwright job runs in the official image pinned by digest, at
+//      the same version as the lockfile, without the apt-based install.
 
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { runInNewContext } from "node:vm";
 import { join } from "node:path";
@@ -330,5 +333,103 @@ describe("Packaging workflow contract", () => {
     // Top-level pull_request must not carry paths filter; triage handles gating.
     const prTrigger = packagingYaml.match(/pull_request:\s*\n\s+paths:/);
     expect(prTrigger).toBeNull();
+  });
+});
+
+/** Return the text of one top-level job (2-space indented key) in ci.yml. */
+function extractJobSection(yaml: string, jobId: string): string {
+  const start = yaml.indexOf(`\n  ${jobId}:\n`);
+  expect(start, `job ${jobId} not found`).toBeGreaterThanOrEqual(0);
+  const rest = yaml.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[a-z0-9-]+:\n/);
+  return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+/** Return a `run: |` block of a named step, de-indented. */
+function extractStepScript(jobSection: string, stepName: string): string {
+  const step = jobSection.split(`- name: ${stepName}\n`)[1];
+  expect(step, `step ${stepName} not found`).toBeDefined();
+  const body = step.split("run: |\n")[1].split(/\n {6}- name: /)[0];
+  const lines = body.split("\n");
+  const indent = lines[0].match(/^ */)![0].length;
+  return lines.map((line) => line.slice(indent)).join("\n");
+}
+
+describe("Playwright container contract", () => {
+  const ciYaml = readProjectFile(".github/workflows/ci.yml");
+  const lockfile = readProjectFile("pnpm-lock.yaml");
+  const job = extractJobSection(ciYaml, "playwright-ui-smoke");
+
+  test("job runs in the official Playwright image pinned by digest", () => {
+    const image = job.match(/^ {6}image: (\S+)(?: # (\S+))?$/m);
+    expect(image, "container image line").not.toBeNull();
+    expect(image![1]).toMatch(
+      /^mcr\.microsoft\.com\/playwright@sha256:[0-9a-f]{64}$/,
+    );
+    // The comment next to the digest names the tag it was resolved from.
+    expect(image![2]).toMatch(/^v\d+\.\d+\.\d+-noble$/);
+  });
+
+  test("image tag matches the playwright version in pnpm-lock.yaml", () => {
+    const locked = [
+      ...lockfile.matchAll(/^ {2}playwright@(\d+\.\d+\.\d+):$/gm),
+    ].map((m) => m[1]);
+    expect(locked.length, "playwright entry in pnpm-lock.yaml").toBeGreaterThan(
+      0,
+    );
+    expect(new Set(locked).size, "a single locked playwright version").toBe(1);
+    const tag = job.match(/^ {6}image: \S+ # v(\d+\.\d+\.\d+)-noble$/m)?.[1];
+    expect(tag).toBe(locked[0]);
+  });
+
+  test("job does not install browser system deps through apt", () => {
+    // Ignore comment lines, which explain why these are gone.
+    const code = job
+      .split("\n")
+      .filter((line) => !/^\s*(#|\/\/)/.test(line))
+      .join("\n");
+    expect(code).not.toMatch(/--with-deps/);
+    expect(code).not.toMatch(/install-deps/);
+    expect(code).not.toMatch(/apt-get/);
+    // jq is not in the Playwright image.
+    expect(code).not.toMatch(/\bjq\b/);
+    expect(code).toMatch(/^ {4}timeout-minutes: 30$/m);
+    // Container jobs default `run:` to `sh -e`; the steps use bash options.
+    expect(code).toMatch(/^ {4}defaults:\n {6}run:\n {8}shell: bash$/m);
+  });
+
+  test("flaky report step parses a Playwright JSON report without jq", () => {
+    const script = extractStepScript(job, "Report flaky tests");
+    const dir = mkdtempSync(join(tmpdir(), "pw-flaky-"));
+    mkdirSync(join(dir, "playwright-report"));
+    writeFileSync(
+      join(dir, "playwright-report", "results.json"),
+      JSON.stringify({
+        suites: [
+          {
+            specs: [{ title: "stable", tests: [{ status: "expected" }] }],
+            suites: [
+              {
+                specs: [{ title: "wobbly", tests: [{ status: "flaky" }] }],
+              },
+            ],
+          },
+        ],
+        stats: { flaky: 1, unexpected: 0 },
+      }),
+    );
+    const summary = join(dir, "summary.md");
+    const result = spawnSync("bash", ["-e", "-c", script], {
+      cwd: dir,
+      env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+    });
+    const output = result.stdout.toString() + result.stderr.toString();
+    expect(result.status, output).toBe(0);
+    const written = readFileSync(summary, "utf8");
+    expect(written).toContain("**Flaky (passed on retry):** 1");
+    expect(written).toContain("**Failed:** 0");
+    expect(written).toContain("- `wobbly`");
+    expect(written).not.toContain("`stable`");
+    expect(output).toContain("::warning::1 flaky Playwright test(s) detected");
   });
 });
