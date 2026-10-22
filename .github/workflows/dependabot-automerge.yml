@@ -63,13 +63,27 @@ jobs:
           dt="${DEP_TYPE}"
           alert="${ALERT_STATE}"
 
-          case "$ut" in
-            version-update:semver-patch|version-update:semver-minor) ;;
-            *) echo "major or unclassified updates require manual review"; exit 0 ;;
-          esac
-
           eligible=false
           reason=""
+
+          # Dependabot reports an empty update-type for SHA-pinned Actions bumps
+          # (for example dtolnay/rust-toolchain@v1 moved to a newer commit). That
+          # is a pin refresh inside the same major, not a breaking change.
+          if [ -z "$ut" ] && { [ "$eco" = "github-actions" ] || [ "$eco" = "github_actions" ]; }; then
+            eligible=true
+            reason="github-actions-pin-refresh"
+          fi
+
+          case "$ut" in
+            version-update:semver-patch|version-update:semver-minor) ;;
+            "")
+              if [ "$eligible" != true ]; then
+                echo "unclassified non-Actions update requires manual review"
+                exit 0
+              fi
+              ;;
+            *) echo "major or unclassified updates require manual review"; exit 0 ;;
+          esac
 
           # Eligible non-major security updates bypass cooldown.
           if [ "$alert" = "OPEN" ] || [ "$alert" = "FIXED" ]; then
