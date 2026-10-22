@@ -1167,7 +1167,7 @@ jobs:
             })(r);
             const list = specs
               .filter((s) => (s.tests || []).some((t) => t.status === "flaky"))
-              .map((s) => "- `" + s.title + "`");
+              .map((s) => "- \u0060" + s.title + "\u0060");
             console.log(JSON.stringify({
               flaky: r.stats?.flaky ?? 0,
               unexpected: r.stats?.unexpected ?? 0,
