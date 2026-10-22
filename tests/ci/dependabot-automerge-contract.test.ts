@@ -48,7 +48,9 @@ describe("dependabot automerge contract", () => {
     ["actions/checkout", "version-update:semver-major", "", "OPEN", false],
     ["actions/checkout", "unknown", "", "OPEN", false],
     ["actions/checkout", "unknown", "", "FIXED", false],
-    ["actions/checkout", "", "", "OPEN", false],
+    // #568: Dependabot reports an empty update-type for SHA-pinned Actions
+    // bumps, which is a same-major pin refresh, so it now auto-merges.
+    ["actions/checkout", "", "", "OPEN", true],
     [
       "example/pkg",
       "version-update:semver-minor",
