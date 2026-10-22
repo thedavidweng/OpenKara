@@ -56,6 +56,7 @@ fn loads_embedded_demucs_model_session() {
     let loaded = model::load_from_path(
         &model::default_model_path(),
         ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
     )
     .expect("demucs model should load");
 
@@ -67,8 +68,12 @@ fn loads_embedded_demucs_model_session() {
 fn fails_with_clear_error_for_missing_model_file() {
     initialize_test_runtime();
     let missing_path = repo_root().join("models").join("missing-model.onnx");
-    let error = model::load_from_path(&missing_path, ExecutionProviderPreference::Cpu)
-        .expect_err("missing model should fail");
+    let error = model::load_from_path(
+        &missing_path,
+        ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
+    )
+    .expect_err("missing model should fail");
 
     assert!(error.to_string().contains("missing-model.onnx"));
 }
@@ -105,6 +110,7 @@ fn loads_embedded_demucs_model_with_xnnpack_preference() {
     let loaded = model::load_from_path(
         &model::default_model_path(),
         ExecutionProviderPreference::Xnnpack,
+        model::SessionOptions::default(),
     )
     .expect("demucs model should load with XNNPACK preference");
 

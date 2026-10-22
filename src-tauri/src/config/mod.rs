@@ -68,4 +68,8 @@ pub struct AppConfig {
     /// Settings still wins and overrides this default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub directml_disabled_by_runtime_timeout: Option<String>,
+    /// Opt-in workaround for hosts where DirectML graph fusion produces wrong
+    /// separation output. Only affects DirectML sessions. Default: off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_directml_graph_fusion: Option<bool>,
 }

@@ -344,6 +344,7 @@ mod tests {
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
             directml_disabled_by_runtime_timeout: None,
+            disable_directml_graph_fusion: None,
         };
 
         save_config(tmp.path(), &legacy).unwrap();
