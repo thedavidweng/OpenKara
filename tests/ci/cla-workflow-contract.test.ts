@@ -43,9 +43,8 @@ function stepSection(name: string): string {
 
 /** Read a one-line `key: value` from a section. */
 function scalar(section: string, key: string): string {
-  const match = section.match(
-    new RegExp(`^\\s*${key.replace(/[-]/g, "\\-")}: (.+)$`, "m"),
-  );
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+  const match = section.match(new RegExp(`^\\s*${escapedKey}: (.+)$`, "m"));
   expect(match, `${key} is set`).not.toBeNull();
   return match![1].trim();
 }
