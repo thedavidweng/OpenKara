@@ -394,6 +394,8 @@ describe("Playwright container contract", () => {
     // jq is not in the Playwright image.
     expect(code).not.toMatch(/\bjq\b/);
     expect(code).toMatch(/^ {4}timeout-minutes: 30$/m);
+    // Container jobs default `run:` to `sh -e`; the steps use bash options.
+    expect(code).toMatch(/^ {4}defaults:\n {6}run:\n {8}shell: bash$/m);
   });
 
   test("flaky report step parses a Playwright JSON report without jq", () => {

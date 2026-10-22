@@ -1099,6 +1099,11 @@ jobs:
       # Chromium needs a larger /dev/shm than Docker's 64 MB default;
       # --init reaps the browser and Vite child processes.
       options: --ipc=host --init
+    # Inside a container GitHub defaults `run:` to `sh -e`, which rejects
+    # `set -o pipefail`; keep the bash the host runner used.
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 30
 
     steps:
