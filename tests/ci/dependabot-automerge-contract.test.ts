@@ -70,19 +70,22 @@ describe("dependabot automerge contract", () => {
       "OPEN",
       true,
     ],
+    // #562 narrowed the denylist to the release driver and this gate:
+    // patch updates and github-actions minor bumps now auto-merge, so the
+    // previous expectations for cla-action and jactionlint are obsolete.
     [
       "contributor-license/cla-action",
       "version-update:semver-patch",
       "",
       "OPEN",
-      false,
+      true,
     ],
     [
       "actions/checkout, jdx/jactionlint",
       "version-update:semver-minor",
       "",
       "",
-      false,
+      true,
     ],
   ])(
     "classifies %s %s %s %s as merge=%s",
