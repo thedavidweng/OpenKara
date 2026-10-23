@@ -1232,6 +1232,13 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@types/node/-/node-24.19.2.tgz",
+    "sha512": "f77778f700962640b237ceccc4ba4d37a2973c2c05c3b6d5520efd986515d4e4b8d09196c150abf27eb50d7092ab3ec257afd57cf91bef179ceee3f633e40759",
+    "dest-filename": "@types__node-24.19.2.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.3.0.tgz",
     "sha512": "648edb538da66575ca1e7fea34b130d88adb888354ed7e7ebdf81d8b10479023696165e32a07d0fcffaec866f90a338b07d51c9d37a0debca542d5768729b8e1",
     "dest-filename": "@types__react-dom-19.3.0.tgz",
@@ -2348,6 +2355,13 @@
     "url": "https://registry.npmjs.org/unbash/-/unbash-6.0.1.tgz",
     "sha512": "d1d6fd792e62ab26eec78d732e45faf6793dd0a4dc8bb17b799fa05f3106fd0ec4d2d02a1018518797e466f93537b8d3ed09065aaab7e22f121463c511ed55f0",
     "dest-filename": "unbash-6.0.1.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/undici-types/-/undici-types-7.24.6.tgz",
+    "sha512": "591356fac2608f9381378ff42691c5aadab38696e75741ae07e3a8cc0f6008bedaf7ddd2994fb5241642ccb37162c6cc7c87832fe953b29843e6337937e9f4ce",
+    "dest-filename": "undici-types-7.24.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
