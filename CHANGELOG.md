@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.18.0](https://github.com/thedavidweng/OpenKara/compare/v0.17.3...v0.18.0) (2026-10-23)
+
+
+### Features
+
+* **streaming:** install online sources as signed Streaming Source packages ([#558](https://github.com/thedavidweng/OpenKara/issues/558)) ([3fffabe](https://github.com/thedavidweng/OpenKara/commit/3fffabe45baa59bd0bfccedb4e08d7ab45afa6ea))
+
+
+### Bug Fixes
+
+* **packaging:** add AppImageUpdate metadata and delta publication ([#531](https://github.com/thedavidweng/OpenKara/issues/531)) ([d30f93a](https://github.com/thedavidweng/OpenKara/commit/d30f93ad15fd84c79b688a29354ad6d902394b6b))
+
 ## [0.17.3](https://github.com/thedavidweng/OpenKara/compare/v0.17.2...v0.17.3) (2026-10-22)
 
 
