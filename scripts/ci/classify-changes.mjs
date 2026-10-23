@@ -159,12 +159,17 @@ const CATEGORY_PATTERNS = {
     // ci.yml. This category is reserved for when one is added.
   ],
 
+  // Workflows whose behavior is asserted by tests/ci/*.test.ts. A policy
+  // change here touches no product code, so without this category the PR
+  // runs only workflow lint and a stale contract test can land unnoticed
+  // (that is how #568 turned main red for 13 minutes).
+  workflow_contracts: [".github/workflows/dependabot-automerge.yml"],
+
   other_workflow: [
     ".github/jactionlint*.yaml",
     ".github/jactionlint*.yml",
     ".github/jactionlint-matcher.json",
     ".github/actions/**",
-    ".github/workflows/dependabot-automerge.yml",
     ".github/workflows/dependabot-sync.yml",
     ".github/workflows/mirror.yml",
     ".github/workflows/pages.yml",
@@ -251,6 +256,7 @@ const JOB_RULES = {
     cats.has("frontend_tooling") ||
     cats.has("deps_js") ||
     cats.has("ci_workflow") ||
+    cats.has("workflow_contracts") ||
     cats.has("unknown"),
 
   website: (cats) =>
