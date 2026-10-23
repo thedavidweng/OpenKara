@@ -66,14 +66,12 @@ include the application and runtime hashes, target, version, and parent PID.
 They contain no account credentials. This is an opt-in feasibility command,
 not the Streaming Source installer or signed source-index implementation.
 
-The `streaming-runtime-feasibility.yml` workflow runs on a repository-owner
-push to the integration branch or an owner dispatch. It builds a signed,
-notarized macOS candidate and a Windows installer. It uses the existing
-installed-application workflows and uploads candidate artifacts and runtime
-observations. It does not publish a release.
+The reusable installed-application workflows accept
+`streaming_runtime_smoke: true` to run these commands from a signed, notarized
+macOS candidate or a Windows installer and upload the runtime observations.
 The reusable Windows observation requires Defender and real-time protection
-before and after execution, and records exclusions. The candidate workflow
-only builds the Windows installer. Hosted Windows runners disable protection
+before and after execution, and records exclusions. Windows candidates
+only build the installer. Hosted Windows runners disable protection
 and exclude whole drives; run the installed candidate commands on a protected
 native machine. An unsigned candidate does not establish a signed release's
 reputation. The macOS observation records Gatekeeper status and extended
