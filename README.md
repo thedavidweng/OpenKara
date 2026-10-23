@@ -118,7 +118,7 @@ On first launch, OpenKara will prompt you to create a Karaoke Library and start 
 **Prerequisites:**
 
 - [Node.js](https://nodejs.org/) 24 (same as CI; the repo root has `.nvmrc`)
-- [pnpm](https://pnpm.io/) 11
+- [pnpm](https://pnpm.io/) 12
 - [Rust](https://rustup.rs/) stable toolchain
 - Platform dependencies for [Tauri 2](https://v2.tauri.app/start/prerequisites/)
 

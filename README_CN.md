@@ -105,7 +105,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 **前置条件：**
 
 - [Node.js](https://nodejs.org/) 24（与 CI 一致；仓库根目录含 `.nvmrc`）
-- [pnpm](https://pnpm.io/) 11
+- [pnpm](https://pnpm.io/) 12
 - [Rust](https://rustup.rs/) stable 工具链
 - [Tauri 2](https://v2.tauri.app/start/prerequisites/) 平台依赖
 
