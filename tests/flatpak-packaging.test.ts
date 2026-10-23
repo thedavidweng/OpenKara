@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -223,6 +224,282 @@ describe("Flatpak packaging", () => {
       }
     },
   );
+  test("targets current supported Flathub runtimes and both default architectures", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain('runtime-version: "50"');
+    expect(manifestTemplate).toContain("org.freedesktop.Sdk.Extension.node24");
+    expect(manifestTemplate).not.toContain("node20");
+    expect(
+      existsSync(join(projectRoot, "packaging/flatpak/flathub.json")),
+    ).toBe(false);
+
+    expect(manifestTemplate).toContain("x86_64");
+    expect(manifestTemplate).toContain("aarch64");
+  });
+
+  test("uses pre-built ONNX Runtime binaries with architecture-specific sources for the Flathub submission", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain("onnxruntime-source");
+    // Runtime archives are injected by the renderer from the catalog
+    // snapshot; the template carries per-arch placeholders, not URLs.
+    expect(manifestTemplate).toContain("@@ORT_X64_URL@@");
+    expect(manifestTemplate).toContain("@@ORT_ARM64_URL@@");
+    expect(manifestTemplate).toContain("only-arches");
+    expect(manifestTemplate).toContain("${FLATPAK_DEST}/share/licenses");
+    expect(manifestTemplate).not.toContain("build_shared_lib");
+  });
+
+  test("builds the Flatpak app binary without asking Tauri to create Linux bundles", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain("pnpm tauri build");
+    expect(manifestTemplate).toContain("--no-bundle");
+    expect(manifestTemplate).not.toContain("--bundles none");
+  });
+
+  test("offline pnpm install trusts the integrity-pinned lockfile", () => {
+    // pnpm re-applies supply-chain policy by fetching registry metadata even
+    // with --offline; that requires network and fails inside the Flatpak
+    // sandbox. The lockfile is already integrity-pinned by flatpak-node sources.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain("pnpm fetch --offline --trust-lockfile");
+    expect(manifestTemplate).toContain(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+  });
+
+  test("rewrites lockfile tarballs to file: then fetches the offline pnpm store", () => {
+    // pnpm 12 is a native binary without dist/worker.js. The vendored wrapper
+    // tarball is installed with --ignore-scripts --no-optional, then the
+    // matching linux exe overwrites the placeholder bin. Lockfile resolutions
+    // are rewritten to file:flatpak-node/pnpm-tarballs/… so fetch/install use
+    // the localTarball fetcher when the sandbox cannot reach registry.npmjs.org.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const rewriteIdx = manifestTemplate.indexOf(
+      "node flatpak-node/rewrite_lockfile_local_tarballs.mjs",
+    );
+    const fetchIdx = manifestTemplate.indexOf(
+      "pnpm fetch --offline --trust-lockfile",
+    );
+    const installIdx = manifestTemplate.indexOf(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+    const pnpmInstallIdx = manifestTemplate.indexOf(
+      "npm install -g --prefix /run/build/openkara/pnpm-install --ignore-scripts --no-optional ./pnpm-package",
+    );
+    const exeInstallIdx = manifestTemplate.indexOf(
+      "install -Dm0755 pnpm-exe/pnpm /run/build/openkara/pnpm-install/lib/node_modules/pnpm/pnpm",
+    );
+
+    expect(rewriteIdx).toBeGreaterThan(-1);
+    expect(fetchIdx).toBeGreaterThan(-1);
+    expect(installIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeGreaterThan(-1);
+    expect(exeInstallIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeLessThan(exeInstallIdx);
+    expect(exeInstallIdx).toBeLessThan(rewriteIdx);
+    expect(rewriteIdx).toBeLessThan(fetchIdx);
+    expect(fetchIdx).toBeLessThan(installIdx);
+
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{
+      type?: string;
+      "dest-filename"?: string;
+      contents?: string;
+      commands?: string[];
+    }>;
+    expect(
+      nodeSources.find((s) => s["dest-filename"] === "populate_pnpm_store.mjs"),
+    ).toBeUndefined();
+
+    const rewrite = nodeSources.find(
+      (s) => s["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs",
+    );
+    expect(rewrite?.contents).toContain("tarball: file:");
+    expect(rewrite?.contents).toContain("pnpm-tarballs");
+    expect(rewrite?.contents).toBe(
+      readProjectFile("scripts/flatpak/rewrite_lockfile_local_tarballs.mjs"),
+    );
+
+    // Shell source only wires store-dir / headers; it must not run the old
+    // Python JSON-index populate (pnpm cannot read that layout).
+    // store-dir MUST be relative: absolute $PWD paths from shell sources point
+    // at the host build tree, which is invisible under --nofilesystem=host:reset.
+    const shell = nodeSources.find((s) => s.type === "shell");
+    expect(shell?.commands?.join("\n")).toContain(
+      "store-dir=flatpak-node/pnpm-store",
+    );
+    expect(shell?.commands?.join("\n")).not.toContain("store-dir=$PWD");
+    expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
+  });
+
+  test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
+    // The Flatpak build installs pnpm from a tarball archive source in the
+    // manifest template. If this tarball drifts from the packageManager version
+    // in package.json, the offline Flatpak build will install a pnpm that
+    // cannot read the migrated pnpm-workspace.yaml or the lockfile.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const packageJson = JSON.parse(readProjectFile("package.json")) as {
+      packageManager: string;
+    };
+    const pinnedVersion = packageJson.packageManager.replace(/^pnpm@/, "");
+
+    expect(manifestTemplate).toContain(`pnpm/-/pnpm-${pinnedVersion}.tgz`);
+    expect(manifestTemplate).toContain(
+      `@pnpm/exe.linux-x64/-/exe.linux-x64-${pinnedVersion}.tgz`,
+    );
+    expect(manifestTemplate).toContain(
+      `@pnpm/exe.linux-arm64/-/exe.linux-arm64-${pinnedVersion}.tgz`,
+    );
+  });
+
+  test("uses the Flathub container image and official flatpak-builder action for Flatpak builds", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    // The build job must run inside the Flathub-maintained container image.
+    // Running flatpak-builder directly on a GitHub hosted runner, or wrapping
+    // `org.flatpak.Builder` manually, led to successive failures:
+    //   1. bwrap could not find appstream-compose (missing from GNOME SDK 50).
+    //   2. flatpak install aborted with "Cannot autolaunch D-Bus without X11
+    //      $DISPLAY" on the session-bus-less runner.
+    //   3. --install-deps-from=flathub failed because the sandbox's per-app
+    //      flatpak dir did not have the flathub remote.
+    //   4. Dependencies resolved for the Update phase were then reported as
+    //      "not installed" during build-init due to nested sandbox visibility.
+    // The supported Flatpak CI pattern is to run in the Flathub container and
+    // use the official flatpak-builder action. Do not revert without reading
+    // the history in commits touching this file.
+    expect(packagingWorkflow).toContain(
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
+    );
+    expect(packagingWorkflow).toMatch(/options:\s*>-?[\s\S]*?--privileged/);
+    // Free-disk must not bind-mount the entire host root into the privileged
+    // container — only specific unused toolchain paths under /host-cleanup.
+    expect(packagingWorkflow).toContain("/host-cleanup/");
+    expect(packagingWorkflow).not.toMatch(/-v\s+\/:\/host(?:\s|$)/);
+    // Reclaim contents *inside* each /host-cleanup/* mount, not the bind root
+    // (rm -rf on the mount-point dir itself yields "Device or resource busy").
+    expect(packagingWorkflow).toMatch(
+      /for mount in \/host-cleanup\/\*;[\s\S]*?find "\$mount" -mindepth 1/,
+    );
+
+    expect(packagingWorkflow).toMatch(
+      /uses: flatpak\/flatpak-github-actions\/flatpak-builder@[a-f0-9]{40}/,
+    );
+    // Without this, `flatpak-builder-lint builddir/repo` fails with
+    // "appstream-external-screenshot-url: Screenshots are not mirrored to
+    // https://dl.flathub.org/media". The action forwards it as
+    // --mirror-screenshots-url=<value> --compose-url-policy=full to
+    // flatpak-builder and also commits the screenshots/<arch> OSTree ref,
+    // which is what the linter's check_repo() looks for.
+    expect(packagingWorkflow).toContain(
+      "mirror-screenshots-url: https://dl.flathub.org/media",
+    );
+  });
+
+  test("renders WinGet manifests with PowerShell environment syntax on Windows", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain(
+      'node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"',
+    );
+    expect(packagingWorkflow).not.toContain(
+      'node scripts/render-winget-manifests.mjs --version "${RELEASE_VERSION}"',
+    );
+  });
+
+  test("bootstraps WinGet with authenticated GitHub downloads instead of anonymous repair", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain(
+      "gh release download --repo microsoft/winget-cli",
+    );
+    expect(packagingWorkflow).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(packagingWorkflow).not.toContain("Repair-WinGetPackageManager");
+  });
+
+  test("includes generated dependency manifests instead of copying them as files", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const renderScript = readProjectFile("scripts/render-flatpak-manifest.mjs");
+
+    expect(manifestTemplate).toMatch(/\n\s+- cargo-sources\.json\n/);
+    expect(manifestTemplate).not.toMatch(
+      /type:\s*file\s*\n\s*path:\s*cargo-sources\.json/,
+    );
+
+    expect(renderScript).toMatch(/` {6}- \${file}`/);
+    expect(renderScript).not.toContain(
+      "`      - type: file\\n        path: ${file}`",
+    );
+  });
+
+  test("keeps app metadata and Flatpak-only Tauri config in the upstream source archive", () => {
+    const renderScript = readProjectFile("scripts/render-flatpak-manifest.mjs");
+    const metainfo = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml",
+    );
+
+    expect(
+      existsSync(
+        join(
+          projectRoot,
+          "packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(
+        join(
+          projectRoot,
+          "packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml.in",
+        ),
+      ),
+    ).toBe(false);
+
+    expect(renderScript).not.toContain(
+      "io.github.thedavidweng.OpenKara.desktop",
+    );
+    expect(renderScript).not.toContain(
+      "io.github.thedavidweng.OpenKara.metainfo.xml",
+    );
+    expect(renderScript).not.toContain("tauri.flatpak.conf.json");
+    expect(renderScript).not.toContain("flathub.json");
+    expect(metainfo).not.toContain("/main/packaging/flatpak/screenshots/");
+    expect(metainfo).toMatch(
+      /\/v\d+\.\d+\.\d+\/packaging\/flatpak\/screenshots\//,
+    );
+  });
+
+  test("keeps a single lockfile document for Flatpak and GitHub", () => {
+    expect(readProjectFile("pnpm-workspace.yaml")).toContain(
+      "pmOnFail: ignore",
+    );
+    expect(readProjectFile("pnpm-lock.yaml")).not.toContain("\n---\n");
+  });
 
   test("keeps pnpm dependency sources in sync with the lockfile packages used by the app", () => {
     const lockfilePackages = parsePnpmLockfilePackages(
@@ -237,20 +514,6 @@ describe("Flatpak packaging", () => {
       type: string;
       contents?: string;
     }>;
-    const manifestSource = nodeSources.find(
-      (source) => source["dest-filename"] === "pnpm-manifest.json",
-    );
-
-    expect(manifestSource).toBeDefined();
-    expect(manifestSource?.dest).toBe("flatpak-node");
-
-    const manifest = JSON.parse(manifestSource?.contents ?? "") as {
-      packages: Record<
-        string,
-        { integrity_hex: string; name: string; version: string }
-      >;
-      store_version: string;
-    };
     const sourceTarballs = new Map(
       nodeSources
         .filter(
@@ -261,8 +524,6 @@ describe("Flatpak packaging", () => {
         .map((source) => [source["dest-filename"], source.sha512]),
     );
 
-    // pnpm 11 resolves from store-dir/v11; v10 left offline installs blind.
-    expect(manifest.store_version).toBe("v11");
     expect(
       nodeSources.filter(
         (source) =>
@@ -270,21 +531,11 @@ describe("Flatpak packaging", () => {
           source.dest?.startsWith("flatpak-node/cache/esbuild/"),
       ),
     ).toEqual([]);
-    expect(Object.keys(manifest.packages).sort()).toEqual(
-      lockfilePackages.map((pkg) => pkg.filename).sort(),
-    );
     expect(Array.from(sourceTarballs.keys()).sort()).toEqual(
       lockfilePackages.map((pkg) => pkg.filename).sort(),
     );
 
     for (const pkg of lockfilePackages) {
-      const manifestPackage = manifest.packages[pkg.filename];
-
-      expect(manifestPackage).toEqual({
-        integrity_hex: pkg.integrityHex,
-        name: pkg.name,
-        version: pkg.version,
-      });
       expect(sourceTarballs.get(pkg.filename)).toBe(pkg.integrityHex);
     }
   });
@@ -354,5 +605,39 @@ describe("Flatpak packaging", () => {
     const rendered = renderCargoSources(lockfile);
 
     expect(rendered).toBe(committed);
+  });
+
+  test("release automation never opens initial Flathub submission PRs automatically", () => {
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+
+    expect(releaseWorkflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
+    expect(releaseWorkflow).toContain("Ensure release source tag exists");
+    expect(releaseWorkflow).toContain("persist-credentials: false");
+    expect(releaseWorkflow).toContain(
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}"',
+    );
+    expect(releaseWorkflow).toContain('push origin "refs/tags/${tag}"');
+    expect(releaseWorkflow).toContain(
+      '--title "New version: ${WINGET_PACKAGE_IDENTIFIER} version ${VERSION}"',
+    );
+    expect(releaseWorkflow).not.toContain(
+      "WinGet PR could not be created automatically.",
+    );
+    expect(releaseWorkflow).not.toContain("skipping WinGet PR automation");
+    expect(releaseWorkflow).toContain("manual_submission_url=");
+    expect(releaseWorkflow).toContain(
+      "Initial Flathub submissions must be opened or updated manually",
+    );
+    // Assets upload as a draft; the workflow then undrafts after required
+    // assets land, before WinGet/Flatpak submit.
+    expect(releaseWorkflow).toContain("--draft");
+    expect(releaseWorkflow).toContain("Publish GitHub Release");
+    expect(releaseWorkflow).toContain("gh release edit");
+    expect(releaseWorkflow).toContain("--draft=false");
+    expect(releaseWorkflow).toContain("publish-github-release");
+    expect(releaseWorkflow).not.toContain(
+      "Open this prefilled GitHub URL to create the Flathub submission PR",
+    );
+    expect(releaseWorkflow).not.toContain("skipping Flathub PR automation");
   });
 });

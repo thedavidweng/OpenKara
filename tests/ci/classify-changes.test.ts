@@ -145,6 +145,23 @@ describe("classifyFile", () => {
     ]);
   });
 
+  test("policy workflows run their contract tests", () => {
+    // #568 changed dependabot-automerge.yml without updating
+    // tests/ci/dependabot-automerge-contract.test.ts, and the PR ran only
+    // workflow lint, so main stayed red. Any workflow with a contract test
+    // must run the unit suite.
+    expect(classifyFile(".github/workflows/dependabot-automerge.yml")).toEqual([
+      "workflow_contracts",
+    ]);
+
+    const result = pr(".github/workflows/dependabot-automerge.yml");
+    expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("workflow-lint");
+    for (const job of FULL_CI_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
+  });
+
   test("AGENTS.md is docs", () => {
     expect(classifyFile("AGENTS.md")).toEqual(["docs"]);
   });

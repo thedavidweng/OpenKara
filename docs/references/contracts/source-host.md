@@ -3,7 +3,7 @@
 The app-independent Rust module `source_host` owns reviewed source discovery,
 installation, and process lifecycle. The application adapter owns credentials,
 authentication windows, preview, import, and library writes. See
-[ADR 0038](../../adr/0038-install-streaming-sources-as-independent-trusted-packages.md)
+[ADR 0039](../../adr/0039-install-streaming-sources-as-independent-trusted-packages.md)
 and the [source protocol](streaming-source-protocol.md).
 
 ## Signed distribution

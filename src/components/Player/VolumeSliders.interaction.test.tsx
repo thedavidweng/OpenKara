@@ -34,7 +34,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { stem?: string }) =>
       (
-        ({
+        {
           "stems.vocals": "Vocals",
           "stems.accompaniment": "Accompaniment",
           "stems.drums": "Drums",
@@ -44,7 +44,7 @@ vi.mock("react-i18next", () => ({
           "stems.collapseStems": "Collapse stems",
           "stems.mute": `Mute ${options?.stem ?? ""}`.trim(),
           "stems.unmute": `Unmute ${options?.stem ?? ""}`.trim(),
-        }) as const
+        } as const
       )[key] ?? key,
   }),
 }));

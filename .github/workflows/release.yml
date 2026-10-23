@@ -547,16 +547,16 @@ jobs:
         if: runner.os != 'macOS' || runner.arch != 'X64'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup pnpm (macOS Intel)
         if: runner.os == 'macOS' && runner.arch == 'X64'
         # Intel macOS needs the pinned pnpm CLI: standalone binaries require newer macOS.
-        run: npm install -g pnpm@11.20.0 # zizmor: ignore[adhoc-packages]
+        run: npm install -g pnpm@12.15.0 # zizmor: ignore[adhoc-packages]
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
           targets: ${{ matrix.rust_targets }}
@@ -662,7 +662,8 @@ jobs:
             -name "*.AppImage" -o \
             -name "*.deb" -o \
             -name "*.tar.gz" -o \
-            -name "*.sig" \
+            -name "*.sig" -o \
+            -name "*.AppImage.zsync" \
           \) -print0)
 
           if [ "${#files[@]}" -eq 0 ]; then
@@ -801,6 +802,7 @@ jobs:
             "OpenKara_${RELEASE_VERSION}_aarch64.dmg"
             "OpenKara_${RELEASE_VERSION}_x64.dmg"
             "OpenKara_${RELEASE_VERSION}_amd64.AppImage"
+            "OpenKara_${RELEASE_VERSION}_amd64.AppImage.zsync"
             "OpenKara_${RELEASE_VERSION}_amd64.deb"
             "release-evidence.json"
             "latest.json"

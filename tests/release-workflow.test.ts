@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -310,7 +312,9 @@ describe("release workflow", () => {
     expect(linuxValidationStep).toContain(
       "Expected exactly one Linux updater signature matching",
     );
-    expect(linuxValidationStep).toContain('cp "$signature" "$updater_dir/"');
+    expect(linuxValidationStep).toContain(
+      'cp "$signature" "${appimage}.zsync" "$updater_dir/"',
+    );
     expect(linuxValidationStep).not.toContain("tar.gz");
     expect(linuxValidationStep).not.toContain('name "*.sig"');
 
@@ -363,9 +367,8 @@ describe("release workflow", () => {
       linuxWorkflow,
       "Generate Rust release evidence fragment",
     );
-    expect(linuxEvidenceStep).toContain(
-      'find "${RUNNER_TEMP}/updater" -type f -name "*.AppImage.sig"',
-    );
+    expect(linuxEvidenceStep).toContain('-name "*.AppImage.sig"');
+    expect(linuxEvidenceStep).toContain('-o -name "*.AppImage.zsync"');
     expect(linuxEvidenceStep).not.toContain('name "*.tar.gz"');
     expect(linuxEvidenceStep).not.toContain('name "*.sig"');
 
@@ -380,6 +383,81 @@ describe("release workflow", () => {
       "src-tauri/target/release/bundle/**/*setup.exe\n",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
+  });
+
+  test("validates AppImage delta files and carries them through publication", () => {
+    const linuxWorkflow = readProjectFile(
+      ".github/workflows/reusable-linux-installed-app-smoke.yml",
+    );
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const buildStep = readWorkflowStep(
+      linuxWorkflow,
+      "Build AppImage release candidate with automation smoke entry point",
+    );
+    expect(buildStep).toContain(
+      "LDAI_UPDATE_INFORMATION: gh-releases-zsync|thedavidweng|OpenKara|latest|OpenKara_*_amd64.AppImage.zsync",
+    );
+    expect(
+      buildStep.indexOf("scripts/prepare-appimage-zsync.sh"),
+    ).toBeGreaterThan(buildStep.lastIndexOf("pnpm tauri build"));
+    expect(readWorkflowStep(linuxWorkflow, "Upload AppImage")).toContain(
+      "release/bundle/appimage/*.AppImage.zsync",
+    );
+    expect(releaseWorkflow).toContain('-name "*.AppImage.zsync"');
+    expect(releaseWorkflow).toContain(
+      '"OpenKara_${RELEASE_VERSION}_amd64.AppImage.zsync"',
+    );
+    expect(readProjectFile(".github/workflows/ci.yml")).toContain(
+      "python3 scripts/test-appimage-zsync.py",
+    );
+  });
+
+  test("uploads the AppImage and its matching delta asset", () => {
+    const root = mkdtempSync(join(tmpdir(), "openkara delta publication "));
+    try {
+      const image = join(root, "OpenKara_1.2.3_amd64.AppImage");
+      writeFileSync(image, "candidate");
+      writeFileSync(`${image}.zsync`, "delta control");
+      writeFileSync(
+        join(root, "gh"),
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$CALL_LOG"\n',
+        { mode: 0o755 },
+      );
+      const script = readWorkflowStep(
+        readProjectFile(".github/workflows/release.yml"),
+        "Publish tested Release Candidate",
+      )
+        .split("        run: |\n")[1]
+        .split("\n")
+        .map((line) => line.replace(/^ {10}/, ""))
+        .join("\n");
+      const result = spawnSync("bash", ["-c", script], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH}`,
+          CANDIDATE_ROOT: root,
+          CALL_LOG: join(root, "upload-args"),
+          GH_REPO: "test/OpenKara",
+          RELEASE_TAG: "v1.2.3",
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const args = readFileSync(join(root, "upload-args"), "utf8")
+        .trim()
+        .split("\n");
+      expect(args.slice(0, 5)).toEqual([
+        "release",
+        "upload",
+        "v1.2.3",
+        "--repo",
+        "test/OpenKara",
+      ]);
+      expect(args.slice(5, -1).sort()).toEqual([image, `${image}.zsync`]);
+      expect(args.at(-1)).toBe("--clobber");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("publishes non-blocking per-platform bundle size evidence", () => {

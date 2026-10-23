@@ -105,7 +105,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 **前置条件：**
 
 - [Node.js](https://nodejs.org/) 24（与 CI 一致；仓库根目录含 `.nvmrc`）
-- [pnpm](https://pnpm.io/) 11
+- [pnpm](https://pnpm.io/) 12
 - [Rust](https://rustup.rs/) stable 工具链
 - [Tauri 2](https://v2.tauri.app/start/prerequisites/) 平台依赖
 
@@ -258,7 +258,7 @@ OpenKara 会写入滚动日志文件（默认 info 级别，错误必录），�
 ### 前置条件
 
 - Node.js 24（`nvm use` 或 `fnm use` 读取 `.nvmrc` / `.node-version`）
-- pnpm 11
+- pnpm 12
 - 通过 [rustup](https://rustup.rs/) 安装的 Rust stable
 - 对应平台的 [Tauri 2 依赖](https://v2.tauri.app/start/prerequisites/)
 

@@ -1,4 +1,4 @@
-# ADR 0032 — End Streaming Import at the shared import path
+# ADR 0034 — End Streaming Import at the shared import path
 
 Date: 2026-08-16
 Status: accepted

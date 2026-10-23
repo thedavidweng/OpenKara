@@ -3,7 +3,7 @@
 Status: implemented host contract. See the [source host](source-host.md) for
 signed distribution, lifecycle, and download interfaces. License: AGPL-3.0-only;
 see [rights inventory](../streaming-source-provenance.md).
-Architecture: [ADR 0038](../../adr/0038-install-streaming-sources-as-independent-trusted-packages.md).
+Architecture: [ADR 0039](../../adr/0039-install-streaming-sources-as-independent-trusted-packages.md).
 The existing bundled NetEase wire format is not protocol 1.0.
 
 ## Transport and negotiation

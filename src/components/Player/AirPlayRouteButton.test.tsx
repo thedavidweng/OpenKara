@@ -27,9 +27,9 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) =>
       (
-        ({
+        {
           "player.airPlayOutput": "AirPlay Output",
-        }) as const
+        } as const
       )[key] ?? key,
   }),
 }));

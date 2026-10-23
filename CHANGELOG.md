@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.17.3](https://github.com/thedavidweng/OpenKara/compare/v0.17.2...v0.17.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* **ci:** keep the copyable CLA sign phrase in every bot comment ([#565](https://github.com/thedavidweng/OpenKara/issues/565)) ([0dd2059](https://github.com/thedavidweng/OpenKara/commit/0dd2059ed1ce14b0dfcd8912d8c544b5b2b094ef))
+* **separator:** add opt-in DirectML graph fusion disable ([#475](https://github.com/thedavidweng/OpenKara/issues/475)) ([b01c58f](https://github.com/thedavidweng/OpenKara/commit/b01c58f110823757961461c7e927fe7d5a447a10))
+
+## [0.17.2](https://github.com/thedavidweng/OpenKara/compare/v0.17.1...v0.17.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **deps:** clear RUSTSEC-2026-0382 and -0383 in the Tauri lockfile ([#560](https://github.com/thedavidweng/OpenKara/issues/560)) ([c171cca](https://github.com/thedavidweng/OpenKara/commit/c171cca2a0ffc328adb46c81b820373c72af02ab))
+
+## [0.17.1](https://github.com/thedavidweng/OpenKara/compare/v0.17.0...v0.17.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **deps:** align notification npm and Rust versions ([#541](https://github.com/thedavidweng/OpenKara/issues/541)) ([5790271](https://github.com/thedavidweng/OpenKara/commit/5790271d80f0d8bf0f50b76de989ce549fb8dbca))
+
 ## [0.17.0](https://github.com/thedavidweng/OpenKara/compare/v0.16.2...v0.17.0) (2026-10-19)
 
 

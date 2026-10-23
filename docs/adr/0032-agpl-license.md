@@ -1,4 +1,4 @@
-# ADR 0037 — AGPL application license
+# ADR 0032 — AGPL application license
 
 Date: 2026-10-05
 Status: accepted

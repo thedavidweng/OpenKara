@@ -160,7 +160,7 @@ fn bench_preference(
     preference: ExecutionProviderPreference,
 ) -> serde_json::Value {
     let cold_start = Instant::now();
-    let model = model::load_from_path(model_path, preference)
+    let model = model::load_from_path(model_path, preference, model::SessionOptions::default())
         .expect("spectral model should load via the preference's fallback chain");
     let cold_load_s = cold_start.elapsed().as_secs_f64();
     // A loaded model always carries a verified spectral interface.

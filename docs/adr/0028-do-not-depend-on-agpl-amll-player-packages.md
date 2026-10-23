@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 Status: accepted for the AMLL dependency boundary; the project-license decision
-is superseded by [ADR 0037](0037-agpl-license.md)
+is superseded by [ADR 0032](0032-agpl-license.md)
 
 ## Context
 
@@ -19,7 +19,7 @@ license effect as a package depend.
 ## Decision
 
 Do not add @applemusic-like-lyrics packages. Do not copy AMLL player or
-parser source. ADR 0037 replaces the earlier decision to keep OpenKara
+parser source. ADR 0032 replaces the earlier decision to keep OpenKara
 under Apache-2.0; the third-party dependency restriction remains in force.
 Consume the native HTTP API and the published TTML format only. Keep the OpenKara list
 lyrics stage. Implement karaoke-relevant behavior in KaraokeFillController

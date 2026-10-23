@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 const lockfilePath = "pnpm-lock.yaml";
 const nodeSourcesPath = "packaging/flatpak/generated/node-sources.0.json";
 const PNPM_TARBALL_DEST = "flatpak-node/pnpm-tarballs";
-const PNPM_MANIFEST_FILENAME = "pnpm-manifest.json";
 
 function splitPackageKey(key) {
   const unquoted = key.replace(/^'|'$/g, "");
@@ -99,44 +98,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     "dest-filename": pkg.filename,
     dest: PNPM_TARBALL_DEST,
   }));
-  const manifestSource = {
-    type: "inline",
-    "dest-filename": PNPM_MANIFEST_FILENAME,
-    dest: "flatpak-node",
-    contents: JSON.stringify(
-      {
-        // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
-        // Populate must use the same version directory or offline install fails
-        // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
-        store_version: "v11",
-        packages: Object.fromEntries(
-          lockfilePackages.map((pkg) => [
-            pkg.filename,
-            {
-              integrity_hex: pkg.integrityHex,
-              name: pkg.name,
-              version: pkg.version,
-            },
-          ]),
-        ),
-      },
-      null,
-      2,
-    ),
-  };
   const preservedSources = existingSources.filter(
-    (source) =>
-      source.dest !== PNPM_TARBALL_DEST &&
-      source.dest !== "flatpak-node/cache/esbuild" &&
-      !source.dest?.startsWith("flatpak-node/cache/esbuild/") &&
-      source["dest-filename"] !== PNPM_MANIFEST_FILENAME,
+    (source) => source.dest !== PNPM_TARBALL_DEST,
   );
   const nextSources = [
     ...preservedSources.slice(0, 1),
     ...generatedDependencySources,
-    manifestSource,
     ...preservedSources.slice(1),
   ];
+  const rewriteScript = readFileSync(
+    "scripts/flatpak/rewrite_lockfile_local_tarballs.mjs",
+    "utf8",
+  );
+  for (const source of nextSources) {
+    if (source["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs") {
+      source.contents = rewriteScript;
+    }
+  }
 
   writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);
 }

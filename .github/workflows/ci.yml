@@ -312,7 +312,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -373,7 +373,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -474,7 +474,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -561,7 +561,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -581,6 +581,12 @@ jobs:
             tests/release-metadata.test.ts \
             tests/macos-release-signing.test.ts
 
+      - name: Test AppImage delta preparation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsync
+          python3 scripts/test-appimage-zsync.py
+
   dependency-checks:
     name: Dependency surface checks
     needs: triage
@@ -597,7 +603,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
@@ -613,7 +619,7 @@ jobs:
       # Prebuilt binary rather than `cargo install`, which rebuilt cargo-shear
       # from source on every run of a job whose actual work takes seconds.
       - name: Install cargo-shear
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-shear@1.12.4
 
@@ -662,7 +668,7 @@ jobs:
           fi
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
@@ -721,7 +727,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Install nextest
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: nextest
 
@@ -760,7 +766,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
@@ -822,7 +828,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -833,7 +839,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
@@ -942,7 +948,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -964,7 +970,7 @@ jobs:
           fi
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
@@ -1097,7 +1103,24 @@ jobs:
       !cancelled() &&
       needs.triage.outputs.run_playwright-ui-smoke == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Run inside Playwright's official image so the browsers and their system
+    # libraries are already present. `playwright install --with-deps` pulled
+    # ~114 MB of apt packages from azure.archive.ubuntu.com on every run; on
+    # 2026-10-22 that mirror slowed to ~50 kB/s and the install step alone
+    # used up the whole job timeout (run 39801493440, both attempts).
+    # The image tag must equal the playwright version in pnpm-lock.yaml
+    # (enforced by tests/ci/ci-workflow-contract.test.ts); bump both together.
+    container:
+      image: mcr.microsoft.com/playwright@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf # v1.64.1-noble
+      # Chromium needs a larger /dev/shm than Docker's 64 MB default;
+      # --init reaps the browser and Vite child processes.
+      options: --ipc=host --init
+    # Inside a container GitHub defaults `run:` to `sh -e`, which rejects
+    # `set -o pipefail`; keep the bash the host runner used.
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -1108,7 +1131,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.15.0
           standalone: true
 
       - name: Setup Node.js
@@ -1121,8 +1144,12 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install chromium webkit --with-deps
+      # The image already ships chromium, chromium-headless-shell, ffmpeg and
+      # webkit under PLAYWRIGHT_BROWSERS_PATH=/ms-playwright, so this finds
+      # them and downloads nothing. No --with-deps: the image has the system
+      # libraries, and that apt step is what used to hang.
+      - name: Ensure Playwright browsers
+        run: pnpm exec playwright install chromium webkit
 
       - name: Run Playwright UI smoke tests
         run: node --run test:ui-smoke
@@ -1145,13 +1172,32 @@ jobs:
             exit 0
           fi
 
-          flaky=$(jq '.stats.flaky // 0' "$report")
-          unexpected=$(jq '.stats.unexpected // 0' "$report")
-          flaky_list=$(jq -r '
-            [ .. | .specs? // empty | .[] ]
-            | map(select(.tests | any(.status == "flaky")))
-            | .[] | "- `\(.title)`"
+          # The Playwright image has no jq, so read the report with Node.
+          # Same semantics as the old jq filters: stats.flaky/unexpected
+          # default to 0, and every spec under any nested suite whose tests
+          # include status "flaky" is listed by title.
+          flaky_json=$(node -e '
+            const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const specs = [];
+            (function walk(v) {
+              if (Array.isArray(v)) return v.forEach(walk);
+              if (v && typeof v === "object") {
+                if (Array.isArray(v.specs)) specs.push(...v.specs);
+                Object.values(v).forEach(walk);
+              }
+            })(r);
+            const list = specs
+              .filter((s) => (s.tests || []).some((t) => t.status === "flaky"))
+              .map((s) => "- \u0060" + s.title + "\u0060");
+            console.log(JSON.stringify({
+              flaky: r.stats?.flaky ?? 0,
+              unexpected: r.stats?.unexpected ?? 0,
+              list: list.join("\n"),
+            }));
           ' "$report")
+          flaky=$(node -p 'JSON.parse(process.argv[1]).flaky' "$flaky_json")
+          unexpected=$(node -p 'JSON.parse(process.argv[1]).unexpected' "$flaky_json")
+          flaky_list=$(node -p 'JSON.parse(process.argv[1]).list' "$flaky_json")
 
           {
             echo "## Playwright UI smoke — flaky tests"

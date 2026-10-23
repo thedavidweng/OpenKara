@@ -26,17 +26,19 @@ modules:
       - mkdir -p .cargo
       - printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "cargo/vendor"\n' > .cargo/config.toml
       - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"@@ORT_VERSION@@\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
-      - npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package
-      # pnpm 11 indexes the offline store in store-dir/v11/index.db (SQLite +
-      # msgpackr). Populate reuses pnpm's extract worker so CAFS + index.db match
-      # a normal install. Legacy JSON index/ files leave packages invisible.
-      - PATH="/run/build/openkara/pnpm-install/bin:$PATH" node flatpak-node/populate_pnpm_store.mjs flatpak-node/pnpm-manifest.json flatpak-node/pnpm-tarballs flatpak-node/pnpm-store
+      # pnpm 12 is a native binary. Skip lifecycle scripts and optional
+      # @pnpm/exe.* registry fetches; the matching linux exe archive is vendored
+      # as pnpm-exe and copied over the shebang-less placeholder bin.
+      - npm install -g --prefix /run/build/openkara/pnpm-install --ignore-scripts --no-optional ./pnpm-package
+      - install -Dm0755 pnpm-exe/pnpm /run/build/openkara/pnpm-install/lib/node_modules/pnpm/pnpm
       # Point every lockfile resolution at the already-downloaded file: tarballs
-      # so install uses the localTarball fetcher. Registry URLs are unreachable
-      # inside the sandbox (EAI_AGAIN); file: works with --offline even if the
-      # pre-seeded store is not consulted for a given package.
+      # so fetch/install use the localTarball fetcher. Registry URLs are
+      # unreachable inside the sandbox (EAI_AGAIN).
       - node flatpak-node/rewrite_lockfile_local_tarballs.mjs
-      # --trust-lockfile: pnpm 11 re-applies supply-chain policy (minimumReleaseAge /
+      # pnpm 12 still indexes the store under store-dir/v11. fetch writes that
+      # layout with the native extractor; dist/worker.js does not ship anymore.
+      - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm fetch --offline --trust-lockfile
+      # --trust-lockfile: pnpm re-applies supply-chain policy (minimumReleaseAge /
       # trustPolicy) by fetching registry metadata even with --offline; that needs
       # network and fails inside the Flatpak sandbox (EAI_AGAIN). The lockfile is
       # already integrity-pinned via flatpak-node sources — safe to trust here.
@@ -59,9 +61,24 @@ modules:
         strip-components: 1
       - cargo-sources.json
       - type: archive
-        url: https://registry.npmjs.org/pnpm/-/pnpm-11.20.0.tgz
-        sha256: 34e198cb1e43237517ecedfd31f9ae26a6c0a3e5366ce58a2d05f4b21fb5f19a
+        url: https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz
+        sha256: f5173f6127cc505cdb36ec17719fe54a8511c6fd8560c7ceb4bf7c73e3b4458b
         dest: pnpm-package
+        strip-components: 1
+      - type: archive
+        url: https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.15.0.tgz
+        sha256: 402f7045b1e0587acb1542f18d38afbccb6babf3c7451394e6fb3d9f0160c6ca
+        dest: pnpm-exe
+        strip-components: 1
+        only-arches:
+          - x86_64
+      - type: archive
+        url: https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.15.0.tgz
+        sha256: 8117d65f28e627e949d5fc65d63342266326826a56fa374317bf13fe1166a50e
+        dest: pnpm-exe
+        strip-components: 1
+        only-arches:
+          - aarch64
       # ONNX Runtime archives come from the openkara-models catalog snapshot;
       # the renderer injects the URL and digest so no version is hand-pinned
       # here. The catalog archives are flat (no directory prefix).

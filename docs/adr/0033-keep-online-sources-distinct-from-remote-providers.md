@@ -1,4 +1,4 @@
-# ADR 0031 — Keep Online Sources distinct from Remote Providers
+# ADR 0033 — Keep Online Sources distinct from Remote Providers
 
 Date: 2026-08-16
 Status: accepted

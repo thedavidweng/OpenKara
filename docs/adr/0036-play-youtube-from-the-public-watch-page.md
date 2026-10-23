@@ -1,4 +1,4 @@
-# ADR 0034 — Play YouTube from the public watch page
+# ADR 0036 — Play YouTube from the public watch page
 
 Date: 2026-08-16
 Status: accepted

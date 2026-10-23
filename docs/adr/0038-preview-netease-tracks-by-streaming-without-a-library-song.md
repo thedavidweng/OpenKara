@@ -1,4 +1,4 @@
-# ADR 0036 — Preview NetEase tracks by streaming without a library song
+# ADR 0038 — Preview NetEase tracks by streaming without a library song
 
 Date: 2026-10-19
 Status: accepted
@@ -6,7 +6,7 @@ Status: accepted
 ## Context
 
 A user browsing a NetEase playlist could only import a track before hearing
-it. ADR 0032 ends every Streaming Import at the shared import path, and the
+it. ADR 0034 ends every Streaming Import at the shared import path, and the
 playback engine and queue assume a library song. A preview that waits for a full
 download and import is slow, and importing every track just to listen would
 fill the library.
@@ -50,5 +50,5 @@ A preview has no library song, no database row, and no file the user keeps.
 - Remote URLs from NetEase expire. Seeking far after an expiry costs one
   re-resolve, and a second expiry in the same preview stops it.
 - The preview does not use a second audio engine and does not try another
-  music source after refusal, keeping ADR 0033 and ADR 0035 intact.
+  music source after refusal, keeping ADR 0035 and ADR 0037 intact.
 - Previews have no library row, so library play counts do not include them.

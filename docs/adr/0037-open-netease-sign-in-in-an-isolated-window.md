@@ -1,8 +1,8 @@
-# ADR 0035 — NetEase web sign-in and bundled API sidecar
+# ADR 0037 — NetEase web sign-in and bundled API sidecar
 
 Date: 2026-09-28
 Status: accepted for controlled official-page authentication; the bundled-sidecar
-decision is superseded by [ADR 0038](0038-install-streaming-sources-as-independent-trusted-packages.md)
+decision is superseded by [ADR 0039](0039-install-streaming-sources-as-independent-trusted-packages.md)
 
 ## Context
 
@@ -24,9 +24,9 @@ NetEase account, playlist, search, detail, and URL operations use a pinned
 release of `@neteasecloudmusicapienhanced/api` in one app-owned Node process.
 The process exchanges one JSON request and response per line on standard
 input/output. It has no local HTTP listener. The sidecar owns the upstream
-protocol and uses its China Client Address option, preserving ADR 0033.
+protocol and uses its China Client Address option, preserving ADR 0035.
 OpenKara downloads only a full permitted URL and passes the temporary file to
-the existing Streaming Import path from ADR 0032. It never tries an alternate
+the existing Streaming Import path from ADR 0034. It never tries an alternate
 music source after refusal.
 
 ## Consequences

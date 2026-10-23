@@ -91,6 +91,11 @@ Download the latest build for your platform from [GitHub Releases](https://githu
 | Windows               | `.exe` (NSIS installer) |
 | Linux                 | `.AppImage` / `.deb`    |
 
+Linux AppImages also embed stable-release AppImageUpdate information. The matching
+`.AppImage.zsync` release asset enables external delta updates without replacing
+OpenKara's existing signed Tauri updater. Update metadata is embedded before Tauri
+signs the final AppImage; publication retains the delta file in release evidence.
+
 **macOS (Homebrew):**
 
 ```bash
@@ -118,7 +123,7 @@ On first launch, OpenKara will prompt you to create a Karaoke Library and start 
 **Prerequisites:**
 
 - [Node.js](https://nodejs.org/) 24 (same as CI; the repo root has `.nvmrc`)
-- [pnpm](https://pnpm.io/) 11
+- [pnpm](https://pnpm.io/) 12
 - [Rust](https://rustup.rs/) stable toolchain
 - Platform dependencies for [Tauri 2](https://v2.tauri.app/start/prerequisites/)
 
@@ -303,7 +308,7 @@ filter such as `OPENKARA_LOG=openkara_lib=trace,warn`).
 ### Prerequisites
 
 - Node.js 24 (`nvm use` or `fnm use` reads `.nvmrc` / `.node-version`)
-- pnpm 11
+- pnpm 12
 - Rust stable via [rustup](https://rustup.rs/)
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
 

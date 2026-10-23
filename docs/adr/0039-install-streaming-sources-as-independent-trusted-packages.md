@@ -1,4 +1,4 @@
-# ADR 0038 — Install Streaming Sources as independent trusted packages
+# ADR 0039 — Install Streaming Sources as independent trusted packages
 
 Date: 2026-10-20
 Status: accepted
@@ -12,12 +12,12 @@ This decision implements the design in [#551](https://github.com/thedavidweng/Op
 
 ## Decision
 
-Supersede only ADR 0035's bundled-sidecar distribution and build preparation.
+Supersede only ADR 0037's bundled-sidecar distribution and build preparation.
 Retain its isolated official-page sign-in, cookie capture, account verification,
-and window-close rules. Retain ADR 0033's China Client Address and no-UNM
-rules, ADR 0032's shared Streaming Import path, and ADR 0034's built-in YouTube
+and window-close rules. Retain ADR 0035's China Client Address and no-UNM
+rules, ADR 0034's shared Streaming Import path, and ADR 0036's built-in YouTube
 player. Online Preview keeps the existing playback coordinator and bounded URL
-refresh. Its current lyric lookup stays in the host; ADR 0036's statement that
+refresh. Its current lyric lookup stays in the host; ADR 0038's statement that
 preview has no lyric lookup is not the implemented behavior.
 
 Publish reviewed packages in `openkara-sources`, with independent releases.
