@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OpenKara",
-  "version": "0.17.3",
+  "version": "0.18.0",
   "identifier": "com.openkara.desktop",
   "mainBinaryName": "openkara",
   "build": {
@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; img-src 'self' blob: asset: http://asset.localhost; connect-src 'self' https://lrclib.net https://api.lrc.cx https://api.amll.dev; frame-ancestors 'none'; object-src 'none'", 
+      "csp": "default-src 'self'; script-src 'self'; img-src 'self' blob: asset: http://asset.localhost; connect-src 'self' https://lrclib.net https://api.lrc.cx https://api.amll.dev; frame-ancestors 'none'; object-src 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": []
