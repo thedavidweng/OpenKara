@@ -19,11 +19,11 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) =>
       (
-        ({
+        {
           "player.volume": "Volume",
           "player.mute": "Mute",
           "player.unmute": "Unmute",
-        }) as const
+        } as const
       )[key] ?? key,
   }),
 }));
