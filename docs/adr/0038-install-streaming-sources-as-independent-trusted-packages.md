@@ -43,6 +43,14 @@ Install runtime and package versions into immutable directories. A successful
 compatible handshake is required before staged activation replaces a usable
 version. Updates require user action and wait for active work to finish.
 
+The initial unreleased trust roots were rotated before source publication:
+current `0374d430d3cf1aa6` and next `71a135edb0fedcf0`. Their raw Ed25519
+public keys are part of the host contract. The matching private keys are
+dedicated to source releases, not application updates. GitHub Actions stores
+them in `openkara-sources`; local recovery copies are in macOS Keychain.
+BWS custody must be verified before the first production publication. A
+configured Actions secret alone does not establish BWS backup.
+
 Support the current and previous protocol major. An incompatible installed or
 pinned package needs an update; keep its credentials and enablement. Verified
 revocations override pins. Stop revoked code at the next safe point and retain

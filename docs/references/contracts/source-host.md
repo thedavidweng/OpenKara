@@ -25,8 +25,8 @@ public roots. They are separate from the application updater key:
 
 | Slot    | Key identifier     | Raw 32-byte public key, standard base64        |
 | ------- | ------------------ | ---------------------------------------------- |
-| Current | `7fcb203630edc3e8` | `eu2mb5fTNPBl1I8GKPGCwacULUQ851xExUO9caYcrXw=` |
-| Next    | `cda981e9c4c32a5f` | `eavnSx5nC4WImQimF9uV3OGCsju4wZC6KLL9USfc3cg=` |
+| Current | `0374d430d3cf1aa6` | `SGkXN6xbau63VKXOSU8kGVJtMN0DhxFDmxlFvelqUXU=` |
+| Next    | `71a135edb0fedcf0` | `VfvOxNOgYgIbKkzMDr8cLgqKIUbH2H9QcsSlc8qc28w=` |
 
 The index payload has this shape:
 

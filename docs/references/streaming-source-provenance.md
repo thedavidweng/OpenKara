@@ -25,6 +25,16 @@ The fixture and protocol added by #552 are new application-repository materials.
 They do not import or copy the old worker or API modules. They remain
 AGPL-3.0-only under the root LICENSE. No MIT exception is declared by this work.
 
+## Production package license
+
+The maintainer authorized an AGPL-3.0-only NetEase publication under #556 when
+the transfer rights cannot support MIT. The production implementation lives in
+[openkara-sources](https://github.com/thedavidweng/openkara-sources). It ports
+the source behavior from application revision
+`a933794fb4b7a450e4a2976c87ed23ba83c9d4ad`. The package keeps AGPL terms and
+historical Apache notices. Its dependency and file-rights inventories must
+accompany the published archive. This choice does not establish an MIT grant.
+
 ## Rights checklist before MIT publication
 
 - [x] Identify exact worker/protocol revisions and author attribution above.
@@ -40,8 +50,8 @@ AGPL-3.0-only under the root LICENSE. No MIT exception is declared by this work.
       actual scope covers those contributions is another route. Record the signer,
       covered revisions, agreement text/revision, and durable evidence URL.
 - [ ] At NetEase package publication, inventory the complete locked production
-      dependency closure and ship each required license/notice. The current
-      `sidecars/netease/package-lock.json` pins
+      dependency closure and ship each required license/notice. The historical
+      `sidecars/netease/package-lock.json` at the audited revision pins
       `@neteasecloudmusicapienhanced/api` 4.40.1 and transitive packages. That lockfile
       records integrity, not copyright clearance. Do not relabel dependencies MIT.
 - [ ] Bind a final file-level rights manifest and attribution bundle to the

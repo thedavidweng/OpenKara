@@ -123,12 +123,12 @@ impl HostConfig {
         };
         let trusted_keys = [
             (
-                "7fcb203630edc3e8",
-                "eu2mb5fTNPBl1I8GKPGCwacULUQ851xExUO9caYcrXw=",
+                "0374d430d3cf1aa6",
+                "SGkXN6xbau63VKXOSU8kGVJtMN0DhxFDmxlFvelqUXU=",
             ),
             (
-                "cda981e9c4c32a5f",
-                "eavnSx5nC4WImQimF9uV3OGCsju4wZC6KLL9USfc3cg=",
+                "71a135edb0fedcf0",
+                "VfvOxNOgYgIbKkzMDr8cLgqKIUbH2H9QcsSlc8qc28w=",
             ),
         ]
         .into_iter()
