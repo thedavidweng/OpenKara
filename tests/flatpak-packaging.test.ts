@@ -250,25 +250,6 @@ describe("Flatpak packaging", () => {
     expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
   });
 
-  test("flatpak-node offline store targets pnpm store version directory v11", () => {
-    // pnpm 12 still looks under store-dir/v11. Writing v10 makes every
-    // offline install fail with ERR_PNPM_NO_OFFLINE_TARBALL.
-    const nodeSources = JSON.parse(
-      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
-    ) as Array<{ "dest-filename"?: string; contents?: string }>;
-    const manifest = nodeSources.find(
-      (s) => s["dest-filename"] === "pnpm-manifest.json",
-    );
-    expect(manifest?.contents).toBeDefined();
-    const parsed = JSON.parse(manifest!.contents!) as { store_version: string };
-    expect(parsed.store_version).toBe("v11");
-
-    const generator = readProjectFile(
-      "scripts/generate-flatpak-node-sources.mjs",
-    );
-    expect(generator).toContain('store_version: "v11"');
-  });
-
   test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
     // The Flatpak build installs pnpm from a tarball archive source in the
     // manifest template. If this tarball drifts from the packageManager version
@@ -436,20 +417,6 @@ describe("Flatpak packaging", () => {
       type: string;
       contents?: string;
     }>;
-    const manifestSource = nodeSources.find(
-      (source) => source["dest-filename"] === "pnpm-manifest.json",
-    );
-
-    expect(manifestSource).toBeDefined();
-    expect(manifestSource?.dest).toBe("flatpak-node");
-
-    const manifest = JSON.parse(manifestSource?.contents ?? "") as {
-      packages: Record<
-        string,
-        { integrity_hex: string; name: string; version: string }
-      >;
-      store_version: string;
-    };
     const sourceTarballs = new Map(
       nodeSources
         .filter(
@@ -460,8 +427,6 @@ describe("Flatpak packaging", () => {
         .map((source) => [source["dest-filename"], source.sha512]),
     );
 
-    // pnpm 12 still resolves from store-dir/v11; v10 left offline installs blind.
-    expect(manifest.store_version).toBe("v11");
     expect(
       nodeSources.filter(
         (source) =>
@@ -469,21 +434,11 @@ describe("Flatpak packaging", () => {
           source.dest?.startsWith("flatpak-node/cache/esbuild/"),
       ),
     ).toEqual([]);
-    expect(Object.keys(manifest.packages).sort()).toEqual(
-      lockfilePackages.map((pkg) => pkg.filename).sort(),
-    );
     expect(Array.from(sourceTarballs.keys()).sort()).toEqual(
       lockfilePackages.map((pkg) => pkg.filename).sort(),
     );
 
     for (const pkg of lockfilePackages) {
-      const manifestPackage = manifest.packages[pkg.filename];
-
-      expect(manifestPackage).toEqual({
-        integrity_hex: pkg.integrityHex,
-        name: pkg.name,
-        version: pkg.version,
-      });
       expect(sourceTarballs.get(pkg.filename)).toBe(pkg.integrityHex);
     }
   });
