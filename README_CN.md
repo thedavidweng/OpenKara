@@ -258,7 +258,7 @@ OpenKara 会写入滚动日志文件（默认 info 级别，错误必录），�
 ### 前置条件
 
 - Node.js 24（`nvm use` 或 `fnm use` 读取 `.nvmrc` / `.node-version`）
-- pnpm 11
+- pnpm 12
 - 通过 [rustup](https://rustup.rs/) 安装的 Rust stable
 - 对应平台的 [Tauri 2 依赖](https://v2.tauri.app/start/prerequisites/)
 

@@ -105,9 +105,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     dest: "flatpak-node",
     contents: JSON.stringify(
       {
-        // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
-        // Populate must use the same version directory or offline install fails
-        // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
+        // pnpm 12 still stores packages under store-dir/v11 (see `pnpm store
+        // path`). fetch/install must use that version directory or offline
+        // install fails with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
         store_version: "v11",
         packages: Object.fromEntries(
           lockfilePackages.map((pkg) => [
@@ -137,6 +137,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     manifestSource,
     ...preservedSources.slice(1),
   ];
+  const rewriteScript = readFileSync(
+    "scripts/flatpak/rewrite_lockfile_local_tarballs.mjs",
+    "utf8",
+  );
+  for (const source of nextSources) {
+    if (source["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs") {
+      source.contents = rewriteScript;
+    }
+  }
 
   writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);
 }

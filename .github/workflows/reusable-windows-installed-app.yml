@@ -106,7 +106,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.20.0
+          version: 12.5.1
           standalone: true
 
       - name: Setup Node.js
@@ -116,7 +116,7 @@ jobs:
           cache: pnpm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 

@@ -15,10 +15,10 @@ concurrency:
 jobs:
   cla:
     permissions:
-      actions: write
-      contents: write
-      pull-requests: write
-      statuses: write
+      actions: write # cla-action reruns the last pull_request_target CLA run after a signature.
+      contents: write # cla-action commits signatures to the cla-signatures branch.
+      pull-requests: write # cla-action and the result step post and edit the signing comment.
+      statuses: write # The CLA commit status is set on the checked PR head.
     name: CLA Assistant
     if: >-
       github.event_name == 'pull_request_target' ||
@@ -66,6 +66,18 @@ jobs:
           branch: cla-signatures
           allowlist: thedavidweng,dependabot[bot],github-actions[bot]
           custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
+          # Keep this prompt in sync with signingInstructions in the result step
+          # below; tests/ci/cla-workflow-contract.test.ts checks both.
+          custom-notsigned-prcomment: |-
+            Thank you for your contribution! Before it can be merged, $you need to sign the [Contributor License Agreement](https://github.com/thedavidweng/OpenKara/blob/cc7a3e1b7e24d9bbe10c2fc9f6b39ff84328d2f1/CLA.md).
+
+            To sign, post a new comment on this pull request that contains only the line below. Use the copy button on the code block so the text matches exactly:
+
+            ```
+            I have read the CLA Document and I hereby sign the CLA
+            ```
+
+            The CLA check runs again automatically after you comment.
           custom-allsigned-prcomment: CLA acceptance received. The CLA check will confirm that signatures were saved.
           lock-pullrequest-aftermerge: false
 
@@ -75,19 +87,23 @@ jobs:
         env:
           CHECKED_HEAD: ${{ steps.pr.outputs.head }}
           AGREEMENT_RESULT: ${{ steps.agreement.outcome }}
+          CLA_DOCUMENT_URL: https://github.com/thedavidweng/OpenKara/blob/cc7a3e1b7e24d9bbe10c2fc9f6b39ff84328d2f1/CLA.md
+          CLA_SIGN_PHRASE: I have read the CLA Document and I hereby sign the CLA
         with:
           script: |
             const { owner, repo } = context.repo;
             const { data: pr } = await github.rest.pulls.get({
               owner, repo, pull_number: context.issue.number,
             });
-            const passed = process.env.AGREEMENT_RESULT === 'success' &&
-              pr.head.sha === process.env.CHECKED_HEAD;
+            const checkedHead = process.env.CHECKED_HEAD;
+            const stale = pr.head.sha !== checkedHead;
+            const passed = process.env.AGREEMENT_RESULT === 'success' && !stale;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             await github.rest.repos.createCommitStatus({
-              owner, repo, sha: process.env.CHECKED_HEAD, context: 'CLA',
+              owner, repo, sha: checkedHead, context: 'CLA',
               state: passed ? 'success' : 'failure',
               description: passed ? 'Contributor agreements verified' : 'Contributor agreements not verified',
-              target_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              target_url: runUrl,
             });
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: context.issue.number, per_page: 100,
@@ -95,11 +111,44 @@ jobs:
             const prompt = comments.find(comment => comment.user?.id === 41898282 &&
               (comment.body?.includes('CLA Assistant Lite bot') ||
                 comment.body?.includes('Contributor License bot')));
-            if (prompt) {
+            if (!prompt) return;
+            if (passed) {
               await github.rest.issues.updateComment({
                 owner, repo, comment_id: prompt.id,
-                body: passed
-                  ? 'All contributors have signed the CLA. Signatures have been recorded. ✍️ ✅\n\n<sub>CLA Assistant Lite bot</sub>'
-                  : `CLA signatures could not be verified for the checked commit. See the [CLA check](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}).\n\n<sub>CLA Assistant Lite bot</sub>`,
+                body: 'All contributors have signed the CLA. Signatures have been recorded. ✍️ ✅\n\n<sub>CLA Assistant Lite bot</sub>',
               });
+              return;
             }
+            // On failure, never drop the signing instructions. Keep the prompt
+            // cla-action just rendered when it carries the copyable phrase,
+            // otherwise restore it, and put a short status note on top.
+            const phrase = process.env.CLA_SIGN_PHRASE;
+            const fenced = '```\n' + phrase + '\n```';
+            const noteStart = '<!-- cla-result-note -->';
+            const noteEnd = '<!-- /cla-result-note -->';
+            const signingInstructions = [
+              `Thank you for your contribution! Before it can be merged, you need to sign the [Contributor License Agreement](${process.env.CLA_DOCUMENT_URL}).`,
+              '',
+              'To sign, post a new comment on this pull request that contains only the line below. Use the copy button on the code block so the text matches exactly:',
+              '',
+              fenced,
+              '',
+              'The CLA check runs again automatically after you comment.',
+              '',
+              '<sub>You can retrigger this bot by commenting **recheck** in this Pull Request. </sub><sub>Posted by the **Contributor License bot**.</sub>',
+            ].join('\n');
+            let existing = (prompt.body ?? '').replace(/\r\n/g, '\n');
+            const start = existing.indexOf(noteStart);
+            const end = existing.indexOf(noteEnd);
+            if (start !== -1 && end > start) {
+              existing = (existing.slice(0, start) + existing.slice(end + noteEnd.length)).replace(/^\s+/, '');
+            }
+            const instructions = existing.includes(fenced) ? existing : signingInstructions;
+            const shortHead = checkedHead.slice(0, 7);
+            const note = stale
+              ? `The pull request head moved after commit \`${shortHead}\` was checked, so the CLA check runs again for the new head. See the [CLA check](${runUrl}).`
+              : `CLA signatures could not be verified for commit \`${shortHead}\`. See the [CLA check](${runUrl}).`;
+            await github.rest.issues.updateComment({
+              owner, repo, comment_id: prompt.id,
+              body: `${noteStart}\n> [!NOTE]\n> ${note}\n${noteEnd}\n\n${instructions}`,
+            });
