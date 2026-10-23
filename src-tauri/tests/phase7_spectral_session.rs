@@ -66,17 +66,28 @@ fn separate_to_dir(
         stem_mode,
         output_dir,
         ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
     )
+    .0
 }
 
 /// Run streaming separation with an explicit execution-provider preference.
+///
+/// Returns the separation outcome and the provider that actually committed the
+/// session (which may differ from `preference` when the fallback chain runs).
 fn separate_to_dir_with_preference(
     model_path: &Path,
     stem_mode: StemMode,
     output_dir: &Path,
     preference: ExecutionProviderPreference,
-) -> openkara_lib::separator::inference::SeparationOutcome {
-    let loaded_model = model::load_from_path(model_path, preference).expect("model should load");
+    options: model::SessionOptions,
+) -> (
+    openkara_lib::separator::inference::SeparationOutcome,
+    ExecutionProviderPreference,
+) {
+    let loaded_model =
+        model::load_from_path(model_path, preference, options).expect("model should load");
+    let resolved_provider = loaded_model.execution_provider;
 
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("fixture audio should decode");
@@ -130,7 +141,7 @@ fn separate_to_dir_with_preference(
     .expect("streaming separation should succeed");
 
     writers.finish_all().expect("writers should finalize");
-    outcome
+    (outcome, resolved_provider)
 }
 
 fn decoded_samples(path: &Path) -> Vec<f32> {
@@ -164,8 +175,12 @@ fn spectral_streaming_end_to_end_four_stem() {
     };
     initialize_test_runtime();
 
-    let loaded = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
-        .expect("spectral model should load");
+    let loaded = model::load_from_path(
+        &model_path,
+        ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
+    )
+    .expect("spectral model should load");
     // A loaded model always carries a verified spectral interface.
     assert!(loaded.spectral.segment_frames > 0);
     drop(loaded);
@@ -213,8 +228,12 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
     };
     initialize_test_runtime();
 
-    let loaded = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
-        .expect("spectral model should load");
+    let loaded = model::load_from_path(
+        &model_path,
+        ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
+    )
+    .expect("spectral model should load");
     let segment = loaded.spectral.segment_frames;
 
     // 1.5 windows -> two chunks at 50% overlap.
@@ -320,15 +339,122 @@ fn spectral_separation_with_default_platform_preference_is_stable() {
         preference.as_str()
     );
 
-    let loaded = model::load_from_path(&model_path, preference)
+    let loaded = model::load_from_path(&model_path, preference, model::SessionOptions::default())
         .expect("platform-default preference must load via its fallback chain");
     drop(loaded);
 
     let out_dir = support::unique_temp_path("phase7-spectral-default-ep");
-    let outcome =
-        separate_to_dir_with_preference(&model_path, StemMode::TwoStem, &out_dir, preference);
+    let (outcome, _) = separate_to_dir_with_preference(
+        &model_path,
+        StemMode::TwoStem,
+        &out_dir,
+        preference,
+        model::SessionOptions::default(),
+    );
     assert_eq!(outcome.stem_mode, StemMode::TwoStem);
     assert_sane_stem(&out_dir.join("vocals.ogg"));
     assert_sane_stem(&out_dir.join("accompaniment.ogg"));
     fs::remove_dir_all(&out_dir).ok();
+}
+
+/// Rejects empty, unequal-length or non-finite outputs so a parity check
+/// cannot pass on a partial comparison.
+#[cfg(target_os = "windows")]
+fn assert_comparable(label: &str, reference: &[f32], candidate: &[f32]) {
+    assert!(!reference.is_empty(), "{label}: reference output is empty");
+    assert_eq!(
+        reference.len(),
+        candidate.len(),
+        "{label}: decoded output lengths differ"
+    );
+    assert!(
+        reference.iter().chain(candidate).all(|s| s.is_finite()),
+        "{label}: decoded output contains non-finite samples"
+    );
+}
+
+#[cfg(target_os = "windows")]
+fn relative_error(reference: &[f32], candidate: &[f32]) -> f64 {
+    let len = reference.len().min(candidate.len());
+    let (mut diff, mut norm) = (0.0f64, 0.0f64);
+    for (r, c) in reference[..len].iter().zip(&candidate[..len]) {
+        diff += (*r as f64 - *c as f64).powi(2);
+        norm += (*r as f64).powi(2);
+    }
+    (diff / norm.max(f64::MIN_POSITIVE)).sqrt()
+}
+
+/// With graph fusion disabled, DirectML must reproduce the CPU stems. The
+/// fused result is only reported: it is correct on most hosts and wrong on
+/// some (an RTX 3070 Ti produced stems thousands of times too loud).
+#[cfg(target_os = "windows")]
+#[test]
+fn directml_without_graph_fusion_matches_cpu() {
+    let Some(model_path) = spectral_model_path() else {
+        eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
+        return;
+    };
+    initialize_test_runtime();
+    if !openkara_lib::config::ExecutionProviderPreference::DirectMl
+        .is_compatible_for_current_platform()
+    {
+        eprintln!("skipping: DirectML is not available on this host");
+        return;
+    }
+
+    const STEMS: [&str; 2] = ["vocals", "accompaniment"];
+    let run = |label: &str, preference, options| {
+        let out_dir = support::unique_temp_path(label);
+        let (_, resolved) = separate_to_dir_with_preference(
+            &model_path,
+            StemMode::TwoStem,
+            &out_dir,
+            preference,
+            options,
+        );
+        if preference == ExecutionProviderPreference::DirectMl {
+            assert_eq!(
+                resolved,
+                ExecutionProviderPreference::DirectMl,
+                "{label}: DirectML preference fell back to {}; parity would pass vacuously on CPU",
+                resolved.as_str()
+            );
+        }
+        let stems = STEMS.map(|stem| decoded_samples(&out_dir.join(format!("{stem}.ogg"))));
+        fs::remove_dir_all(&out_dir).ok();
+        stems
+    };
+    let cpu = run(
+        "phase7-dml-parity-cpu",
+        ExecutionProviderPreference::Cpu,
+        model::SessionOptions::default(),
+    );
+    let fused = run(
+        "phase7-dml-parity-fused",
+        ExecutionProviderPreference::DirectMl,
+        model::SessionOptions::default(),
+    );
+    let unfused = run(
+        "phase7-dml-parity-unfused",
+        ExecutionProviderPreference::DirectMl,
+        model::SessionOptions {
+            disable_directml_graph_fusion: true,
+        },
+    );
+
+    for (index, stem) in STEMS.iter().enumerate() {
+        // Fused output is diagnostic only; unfused must be fully comparable.
+        assert_comparable(&format!("{stem} unfused"), &cpu[index], &unfused[index]);
+        let unfused_error = relative_error(&cpu[index], &unfused[index]);
+        eprintln!(
+            "{stem} relative error vs CPU: fused {:.3e} ({} vs {} samples), unfused {unfused_error:.3e}",
+            relative_error(&cpu[index], &fused[index]),
+            fused[index].len(),
+            cpu[index].len()
+        );
+        assert!(
+            unfused_error < 0.05,
+            "{stem}: unfused DirectML differs from CPU (relative error {unfused_error:.3e})"
+        );
+    }
 }
