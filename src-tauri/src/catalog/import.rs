@@ -94,7 +94,7 @@ impl StreamingImportSession {
         self.work_lease
             .as_ref()
             .map(|lease| lease.cancellation())
-            .unwrap_or_else(crate::source_host::Cancellation::new)
+            .unwrap_or_default()
     }
 
     pub fn with_work_lease(mut self, lease: crate::source_host::WorkLease) -> Self {

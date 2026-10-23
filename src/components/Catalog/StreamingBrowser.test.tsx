@@ -319,23 +319,23 @@ test("load more forwards an opaque continuation rather than treating it as track
   expect(listing.mock.calls[1]).toEqual(["alpha", "signed opaque cursor/?=2"]);
 });
 
-const originalHeight = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "offsetHeight",
+const viewportProps = ["offsetHeight", "clientHeight"] as const;
+const originalViewport = viewportProps.map((prop) =>
+  Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop),
 );
-beforeAll(() =>
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-    configurable: true,
-    get: () => 600,
-  }),
-);
+beforeAll(() => {
+  for (const prop of viewportProps) {
+    Object.defineProperty(HTMLElement.prototype, prop, {
+      configurable: true,
+      get: () => 600,
+    });
+  }
+});
 afterAll(() => {
-  if (originalHeight)
-    Object.defineProperty(
-      HTMLElement.prototype,
-      "offsetHeight",
-      originalHeight,
-    );
+  viewportProps.forEach((prop, index) => {
+    const original = originalViewport[index];
+    if (original) Object.defineProperty(HTMLElement.prototype, prop, original);
+  });
 });
 
 test("selection stays with its source when equal remote ids appear elsewhere", async () => {

@@ -27,24 +27,23 @@ vi.mock("react-i18next", () => ({
 }));
 
 // jsdom has no layout; give scroll containers a viewport so rows render.
-const heightDescriptor = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "offsetHeight",
+const viewportProps = ["offsetHeight", "clientHeight"] as const;
+const originalViewport = viewportProps.map((prop) =>
+  Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop),
 );
 beforeAll(() => {
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-    configurable: true,
-    get: () => 600,
-  });
+  for (const prop of viewportProps) {
+    Object.defineProperty(HTMLElement.prototype, prop, {
+      configurable: true,
+      get: () => 600,
+    });
+  }
 });
 afterAll(() => {
-  if (heightDescriptor) {
-    Object.defineProperty(
-      HTMLElement.prototype,
-      "offsetHeight",
-      heightDescriptor,
-    );
-  }
+  viewportProps.forEach((prop, index) => {
+    const original = originalViewport[index];
+    if (original) Object.defineProperty(HTMLElement.prototype, prop, original);
+  });
 });
 
 const track = (id: string, overrides: Partial<StreamingTrack> = {}) => ({

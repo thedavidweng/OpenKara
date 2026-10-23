@@ -111,6 +111,14 @@ vi.mock("@/components/Settings/ConfirmationDialog", () => ({
 }));
 vi.mock("@/lib/errors", () => ({ notifyError: vi.fn() }));
 
+function rowByLabel(container: HTMLElement, label: string) {
+  const row = Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(label),
+  );
+  if (!row) throw new Error(`missing sidebar row ${label}`);
+  return row;
+}
+
 async function renderSidebar(root: ReturnType<typeof createRoot>) {
   await act(async () => {
     root.render(
@@ -179,16 +187,8 @@ describe("Sidebar catalog source rows", () => {
         </BackendProvider>,
       );
     });
-    (
-      container.querySelector(
-        "[aria-label='sidebar.allTracks']",
-      ) as HTMLButtonElement
-    ).click();
-    (
-      container.querySelector(
-        "[aria-label='sidebar.separated']",
-      ) as HTMLButtonElement
-    ).click();
+    rowByLabel(container, "sidebar.allTracks").click();
+    rowByLabel(container, "sidebar.separated").click();
     sourceRow().click();
     expect(setCatalogView).toHaveBeenCalledWith("library");
     expect(setCatalogView).toHaveBeenCalledWith("alpha");
