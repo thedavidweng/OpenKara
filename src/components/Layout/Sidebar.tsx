@@ -145,7 +145,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </div>
           <button
             type="button"
-            aria-label={t("sidebar.allTracks")}
             onClick={() => {
               setFilter("all");
               setActivePlaylist(null);
@@ -171,7 +170,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </button>
           <button
             type="button"
-            aria-label={t("sidebar.separated")}
             onClick={() => {
               setFilter("separated");
               setActivePlaylist(null);
