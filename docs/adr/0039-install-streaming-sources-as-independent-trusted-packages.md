@@ -48,8 +48,10 @@ current `0374d430d3cf1aa6` and next `71a135edb0fedcf0`. Their raw Ed25519
 public keys are part of the host contract. The matching private keys are
 dedicated to source releases, not application updates. GitHub Actions stores
 them in `openkara-sources`; local recovery copies are in macOS Keychain.
-BWS custody must be verified before the first production publication. A
-configured Actions secret alone does not establish BWS backup.
+BWS custody must be verified before each new key enters production. A
+configured Actions secret alone does not establish BWS backup. The maintainer
+confirmed BWS backup of both keys on 2026-10-23, after `netease-v1.0.0` was
+published.
 
 Support the current and previous protocol major. An incompatible installed or
 pinned package needs an update; keep its credentials and enablement. Verified
