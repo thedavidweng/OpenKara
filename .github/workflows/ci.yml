@@ -580,6 +580,12 @@ jobs:
             tests/release-metadata.test.ts \
             tests/macos-release-signing.test.ts
 
+      - name: Test AppImage delta preparation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsync
+          python3 scripts/test-appimage-zsync.py
+
   dependency-checks:
     name: Dependency surface checks
     needs: triage

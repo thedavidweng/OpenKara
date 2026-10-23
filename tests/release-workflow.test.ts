@@ -310,6 +310,9 @@ describe("release workflow", () => {
     expect(linuxValidationStep).toContain(
       "Expected exactly one Linux updater signature matching",
     );
+    expect(linuxValidationStep).toContain(
+      'cp "$signature" "${appimage}.zsync" "$updater_dir/"',
+    );
     expect(linuxValidationStep).not.toContain("tar.gz");
     expect(linuxValidationStep).not.toContain('name "*.sig"');
 
@@ -362,6 +365,8 @@ describe("release workflow", () => {
       linuxWorkflow,
       "Generate Rust release evidence fragment",
     );
+    expect(linuxEvidenceStep).toContain('-name "*.AppImage.sig"');
+    expect(linuxEvidenceStep).toContain('-o -name "*.AppImage.zsync"');
     expect(linuxEvidenceStep).not.toContain('name "*.tar.gz"');
     expect(linuxEvidenceStep).not.toContain('name "*.sig"');
 
@@ -376,6 +381,33 @@ describe("release workflow", () => {
       "src-tauri/target/release/bundle/**/*setup.exe\n",
     );
     expect(windowsUpdaterStep).toContain("if-no-files-found: error");
+  });
+
+  test("validates AppImage delta files and carries them through publication", () => {
+    const linuxWorkflow = readProjectFile(
+      ".github/workflows/reusable-linux-installed-app-smoke.yml",
+    );
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+    const buildStep = readWorkflowStep(
+      linuxWorkflow,
+      "Build AppImage release candidate with automation smoke entry point",
+    );
+    expect(buildStep).toContain(
+      "LDAI_UPDATE_INFORMATION: gh-releases-zsync|thedavidweng|OpenKara|latest|OpenKara_*_amd64.AppImage.zsync",
+    );
+    expect(
+      buildStep.indexOf("scripts/prepare-appimage-zsync.sh"),
+    ).toBeGreaterThan(buildStep.lastIndexOf("pnpm tauri build"));
+    expect(readWorkflowStep(linuxWorkflow, "Upload AppImage")).toContain(
+      "release/bundle/appimage/*.AppImage.zsync",
+    );
+    expect(releaseWorkflow).toContain('-name "*.AppImage.zsync"');
+    expect(releaseWorkflow).toContain(
+      '"OpenKara_${RELEASE_VERSION}_amd64.AppImage.zsync"',
+    );
+    expect(readProjectFile(".github/workflows/ci.yml")).toContain(
+      "python3 scripts/test-appimage-zsync.py",
+    );
   });
 
   test("publishes non-blocking per-platform bundle size evidence", () => {

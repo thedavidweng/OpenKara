@@ -124,7 +124,8 @@ jobs:
             libxdo-dev \
             patchelf \
             wget \
-            xvfb
+            xvfb \
+            zsync
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -162,7 +163,7 @@ jobs:
           else
             pnpm tauri build --ci --bundles "${bundles}" --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
           fi
-          bash scripts/collect-appimage-zsync.sh "src-tauri/target/${TAURI_TARGET}/release/bundle/appimage"
+          bash scripts/prepare-appimage-zsync.sh "src-tauri/target/${TAURI_TARGET}/release/bundle/appimage"
 
       - name: Build automation driver
         working-directory: src-tauri

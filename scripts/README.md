@@ -1,5 +1,17 @@
 # Scripts
 
+## `prepare-appimage-zsync.sh`
+
+Run `bash scripts/prepare-appimage-zsync.sh <appimage-bundle-directory>` after the
+Linux Tauri build. The script requires `zsyncmake` and `zsync` from the `zsync`
+package. It checks the embedded stable-release AppImageUpdate transport, creates
+`<AppImage>.zsync` from the final AppImage, and reconstructs the AppImage with
+zsync to verify the control file. It does not modify the AppImage.
+
+The Linux installed-app workflow uploads this file with every candidate. Release
+Evidence records its hash, and the release workflow requires the asset before
+publication. Run `python3 scripts/test-appimage-zsync.py` for regression tests.
+
 ## `ci/notarize-macos-release.sh`
 
 Run this script after the Tauri release build and before artifact upload:
