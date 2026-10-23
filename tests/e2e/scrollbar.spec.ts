@@ -297,10 +297,10 @@ test.describe("scrollbar platform contract", () => {
   }) => {
     // Populate enough songs to overflow the virtualized song list. The
     // virtualizer estimates 68px per row + 4px gap, so 60 songs produce
-    // ~4316px of content — far beyond a 400px viewport.
+    // ~4316px of content — far beyond a 640px viewport.
     const songs = generateSongs(60);
 
-    await page.setViewportSize({ width: 1280, height: 400 });
+    await page.setViewportSize({ width: 1280, height: 640 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
 
@@ -314,7 +314,7 @@ test.describe("scrollbar platform contract", () => {
     const songList = page.getByTestId("song-list");
     await expect(songList).toBeVisible();
     // Song 0 is newest under fixed imported_at ordering and must be in the
-    // virtualizer viewport at the top of a 400px list.
+    // virtualizer viewport at the top of the list.
     await expect(page.getByText("Test Song 0")).toBeVisible({
       timeout: 15_000,
     });
@@ -330,7 +330,7 @@ test.describe("scrollbar platform contract", () => {
     // Override the mock lyrics with 60 synced lines so the lyrics viewport
     // overflows.  Then play a song to trigger fetchLyrics.
     const lyrics = generateLyrics(60, "earfquake");
-    await page.setViewportSize({ width: 1280, height: 400 });
+    await page.setViewportSize({ width: 1280, height: 640 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
 
@@ -358,7 +358,7 @@ test.describe("scrollbar platform contract", () => {
     // uses for cross-webview sync.
     const songs = generateSongs(60);
 
-    await page.setViewportSize({ width: 1280, height: 400 });
+    await page.setViewportSize({ width: 1280, height: 640 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
 
