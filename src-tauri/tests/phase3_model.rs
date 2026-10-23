@@ -51,17 +51,19 @@ fn initialize_test_runtime() {
 }
 
 #[test]
-fn loads_embedded_demucs_model_session() {
+fn reuses_runtime_environment_after_model_session_is_dropped() {
     initialize_test_runtime();
-    let loaded = model::load_from_path(
-        &model::default_model_path(),
-        ExecutionProviderPreference::Cpu,
-        model::SessionOptions::default(),
-    )
-    .expect("demucs model should load");
+    for _ in 0..2 {
+        let loaded = model::load_from_path(
+            &model::default_model_path(),
+            ExecutionProviderPreference::Cpu,
+            model::SessionOptions::default(),
+        )
+        .expect("demucs model should load after the previous session was dropped");
 
-    assert!(!loaded.inputs.is_empty());
-    assert!(!loaded.outputs.is_empty());
+        assert!(!loaded.inputs.is_empty());
+        assert!(!loaded.outputs.is_empty());
+    }
 }
 
 #[test]

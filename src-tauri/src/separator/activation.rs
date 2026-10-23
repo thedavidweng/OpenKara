@@ -49,26 +49,26 @@ pub const ORT_RUNTIME_FILENAME: &str = "libonnxruntime.dylib";
 // Process commitment
 // ---------------------------------------------------------------------------
 
-static ORT_RUNTIME_PATH: OnceLock<PathBuf> = OnceLock::new();
+static ORT_RUNTIME: OnceLock<(PathBuf, ort::environment::Environment)> = OnceLock::new();
 static ORT_RUNTIME_INIT_LOCK: Mutex<()> = Mutex::new(());
 
 /// The runtime library committed into this process, when one is loaded.
 /// ORT cannot be unloaded or swapped in place — a different runtime only
 /// takes effect after a restart.
 pub fn loaded_runtime_path() -> Option<&'static Path> {
-    ORT_RUNTIME_PATH.get().map(|path| path.as_path())
+    ORT_RUNTIME.get().map(|(path, _)| path.as_path())
 }
 
 /// The committed runtime, or the error model loading reports when the
 /// managed bootstrap has not finished yet.
-pub(crate) fn ensure_activated() -> Result<&'static Path> {
-    loaded_runtime_path().context(
+pub(crate) fn ensure_activated() -> Result<&'static ort::environment::Environment> {
+    ORT_RUNTIME.get().map(|(_, environment)| environment).context(
         "ONNX Runtime is not initialized; the managed runtime bootstrap must complete before model loading",
     )
 }
 
 pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
+    if let Some((path, _)) = ORT_RUNTIME.get() {
         // Committed runtime is process-final; do not report a different path.
         anyhow::ensure!(
             path.as_path() == runtime_path,
@@ -82,7 +82,7 @@ pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static P
     let _init_guard = ORT_RUNTIME_INIT_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("onnx runtime initialization lock was poisoned"))?;
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
+    if let Some((path, _)) = ORT_RUNTIME.get() {
         anyhow::ensure!(
             path.as_path() == runtime_path,
             "a different ONNX Runtime is already loaded from {}; restart to use {}",
@@ -93,10 +93,8 @@ pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static P
     }
 
     init_ort_from_path(runtime_path)?;
-    Ok(ORT_RUNTIME_PATH
-        .get()
-        .expect("runtime path should be stored after successful initialization")
-        .as_path())
+    Ok(loaded_runtime_path()
+        .expect("runtime path should be stored after successful initialization"))
 }
 
 fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
@@ -115,14 +113,17 @@ fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
         probe_load_windows_runtime(runtime_path).map_err(|message| anyhow::anyhow!(message))?;
     }
 
-    let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
-    anyhow::ensure!(
-        committed,
-        "failed to initialize ONNX Runtime from {} before another ORT environment was configured",
-        runtime_path.display()
-    );
+    let environment = ort::init_from(runtime_path)?
+        .with_name("openkara")
+        .build()
+        .with_context(|| {
+            format!(
+                "failed to initialize ONNX Runtime from {}",
+                runtime_path.display()
+            )
+        })?;
 
-    let _ = ORT_RUNTIME_PATH.set(runtime_path.to_path_buf());
+    let _ = ORT_RUNTIME.set((runtime_path.to_path_buf(), environment));
     Ok(())
 }
 
@@ -265,7 +266,7 @@ fn probe_load_windows_runtime(runtime_path: &Path) -> std::result::Result<(), St
 #[cfg(target_os = "windows")]
 pub(crate) fn preload_directml_companion() -> Result<()> {
     let runtime_path =
-        ensure_activated().context("ONNX Runtime path is not available for DirectML setup")?;
+        loaded_runtime_path().context("ONNX Runtime path is not available for DirectML setup")?;
     let runtime_dir = runtime_path
         .parent()
         .context("ONNX Runtime path has no parent directory")?;

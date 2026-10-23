@@ -292,7 +292,7 @@ fn load_with_ep(
     ep_preference: ExecutionProviderPreference,
     options: SessionOptions,
 ) -> Result<LoadedModel> {
-    activation::ensure_activated()?;
+    let environment = activation::ensure_activated()?;
     let runtime_metadata = read_model_runtime_metadata(path)?;
     // Fail unsupported spectral contracts before creating an ORT session (#172).
     ensure_spectral_core_metadata(&runtime_metadata)
@@ -309,8 +309,8 @@ fn load_with_ep(
         available,
     );
 
-    let mut builder =
-        ort::session::Session::builder().context("failed to create ONNX session builder")?;
+    let mut builder = ort::session::Session::builder(environment)
+        .context("failed to create ONNX session builder")?;
 
     builder = builder
         .with_intra_threads(num_threads)
@@ -774,13 +774,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn directml_registration_failure_is_an_error() {
+        let runtime_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("generated/onnxruntime")
+            .join(ORT_RUNTIME_FILENAME);
+        ensure_runtime_loaded_from_path(&runtime_path).expect("test runtime should initialize");
         let providers = build_execution_provider_list(ExecutionProviderPreference::DirectMl, 1);
         assert_eq!(providers.len(), 1);
-        let debug = format!("{:?}", providers[0]);
+        let builder =
+            ort::session::Session::builder(activation::ensure_activated().unwrap()).unwrap();
         assert!(
-            debug.contains("error_on_failure: true"),
-            "DirectML must not fall back to CPU silently, got {debug}"
+            builder.with_execution_providers(providers).is_err(),
+            "DirectML registration must fail on a platform without DirectML"
         );
     }
 
