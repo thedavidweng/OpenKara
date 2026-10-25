@@ -85,7 +85,7 @@ scripts, or use inherited PATH. Each runtime uses a digest-addressed directory.
 Compatible sources share runtime bytes, not a process.
 
 Flatpak uses `RuntimePolicy::ChannelBundled` with
-`/app/bin/openkara-source-node`, exact version `24.21.0`, and the native target.
+`/app/bin/openkara-source-node`, exact version `24.22.1`, and the native target.
 The package work must provision that path. A missing or incompatible executable
 requires a package/application update. There is no runtime download fallback.
 Both modes execute a bounded version/platform probe and compare exact Node
@@ -226,7 +226,7 @@ credential secrecy from authorized code.
 
 `source_host::tests` uses signed fixture packages, independent generated signing
 keys, and a real pinned Node process. Set `OPENKARA_SOURCE_TEST_NODE` to an
-explicitly prepared Node 24.21.0 executable and run ignored source-host tests.
+explicitly prepared Node 24.22.1 executable and run ignored source-host tests.
 The host itself verifies exact runtime version and architecture. The regular
 suite also covers local-first failed discovery without Node.
 

@@ -33,7 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
 
       # RATIONALE: Both Flatpak generators use only Node built-ins and
       # checked-in lockfiles; no pnpm install is needed. Running

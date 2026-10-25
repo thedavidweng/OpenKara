@@ -79,6 +79,9 @@ impl Cancellation {
     }
 }
 
+/// The Node version that the Flatpak bundles from `packaging/source-runtime.json`.
+pub(crate) const BUNDLED_RUNTIME_VERSION: &str = "24.22.1";
+
 #[derive(Clone)]
 pub enum RuntimePolicy {
     Downloaded,
@@ -115,7 +118,7 @@ impl HostConfig {
         let runtime_policy = if std::env::var_os("FLATPAK_ID").is_some() {
             RuntimePolicy::ChannelBundled {
                 executable: PathBuf::from("/app/bin/openkara-source-node"),
-                version: "24.21.0".into(),
+                version: BUNDLED_RUNTIME_VERSION.into(),
                 target: target.clone(),
             }
         } else {
@@ -346,4 +349,14 @@ pub(crate) struct StoredSource {
 pub(crate) struct StoredState {
     pub generation: u64,
     pub sources: BTreeMap<String, StoredSource>,
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_bundled_runtime_version_matches_the_packaged_pin() {
+        let pin: serde_json::Value =
+            serde_json::from_str(include_str!("../../../packaging/source-runtime.json")).unwrap();
+        assert_eq!(pin["version"], super::BUNDLED_RUNTIME_VERSION);
+    }
 }

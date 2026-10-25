@@ -29,7 +29,7 @@ fn installed_application_downloads_its_runtime_and_restarts_without_system_node(
         &fs::read(root.path().join("streaming-runtime-install.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(installed["runtime"]["version"], "v24.21.0");
+    assert_eq!(installed["runtime"]["version"], "v24.22.1");
     assert_eq!(installed["runtime_delivery"], "managed-download");
     assert_eq!(installed["runtime"]["parent_pid"], installed["app_pid"]);
     #[cfg(target_os = "macos")]
@@ -60,7 +60,7 @@ fn installed_application_downloads_its_runtime_and_restarts_without_system_node(
     )
     .unwrap();
     assert_eq!(restarted["runtime_sha256"], installed["runtime_sha256"]);
-    assert_eq!(restarted["runtime"]["version"], "v24.21.0");
+    assert_eq!(restarted["runtime"]["version"], "v24.22.1");
     assert_eq!(restarted["runtime_delivery"], "managed-download");
     assert_eq!(restarted["runtime"]["parent_pid"], restarted["app_pid"]);
     #[cfg(target_os = "macos")]
@@ -99,7 +99,7 @@ fn flatpak_reuses_its_bundled_runtime_without_installing_an_executable() {
             report["runtime_executable"],
             "/app/bin/openkara-source-node"
         );
-        assert_eq!(report["runtime"]["version"], "v24.21.0");
+        assert_eq!(report["runtime"]["version"], "v24.22.1");
         assert_eq!(report["runtime"]["parent_pid"], report["app_pid"]);
         if let Some(digest) = &previous_digest {
             assert_eq!(&report["runtime_sha256"], digest);

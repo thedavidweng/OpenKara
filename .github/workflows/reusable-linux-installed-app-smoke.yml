@@ -97,7 +97,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
           package-manager-cache: false
 
       - name: Setup Rust
@@ -294,7 +294,7 @@ jobs:
       - name: Setup observation Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
           package-manager-cache: false
 
       - name: Install runtime dependencies and FUSE library
@@ -357,7 +357,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
           package-manager-cache: false
 
       - name: Install smoke runtime dependencies
@@ -560,7 +560,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
           package-manager-cache: false
 
       - name: Download smoke reports

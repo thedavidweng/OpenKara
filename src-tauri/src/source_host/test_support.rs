@@ -48,7 +48,7 @@ impl FixtureDistribution {
             )]),
             RuntimePolicy::ChannelBundled {
                 executable: runtime,
-                version: "24.21.0".into(),
+                version: "24.22.1".into(),
                 target,
             },
         )
@@ -89,7 +89,7 @@ impl FixtureDistribution {
                 .create_async()
                 .await;
             let target = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
-            sources.push(json!({"source_id":package.manifest.source_id,"publisher":package.manifest.publisher,"package_id":package.manifest.package_id,"releases":[{"manifest":package.manifest,"archive":artifact,"runtime":{"version":"24.21.0","targets":{(target):{"url":"https://nodejs.org/fixture-never-download.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":[]}));
+            sources.push(json!({"source_id":package.manifest.source_id,"publisher":package.manifest.publisher,"package_id":package.manifest.package_id,"releases":[{"manifest":package.manifest,"archive":artifact,"runtime":{"version":"24.22.1","targets":{(target):{"url":"https://nodejs.org/fixture-never-download.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":[]}));
         }
         let payload = serde_json::to_vec(
             &json!({"schema_version":1,"generation":self.generation,"sources":sources}),

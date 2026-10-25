@@ -52,7 +52,7 @@ impl Fixture {
         ]);
         config.runtime_policy = RuntimePolicy::ChannelBundled {
             executable: self.runtime.clone(),
-            version: "24.21.0".into(),
+            version: "24.22.1".into(),
             target: config.target.clone(),
         };
         config.allow_test_distribution_http = true;
@@ -106,7 +106,7 @@ impl Fixture {
             .with_body(bytes.clone())
             .create_async()
             .await;
-        let index = json!({"schema_version":1,"generation":self.generation,"sources":[{"source_id":"fixture","publisher":"org.openkara","package_id":"org.openkara.fixture","releases":[{"manifest":manifest,"archive":{"url":format!("{}/package-{version}.tar",self.server.url()),"size":bytes.len(),"sha256":digest,"format":"tar"},"runtime":{"version":"24.21.0","targets":{(self.config().target):{"url":"https://nodejs.org/never-fetched.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":revoked}]});
+        let index = json!({"schema_version":1,"generation":self.generation,"sources":[{"source_id":"fixture","publisher":"org.openkara","package_id":"org.openkara.fixture","releases":[{"manifest":manifest,"archive":{"url":format!("{}/package-{version}.tar",self.server.url()),"size":bytes.len(),"sha256":digest,"format":"tar"},"runtime":{"version":"24.22.1","targets":{(self.config().target):{"url":"https://nodejs.org/never-fetched.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":revoked}]});
         self.index = index.clone();
         let payload = serde_json::to_vec(&index).unwrap();
         let signature = sign_key.unwrap_or(&self.key).sign(&payload);
@@ -417,7 +417,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
     );
     fixture
         .change_index(false, |index| {
-            index["sources"][0]["releases"][0]["runtime"]["version"] = json!("24.21.0");
+            index["sources"][0]["releases"][0]["runtime"]["version"] = json!("24.22.1");
             index["sources"][0]["releases"][0]["manifest"]["protocol"]["majors"] = json!([99]);
         })
         .await;

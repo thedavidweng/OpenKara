@@ -72,7 +72,7 @@ The catalog consumer test builds both archives, signs an index with independent
 ephemeral keys, installs them through `SourceHost`, and runs their real stdio
 processes. Its exact public HTTPS media URLs use constructor-injected public DNS
 addresses and fixture bytes. It does not permit loopback media in production.
-Prepare the exact Node 24.21.0 runtime, then run from `src-tauri`:
+Prepare the exact Node 24.22.1 runtime, then run from `src-tauri`:
 
 ```sh
 OPENKARA_SOURCE_TEST_NODE=/absolute/path/to/node \
