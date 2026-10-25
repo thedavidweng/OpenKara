@@ -240,7 +240,7 @@ jobs:
             os: macos-14
             ort_target: aarch64-apple-darwin
             artifact_prefix: release-separation-smoke-aarch64-apple
-    uses: ./.github/workflows/reusable-separation-smoke.yml
+    uses: $/.github/workflows/reusable-separation-smoke.yml
     with:
       name: ${{ matrix.name }}
       os: ${{ matrix.os }}
@@ -253,7 +253,7 @@ jobs:
     # Display scaling matrix stays on Nightly to keep release wall-clock shorter.
     name: Release Windows installed-app smoke
     needs: [prepare-release, verify-nightly-evidence]
-    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-windows-installed-app
@@ -278,7 +278,7 @@ jobs:
     # One arch for install lifecycle. Publish still builds Intel + AS installers.
     name: Release macOS installed-app smoke (Apple Silicon)
     needs: [prepare-release, verify-nightly-evidence]
-    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-macos-installed-app-aarch64
@@ -305,7 +305,7 @@ jobs:
   release-macos-intel-installed-smoke:
     name: Release macOS installed-app smoke (Intel)
     needs: [prepare-release, verify-nightly-evidence]
-    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-macos-installed-app-x86_64
@@ -332,7 +332,7 @@ jobs:
   release-linux-installed-smoke:
     name: Release Linux installed-app smoke (x64)
     needs: [prepare-release, verify-nightly-evidence]
-    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-linux-installed-app-smoke.yml
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-linux-installed-app-x86_64

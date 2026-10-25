@@ -98,7 +98,7 @@ jobs:
             os: macos-15-intel
             ort_target: x86_64-apple-darwin
             artifact_prefix: nightly-separation-smoke-x86_64-apple
-    uses: ./.github/workflows/reusable-separation-smoke.yml
+    uses: $/.github/workflows/reusable-separation-smoke.yml
     with:
       name: ${{ matrix.name }}
       os: ${{ matrix.os }}
@@ -108,7 +108,7 @@ jobs:
 
   windows-installed-app:
     name: Windows installed app smoke
-    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-windows-installed-app
@@ -137,7 +137,7 @@ jobs:
             rust_target: x86_64-apple-darwin
             tauri_target: x86_64-apple-darwin
             artifact_prefix: nightly-macos-installed-app-x86_64
-    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: ${{ matrix.artifact_prefix }}
@@ -150,7 +150,7 @@ jobs:
 
   linux-installed-app:
     name: Linux installed app smoke (x64)
-    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-linux-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-linux-installed-app-x86_64

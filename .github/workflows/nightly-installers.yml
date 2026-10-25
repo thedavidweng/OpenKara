@@ -84,7 +84,7 @@ jobs:
     name: Nightly Windows installer (x64)
     needs: check
     if: needs.check.outputs.should_build == 'true'
-    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-dist-windows-x64
@@ -100,7 +100,7 @@ jobs:
     name: Nightly macOS installer (Apple Silicon)
     needs: check
     if: needs.check.outputs.should_build == 'true'
-    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-dist-macos-aarch64
@@ -115,7 +115,7 @@ jobs:
     name: Nightly macOS installer (Intel)
     needs: check
     if: needs.check.outputs.should_build == 'true'
-    uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-dist-macos-x86_64
@@ -130,7 +130,7 @@ jobs:
     name: Nightly Linux installer (x64)
     needs: check
     if: needs.check.outputs.should_build == 'true'
-    uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml
+    uses: $/.github/workflows/reusable-linux-installed-app-smoke.yml
     with:
       openkara_version: "0.0.0-nightly"
       artifact_prefix: nightly-dist-linux-x86_64

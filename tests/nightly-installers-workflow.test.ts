@@ -40,13 +40,13 @@ describe("nightly installers workflow", () => {
 
   test("reuses the installed-app build workflows instead of a bespoke build", () => {
     expect(workflow).toContain(
-      "uses: ./.github/workflows/reusable-windows-installed-app.yml",
+      "uses: $/.github/workflows/reusable-windows-installed-app.yml",
     );
     expect(workflow).toContain(
-      "uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml",
+      "uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml",
     );
     expect(workflow).toContain(
-      "uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml",
+      "uses: $/.github/workflows/reusable-linux-installed-app-smoke.yml",
     );
     // Nightly never runs the release build path: release_build stays off, no
     // signing secrets, and therefore no tauri.release.conf.json overlay.

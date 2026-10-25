@@ -39,7 +39,7 @@ permissions:
 jobs:
   windows-installed-app:
     name: Windows installed-app (branch)
-    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-test"
       artifact_prefix: test-windows-installed-app

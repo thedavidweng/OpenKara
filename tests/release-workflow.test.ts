@@ -53,20 +53,20 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain("release-separation-smoke:");
     expect(releaseWorkflow).toContain("name: Release separation smoke");
     expect(releaseWorkflow).toContain(
-      "uses: ./.github/workflows/reusable-separation-smoke.yml",
+      "uses: $/.github/workflows/reusable-separation-smoke.yml",
     );
     expect(releaseWorkflow).toContain("release-windows-installed-smoke:");
     expect(releaseWorkflow).toContain("Release Windows installed-app smoke");
     expect(releaseWorkflow).toContain(
-      "uses: ./.github/workflows/reusable-windows-installed-app.yml",
+      "uses: $/.github/workflows/reusable-windows-installed-app.yml",
     );
     expect(releaseWorkflow).toContain("release-macos-installed-smoke:");
     expect(releaseWorkflow).toContain(
-      "uses: ./.github/workflows/reusable-macos-installed-app-smoke.yml",
+      "uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml",
     );
     expect(releaseWorkflow).toContain("release-linux-installed-smoke:");
     expect(releaseWorkflow).toContain(
-      "uses: ./.github/workflows/reusable-linux-installed-app-smoke.yml",
+      "uses: $/.github/workflows/reusable-linux-installed-app-smoke.yml",
     );
 
     expect(separationWorkflow).toContain("./scripts/setup.sh");
