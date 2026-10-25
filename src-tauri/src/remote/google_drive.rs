@@ -194,6 +194,23 @@ fn google_drive_api_url(path: &str) -> CommandResult<Url> {
     })
 }
 
+/// A resumable session URL receives the bearer token. It comes from a
+/// `Location` header or from the transfer database, so accept it only over
+/// TLS on the Google API host.
+fn google_drive_session_url(location: &str) -> CommandResult<Url> {
+    let url = Url::parse(location).map_err(|_| {
+        CommandError::from(LibraryError::Internal(
+            "Google Drive resumable session URL is not a valid URL".to_owned(),
+        ))
+    })?;
+    if url.scheme() != "https" || url.host_str() != Some("www.googleapis.com") {
+        return Err(CommandError::from(LibraryError::Internal(
+            "Google Drive resumable session URL is not on the Google API origin".to_owned(),
+        )));
+    }
+    Ok(url)
+}
+
 /// Process-wide lock that serializes Google Drive token refresh. Without
 /// this, concurrent provider instances would all fire refresh requests
 /// simultaneously when the token expires.
@@ -547,7 +564,7 @@ pub(crate) fn google_drive_begin_resumable_upload(
     parent_id: &str,
     file_name: &str,
     total_size: u64,
-) -> CommandResult<String> {
+) -> CommandResult<Url> {
     let url = google_drive_api_url("/upload/drive/v3/files?uploadType=resumable")?;
     let metadata = serde_json::json!({
         "name": file_name,
@@ -565,16 +582,16 @@ pub(crate) fn google_drive_begin_resumable_upload(
             response.status()
         ))));
     }
-    response
+    let location = response
         .headers()
         .get("Location")
         .and_then(|v| v.to_str().ok())
-        .map(str::to_owned)
         .ok_or_else(|| {
             CommandError::from(LibraryError::Internal(
                 "Google Drive resumable upload response missing Location header".to_owned(),
             ))
-        })
+        })?;
+    google_drive_session_url(location)
 }
 
 pub(crate) fn google_drive_begin_resumable_upload_existing(
@@ -582,7 +599,7 @@ pub(crate) fn google_drive_begin_resumable_upload_existing(
     secret: &mut GoogleDriveSecret,
     file_id: &str,
     total_size: u64,
-) -> CommandResult<String> {
+) -> CommandResult<Url> {
     let url = google_drive_api_url(&format!(
         "/upload/drive/v3/files/{file_id}?uploadType=resumable"
     ))?;
@@ -598,25 +615,25 @@ pub(crate) fn google_drive_begin_resumable_upload_existing(
             response.status()
         ))));
     }
-    response
+    let location = response
         .headers()
         .get("Location")
         .and_then(|v| v.to_str().ok())
-        .map(str::to_owned)
         .ok_or_else(|| {
             CommandError::from(LibraryError::Internal(
                 "Google Drive resumable upload response missing Location header".to_owned(),
             ))
-        })
+        })?;
+    google_drive_session_url(location)
 }
 
 pub(crate) fn google_drive_query_resumable_offset(
-    session_url: &str,
+    session_url: &Url,
     access_token: &str,
     total_size: u64,
 ) -> CommandResult<u64> {
     let response = crate::remote::net_policy::shared_http_client()
-        .put(session_url)
+        .put(session_url.clone())
         .bearer_auth(access_token)
         .header("Content-Range", format!("bytes */{total_size}"))
         .header("Content-Length", "0")
@@ -658,7 +675,7 @@ pub(crate) fn google_drive_query_resumable_offset(
 }
 
 pub(crate) fn google_drive_upload_chunk(
-    session_url: &str,
+    session_url: &Url,
     access_token: &str,
     start: u64,
     total_size: u64,
@@ -666,7 +683,7 @@ pub(crate) fn google_drive_upload_chunk(
 ) -> CommandResult<()> {
     let end = start + chunk.len() as u64 - 1;
     let response = crate::remote::net_policy::shared_http_client()
-        .put(session_url)
+        .put(session_url.clone())
         .bearer_auth(access_token)
         .header("Content-Range", format!("bytes {start}-{end}/{total_size}"))
         .header("Content-Length", chunk.len().to_string())
@@ -703,8 +720,9 @@ pub(crate) fn google_drive_resumable_upload(
 
     let (session_url, mut offset) = match existing_session {
         Some((url, off)) if off > 0 && off < total => {
-            let server_offset = google_drive_query_resumable_offset(url, &token, total)?;
-            (url.to_owned(), server_offset)
+            let url = google_drive_session_url(url)?;
+            let server_offset = google_drive_query_resumable_offset(&url, &token, total)?;
+            (url, server_offset)
         }
         _ => {
             let url = if let Some(fid) = file_id {
@@ -722,7 +740,7 @@ pub(crate) fn google_drive_resumable_upload(
                 })?;
                 google_drive_begin_resumable_upload(app_data_dir, secret, pid, fname, total)?
             };
-            progress(&url, 0);
+            progress(url.as_str(), 0);
             (url, 0)
         }
     };
@@ -732,11 +750,11 @@ pub(crate) fn google_drive_resumable_upload(
         let chunk = &bytes[offset as usize..chunk_end];
         google_drive_upload_chunk(&session_url, &token, offset, total, chunk)?;
         offset = chunk_end as u64;
-        progress(&session_url, offset);
+        progress(session_url.as_str(), offset);
     }
 
     let final_response = crate::remote::net_policy::shared_http_client()
-        .put(&session_url)
+        .put(session_url.clone())
         .bearer_auth(&token)
         .header("Content-Range", format!("bytes */{total}"))
         .header("Content-Length", "0")
@@ -1770,6 +1788,21 @@ mod tests {
     use super::*;
     use crate::remote::types::BundledGoogleDriveInstalledClient;
     use tempfile::tempdir;
+
+    #[test]
+    fn resumable_session_urls_stay_on_the_google_api_origin() {
+        let session =
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=abc";
+        assert_eq!(google_drive_session_url(session).unwrap().as_str(), session);
+        for rejected in [
+            "http://www.googleapis.com/upload/drive/v3/files?upload_id=abc",
+            "https://attacker.example/upload?upload_id=abc",
+            "https://www.googleapis.com.attacker.example/upload",
+            "not a url",
+        ] {
+            assert!(google_drive_session_url(rejected).is_err(), "{rejected}");
+        }
+    }
 
     #[test]
     fn resolves_google_drive_credentials_from_non_ui_source() {
