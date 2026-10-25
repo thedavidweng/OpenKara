@@ -11,12 +11,3 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 [[profile.default.overrides]]
 filter = 'binary(phase3_inference)'
 slow-timeout = { period = "90s", terminate-after = 3 }
-
-# This test compares real read latency against a 100 ms budget on a paced,
-# latency-shaped local stream. Beside the CPU-bound inference binaries on a
-# shared macOS runner, scheduler stalls alone exceeded the budget (196 ms and
-# 183 ms on two runs). Run it with the whole thread pool reserved so only the
-# download code under test can stall the reader.
-[[profile.default.overrides]]
-filter = 'test(a_high_latency_320kbps_stream_never_starves_the_reader)'
-threads-required = "num-cpus"
