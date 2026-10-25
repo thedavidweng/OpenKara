@@ -586,11 +586,18 @@ mod tests {
                     if stream.write_all(head.as_bytes()).is_err() {
                         return;
                     }
-                    for chunk in part.chunks(link.tick_bytes) {
+                    // Pace against a fixed schedule. A relative sleep per tick
+                    // lets every oversleep accumulate, and a loaded host with
+                    // coalesced timers then runs the link far below its rate.
+                    let sending = Instant::now();
+                    for (index, chunk) in part.chunks(link.tick_bytes).enumerate() {
                         if stream.write_all(chunk).is_err() {
                             return;
                         }
-                        std::thread::sleep(link.tick);
+                        let due = sending + link.tick * (index as u32 + 1);
+                        if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                            std::thread::sleep(wait);
+                        }
                     }
                 });
             }
@@ -653,7 +660,8 @@ mod tests {
     /// (consumption at 160 KB/s, link at 640 KB/s) so the test runs in seconds;
     /// the round trip is not compressed, which is harsher than real time. A
     /// per-chunk fetcher pays 150 ms for every chunk and cannot keep up; one
-    /// sequential download must never leave a read waiting.
+    /// sequential download must never leave a read waiting: the bytes of every
+    /// read are on disk before the reader asks for them.
     #[test]
     fn a_high_latency_320kbps_stream_never_starves_the_reader() {
         let data = body(1_000_000);
@@ -684,26 +692,31 @@ mod tests {
             Duration::from_secs(10),
         )
         .expect("buffered");
+        assert_eq!(
+            cache.cached_length_from(0, startup),
+            startup,
+            "startup bytes never arrived"
+        );
 
         let mut buffer = [0u8; 8_000];
         let mut offset = 0usize;
-        let mut worst = Duration::ZERO;
         let began = Instant::now();
         while offset < data.len() {
             let paced = began + Duration::from_millis(50) * (offset / 8_000) as u32;
             if let Some(wait) = paced.checked_duration_since(Instant::now()) {
                 std::thread::sleep(wait);
             }
-            let asked = Instant::now();
+            let wanted = (data.len() - offset).min(buffer.len());
+            assert_eq!(
+                cache.cached_length_from(offset as u64, wanted as u64),
+                wanted as u64,
+                "the reader caught up with the download at byte {offset}"
+            );
             let read = io::Read::read(&mut source, &mut buffer).expect("read");
-            worst = worst.max(asked.elapsed());
+            assert_eq!(read, wanted);
             assert_eq!(&buffer[..read], &data[offset..offset + read]);
             offset += read;
         }
-        assert!(
-            worst < Duration::from_millis(100),
-            "a read waited {worst:?} for data"
-        );
         assert_eq!(server.starts.lock().expect("starts").len(), 1);
     }
 
