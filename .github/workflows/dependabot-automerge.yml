@@ -24,8 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write # gh pr merge --auto needs it to merge the branch once checks pass.
+      pull-requests: write # gh pr review approves and gh pr merge enables auto-merge on the PR.
     steps:
       - name: Dependabot metadata
         id: meta
