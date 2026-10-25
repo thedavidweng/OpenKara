@@ -1020,7 +1020,7 @@ mod tests {
         let mock = MockFetcher::new(vec![Err(FetchError::HttpStatus(500)), Ok(data.clone())]);
 
         let (_tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1060,7 +1060,7 @@ mod tests {
         let mock = MockFetcher::new(vec![Err(FetchError::HttpStatus(403))]);
 
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1102,7 +1102,7 @@ mod tests {
         ]);
 
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1147,7 +1147,7 @@ mod tests {
         ]);
 
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1259,7 +1259,7 @@ mod tests {
             Ok(data),
         ]);
         let (tx, _event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1328,7 +1328,7 @@ mod tests {
         let mock = MockFetcher::new(vec![Err(FetchError::RangeNotSupported)]);
 
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {
@@ -1363,7 +1363,7 @@ mod tests {
         let mock = MockFetcher::new(vec![Ok(vec![42u8; 10])]);
         let boxed: Box<dyn HttpFetcher> = Box::new(mock);
 
-        let result = boxed.fetch_range("http://example.com", 0, 10).unwrap();
+        let result = boxed.fetch_range("https://example.com", 0, 10).unwrap();
         assert_eq!(result, vec![42u8; 10]);
     }
 
@@ -1388,7 +1388,7 @@ mod tests {
             };
             super::fetch_loop(
                 &fetcher,
-                "http://example.com/test",
+                "https://example.com/test",
                 &cache_clone,
                 &rx,
                 &event_tx,
@@ -1688,7 +1688,7 @@ mod tests {
         ]);
 
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
-            "http://example.com/test.mp3".to_string(),
+            "https://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             Box::new(mock),
             RetryConfig {

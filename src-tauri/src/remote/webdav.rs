@@ -1352,6 +1352,11 @@ mod tests {
         assert!(result.ends_with(".db"));
     }
 
+    /// The test server accepts any credentials, so each test uses a fresh one.
+    fn test_password() -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+
     struct TestWebDavServer {
         base_url: String,
         directories: Arc<Mutex<HashSet<String>>>,
@@ -1482,7 +1487,7 @@ mod tests {
         let secret = WebDavSecret {
             root_url: root_url.clone(),
             username: "openkara".to_owned(),
-            password: "secret".to_owned(),
+            password: test_password(),
         };
         let first_library =
             test_remote_library(first_working_copy.path(), &server.base_url, &root_url);
@@ -1554,7 +1559,7 @@ mod tests {
         let secret = WebDavSecret {
             root_url: root_url.clone(),
             username: "openkara".to_owned(),
-            password: "secret".to_owned(),
+            password: test_password(),
         };
         let library = test_remote_library(working_copy.path(), &server.base_url, &root_url);
 
@@ -1573,11 +1578,12 @@ mod tests {
         let client = webdav_client().unwrap();
         let url = join_url(&server.base_url, "song.bin").unwrap();
         let body: Vec<u8> = (0..200_000).map(|i| (i % 256) as u8).collect();
-        upload_webdav_bytes(&client, &url, body.clone(), "openkara", "secret").unwrap();
+        let password = test_password();
+        upload_webdav_bytes(&client, &url, body.clone(), "openkara", &password).unwrap();
 
         let dest_dir = tempdir().unwrap();
         let dest_path = dest_dir.path().join("nested/out.bin");
-        let etag = download_webdav_file(&client, &url, &dest_path, "openkara", "secret").unwrap();
+        let etag = download_webdav_file(&client, &url, &dest_path, "openkara", &password).unwrap();
 
         assert!(
             etag.is_some(),
@@ -1613,7 +1619,7 @@ mod tests {
             WebDavSecret {
                 root_url: "https://example.invalid/OpenKara/".to_owned(),
                 username: "openkara".to_owned(),
-                password: "secret".to_owned(),
+                password: test_password(),
             },
             &library,
         );
