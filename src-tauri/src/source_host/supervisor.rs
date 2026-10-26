@@ -30,7 +30,9 @@ impl SourceHost {
                 if instance.alive() {
                     return Ok(instance.clone());
                 }
-                live.schedule_retry(self.inner.config.backoff_unit);
+                if instance.backs_off_after_stop() {
+                    live.schedule_retry(self.inner.config.backoff_unit);
+                }
                 live.instance = None;
             }
             if live.failures >= 4 {
@@ -200,13 +202,10 @@ impl SourceHost {
                 let staged = source.staged.is_some();
                 let live = state.sources.entry(id.clone()).or_default();
                 let mut changed = false;
-                if live
-                    .instance
-                    .as_ref()
-                    .is_some_and(|instance| !instance.alive())
-                {
-                    live.instance = None;
-                    live.schedule_retry(self.inner.config.backoff_unit);
+                if let Some(stopped) = live.instance.take_if(|instance| !instance.alive()) {
+                    if stopped.backs_off_after_stop() {
+                        live.schedule_retry(self.inner.config.backoff_unit);
+                    }
                     live.error = Some(HostError::new(
                         "source_unavailable",
                         "Source process stopped. Retry or install a source update.",

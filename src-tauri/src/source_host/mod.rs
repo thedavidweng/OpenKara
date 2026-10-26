@@ -1,5 +1,6 @@
 mod discovery;
 mod distribution;
+mod engine;
 mod install;
 mod lifecycle;
 mod media;
@@ -17,8 +18,7 @@ pub use types::*;
 pub use work::WorkLease;
 
 use distribution::{SignedIndexDistribution, SourceDistribution};
-use process::NodeRuntime;
-use runtime::{SourceInstance, SourceRuntime};
+use runtime::{Runtimes, SourceInstance, SourceRuntime};
 use std::{
     collections::BTreeMap,
     fs,
@@ -133,7 +133,7 @@ impl Inner {
         Arc::new(Self {
             config,
             distribution,
-            runtime: Box::new(NodeRuntime::default()),
+            runtime: Box::new(Runtimes::default()),
             state: Mutex::new(state),
             changes,
             starts: Mutex::new(BTreeMap::new()),
@@ -256,6 +256,8 @@ impl SourceHost {
         Ok(host)
     }
 }
+#[cfg(test)]
+mod engine_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
