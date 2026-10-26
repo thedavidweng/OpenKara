@@ -102,8 +102,10 @@ pub struct HostConfig {
     pub(crate) target: String,
     pub(crate) current_protocol: u32,
     pub(crate) idle_timeout: Duration,
+    pub(crate) describe_timeout: Duration,
     pub(crate) operation_timeout: Duration,
     pub(crate) backoff_unit: Duration,
+    pub(crate) engine_memory_limit: usize,
     #[cfg(test)]
     pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)]
@@ -156,8 +158,10 @@ impl HostConfig {
             target,
             current_protocol: 1,
             idle_timeout: Duration::from_secs(60),
+            describe_timeout: Duration::from_secs(10),
             operation_timeout: Duration::from_secs(30),
             backoff_unit: Duration::from_secs(1),
+            engine_memory_limit: 64 * 1024 * 1024,
             #[cfg(test)]
             allow_test_distribution_http: false,
             #[cfg(test)]
@@ -300,7 +304,7 @@ pub(crate) struct Artifact {
     #[serde(default)]
     pub executable: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct RuntimeRelease {
     pub version: String,
     pub targets: BTreeMap<String, Artifact>,
@@ -309,6 +313,7 @@ pub(crate) struct RuntimeRelease {
 pub(crate) struct Release {
     pub manifest: SourceManifest,
     pub archive: Artifact,
+    #[serde(default)]
     pub runtime: RuntimeRelease,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_package: Option<String>,

@@ -73,17 +73,17 @@ may escape the archive root; reject absolute paths, traversal, symlinks, device
 files, duplicate entries, and install scripts. The client never installs npm
 dependencies. `manifest_version` is 1. Required manifest fields:
 
-| Field                                     | Meaning                                                                                                   |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `package_id`, `publisher`, `source_id`    | Stable verified package/publisher/source binding. Lowercase ASCII source id `[a-z][a-z0-9_-]{0,63}`.      |
-| `version`, `minimum_host_version`         | SemVer strings; host uses SemVer ordering.                                                                |
-| `protocol`                                | `{ "majors": [1], "minor": 0 }`; nonempty supported majors.                                               |
-| `runtime`                                 | `{ "kind": "node", "major": 24 }`; exact version and platform bytes come from the signed index, not PATH. |
-| `entry`, `name`, `description`, `license` | Relative entry, plain display text, SPDX expression. No HTML or executable presentation.                  |
-| `capabilities`                            | Known capability strings listed below.                                                                    |
-| `authentication`                          | Auth declaration below.                                                                                   |
-| `requires_authentication`                 | Array of method names that require a verified session.                                                    |
-| `resource_origins`, `media_origins`       | Exact HTTPS origins allowed for resource/media requests, including scoped cookies. No wildcard origins.   |
+| Field                                     | Meaning                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `package_id`, `publisher`, `source_id`    | Stable verified package/publisher/source binding. Lowercase ASCII source id `[a-z][a-z0-9_-]{0,63}`.                                                                                                                                                         |
+| `version`, `minimum_host_version`         | SemVer strings; host uses SemVer ordering.                                                                                                                                                                                                                   |
+| `protocol`                                | `{ "majors": [1], "minor": 0 }`; nonempty supported majors.                                                                                                                                                                                                  |
+| `runtime`                                 | `{ "kind": "node", "major": 24 }`; exact version and platform bytes come from the signed index, not PATH. Protocol major 2 packages use `{ "kind": "openkara-js", "major": 1 }`; see the [embedded engine](source-host.md#embedded-engine-protocol-major-2). |
+| `entry`, `name`, `description`, `license` | Relative entry, plain display text, SPDX expression. No HTML or executable presentation.                                                                                                                                                                     |
+| `capabilities`                            | Known capability strings listed below.                                                                                                                                                                                                                       |
+| `authentication`                          | Auth declaration below.                                                                                                                                                                                                                                      |
+| `requires_authentication`                 | Array of method names that require a verified session.                                                                                                                                                                                                       |
+| `resource_origins`, `media_origins`       | Exact HTTPS origins allowed for resource/media requests, including scoped cookies. No wildcard origins.                                                                                                                                                      |
 
 The signed index uses a dedicated signing key. It binds these identities,
 versions, archive HTTPS URL, byte size, SHA-256, protocol, host requirement,
