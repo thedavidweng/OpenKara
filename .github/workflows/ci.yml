@@ -713,11 +713,6 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
-        env:
-          # Parallel rust-lld of many heavy Tauri integration-test binaries has
-          # hit SIGBUS (Bus error) on GitHub Linux runners. Cap build jobs so
-          # concurrent linkers do not collide under memory pressure.
-          CARGO_BUILD_JOBS: "2"
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             cargo nextest run --no-fail-fast
@@ -725,9 +720,8 @@ jobs:
             # phase5_perf asserts fixed latency thresholds for fixture audio. GitHub's
             # macOS runners have noisy cold metadata probes; Linux remains the CI
             # baseline, while macOS still runs the functional Rust suite.
-            # Filter by binary name — test(phase5_perf) does not match the binary
-            # and still runs backend_performance_report_stays_within_phase5_thresholds.
-            cargo nextest run --no-fail-fast -E '!binary(phase5_perf)'
+            # All integration tests share one binary, so filter by module path.
+            cargo nextest run --no-fail-fast -E '!test(/^phase5_perf::/)'
           fi
         shell: bash
 

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::smoke::{
     run_local_audio_smoke, LocalAudioSmokeConfig, SeparationSmokeMode, SmokeStepStatus,

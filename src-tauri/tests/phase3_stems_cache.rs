@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod support;
+use crate::support;
 
 use lofty::{
     config::WriteOptions,

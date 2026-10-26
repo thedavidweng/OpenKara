@@ -11,7 +11,7 @@
 //!
 //! ```text
 //! OPENKARA_SPECTRAL_MODEL=/path/to/htdemucs.spectral.onnx \
-//!     cargo test --test phase7_spectral_session
+//!     cargo test --test integration phase7_spectral_session::
 //! ```
 
 use std::{
@@ -20,7 +20,7 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::audio::encode::StreamingOggWriter;
 use openkara_lib::{
@@ -44,15 +44,6 @@ fn fixture_path(directory: &str, filename: &str) -> PathBuf {
         .join("fixtures")
         .join(directory)
         .join(filename)
-}
-
-fn initialize_test_runtime() {
-    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("generated")
-        .join("onnxruntime")
-        .join(model::ORT_RUNTIME_FILENAME);
-    model::ensure_runtime_loaded_from_path(&runtime_path)
-        .expect("dev runtime should initialize for spectral session tests");
 }
 
 /// Run streaming separation with the given model and mode into `output_dir`.
@@ -173,7 +164,7 @@ fn spectral_streaming_end_to_end_four_stem() {
         eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
         return;
     };
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
 
     let loaded = model::load_from_path(
         &model_path,
@@ -202,7 +193,7 @@ fn spectral_streaming_end_to_end_two_stem() {
         eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
         return;
     };
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
 
     let out_dir = support::unique_temp_path("phase7-spectral-two");
     let outcome = separate_to_dir(&model_path, StemMode::TwoStem, &out_dir);
@@ -226,7 +217,7 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
         eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
         return;
     };
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
 
     let loaded = model::load_from_path(
         &model_path,
@@ -330,7 +321,7 @@ fn spectral_separation_with_default_platform_preference_is_stable() {
         eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
         return;
     };
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
 
     let preference =
         openkara_lib::config::ExecutionProviderPreference::default_for_current_platform();
@@ -394,7 +385,7 @@ fn directml_without_graph_fusion_matches_cpu() {
         eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
         return;
     };
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     if !openkara_lib::config::ExecutionProviderPreference::DirectMl
         .is_compatible_for_current_platform()
     {

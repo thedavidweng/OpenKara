@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use std::path::PathBuf;
 
@@ -41,18 +41,9 @@ fn managed_runtime_installs_live_under_the_runtimes_root() {
     );
 }
 
-fn initialize_test_runtime() {
-    let runtime_path = repo_root()
-        .join("generated")
-        .join("onnxruntime")
-        .join(model::ORT_RUNTIME_FILENAME);
-    model::ensure_runtime_loaded_from_path(&runtime_path)
-        .expect("CI-prepared runtime should initialize explicitly for model tests");
-}
-
 #[test]
 fn reuses_runtime_environment_after_model_session_is_dropped() {
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     for _ in 0..2 {
         let loaded = model::load_from_path(
             &model::default_model_path(),
@@ -68,7 +59,7 @@ fn reuses_runtime_environment_after_model_session_is_dropped() {
 
 #[test]
 fn fails_with_clear_error_for_missing_model_file() {
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     let missing_path = repo_root().join("models").join("missing-model.onnx");
     let error = model::load_from_path(
         &missing_path,
@@ -108,7 +99,7 @@ fn describes_directml_full_fallback_provider_path() {
 /// Exercises the full XNNPACK -> CPU session-level fallback on the embedded model.
 #[test]
 fn loads_embedded_demucs_model_with_xnnpack_preference() {
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     let loaded = model::load_from_path(
         &model::default_model_path(),
         ExecutionProviderPreference::Xnnpack,

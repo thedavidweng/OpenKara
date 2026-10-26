@@ -141,7 +141,7 @@ jobs:
       - name: Golden stages + spectral unit suite
         working-directory: src-tauri
         shell: bash
-        run: cargo nextest run --no-fail-fast -E 'binary(phase7_spectral) or test(spectral)'
+        run: cargo nextest run --no-fail-fast -E 'test(spectral)'
 
       - name: Candidate streaming + cancellation suite
         working-directory: src-tauri
@@ -149,7 +149,7 @@ jobs:
         env:
           OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
         run: |
-          cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session)'
+          cargo nextest run --no-fail-fast -E 'test(/^phase7_spectral_session::/)'
 
       - name: Measurement harness
         working-directory: src-tauri
@@ -160,7 +160,7 @@ jobs:
           BENCH_TARGET: ${{ matrix.ort_target }}
           BENCH_RELEASE: ${{ steps.spectral.outputs.release }}
         run: |
-          cargo test -q --release --test phase7_spectral_bench -- --nocapture
+          cargo test -q --release --test integration phase7_spectral_bench:: -- --nocapture
           {
             echo "### Spectral candidate bench (${BENCH_TARGET}, release ${BENCH_RELEASE})"
             echo '```json'

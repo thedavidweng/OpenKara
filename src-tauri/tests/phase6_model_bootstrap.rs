@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::{
     commands::{self, error::ErrorCode},
