@@ -1,5 +1,5 @@
 use super::{
-    binding, install, network,
+    binding, engine, install, network,
     runtime::{BoxFuture, Progress},
     test_http,
     types::*,
@@ -160,7 +160,6 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
                 || semver::Version::parse(&manifest.version).is_err()
                 || semver::Version::parse(&manifest.minimum_host_version).is_err()
                 || manifest.protocol.majors.is_empty()
-                || manifest.runtime.kind != "node"
                 || !manifest.entry.ends_with(".mjs")
                 || install::relative(&manifest.entry).is_err()
                 || manifest.name.is_empty()
@@ -168,10 +167,26 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
             {
                 return Err(error());
             }
-            let runtime = semver::Version::parse(&release.runtime.version).map_err(|_| error())?;
-            if runtime.major != manifest.runtime.major
-                || release.runtime.targets.is_empty()
-                || !release.archive.executable.is_empty()
+            match manifest.runtime.kind.as_str() {
+                "node" => {
+                    let runtime =
+                        semver::Version::parse(&release.runtime.version).map_err(|_| error())?;
+                    if runtime.major != manifest.runtime.major || release.runtime.targets.is_empty()
+                    {
+                        return Err(error());
+                    }
+                }
+                engine::RUNTIME_KIND => {
+                    if manifest.runtime.major != engine::RUNTIME_MAJOR
+                        || !release.runtime.version.is_empty()
+                        || !release.runtime.targets.is_empty()
+                    {
+                        return Err(error());
+                    }
+                }
+                _ => return Err(error()),
+            }
+            if !release.archive.executable.is_empty()
                 || release.installed_package.is_some()
                 || release.installed_runtime.is_some()
             {

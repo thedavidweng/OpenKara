@@ -206,12 +206,14 @@ derives the expected job set from the category union. Consumed by the triage
 job in `.github/workflows/ci.yml` and `.github/workflows/packaging.yml`.
 
 - **Input:** newline-delimited filenames (`--files`) or JSON array (`--json`),
-  plus event type (`--event pull_request|push|workflow_dispatch`)
-- **Events:** `pull_request` and `push` are path-aware; `workflow_dispatch`
-  forces full CI. Full multi-platform matrices live on Nightly — see
-  `docs/CI_LAYERS.md`.
+  event type (`--event pull_request|push|schedule|workflow_dispatch`), and
+  optional PR labels (`--labels <json-or-csv>`)
+- **Events:** default `pull_request` runs only the fast job set; `push` (to
+  `main`) and `pull_request` with the `ci:full` label run path-aware fast and
+  heavy jobs; `schedule` and `workflow_dispatch` force full CI. Full
+  multi-platform matrices live on Nightly — see `docs/CI_LAYERS.md`.
 - **Output:** JSON to stdout; `GITHUB_OUTPUT` entries (`expected-jobs`,
-  `run_<job>` booleans, `unknown-files`, `categories`) and
+  `run_<job>` booleans, `heavy-enabled`, `unknown-files`, `categories`) and
   `GITHUB_STEP_SUMMARY` markdown table when those env vars are set
 - **Pure function:** no network or filesystem access beyond stdin — testable
   locally without GitHub API access

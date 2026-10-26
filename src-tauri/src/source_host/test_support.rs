@@ -51,7 +51,10 @@ fn archive(package: &FixturePackage) -> Vec<u8> {
             "manifest.json",
             serde_json::to_vec(&package.manifest).unwrap(),
         ),
-        ("worker.mjs", package.worker.as_bytes().to_vec()),
+        (
+            package.manifest.entry.as_str(),
+            package.worker.as_bytes().to_vec(),
+        ),
         ("package-lock.json", b"{\"lockfileVersion\":3}".to_vec()),
         ("LICENSE", b"AGPL-3.0-only".to_vec()),
         ("NOTICE", b"Deterministic source test fixture".to_vec()),
@@ -102,6 +105,19 @@ impl FixtureDistribution {
             },
         )
     }
+    /// Configuration for sources that run in the embedded engine; it needs no Node.
+    pub(crate) fn engine_config(&self, data_root: PathBuf) -> HostConfig {
+        HostConfig::fixture(
+            data_root,
+            "0.17.0".into(),
+            format!("{}/index.json", self.server.url()),
+            BTreeMap::from([(
+                CURRENT_KEY.into(),
+                self.key.public_key().as_ref().try_into().unwrap(),
+            )]),
+            RuntimePolicy::Downloaded,
+        )
+    }
     pub(crate) fn asset(&self, path: &str) -> Vec<u8> {
         self.assets[path].clone()
     }
@@ -122,7 +138,11 @@ impl FixtureDistribution {
             let bytes = archive(&package);
             let path = archive_path(&package.manifest.source_id, &package.manifest.version);
             let artifact = json!({"url":format!("{}{path}",self.server.url()),"size":bytes.len(),"sha256":digest(&bytes),"format":"tar"});
-            sources.push(json!({"source_id":package.manifest.source_id,"publisher":package.manifest.publisher,"package_id":package.manifest.package_id,"releases":[{"manifest":package.manifest,"archive":artifact,"runtime":{"version":"24.22.1","targets":{(target()):{"url":"https://nodejs.org/fixture-never-download.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":package.revoked_versions}));
+            let mut release = json!({"manifest":package.manifest,"archive":artifact});
+            if package.manifest.runtime.kind == "node" {
+                release["runtime"] = json!({"version":"24.22.1","targets":{(target()):{"url":"https://nodejs.org/fixture-never-download.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}});
+            }
+            sources.push(json!({"source_id":package.manifest.source_id,"publisher":package.manifest.publisher,"package_id":package.manifest.package_id,"releases":[release],"revoked_versions":package.revoked_versions}));
             self.assets.insert(path, bytes);
         }
         self.serve_assets().await;

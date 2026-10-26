@@ -1,4 +1,8 @@
-use super::types::*;
+use super::{
+    engine::{EngineRuntime, RUNTIME_KIND as ENGINE_KIND},
+    process::NodeRuntime,
+    types::*,
+};
 use serde_json::Value;
 use std::{
     future::Future,
@@ -44,6 +48,10 @@ pub(crate) trait SourceInstance: Send + Sync + 'static {
     fn alive(&self) -> bool;
     fn idle_for(&self) -> Duration;
     fn pending_count(&self) -> usize;
+    /// Whether a stop that the host did not request delays the next start.
+    fn backs_off_after_stop(&self) -> bool {
+        true
+    }
     fn send<'a>(
         self: Arc<Self>,
         method: &'a str,
@@ -104,6 +112,80 @@ impl Drop for RequestHandle {
     fn drop(&mut self) {
         self.cancellation.cancel();
     }
+}
+/// Selects the runtime that a release's manifest names.
+#[derive(Default)]
+pub(crate) struct Runtimes {
+    node: NodeRuntime,
+    engine: EngineRuntime,
+}
+impl Runtimes {
+    fn select(&self, release: &Release) -> HostResult<&dyn SourceRuntime> {
+        match release.manifest.runtime.kind.as_str() {
+            "node" => Ok(&self.node),
+            ENGINE_KIND => Ok(&self.engine),
+            _ => Err(HostError::new(
+                "incompatible_plugin",
+                "This source needs a runtime that this OpenKara version does not provide.",
+            )),
+        }
+    }
+}
+impl SourceRuntime for Runtimes {
+    fn supports(&self, config: &HostConfig, release: &Release) -> bool {
+        self.select(release)
+            .is_ok_and(|runtime| runtime.supports(config, release))
+    }
+    fn require_installed(&self, config: &HostConfig, release: &Release) -> HostResult<()> {
+        self.select(release)?.require_installed(config, release)
+    }
+    fn verify_installed(&self, config: &HostConfig, release: &Release) -> HostResult<()> {
+        self.select(release)?.verify_installed(config, release)
+    }
+    fn choose_repair_slot(&self, config: &HostConfig, release: &mut Release) -> HostResult<()> {
+        self.select(release)?.choose_repair_slot(config, release)
+    }
+    fn prepare<'a>(
+        &'a self,
+        config: &'a HostConfig,
+        release: &'a Release,
+        cancel: &'a Cancellation,
+        progress: Progress<'a>,
+    ) -> BoxFuture<'a, HostResult<Box<dyn PreparedRuntime>>> {
+        match self.select(release) {
+            Ok(runtime) => runtime.prepare(config, release, cancel, progress),
+            Err(error) => Box::pin(async move { Err(error) }),
+        }
+    }
+}
+
+const SOURCE_ERROR_CODES: &[&str] = &[
+    "invalid_request",
+    "handshake_required",
+    "incompatible_plugin",
+    "unsupported_operation",
+    "authentication_required",
+    "session_expired",
+    "challenge_expired",
+    "invalid_cursor",
+    "not_found",
+    "network",
+    "rate_limited",
+    "busy",
+    "cancelled",
+    "source_disabled",
+    "source_unavailable",
+    "internal",
+];
+/// Maps a protocol error code that a source reports to the host error that
+/// callers see; source-supplied messages never reach callers.
+pub(crate) fn source_error(code: &str) -> Option<HostError> {
+    SOURCE_ERROR_CODES.contains(&code).then(|| {
+        HostError::new(
+            code,
+            format!("Source request failed ({code}). Retry, sign in, or update the source as appropriate."),
+        )
+    })
 }
 pub(crate) fn unavailable() -> HostError {
     HostError::new(
