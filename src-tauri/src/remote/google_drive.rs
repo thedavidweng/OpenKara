@@ -793,12 +793,12 @@ pub(crate) fn google_drive_download_file(
             google_drive_authorized_request(app_data_dir, secret, Method::GET, url.clone())
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
         Ok(builder)
-    })
-    .map_err(|e| e.to_command_error())?;
+    })?;
     if !response.status().is_success() {
-        return Err(
-            remote_error_from_status(response.status(), "Google Drive download").to_command_error(),
-        );
+        return Err(CommandError::from(remote_error_from_status(
+            response.status(),
+            "Google Drive download",
+        )));
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {

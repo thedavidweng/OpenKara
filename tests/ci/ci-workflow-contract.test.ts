@@ -170,8 +170,37 @@ describe("CI workflow drift protection", () => {
     expect(ciYaml).toContain("run_app-frontend");
     expect(ciYaml).toContain("run_js-quality");
     expect(ciYaml).toContain("run_rust-test");
+    expect(ciYaml).toContain("run_rust-test-macos");
+    expect(ciYaml).toContain("run_rust-test-windows-compile");
     expect(ciYaml).toContain("run_tauri-build-smoke");
     expect(ciYaml).toContain("run_tauri-build");
+    expect(ciYaml).toContain("run_playwright-ui-smoke");
+  });
+
+  test("ci.yml triggers on main push, PR (with label updates), nightly schedule, and manual dispatch", () => {
+    expect(ciYaml).toMatch(
+      /pull_request:\s*\n\s+types:\s*\[opened,\s*synchronize,\s*reopened,\s*labeled,\s*unlabeled\]/,
+    );
+    expect(ciYaml).toMatch(/schedule:\s*\n\s+-\s*cron:/);
+    expect(ciYaml).toContain("workflow_dispatch:");
+    expect(ciYaml).toContain(
+      "PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}",
+    );
+    expect(ciYaml).toContain('--labels "$PR_LABELS"');
+  });
+
+  test("rust-test runs on Linux with Rust caching and rust-test-macos runs on macOS", () => {
+    const rustLinux = extractJobSection(ciYaml, "rust-test");
+    expect(rustLinux).toContain("runs-on: ubuntu-22.04");
+    expect(rustLinux).toContain("swatinem/rust-cache@");
+    expect(rustLinux).not.toContain("macos-14");
+
+    const rustMacos = extractJobSection(ciYaml, "rust-test-macos");
+    expect(rustMacos).toContain("runs-on: macos-14");
+    expect(rustMacos).toContain("swatinem/rust-cache@");
+    expect(rustMacos).toContain(
+      "needs.triage.outputs.run_rust-test-macos == 'true'",
+    );
   });
 
   test("ci-gate verifies expected jobs against actual results", () => {
@@ -206,6 +235,29 @@ describe("CI workflow drift protection", () => {
         result.stdout.toString() + result.stderr.toString(),
       ).toBe(status === "success" ? 0 : 1);
     }
+  });
+
+  test("ci-gate accepts fast-only PR classification even when unknown files exist", () => {
+    const classification = classifyChanges(
+      ["new-unmapped-root-config.xyz"],
+      "pull_request",
+    );
+    const gate = ciYaml.split("  ci-gate:")[1].split("        run: |\n")[1];
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
+      UNKNOWN_FLAG: "true",
+    };
+    for (const job of ALL_JOBS) {
+      env[job.replaceAll("-", "_").toUpperCase()] = classification.run[job]
+        ? "success"
+        : "skipped";
+    }
+    const result = spawnSync("bash", ["-c", gate], { env });
+    expect(
+      result.status,
+      result.stdout.toString() + result.stderr.toString(),
+    ).toBe(0);
   });
 
   test("prepare-model does not run for frontend-only or docs-only changes", () => {
@@ -273,14 +325,17 @@ describe("Packaging workflow contract", () => {
   });
 
   test.each([
-    ["pull_request", true],
-    ["pull_request", false],
-    ["push", true],
-    ["push", false],
-    ["workflow_dispatch", false],
+    ["pull_request", false, true],
+    ["pull_request", false, false],
+    ["pull_request", true, true],
+    ["pull_request", true, false],
+    ["push", true, true],
+    ["push", true, false],
+    ["schedule", true, false],
+    ["workflow_dispatch", true, false],
   ])(
-    "%s packaging changes=%s has matching build and gate requirements",
-    (event, changed) => {
+    "%s full_ci=%s packaging changes=%s has matching build and gate requirements",
+    (event, fullCi, changed) => {
       const condition = packagingYaml.match(
         /  build-flatpak:[\s\S]*?    if: \|\n([\s\S]*?)    runs-on:/,
       )?.[1];
@@ -289,13 +344,19 @@ describe("Packaging workflow contract", () => {
         .split("  packaging-gate:")[1]
         .split("        run: |\n")[1];
       expect(gate).toBeDefined();
-      const required = changed || event === "workflow_dispatch";
+      const required =
+        fullCi &&
+        (changed || event === "schedule" || event === "workflow_dispatch");
       for (const validation of ["success", "failure"]) {
         const expression = condition!
           .replace(/!cancelled\(\)/g, "true")
           .replace(
             /needs\.validate-flatpak\.result/g,
             JSON.stringify(validation),
+          )
+          .replace(
+            /needs\.triage\.outputs\.full_ci/g,
+            JSON.stringify(String(fullCi)),
           )
           .replace(
             /needs\.triage\.outputs\.packaging_(inputs|workflow)/g,
@@ -320,6 +381,7 @@ describe("Packaging workflow contract", () => {
               WINGET: required ? "success" : "skipped",
               FLATPAK_VAL: required ? "success" : "skipped",
               FLATPAK_BUILD: required ? "success" : "skipped",
+              FULL_CI: String(fullCi),
               PKG_INPUTS: String(changed),
               PKG_WORKFLOW: "false",
               REL_META: "false",
@@ -358,6 +420,22 @@ describe("Packaging workflow contract", () => {
     // Top-level pull_request must not carry paths filter; triage handles gating.
     const prTrigger = packagingYaml.match(/pull_request:\s*\n\s+paths:/);
     expect(prTrigger).toBeNull();
+  });
+});
+
+describe("Windows installed-app gate workflow contract", () => {
+  const winGateYaml = readProjectFile(
+    ".github/workflows/windows-installed-app-smoke-test.yml",
+  );
+
+  test("runs on main push, nightly schedule, manual dispatch, and PRs labeled ci:full", () => {
+    expect(winGateYaml).toMatch(/push:\s*\n\s+branches:\s*\n\s+-\s*main/);
+    expect(winGateYaml).toMatch(/schedule:\s*\n\s+-\s*cron:/);
+    expect(winGateYaml).toContain("workflow_dispatch:");
+    expect(winGateYaml).toContain("pull_request:");
+    expect(winGateYaml).toContain(
+      "contains(github.event.pull_request.labels.*.name, 'ci:full')",
+    );
   });
 });
 

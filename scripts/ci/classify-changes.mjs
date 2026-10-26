@@ -100,6 +100,7 @@ const CATEGORY_PATTERNS = {
   rust: [
     "src-tauri/build.rs",
     "src-tauri/src/**",
+    "src-tauri/crates/**",
     "src-tauri/tests/**",
     // Source-tree smoke binaries compile against the production crate and
     // need the same native validation as any other Rust entry point.
@@ -124,7 +125,11 @@ const CATEGORY_PATTERNS = {
     "packaging/flatpak/generated/node-sources.0.json",
   ],
 
-  deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
+  deps_rust: [
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/crates/**/Cargo.toml",
+  ],
 
   ci_workflow: [
     ".github/workflows/ci.yml",
@@ -234,8 +239,29 @@ function classifyFile(file) {
 // ── Job derivation ────────────────────────────────────────────────────
 // Maps category sets to expected job IDs. The workflow job `if:` conditions
 // consume the per-job boolean outputs (`run_<job>`).
+//
+// Heavy platform and browser jobs (`playwright-ui-smoke`, `rust-test-macos`,
+// `rust-test-windows-compile`, `tauri-build-smoke`, `tauri-build`) only run
+// when `heavyEnabled` is true: on `push` (to main), `schedule`,
+// `workflow_dispatch`, or when a PR carries the `ci:full` label.
 
-/** @type {Record<string, (cats: Set<string>, event: string) => boolean>} */
+const FULL_CI_LABEL = "ci:full";
+
+/**
+ * @param {Set<string>} cats
+ * @returns {boolean}
+ */
+function hasRustImpact(cats) {
+  return (
+    cats.has("rust") ||
+    cats.has("model_runtime") ||
+    cats.has("deps_rust") ||
+    cats.has("ci_workflow") ||
+    cats.has("unknown")
+  );
+}
+
+/** @type {Record<string, (cats: Set<string>, event: string, heavyEnabled: boolean) => boolean>} */
 const JOB_RULES = {
   triage: () => true,
   "conventional-commits": (_cats, event) => event === "pull_request",
@@ -266,13 +292,14 @@ const JOB_RULES = {
     cats.has("ci_workflow") ||
     cats.has("unknown"),
 
-  "playwright-ui-smoke": (cats) =>
-    cats.has("frontend_app") ||
-    cats.has("frontend_tooling") ||
-    cats.has("e2e") ||
-    cats.has("deps_js") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "playwright-ui-smoke": (cats, _event, heavyEnabled) =>
+    heavyEnabled &&
+    (cats.has("frontend_app") ||
+      cats.has("frontend_tooling") ||
+      cats.has("e2e") ||
+      cats.has("deps_js") ||
+      cats.has("ci_workflow") ||
+      cats.has("unknown")),
 
   "workflow-lint": () => true,
 
@@ -282,61 +309,33 @@ const JOB_RULES = {
     cats.has("ci_workflow") ||
     cats.has("unknown"),
 
-  "cargo-deny": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "cargo-deny": (cats) => hasRustImpact(cats),
 
-  "dependency-checks": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "dependency-checks": (cats) => hasRustImpact(cats),
 
-  "prepare-model": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "prepare-model": (cats) => hasRustImpact(cats),
 
-  "rust-test": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "rust-test": (cats) => hasRustImpact(cats),
 
-  "rust-test-windows-compile": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "rust-test-macos": (cats, _event, heavyEnabled) =>
+    heavyEnabled && hasRustImpact(cats),
 
-  "tauri-build-smoke": (cats) => {
+  "rust-test-windows-compile": (cats, _event, heavyEnabled) =>
+    heavyEnabled && hasRustImpact(cats),
+
+  "tauri-build-smoke": (cats, _event, heavyEnabled) => {
+    if (!heavyEnabled) {
+      return false;
+    }
     const frontend =
       cats.has("frontend_app") ||
       cats.has("frontend_tooling") ||
       cats.has("deps_js");
-    const heavy =
-      cats.has("rust") ||
-      cats.has("model_runtime") ||
-      cats.has("deps_rust") ||
-      cats.has("ci_workflow") ||
-      cats.has("unknown");
-    return frontend && !heavy;
+    return frontend && !hasRustImpact(cats);
   },
 
-  "tauri-build": (cats) =>
-    cats.has("rust") ||
-    cats.has("model_runtime") ||
-    cats.has("deps_rust") ||
-    cats.has("ci_workflow") ||
-    cats.has("unknown"),
+  "tauri-build": (cats, _event, heavyEnabled) =>
+    heavyEnabled && hasRustImpact(cats),
 };
 
 // All job IDs in declaration order (used by CI Gate and drift tests).
@@ -351,35 +350,74 @@ const HEAVY_JOBS = new Set([
   "dependency-checks",
   "prepare-model",
   "rust-test",
+  "rust-test-macos",
   "rust-test-windows-compile",
   "tauri-build-smoke",
   "tauri-build",
 ]);
+
+/**
+ * Normalize a raw label list (array, JSON array string, or comma-delimited string).
+ * @param {string[] | string | null | undefined} rawLabels
+ * @returns {string[]}
+ */
+export function parseLabels(rawLabels) {
+  if (!rawLabels) {
+    return [];
+  }
+  if (Array.isArray(rawLabels)) {
+    return rawLabels.filter(
+      (item) => typeof item === "string" && item.length > 0,
+    );
+  }
+  const trimmed = String(rawLabels).trim();
+  if (!trimmed || trimmed === "null") {
+    return [];
+  }
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item) => typeof item === "string" && item.length > 0,
+        );
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+  return trimmed
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 // ── Main classify function ────────────────────────────────────────────
 
 /**
  * Classify changed files and derive expected jobs.
  *
- * - `pull_request` and `push` (main): path-aware job set from categories.
- * - `workflow_dispatch`: full CI (manual force / safety path).
- *
- * Full multi-platform and accessibility matrices live on Nightly, not on
- * every main push. Release owns product packaging + Windows #284 core.
+ * - `pull_request` (default): path-aware fast job set only.
+ * - `pull_request` with `ci:full` label: path-aware fast + heavy job set.
+ * - `push` (main): path-aware fast + heavy job set.
+ * - `schedule` and `workflow_dispatch`: full CI (manual/nightly force path).
  *
  * @param {string[]} files - changed file paths
- * @param {string} event - "pull_request" | "push" | "workflow_dispatch"
+ * @param {string} event - "pull_request" | "push" | "schedule" | "workflow_dispatch"
+ * @param {{ labels?: string[] | string | null }} [options]
  * @returns {{
  *   files: string[],
  *   categories: string[],
  *   categoriesByFile: Record<string, string[]>,
  *   unknownFiles: string[],
+ *   heavyEnabled: boolean,
  *   expectedJobs: string[],
  *   expectedSkippedHeavyJobs: string[],
  *   run: Record<string, boolean>,
  * }}
  */
-export function classifyChanges(files, event) {
+export function classifyChanges(files, event, options = {}) {
   // Always classify each file against all known categories. The category
   // data is consumed by both the main CI workflow (for job gating) and the
   // packaging workflow (for packaging-specific gates). Classifying up front
@@ -405,18 +443,26 @@ export function classifyChanges(files, event) {
     }
   }
 
-  // Manual dispatch is the only event that always forces full CI. Main push
-  // and PRs share path-aware gating so a docs-only merge does not rebuild
-  // every platform again after PR green.
-  if (event === "workflow_dispatch") {
+  const labels = new Set(parseLabels(options.labels));
+  const heavyEnabled =
+    event === "push" ||
+    event === "schedule" ||
+    event === "workflow_dispatch" ||
+    (event === "pull_request" && labels.has(FULL_CI_LABEL));
+
+  // Nightly schedule and manual dispatch always force full CI. Main push and
+  // PRs share path-aware gating so a docs-only merge does not rebuild every
+  // platform again after PR green.
+  if (event === "workflow_dispatch" || event === "schedule") {
     const allJobs = ALL_JOBS.filter((job) =>
-      JOB_RULES[job](new Set(["unknown"]), event),
+      JOB_RULES[job](new Set(["unknown"]), event, true),
     );
     return {
       files,
       categories: [...categorySet],
       categoriesByFile,
       unknownFiles,
+      heavyEnabled: true,
       expectedJobs: allJobs,
       expectedSkippedHeavyJobs: [],
       run: Object.fromEntries(ALL_JOBS.map((j) => [j, allJobs.includes(j)])),
@@ -425,7 +471,7 @@ export function classifyChanges(files, event) {
 
   // PR and main push: derive expected jobs from the category union.
   const expectedJobs = ALL_JOBS.filter((job) =>
-    JOB_RULES[job](categorySet, event),
+    JOB_RULES[job](categorySet, event, heavyEnabled),
   );
 
   const expectedSkippedHeavyJobs = HEAVY_JOBS
@@ -441,6 +487,7 @@ export function classifyChanges(files, event) {
     categories: [...categorySet].sort(),
     categoriesByFile,
     unknownFiles,
+    heavyEnabled,
     expectedJobs,
     expectedSkippedHeavyJobs,
     run,
@@ -511,7 +558,7 @@ export function buildStepSummary(result, event) {
 
 /** @param {string[]} argv */
 export function parseArgs(argv) {
-  const args = { files: null, json: null, event: "pull_request" };
+  const args = { files: null, json: null, event: "pull_request", labels: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--files") {
@@ -520,6 +567,8 @@ export function parseArgs(argv) {
       args.json = argv[++i];
     } else if (arg === "--event") {
       args.event = argv[++i];
+    } else if (arg === "--labels") {
+      args.labels = argv[++i];
     }
   }
   return args;
@@ -540,7 +589,7 @@ function main() {
     files = input ? input.split("\n").filter(Boolean) : [];
   }
 
-  const result = classifyChanges(files, args.event);
+  const result = classifyChanges(files, args.event, { labels: args.labels });
   const json = JSON.stringify(result, null, 2);
   console.log(json);
 
@@ -551,6 +600,7 @@ function main() {
       `categories=${JSON.stringify(result.categories)}`,
       `unknown=${result.unknownFiles.length > 0}`,
       `unknown-files=${JSON.stringify(result.unknownFiles)}`,
+      `heavy-enabled=${result.heavyEnabled}`,
       `expected-jobs=${JSON.stringify(result.expectedJobs)}`,
       `expected-skipped-heavy=${JSON.stringify(result.expectedSkippedHeavyJobs)}`,
     ];
@@ -573,6 +623,7 @@ export {
   CATEGORY_REGEXES,
   ALL_JOBS,
   HEAVY_JOBS,
+  FULL_CI_LABEL,
   JOB_RULES,
   globToRegex,
   classifyFile,

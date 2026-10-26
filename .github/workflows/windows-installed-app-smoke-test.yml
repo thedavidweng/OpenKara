@@ -9,6 +9,7 @@ name: Branch Windows installed-app gate
 # suite=full (default on push) keeps keyboard UIA + fault-injection proof.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "src-tauri/src/commands/runtime_bootstrap.rs"
       - "src-tauri/src/separator/runtime_bootstrap.rs"
@@ -18,7 +19,16 @@ on:
       - ".github/workflows/windows-installed-app-smoke-test.yml"
   push:
     branches:
-      - fix/automation-assertions-and-workflows
+      - main
+    paths:
+      - "src-tauri/src/commands/runtime_bootstrap.rs"
+      - "src-tauri/src/separator/runtime_bootstrap.rs"
+      - "src-tauri/src/separator/artifacts.rs"
+      - "src-tauri/src/runtime_bootstrap_regression.rs"
+      - ".github/workflows/reusable-windows-installed-app.yml"
+      - ".github/workflows/windows-installed-app-smoke-test.yml"
+  schedule:
+    - cron: "47 3 * * *"
   workflow_dispatch:
     inputs:
       suite:
@@ -39,6 +49,9 @@ permissions:
 jobs:
   windows-installed-app:
     name: Windows installed-app (branch)
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:full')
     uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-test"
