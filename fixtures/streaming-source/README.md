@@ -8,7 +8,7 @@ music vendor. `worker.mjs` is its stdio entry. Node 24 is the runtime family;
 release signing must pin an exact runtime and platform digests in the index.
 
 The package has one Streaming Playlist (`42`) and three tracks (`1`, `2`, `3`).
-These ids deliberately collide with the existing NetEase behavior fixtures.
+These ids deliberately collide with ids that other Streaming Sources use.
 Their titles and audio differ. It supports playlist browse, track details,
 and import. It does not support search, liked tracks, or preview. The first
 track page has one item; the second has two. Continuation cursors are opaque,

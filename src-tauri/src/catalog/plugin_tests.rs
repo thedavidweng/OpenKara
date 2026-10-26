@@ -48,6 +48,7 @@ fn workflow_package(id: &str, web: bool) -> FixturePackage {
     FixturePackage {
         manifest,
         worker: include_str!("../../../fixtures/streaming-source/workflow-worker.mjs").into(),
+        revoked_versions: Vec::new(),
     }
 }
 const MEDIA_ROOT: &str = "https://raw.githubusercontent.com/thedavidweng/OpenKara/f439d2d94edff292b2f38b10bbe279a2e355e7dc/src-tauri/tests/fixtures/audio/fixture";

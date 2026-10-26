@@ -1,8 +1,15 @@
-use super::types::*;
+use super::{
+    install,
+    runtime::{
+        unavailable, Admission, BoxFuture, PreparedRuntime, Progress, RequestHandle,
+        SourceInstance, SourceRuntime,
+    },
+    types::*,
+};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -16,6 +23,8 @@ use tokio::{
 };
 
 const MAX_LINE: usize = 1024 * 1024;
+const MISSING_RUNTIME: &str =
+    "Source runtime is missing. Reinstall this source to restore verified runtime files.";
 struct Pending {
     result: oneshot::Sender<HostResult<Value>>,
     progress: broadcast::Sender<Value>,
@@ -39,7 +48,7 @@ impl Drop for DispatchGuard {
         if self.writing {
             process.alive.store(false, Ordering::Release);
             tokio::spawn(async move {
-                process.stop().await;
+                process.terminate().await;
             });
         } else if let Some(request) = process.pending.lock().unwrap().remove(&self.id) {
             request.settled.cancel();
@@ -61,56 +70,13 @@ pub(crate) struct Process {
     stopped: Cancellation,
     timeout: Duration,
 }
-pub struct RequestHandle {
-    id: String,
-    receiver: Option<oneshot::Receiver<HostResult<Value>>>,
-    progress: broadcast::Sender<Value>,
-    cancellation: Cancellation,
-    first_progress: Mutex<Option<broadcast::Receiver<Value>>>,
-}
-impl RequestHandle {
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-    pub fn cancel(&self) {
-        self.cancellation.cancel();
-    }
-    pub fn cancellation(&self) -> Cancellation {
-        self.cancellation.clone()
-    }
-    pub fn subscribe_progress(&self) -> broadcast::Receiver<Value> {
-        self.first_progress
-            .lock()
-            .unwrap()
-            .take()
-            .unwrap_or_else(|| self.progress.subscribe())
-    }
-    pub async fn result(mut self) -> HostResult<Value> {
-        self.receiver
-            .take()
-            .expect("request receiver consumed once")
-            .await
-            .unwrap_or_else(|_| Err(unavailable()))
-    }
-}
-impl Drop for RequestHandle {
-    fn drop(&mut self) {
-        self.cancellation.cancel();
-    }
-}
-fn unavailable() -> HostError {
-    HostError::new(
-        "source_unavailable",
-        "Source process stopped. Retry or update the source.",
-    )
-}
 impl Process {
     pub(crate) async fn start(
         executable: &Path,
         package: &Path,
         release: &Release,
         config: &HostConfig,
-        spawn: impl FnOnce(&mut Command) -> HostResult<Child>,
+        admit: Admission<'_>,
     ) -> HostResult<Arc<Self>> {
         let mut command = Command::new(executable);
         command
@@ -138,7 +104,17 @@ impl Process {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
-        let mut child = spawn(&mut command)?;
+        let mut spawned = None;
+        admit(&mut || {
+            spawned = Some(command.spawn().map_err(|_| {
+                HostError::new(
+                    "source_unavailable",
+                    "Source process cannot start. Retry or update this source.",
+                )
+            })?);
+            Ok(())
+        })?;
+        let mut child: Child = spawned.ok_or_else(unavailable)?;
         let input = child.stdin.take().ok_or_else(unavailable)?;
         let output = child.stdout.take().ok_or_else(unavailable)?;
         let process = Arc::new(Self {
@@ -163,22 +139,22 @@ impl Process {
                 match frame {
                     Ok(frame) => {
                         if process.receive(frame).is_err() {
-                            process.stop().await;
+                            process.terminate().await;
                             return;
                         }
                     }
                     Err(_) => {
-                        process.stop().await;
+                        process.terminate().await;
                         return;
                     }
                 }
             }
         });
-        let handshake=process.send("handshake",json!({"protocol_majors":supported(config.current_protocol),"host_version":config.host_version}),true).await?;
+        let handshake=process.dispatch("handshake",json!({"protocol_majors":supported(config.current_protocol),"host_version":config.host_version}),true).await?;
         let result = match handshake.result().await {
             Ok(result) => result,
             Err(error) => {
-                process.stop().await;
+                process.terminate().await;
                 return Err(error);
             }
         };
@@ -189,19 +165,10 @@ impl Process {
             || result["package_id"] != release.manifest.package_id
             || result["package_version"] != release.manifest.version
         {
-            process.stop().await;
+            process.terminate().await;
             return Err(HostError::new("incompatible_plugin","Source handshake does not match the verified package. Install a compatible source update."));
         }
         Ok(process)
-    }
-    pub(crate) fn alive(&self) -> bool {
-        self.alive.load(Ordering::Acquire)
-    }
-    pub(crate) fn idle_for(&self) -> Duration {
-        self.last_used.lock().unwrap().elapsed()
-    }
-    pub(crate) fn pending_count(&self) -> usize {
-        self.pending.lock().unwrap().len()
     }
     async fn enqueue(
         self: &Arc<Self>,
@@ -276,7 +243,7 @@ impl Process {
         *self.last_used.lock().unwrap() = Instant::now();
         Ok((id, receiver, progress, first_progress, settled))
     }
-    pub(crate) async fn send(
+    async fn dispatch(
         self: &Arc<Self>,
         method: &str,
         params: Value,
@@ -312,7 +279,7 @@ impl Process {
                 request.failure = Some(error);
             }
             if handshake {
-                process.stop().await;
+                process.terminate().await;
                 return;
             }
             let grace = async {
@@ -332,16 +299,16 @@ impl Process {
                 .await
                 .map_or(true, |result| result.is_err())
             {
-                process.stop().await;
+                process.terminate().await;
             }
         });
-        Ok(RequestHandle {
+        Ok(RequestHandle::new(
             id,
-            receiver: Some(receiver),
+            receiver,
             progress,
+            first_progress,
             cancellation,
-            first_progress: Mutex::new(Some(first_progress)),
-        })
+        ))
     }
     fn receive(&self, frame: Value) -> HostResult<()> {
         let object = frame.as_object().ok_or_else(unavailable)?;
@@ -403,7 +370,7 @@ impl Process {
         *self.last_used.lock().unwrap() = Instant::now();
         Ok(())
     }
-    pub(crate) async fn stop(&self) {
+    async fn terminate(&self) {
         self.alive.store(false, Ordering::Release);
         if !self.terminating.swap(true, Ordering::AcqRel) {
             self.stopped.cancel();
@@ -420,13 +387,110 @@ impl Process {
         }
     }
 }
-pub(crate) fn supported(current: u32) -> Vec<u32> {
+fn supported(current: u32) -> Vec<u32> {
     if current > 1 {
         vec![current, current - 1]
     } else {
         vec![1]
     }
 }
+impl SourceInstance for Process {
+    fn alive(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
+    }
+    fn idle_for(&self) -> Duration {
+        self.last_used.lock().unwrap().elapsed()
+    }
+    fn pending_count(&self) -> usize {
+        self.pending.lock().unwrap().len()
+    }
+    fn send<'a>(
+        self: Arc<Self>,
+        method: &'a str,
+        params: Value,
+        control: bool,
+    ) -> BoxFuture<'a, HostResult<RequestHandle>> {
+        Box::pin(async move { self.dispatch(method, params, control).await })
+    }
+    fn stop(&self) -> BoxFuture<'_, ()> {
+        Box::pin(self.terminate())
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct NodeRuntime {
+    installs: tokio::sync::Mutex<()>,
+}
+struct NodeLaunch {
+    executable: PathBuf,
+}
+impl SourceRuntime for NodeRuntime {
+    fn supports(&self, config: &HostConfig, release: &Release) -> bool {
+        release
+            .manifest
+            .protocol
+            .majors
+            .iter()
+            .any(|major| supported(config.current_protocol).contains(major))
+            && release.runtime.targets.contains_key(&config.target)
+            && match &config.runtime_policy {
+                RuntimePolicy::Downloaded => true,
+                RuntimePolicy::ChannelBundled {
+                    executable,
+                    version,
+                    target,
+                } => {
+                    version == &release.runtime.version
+                        && target == &config.target
+                        && executable.is_file()
+                }
+            }
+    }
+    fn require_installed(&self, config: &HostConfig, release: &Release) -> HostResult<()> {
+        if let RuntimePolicy::Downloaded = &config.runtime_policy {
+            if !install::runtime_path(config, release)?.exists() {
+                return Err(HostError::new("source_unavailable", MISSING_RUNTIME));
+            }
+        }
+        Ok(())
+    }
+    fn verify_installed(&self, config: &HostConfig, release: &Release) -> HostResult<()> {
+        install::verify_runtime(config, release)
+    }
+    fn choose_repair_slot(&self, config: &HostConfig, release: &mut Release) -> HostResult<()> {
+        install::choose_runtime_slot(config, release)
+    }
+    fn prepare<'a>(
+        &'a self,
+        config: &'a HostConfig,
+        release: &'a Release,
+        cancel: &'a Cancellation,
+        progress: Progress<'a>,
+    ) -> BoxFuture<'a, HostResult<Box<dyn PreparedRuntime>>> {
+        Box::pin(async move {
+            let executable = {
+                let _guard = self.installs.lock().await;
+                install::runtime(config, release, cancel, |done| progress(done, None)).await?
+            };
+            Ok(Box::new(NodeLaunch { executable }) as Box<dyn PreparedRuntime>)
+        })
+    }
+}
+impl PreparedRuntime for NodeLaunch {
+    fn start<'a>(
+        self: Box<Self>,
+        config: &'a HostConfig,
+        release: &'a Release,
+        package: &'a Path,
+        admit: Admission<'a>,
+    ) -> BoxFuture<'a, HostResult<Arc<dyn SourceInstance>>> {
+        Box::pin(async move {
+            let process = Process::start(&self.executable, package, release, config, admit).await?;
+            Ok(process as Arc<dyn SourceInstance>)
+        })
+    }
+}
+
 async fn read_frame(reader: &mut BufReader<tokio::process::ChildStdout>) -> HostResult<Value> {
     let mut line = Vec::new();
     loop {

@@ -62,10 +62,13 @@ pub(crate) fn runtime_path(config: &HostConfig, release: &Release) -> HostResult
             .unwrap_or(&artifact.sha256),
     ))
 }
-pub(crate) fn verify_installed(config: &HostConfig, release: &Release) -> HostResult<()> {
+pub(crate) fn verify_package(config: &HostConfig, release: &Release) -> HostResult<PathBuf> {
     let package = package_path(config, release);
     verify_seal(&package)?;
     validate_package(&package, release)?;
+    Ok(package)
+}
+pub(crate) fn verify_runtime(config: &HostConfig, release: &Release) -> HostResult<()> {
     match &config.runtime_policy {
         RuntimePolicy::Downloaded => {
             let root = runtime_path(config, release)?;
@@ -87,7 +90,7 @@ pub(crate) fn verify_installed(config: &HostConfig, release: &Release) -> HostRe
     }
     Ok(())
 }
-pub(crate) fn choose_repair_slots(config: &HostConfig, release: &mut Release) -> HostResult<()> {
+pub(crate) fn choose_package_slot(config: &HostConfig, release: &mut Release) {
     if package_path(config, release).exists()
         && verify_seal(&package_path(config, release)).is_err()
     {
@@ -97,6 +100,8 @@ pub(crate) fn choose_repair_slots(config: &HostConfig, release: &mut Release) ->
             uuid::Uuid::new_v4()
         ));
     }
+}
+pub(crate) fn choose_runtime_slot(config: &HostConfig, release: &mut Release) -> HostResult<()> {
     if matches!(config.runtime_policy, RuntimePolicy::Downloaded) {
         let root = runtime_path(config, release)?;
         if root.exists() && verify_seal(&root).is_err() {
