@@ -1244,6 +1244,7 @@ fn record_failure(
         }
         RemoteErrorKind::ProviderCapabilityUnavailable
         | RemoteErrorKind::PermissionDenied
+        | RemoteErrorKind::ObjectNotFound
         | RemoteErrorKind::RemoteIntegrityFailed
         | RemoteErrorKind::DiskFull => (OperationState::Failed, LocalState::Dirty),
         RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {

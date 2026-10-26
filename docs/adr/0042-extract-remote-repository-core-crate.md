@@ -17,4 +17,5 @@ Turn `src-tauri` into a Cargo workspace and extract `crates/openkara-remote` as 
 - Desktop and future mobile targets compile the same `openkara-remote` crate for **Refresh Repository** and **Offline Pin** rules.
 - `openkara-remote` must not import `tauri`, desktop window state, or IPC error types.
 - New **Remote Provider** adapters and protocol rules must pass unit and conformance tests inside `openkara-remote` first.
+- The in-memory storage with scripted faults and the conformance suite compile only for tests or with the `testing` feature. Production builds contain no fault injection.
 - [ADR 0018](./0018-remote-repository-module-ownership.md) module ownership continues to apply across the workspace boundary.
