@@ -2,8 +2,11 @@ name: Packaging
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: ["main"]
+  schedule:
+    - cron: "32 3 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -29,6 +32,7 @@ jobs:
       packaging_inputs: ${{ steps.classify.outputs.packaging_inputs }}
       packaging_workflow: ${{ steps.classify.outputs.packaging_workflow }}
       release_metadata: ${{ steps.classify.outputs.release_metadata }}
+      full_ci: ${{ steps.classify.outputs.full_ci }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,19 +80,23 @@ jobs:
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
           node scripts/ci/classify-changes.mjs \
             --files "$(cat changed-files.txt)" \
             --event "$EVENT_NAME" \
+            --labels "$PR_LABELS" \
             > classification.json
 
           # Check whether packaging-impacting categories are present.
           cats=$(jq -r '.categories | join(",")' classification.json)
+          full_ci=$(jq -r '.heavyEnabled' classification.json)
           {
             echo "packaging_inputs=$(echo "$cats" | grep -q 'packaging_inputs' && echo true || echo false)"
             echo "packaging_workflow=$(echo "$cats" | grep -q 'packaging_workflow' && echo true || echo false)"
             echo "release_metadata=$(echo "$cats" | grep -q 'release_metadata' && echo true || echo false)"
+            echo "full_ci=$full_ci"
           } >> "$GITHUB_OUTPUT"
 
   validate-winget:
@@ -96,9 +104,11 @@ jobs:
     needs: triage
     if: |
       !cancelled() &&
+      needs.triage.outputs.full_ci == 'true' &&
       (needs.triage.outputs.packaging_inputs == 'true' ||
        needs.triage.outputs.packaging_workflow == 'true' ||
        needs.triage.outputs.release_metadata == 'true' ||
+       github.event_name == 'schedule' ||
        github.event_name == 'workflow_dispatch')
     runs-on: windows-latest
     timeout-minutes: 30
@@ -202,8 +212,10 @@ jobs:
     needs: triage
     if: |
       !cancelled() &&
+      needs.triage.outputs.full_ci == 'true' &&
       (needs.triage.outputs.packaging_inputs == 'true' ||
        needs.triage.outputs.packaging_workflow == 'true' ||
+       github.event_name == 'schedule' ||
        github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -277,8 +289,10 @@ jobs:
     if: |
       !cancelled() &&
       needs.validate-flatpak.result == 'success' &&
+      needs.triage.outputs.full_ci == 'true' &&
       (needs.triage.outputs.packaging_inputs == 'true' ||
        needs.triage.outputs.packaging_workflow == 'true' ||
+       github.event_name == 'schedule' ||
        github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -407,10 +421,11 @@ jobs:
           PKG_INPUTS: ${{ needs.triage.outputs.packaging_inputs }}
           PKG_WORKFLOW: ${{ needs.triage.outputs.packaging_workflow }}
           REL_META: ${{ needs.triage.outputs.release_metadata }}
+          FULL_CI: ${{ needs.triage.outputs.full_ci }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          echo "Event: $EVENT_NAME"
+          echo "Event: $EVENT_NAME (full_ci=$FULL_CI)"
           echo "Triage: $TRIAGE (packaging_inputs=$PKG_INPUTS, packaging_workflow=$PKG_WORKFLOW, release_metadata=$REL_META)"
           echo "WinGet: $WINGET"
           echo "Flatpak Validate: $FLATPAK_VAL"
@@ -423,12 +438,10 @@ jobs:
 
           fail=0
           should_run_packaging="false"
-          if [ "$PKG_INPUTS" = "true" ] || [ "$PKG_WORKFLOW" = "true" ]; then
-            should_run_packaging="true"
-          fi
-
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            should_run_packaging="true"
+          if [ "$FULL_CI" = "true" ]; then
+            if [ "$PKG_INPUTS" = "true" ] || [ "$PKG_WORKFLOW" = "true" ] || [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              should_run_packaging="true"
+            fi
           fi
 
           if [ "$should_run_packaging" = "true" ]; then
@@ -452,8 +465,10 @@ jobs:
           fi
 
           should_run_winget="false"
-          if [ "$should_run_packaging" = "true" ] || [ "$REL_META" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            should_run_winget="true"
+          if [ "$FULL_CI" = "true" ]; then
+            if [ "$should_run_packaging" = "true" ] || [ "$REL_META" = "true" ]; then
+              should_run_winget="true"
+            fi
           fi
 
           if [ "$should_run_winget" = "true" ]; then
