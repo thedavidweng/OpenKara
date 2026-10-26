@@ -178,7 +178,7 @@ pub(crate) async fn artifact(
     }
     result
 }
-fn extract(
+pub(crate) fn extract(
     archive: &Path,
     output: &Path,
     format: &str,

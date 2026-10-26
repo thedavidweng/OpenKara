@@ -1,4 +1,30 @@
-use super::{incompatible, save, types::*, unknown, SourceHost};
+use super::{
+    incompatible, registry, runtime::PreparedRuntime, save, types::*, unknown, SourceHost,
+};
+use std::path::PathBuf;
+
+const SOURCE_ID_TAKEN: &str =
+    "Another installed source package already uses this source id. Uninstall it before you install this package.";
+
+fn not_listed() -> HostError {
+    HostError::new(
+        "not_found",
+        "No added Source Registry lists this package. Add or refresh the registry.",
+    )
+}
+
+enum Plan {
+    Index(Box<Release>),
+    Registry(Box<registry::Candidate>),
+}
+impl Plan {
+    fn version(&self) -> &str {
+        match self {
+            Self::Index(release) => &release.manifest.version,
+            Self::Registry(candidate) => &candidate.version.version,
+        }
+    }
+}
 
 impl SourceHost {
     fn progress(&self, id: &str, phase: &str, completed: u64, total: Option<u64>) {
@@ -25,39 +51,114 @@ impl SourceHost {
         }
         Ok(())
     }
+    /// Installs or updates an installed source from where it came from: its
+    /// Source Registry package, or the signed index.
     pub async fn install(&self, id: &str, version: Option<&str>) -> HostResult<SourceSnapshot> {
         self.inner.check()?;
         let gate = self.inner.gate(id, true);
         let _guard = gate
             .try_lock()
             .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
-        let selection: HostResult<(Release, Cancellation)> = (|| {
-            let mut state = self.inner.state.lock().unwrap();
-            let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
-            let wanted = version.or(stored.pinned_version.as_deref());
+        self.install_locked(id, version).await
+    }
+    /// Installs a package that an added Source Registry lists. The package
+    /// identity is the registry id and package id; it cannot take a source id
+    /// that another installed package holds.
+    pub async fn install_package(
+        &self,
+        registry_id: &str,
+        package_id: &str,
+        version: Option<&str>,
+    ) -> HostResult<SourceSnapshot> {
+        self.inner.check()?;
+        let identity = PackageIdentity {
+            registry_id: registry_id.into(),
+            package_id: package_id.into(),
+        };
+        let id = registry::package(&self.inner.state.lock().unwrap().registries, &identity)
+            .map(|package| package.source_id.clone())
+            .ok_or_else(not_listed)?;
+        let gate = self.inner.gate(&id, true);
+        let _guard = gate
+            .try_lock()
+            .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
+        self.claim(&id, &identity)?;
+        self.install_locked(&id, version).await
+    }
+    fn claim(&self, id: &str, identity: &PackageIdentity) -> HostResult<()> {
+        let mut state = self.inner.state.lock().unwrap();
+        let owner = identity.owner_binding();
+        if state
+            .stored
+            .sources
+            .get(id)
+            .is_some_and(|source| source.owner_binding == owner)
+        {
+            return Ok(());
+        }
+        let mut stored = state.stored.clone();
+        let source = stored.sources.entry(id.into()).or_default();
+        if source.active.is_some() || source.staged.is_some() {
+            return Err(HostError::new("source_id_taken", SOURCE_ID_TAKEN));
+        }
+        *source = StoredSource {
+            owner_binding: owner,
+            package: Some(identity.clone()),
+            ..StoredSource::default()
+        };
+        save(&self.inner.config, &stored)?;
+        state.stored = stored;
+        state.sources.entry(id.into()).or_default().error = None;
+        drop(state);
+        self.inner.publish(id);
+        Ok(())
+    }
+    fn plan(&self, id: &str, version: Option<&str>) -> HostResult<(Plan, Cancellation)> {
+        let mut state = self.inner.state.lock().unwrap();
+        let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
+        let wanted = version.or(stored.pinned_version.as_deref());
+        let plan = if let Some(identity) = &stored.package {
+            let package = registry::package(&state.registries, identity).ok_or_else(not_listed)?;
+            if package.source_id != id {
+                return Err(HostError::new(
+                    "invalid_package",
+                    "The Source Registry now lists this package under another source id. Ask the registry maintainer.",
+                ));
+            }
+            let version = registry::select(&self.inner.config, package, wanted)?.clone();
+            Plan::Registry(Box::new(registry::Candidate {
+                identity: identity.clone(),
+                package: package.clone(),
+                version,
+            }))
+        } else {
             let source = state
                 .index
                 .as_ref()
                 .and_then(|index| index.sources.iter().find(|source| source.source_id == id))
                 .ok_or_else(unknown)?;
-            let release = source
-                .releases
-                .iter()
-                .filter(|release| {
-                    !stored.revoked.contains(&release.manifest.version)
-                        && wanted.is_none_or(|wanted| wanted == release.manifest.version)
-                        && self.inner.compatible(release)
-                })
-                .max_by_key(|release| semver::Version::parse(&release.manifest.version).ok())
-                .cloned()
-                .ok_or_else(incompatible)?;
-            let cancel = Cancellation::new();
-            let live = state.sources.entry(id.into()).or_default();
-            live.install = Some(cancel.clone());
-            live.error = None;
-            Ok((release, cancel))
-        })();
-        let (mut release, cancel) = match selection {
+            Plan::Index(Box::new(
+                source
+                    .releases
+                    .iter()
+                    .filter(|release| {
+                        !stored.revoked.contains(&release.manifest.version)
+                            && wanted.is_none_or(|wanted| wanted == release.manifest.version)
+                            && self.inner.compatible(release)
+                    })
+                    .max_by_key(|release| semver::Version::parse(&release.manifest.version).ok())
+                    .cloned()
+                    .ok_or_else(incompatible)?,
+            ))
+        };
+        let cancel = Cancellation::new();
+        let live = state.sources.entry(id.into()).or_default();
+        live.install = Some(cancel.clone());
+        live.error = None;
+        Ok((plan, cancel))
+    }
+    async fn install_locked(&self, id: &str, version: Option<&str>) -> HostResult<SourceSnapshot> {
+        let (plan, cancel) = match self.plan(id, version) {
             Ok(selection) => selection,
             Err(error) => {
                 self.inner
@@ -72,17 +173,25 @@ impl SourceHost {
                 return Err(error);
             }
         };
-        let result = async {
-            let config = &self.inner.config;
-            self.inner
-                .distribution
-                .choose_repair_slot(config, &mut release);
-            self.inner
-                .runtime
-                .choose_repair_slot(config, &mut release)?;
-            self.install_release(id, &release, &cancel).await
-        }
-        .await;
+        let planned_version = plan.version().to_string();
+        let result = match plan {
+            Plan::Index(mut release) => {
+                async {
+                    let config = &self.inner.config;
+                    self.inner
+                        .distribution
+                        .choose_repair_slot(config, &mut release);
+                    self.inner
+                        .runtime
+                        .choose_repair_slot(config, &mut release)?;
+                    self.install_release(id, &release, &cancel).await
+                }
+                .await
+            }
+            Plan::Registry(candidate) => {
+                self.install_registry_release(id, &candidate, &cancel).await
+            }
+        };
         {
             let mut state = self.inner.state.lock().unwrap();
             let live = state.sources.entry(id.into()).or_default();
@@ -90,7 +199,7 @@ impl SourceHost {
             live.progress = None;
             if let Err(error) = &result {
                 live.error = Some(error.clone());
-                live.failed_install = Some(release.manifest.version.clone());
+                live.failed_install = Some(planned_version);
             } else {
                 live.failed_install = None;
             }
@@ -121,6 +230,40 @@ impl SourceHost {
                 self.progress(id, "package", done, total)
             })
             .await?;
+        self.stage_candidate(id, release, runtime, package, cancel)
+            .await
+    }
+    async fn install_registry_release(
+        &self,
+        id: &str,
+        candidate: &registry::Candidate,
+        cancel: &Cancellation,
+    ) -> HostResult<()> {
+        let config = &self.inner.config;
+        let release = registry::download(config, candidate, cancel, &|done, total| {
+            self.progress(id, "package", done, total)
+        })
+        .await?;
+        let runtime = self
+            .inner
+            .runtime
+            .prepare(config, &release, cancel, &|_, _| {})
+            .await?;
+        let package = self.inner.verified_package(&release)?;
+        self.stage_candidate(id, &release, runtime, package, cancel)
+            .await
+    }
+    /// Starts a downloaded candidate to pass its compatibility check, then
+    /// stages it to replace the active release once the source is idle.
+    async fn stage_candidate(
+        &self,
+        id: &str,
+        release: &Release,
+        runtime: Box<dyn PreparedRuntime>,
+        package: PathBuf,
+        cancel: &Cancellation,
+    ) -> HostResult<()> {
+        let config = &self.inner.config;
         cancel.check()?;
         self.progress(id, "handshake", 0, None);
         {
