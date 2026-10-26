@@ -1,8 +1,9 @@
+use super::install::extract;
 use super::*;
 use base64::Engine;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::json;
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, fs, io::Write, path::PathBuf};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -549,6 +550,47 @@ async fn approved_stop_waits_for_lease_acknowledgment_and_never_removes_other_so
     fs::write(&library, b"imported library song").unwrap();
     host.uninstall("fixture", false).await.unwrap();
     assert_eq!(fs::read(&library).unwrap(), b"imported library song");
+}
+
+/// Regression for the published Windows failure: the signed index declares the
+/// runtime executable with `/` (e.g. `node-v24.22.1-win-x64/node.exe`), but a
+/// `Path` renders with `\` on Windows. Comparing the rendered string dropped the
+/// executable during extraction, and the install then failed with the generic
+/// `invalid_package` message. Exercise `extract` with a Windows-shaped `.zip`
+/// runtime archive so the comparison is proven on every host platform.
+#[test]
+fn runtime_extract_matches_pinned_executable_by_component() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("runtime.zip");
+    let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, body) in [
+        ("node-v24.22.1-win-x64/node.exe", b"MZ".as_slice()),
+        ("node-v24.22.1-win-x64/LICENSE", b"MIT".as_slice()),
+        ("node-v24.22.1-win-x64/other.dll", b"ignored".as_slice()),
+    ] {
+        zip.start_file(name, options).unwrap();
+        zip.write_all(body).unwrap();
+    }
+    zip.finish().unwrap();
+    let output = root.path().join("files");
+    fs::create_dir(&output).unwrap();
+    extract(
+        &archive,
+        &output,
+        "zip",
+        &Cancellation::new(),
+        Some("node-v24.22.1-win-x64/node.exe"),
+    )
+    .unwrap();
+    let entry = output.join("node-v24.22.1-win-x64/node.exe");
+    assert!(
+        entry.is_file(),
+        "pinned runtime executable must be extracted on every platform"
+    );
+    assert_eq!(fs::read(&entry).unwrap(), b"MZ");
+    assert!(output.join("node-v24.22.1-win-x64/LICENSE").is_file());
+    assert!(!output.join("node-v24.22.1-win-x64/other.dll").exists());
 }
 
 #[tokio::test]

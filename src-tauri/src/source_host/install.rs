@@ -173,7 +173,7 @@ pub(crate) async fn artifact(
     }
     result
 }
-fn extract(
+pub(crate) fn extract(
     archive: &Path,
     output: &Path,
     format: &str,
@@ -182,13 +182,15 @@ fn extract(
 ) -> HostResult<()> {
     let mut seen = BTreeSet::new();
     let mut expanded = 0u64;
-    let selected = |name: &str| {
+    // Archive entry names always use `/`, while `Path` renders with `\` on
+    // Windows. Compare components through `Path` so the pinned runtime entry
+    // matches on every platform instead of relying on the host separator.
+    let selected = |path: &Path| {
         runtime_entry.is_none_or(|entry| {
-            entry == name
-                || name
-                    .rsplit('/')
-                    .next()
-                    .is_some_and(|name| matches!(name, "LICENSE" | "NOTICE" | "LICENSE.txt"))
+            path == Path::new(entry)
+                || path.file_name().is_some_and(|name| {
+                    matches!(name.to_str(), Some("LICENSE" | "NOTICE" | "LICENSE.txt"))
+                })
         })
     };
     let mut member =
@@ -243,7 +245,7 @@ fn extract(
             let kind = mode & 0o170000;
             let name = entry.name().map_err(|_| invalid())?.into_owned();
             let path = relative(&name)?;
-            if !selected(path.to_str().ok_or_else(invalid)?) {
+            if !selected(&path) {
                 continue;
             }
             if kind != 0 && kind != 0o100000 && kind != 0o040000 {
@@ -271,7 +273,7 @@ fn extract(
                 .ok_or_else(invalid)?
                 .to_string();
             let path = relative(&name)?;
-            if !selected(path.to_str().ok_or_else(invalid)?) {
+            if !selected(&path) {
                 continue;
             }
             if !kind.is_file() && !kind.is_dir() {

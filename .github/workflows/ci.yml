@@ -785,6 +785,16 @@ jobs:
           $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
           cargo test -q --lib execution_provider
 
+      # Executes the runtime-archive extraction regression on Windows itself,
+      # not a cross-compile. The pinned executable is declared with `/`, while
+      # a Path renders with `\` here; comparing the rendered string dropped the
+      # executable and surfaced the generic invalid_package error on install.
+      - name: Verify source runtime archive extraction on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::tests::runtime_extract_matches_pinned_executable_by_component
+
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without
   # paying for the 3-platform matrix. Runs when frontend changed but rust
