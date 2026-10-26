@@ -1,74 +1,28 @@
+use super::test_support::{
+    archive_path, fixture_manifest, test_node, FixtureDistribution, FixturePackage, CURRENT_KEY,
+};
 use super::*;
-use base64::Engine;
-use ring::signature::{Ed25519KeyPair, KeyPair};
+use ring::signature::Ed25519KeyPair;
 use serde_json::json;
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, fs};
 
 struct Fixture {
     root: tempfile::TempDir,
-    server: mockito::ServerGuard,
-    key: Ed25519KeyPair,
-    next_key: Ed25519KeyPair,
-    generation: u64,
-    runtime: PathBuf,
-    index: Value,
-    assets: BTreeMap<String, Vec<u8>>,
+    distribution: FixtureDistribution,
 }
 impl Fixture {
     async fn new() -> Self {
-        let runtime = PathBuf::from(
-            std::env::var_os("OPENKARA_SOURCE_TEST_NODE")
-                .expect("prepare pinned Node and set OPENKARA_SOURCE_TEST_NODE"),
-        );
-        let document = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
-        let next = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
         Self {
             root: tempfile::tempdir().unwrap(),
-            server: mockito::Server::new_async().await,
-            key: Ed25519KeyPair::from_pkcs8(document.as_ref()).unwrap(),
-            next_key: Ed25519KeyPair::from_pkcs8(next.as_ref()).unwrap(),
-            generation: 0,
-            runtime,
-            index: Value::Null,
-            assets: BTreeMap::new(),
+            distribution: FixtureDistribution::new().await,
         }
     }
     fn config(&self) -> HostConfig {
-        let mut config = HostConfig::production(
-            self.root.path().to_path_buf(),
-            self.root.path().to_path_buf(),
-            "0.17.0".into(),
-        );
-        config.index_url = format!("{}/index.json", self.server.url());
-        config.trusted_keys = BTreeMap::from([
-            (
-                "test-current".into(),
-                self.key.public_key().as_ref().try_into().unwrap(),
-            ),
-            (
-                "test-next".into(),
-                self.next_key.public_key().as_ref().try_into().unwrap(),
-            ),
-        ]);
-        config.runtime_policy = RuntimePolicy::ChannelBundled {
-            executable: self.runtime.clone(),
-            version: "24.22.1".into(),
-            target: config.target.clone(),
-        };
-        config.allow_test_distribution_http = true;
+        let mut config = self.distribution.config(self.root.path().to_path_buf());
         config.idle_timeout = std::time::Duration::from_millis(80);
         config.operation_timeout = std::time::Duration::from_millis(300);
         config.backoff_unit = std::time::Duration::from_millis(1);
         config
-    }
-    fn manifest(&self, version: &str) -> SourceManifest {
-        let mut manifest: SourceManifest = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../fixtures/streaming-source/manifest.json"
-        )))
-        .unwrap();
-        manifest.version = version.into();
-        manifest
     }
     async fn publish(
         &mut self,
@@ -77,91 +31,16 @@ impl Fixture {
         revoked: Vec<String>,
         sign_key: Option<&Ed25519KeyPair>,
     ) {
-        self.server.reset();
-        self.generation += 1;
-        let manifest = self.manifest(version);
-        let mut archive = tar::Builder::new(Vec::new());
-        for (path, bytes) in [
-            ("manifest.json", serde_json::to_vec(&manifest).unwrap()),
-            ("worker.mjs", worker.as_bytes().to_vec()),
-            ("package-lock.json", b"{\"lockfileVersion\":3}".to_vec()),
-            ("LICENSE", b"AGPL-3.0-only".to_vec()),
-            ("NOTICE", b"Fixture".to_vec()),
-        ] {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(bytes.len() as u64);
-            header.set_mode(0o644);
-            header.set_cksum();
-            archive
-                .append_data(&mut header, path, bytes.as_slice())
-                .unwrap();
-        }
-        let bytes = archive.into_inner().unwrap();
-        let digest = digest(&bytes);
-        self.assets.clear();
-        self.assets
-            .insert(format!("/package-{version}.tar"), bytes.clone());
-        self.server
-            .mock("GET", format!("/package-{version}.tar").as_str())
-            .with_body(bytes.clone())
-            .create_async()
+        self.distribution
+            .publish_signed(
+                vec![FixturePackage {
+                    manifest: fixture_manifest("fixture", version),
+                    worker: worker.into(),
+                    revoked_versions: revoked,
+                }],
+                sign_key,
+            )
             .await;
-        let index = json!({"schema_version":1,"generation":self.generation,"sources":[{"source_id":"fixture","publisher":"org.openkara","package_id":"org.openkara.fixture","releases":[{"manifest":manifest,"archive":{"url":format!("{}/package-{version}.tar",self.server.url()),"size":bytes.len(),"sha256":digest,"format":"tar"},"runtime":{"version":"24.22.1","targets":{(self.config().target):{"url":"https://nodejs.org/never-fetched.tar.gz","size":1,"sha256":"00".repeat(32),"format":"tar.gz","executable":"node/bin/node"}}}}],"revoked_versions":revoked}]});
-        self.index = index.clone();
-        let payload = serde_json::to_vec(&index).unwrap();
-        let signature = sign_key.unwrap_or(&self.key).sign(&payload);
-        let envelope = json!({"key_id":"test-current","payload":base64::engine::general_purpose::STANDARD.encode(payload),"signature":base64::engine::general_purpose::STANDARD.encode(signature.as_ref())});
-        self.server
-            .mock("GET", "/index.json")
-            .with_body(serde_json::to_vec(&envelope).unwrap())
-            .create_async()
-            .await;
-    }
-    async fn change_index(&mut self, next: bool, change: impl FnOnce(&mut Value)) {
-        self.server.reset();
-        self.generation += 1;
-        self.index["generation"] = json!(self.generation);
-        change(&mut self.index);
-        for (path, bytes) in &self.assets {
-            self.server
-                .mock("GET", path.as_str())
-                .with_body(bytes.clone())
-                .create_async()
-                .await;
-        }
-        let payload = serde_json::to_vec(&self.index).unwrap();
-        let key = if next { &self.next_key } else { &self.key };
-        let envelope = json!({"key_id":if next{"test-next"}else{"test-current"},"payload":base64::engine::general_purpose::STANDARD.encode(&payload),"signature":base64::engine::general_purpose::STANDARD.encode(key.sign(&payload).as_ref())});
-        self.server
-            .mock("GET", "/index.json")
-            .with_body(serde_json::to_vec(&envelope).unwrap())
-            .create_async()
-            .await;
-    }
-    async fn append_package(&mut self, extra: impl FnOnce(&mut tar::Builder<Vec<u8>>)) {
-        let (path, old) = self
-            .assets
-            .iter()
-            .next()
-            .map(|(path, bytes)| (path.clone(), bytes.clone()))
-            .unwrap();
-        let mut archive = tar::Archive::new(old.as_slice());
-        let mut output = tar::Builder::new(Vec::new());
-        for entry in archive.entries().unwrap() {
-            let mut entry = entry.unwrap();
-            let header = entry.header().clone();
-            output.append(&header, &mut entry).unwrap();
-        }
-        extra(&mut output);
-        let bytes = output.into_inner().unwrap();
-        let size = bytes.len();
-        let sha256 = digest(&bytes);
-        self.assets.insert(path, bytes);
-        self.change_index(false, |index| {
-            index["sources"][0]["releases"][0]["archive"]["size"] = json!(size);
-            index["sources"][0]["releases"][0]["archive"]["sha256"] = json!(sha256);
-        })
-        .await;
     }
 }
 
@@ -263,7 +142,7 @@ async fn pinned_revoked_release_stays_stopped_after_offline_restart() {
         "incompatible_plugin"
     );
     drop(host);
-    fixture.server.reset();
+    fixture.distribution.server.reset();
     let host = SourceHost::new(fixture.config()).await.unwrap();
     assert!(host.refresh().await.is_err());
     let snapshot = host.snapshot("fixture").unwrap();
@@ -360,7 +239,7 @@ async fn rotated_key_is_accepted_and_owner_claim_cannot_replace_uninstalled_iden
     host.refresh().await.unwrap();
     host.install("fixture", None).await.unwrap();
     host.uninstall("fixture", false).await.unwrap();
-    fixture.change_index(true, |_| {}).await;
+    fixture.distribution.change_index(true, |_| {}).await;
     assert_eq!(
         host.refresh().await.unwrap()[0].owner_binding,
         "org.openkara/org.openkara.fixture"
@@ -375,6 +254,7 @@ async fn rotated_key_is_accepted_and_owner_claim_cannot_replace_uninstalled_iden
     );
     host.uninstall("fixture", false).await.unwrap();
     fixture
+        .distribution
         .change_index(true, |index| {
             index["sources"][0]["publisher"] = json!("org.attacker");
             index["sources"][0]["releases"][0]["manifest"]["publisher"] = json!("org.attacker");
@@ -406,6 +286,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
     host.refresh().await.unwrap();
     host.install("fixture", None).await.unwrap();
     fixture
+        .distribution
         .change_index(false, |index| {
             index["sources"][0]["releases"][0]["runtime"]["version"] = json!("24.22.0");
         })
@@ -416,6 +297,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
         "incompatible_plugin"
     );
     fixture
+        .distribution
         .change_index(false, |index| {
             index["sources"][0]["releases"][0]["runtime"]["version"] = json!("24.22.1");
             index["sources"][0]["releases"][0]["manifest"]["protocol"]["majors"] = json!([99]);
@@ -567,7 +449,7 @@ async fn downloaded_runtime_is_verified_and_shared_without_system_node() {
         )
         .await;
     let mut tar = tar::Builder::new(Vec::new());
-    let bytes = fs::read(&fixture.runtime).unwrap();
+    let bytes = fs::read(test_node()).unwrap();
     let mut header = tar::Header::new_gnu();
     header.set_size(bytes.len() as u64);
     header.set_mode(0o755);
@@ -577,9 +459,10 @@ async fn downloaded_runtime_is_verified_and_shared_without_system_node() {
     let archive = tar.into_inner().unwrap();
     let size = archive.len();
     let hash = digest(&archive);
-    let url = format!("{}/runtime.tar", fixture.server.url());
-    fixture.change_index(false,|index|{let target=index["sources"][0]["releases"][0]["runtime"]["targets"].as_object_mut().unwrap().values_mut().next().unwrap();*target=json!({"url":url,"size":size,"sha256":hash,"format":"tar","executable":"node/bin/node"});}).await;
+    let url = format!("{}/runtime.tar", fixture.distribution.server.url());
+    fixture.distribution.change_index(false,|index|{let target=index["sources"][0]["releases"][0]["runtime"]["targets"].as_object_mut().unwrap().values_mut().next().unwrap();*target=json!({"url":url,"size":size,"sha256":hash,"format":"tar","executable":"node/bin/node"});}).await;
     fixture
+        .distribution
         .server
         .mock("GET", "/runtime.tar")
         .with_body(archive)
@@ -616,7 +499,7 @@ async fn downloaded_runtime_is_verified_and_shared_without_system_node() {
         }
     }
     host.set_enabled("fixture", false, false).await.unwrap();
-    let digest = fixture.index["sources"][0]["releases"][0]["runtime"]["targets"]
+    let digest = fixture.distribution.index["sources"][0]["releases"][0]["runtime"]["targets"]
         .as_object()
         .unwrap()
         .values()
@@ -869,13 +752,15 @@ async fn invalid_archive_bytes_and_handshake_identity_never_replace_usable_code(
     host.install("fixture", None).await.unwrap();
     fixture.publish("1.1.0", worker, vec![], None).await;
     fixture
+        .distribution
         .change_index(false, |index| {
             index["sources"][0]["releases"][0]["archive"]["sha256"] = json!("00".repeat(32));
         })
         .await;
     fixture
+        .distribution
         .server
-        .mock("GET", "/package-1.1.0.tar")
+        .mock("GET", archive_path("fixture", "1.1.0").as_str())
         .with_body("invalid package")
         .create_async()
         .await;
@@ -1007,6 +892,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
     ));
     fixture.publish("1.0.0", worker, vec![], None).await;
     fixture
+        .distribution
         .append_package(|archive| {
             for index in 0..700 {
                 let mut header = tar::Header::new_gnu();
@@ -1028,6 +914,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
     host.install("fixture", None).await.unwrap();
     fixture.publish("1.1.0", worker, vec![], None).await;
     fixture
+        .distribution
         .append_package(|archive| {
             let mut header = tar::Header::new_gnu();
             header.set_size(0);
@@ -1047,6 +934,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
     );
     fixture.publish("1.2.0", worker, vec![], None).await;
     fixture
+        .distribution
         .append_package(|archive| {
             let data = b"{\"scripts\":{\"postinstall\":\"touch host\"}}";
             let mut header = tar::Header::new_gnu();
@@ -1458,7 +1346,7 @@ async fn startup_mutation_and_damaged_staged_files_preserve_previous_release() {
     fixture.publish("1.2.0", worker, vec![], None).await;
     host.refresh().await.unwrap();
     host.install("fixture", None).await.unwrap();
-    let sha = fixture.index["sources"][0]["releases"][0]["archive"]["sha256"]
+    let sha = fixture.distribution.index["sources"][0]["releases"][0]["archive"]["sha256"]
         .as_str()
         .unwrap();
     fs::remove_file(
@@ -1508,7 +1396,7 @@ async fn retired_cached_root_does_not_block_new_trusted_discovery_or_working_ins
     host.set_enabled("fixture", true, false).await.unwrap();
     drop(host);
     let mut config = fixture.config();
-    config.trusted_keys.remove("test-current");
+    config.trusted_keys.remove(CURRENT_KEY);
     let host = SourceHost::new(config).await.unwrap();
     assert_eq!(
         host.request("fixture", "describe", json!({}))
@@ -1516,7 +1404,7 @@ async fn retired_cached_root_does_not_block_new_trusted_discovery_or_working_ins
             .unwrap()["name"],
         "Deterministic Streaming Source"
     );
-    fixture.change_index(true, |_| {}).await;
+    fixture.distribution.change_index(true, |_| {}).await;
     host.refresh().await.unwrap();
 }
 
@@ -1543,7 +1431,7 @@ async fn explicit_reinstall_repairs_damaged_package_without_overwriting_running_
         .await
         .unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Preview).unwrap();
-    let sha = fixture.index["sources"][0]["releases"][0]["archive"]["sha256"]
+    let sha = fixture.distribution.index["sources"][0]["releases"][0]["archive"]["sha256"]
         .as_str()
         .unwrap();
     let original = fixture
@@ -1585,11 +1473,14 @@ async fn revocation_during_download_prevents_candidate_execution() {
     );
     fixture.publish("1.1.0", &startup, vec![], None).await;
     host.refresh().await.unwrap();
-    let bytes = fixture.assets["/package-1.1.0.tar"].clone();
-    fixture.server.reset();
+    let bytes = fixture
+        .distribution
+        .asset(&archive_path("fixture", "1.1.0"));
+    fixture.distribution.server.reset();
     fixture
+        .distribution
         .server
-        .mock("GET", "/package-1.1.0.tar")
+        .mock("GET", archive_path("fixture", "1.1.0").as_str())
         .with_chunked_body(move |stream| {
             std::thread::sleep(Duration::from_millis(300));
             stream.write_all(&bytes)
@@ -1615,16 +1506,11 @@ async fn revocation_during_download_prevents_candidate_execution() {
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    fixture.index["sources"][0]["revoked_versions"] = json!(["1.1.0"]);
-    fixture.generation += 1;
-    fixture.index["generation"] = json!(fixture.generation);
-    let payload = serde_json::to_vec(&fixture.index).unwrap();
-    let envelope = json!({"key_id":"test-current","payload":base64::engine::general_purpose::STANDARD.encode(&payload),"signature":base64::engine::general_purpose::STANDARD.encode(fixture.key.sign(&payload).as_ref())});
     fixture
-        .server
-        .mock("GET", "/index.json")
-        .with_body(serde_json::to_vec(&envelope).unwrap())
-        .create_async()
+        .distribution
+        .reissue_index(false, |index| {
+            index["sources"][0]["revoked_versions"] = json!(["1.1.0"]);
+        })
         .await;
     host.refresh().await.unwrap();
     assert!(install.await.unwrap().is_err());

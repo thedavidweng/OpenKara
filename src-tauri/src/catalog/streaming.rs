@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn sign_out_clears_credentials_disable_does_not() {
-        let source = FakeStreamingSource::new("netease");
+        let source = FakeStreamingSource::new("fixture");
         source.authenticate();
         assert!(source.stored_credentials().is_some());
         let gated = GatedStreamingSource::new(false, &source);
@@ -445,7 +445,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp");
         let path = dir.path().join("track.mp3");
         std::fs::write(&path, b"audio").expect("write");
-        let source = FakeStreamingSource::new("netease");
+        let source = FakeStreamingSource::new("fixture");
         source.authenticate();
         source.insert_track(FakeTrackSpec {
             remote_track_id: "playable".to_owned(),
