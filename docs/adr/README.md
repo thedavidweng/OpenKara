@@ -84,3 +84,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0038 — Preview NetEase tracks by streaming without a library song](./0038-preview-netease-tracks-by-streaming-without-a-library-song.md)
 - [0039 — Install Streaming Sources as independent trusted packages](./0039-install-streaming-sources-as-independent-trusted-packages.md)
 - [0040 — Rebase song-scoped outbox changes on publish](./0040-rebase-song-scoped-changes-on-publish.md)
+- [0042 — Extract a Tauri-free Remote Repository core crate](./0042-extract-remote-repository-core-crate.md)

@@ -88,6 +88,15 @@ describe("classifyFile", () => {
     expect(classifyFile("src-tauri/src/audio/mixer.rs")).toEqual(["rust"]);
   });
 
+  test("Rust workspace crate source is rust", () => {
+    expect(classifyFile("src-tauri/crates/openkara-remote/src/lib.rs")).toEqual(
+      ["rust"],
+    );
+    expect(classifyFile("src-tauri/crates/openkara-remote/Cargo.toml")).toEqual(
+      ["rust", "deps_rust"],
+    );
+  });
+
   test("Rust example is rust", () => {
     expect(classifyFile("src-tauri/examples/local-audio-smoke.rs")).toEqual([
       "rust",

@@ -3175,6 +3175,7 @@ dependencies = [
  "libc",
  "lofty",
  "mockito",
+ "openkara-remote",
  "ort",
  "quick-xml",
  "rand 0.10.3",
@@ -3215,6 +3216,15 @@ dependencies = [
  "vorbis_rs",
  "windows",
  "zip",
+]
+
+[[package]]
+name = "openkara-remote"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
 ]
 
 [[package]]

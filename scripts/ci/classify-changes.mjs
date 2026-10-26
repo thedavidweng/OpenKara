@@ -100,6 +100,7 @@ const CATEGORY_PATTERNS = {
   rust: [
     "src-tauri/build.rs",
     "src-tauri/src/**",
+    "src-tauri/crates/**",
     "src-tauri/tests/**",
     // Source-tree smoke binaries compile against the production crate and
     // need the same native validation as any other Rust entry point.
@@ -124,7 +125,11 @@ const CATEGORY_PATTERNS = {
     "packaging/flatpak/generated/node-sources.0.json",
   ],
 
-  deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
+  deps_rust: [
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/crates/**/Cargo.toml",
+  ],
 
   ci_workflow: [
     ".github/workflows/ci.yml",
