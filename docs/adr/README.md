@@ -85,3 +85,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0039 — Install Streaming Sources as independent trusted packages](./0039-install-streaming-sources-as-independent-trusted-packages.md) (partially superseded by 0041)
 - [0040 — Rebase song-scoped outbox changes on publish](./0040-rebase-song-scoped-changes-on-publish.md)
 - [0041 — Run Streaming Sources as sandboxed packages from user-added registries](./0041-run-streaming-sources-as-sandboxed-packages-from-user-added-registries.md)
+- [0042 — Extract a Tauri-free Remote Repository core crate](./0042-extract-remote-repository-core-crate.md)

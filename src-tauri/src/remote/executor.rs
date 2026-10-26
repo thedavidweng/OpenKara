@@ -103,7 +103,7 @@ pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> C
         }
         Err(remote_err) => {
             record_failure(ctx, &op, &remote_err)?;
-            Err(remote_err.to_command_error())
+            Err(remote_err.into())
         }
     }
 }
@@ -442,7 +442,7 @@ fn run_publish_protocol(
     };
     let manifest_json = manifest
         .to_json()
-        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
 
     let committed_meta = ctx.provider.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
