@@ -1,5 +1,3 @@
-#![cfg(feature = "automation-smoke")]
-
 use std::{fs, process::Command};
 
 #[test]

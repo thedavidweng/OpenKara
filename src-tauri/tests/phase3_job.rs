@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::{
     cache,
@@ -36,15 +36,6 @@ fn cleanup_dir(path: &Path) {
     }
 }
 
-fn initialize_test_runtime() {
-    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("generated")
-        .join("onnxruntime")
-        .join(model::ORT_RUNTIME_FILENAME);
-    model::ensure_runtime_loaded_from_path(&runtime_path)
-        .expect("CI-prepared runtime should initialize explicitly for job tests");
-}
-
 fn fixture_song(hash: &str, library: &LibraryRoot) -> Song {
     let src = fixture_path("audio", "fixture.wav");
     let relative = format!("media/{hash}.wav");
@@ -73,7 +64,7 @@ fn fixture_song(hash: &str, library: &LibraryRoot) -> Song {
 
 #[test]
 fn separation_job_reports_monotonic_progress_and_hits_cache_on_second_run() {
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
 

@@ -6,6 +6,7 @@ authors = ["OpenKara contributors"]
 license = "AGPL-3.0-only"
 edition = "2021"
 default-run = "openkara"
+autotests = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -36,6 +37,12 @@ required-features = ["automation-driver"]
 name = "openkara_release_evidence"
 path = "src/bin/openkara_release_evidence.rs"
 required-features = ["automation-driver"]
+
+# One integration test binary: every file in tests/ is a module of
+# tests/integration.rs, so a library change links the application once.
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
 
 [build-dependencies]
 cc = "1"

@@ -11,7 +11,10 @@ use openkara_lib::{
         lrcapi::LrcApiClient,
         lrclib::LrcLibClient,
     },
-    separator::verified_manifest::{sha256_hex, write_verified_manifest},
+    separator::{
+        model,
+        verified_manifest::{sha256_hex, write_verified_manifest},
+    },
     state::{AppState, PlaybackState},
 };
 use rusqlite::Connection;
@@ -20,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard, PoisonError,
     },
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -29,7 +32,34 @@ use tauri::test::{mock_app, MockRuntime};
 
 static TEMP_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[allow(dead_code)]
+/// Serializes integration tests that change process-wide state: environment
+/// variables, the current directory, a library singleton, or the ONNX Runtime
+/// sessions. All integration tests run in one process, so such a change is
+/// visible to every concurrent test. The guard ignores poisoning so one failing
+/// test does not fail the others.
+pub fn process_state_lock() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Commits the CI-prepared ONNX Runtime for this process and holds the
+/// process-state lock while the caller uses model sessions. The commit is
+/// process-final, so every test must load the same library. Concurrent model
+/// sessions from different test modules exhaust memory on small machines.
+/// Product code resolves and verifies the runtime only through the managed
+/// installer.
+#[must_use = "hold the guard while the test uses model sessions"]
+pub fn acquire_test_runtime() -> MutexGuard<'static, ()> {
+    let guard = process_state_lock();
+    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("generated")
+        .join("onnxruntime")
+        .join(model::ORT_RUNTIME_FILENAME);
+    model::ensure_runtime_loaded_from_path(&runtime_path)
+        .expect("CI-prepared ONNX Runtime should initialize for integration tests");
+    guard
+}
+
 pub fn unique_temp_path(prefix: &str) -> PathBuf {
     // Parallel integration tests were colliding on timestamp-only names and deleting each
     // other's fixtures. A per-process counter keeps temp paths unique even when the clock
@@ -46,7 +76,6 @@ pub fn unique_temp_path(prefix: &str) -> PathBuf {
     ))
 }
 
-#[allow(dead_code)]
 pub fn acquire_and_persist_lyrics(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -67,9 +96,6 @@ pub fn acquire_and_persist_lyrics(
 /// startup verification manifest — the exact on-disk shape a real streaming
 /// install leaves behind. Used by the phase6 integration tests to stage a
 /// trusted install without exercising the network download path.
-// Not every integration-test binary that pulls in this shared support module
-// stages a managed install, so this helper is dead code in some of them.
-#[allow(dead_code)]
 pub fn install_verified_model_bytes(
     destination: &Path,
     payload: &[u8],
@@ -108,7 +134,6 @@ pub fn install_verified_model_bytes(
 ///
 /// The output thread is marked started because CI machines have no audio
 /// device; everything else is the production wiring.
-#[allow(dead_code)]
 pub struct PlaybackHarness {
     app: tauri::App<MockRuntime>,
     state: AppState,
@@ -116,7 +141,6 @@ pub struct PlaybackHarness {
     app_data_dir: PathBuf,
 }
 
-#[allow(dead_code)]
 impl PlaybackHarness {
     pub fn new(library: &LibraryRoot) -> Self {
         let app = mock_app();

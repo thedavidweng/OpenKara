@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::{
     cache,
@@ -33,20 +33,9 @@ fn cleanup_dir(path: &Path) {
     }
 }
 
-// Tests initialize the CI-prepared shared library explicitly. Product code must
-// still resolve and verify Runtime exclusively through the managed installer.
-fn initialize_test_runtime() {
-    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("generated")
-        .join("onnxruntime")
-        .join(model::ORT_RUNTIME_FILENAME);
-    model::ensure_runtime_loaded_from_path(&runtime_path)
-        .expect("CI-prepared runtime should initialize explicitly for backend flow tests");
-}
-
 #[test]
 fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode() {
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
     let fixture_dir = unique_temp_dir("phase5-fixture");
     cleanup_dir(&fixture_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");

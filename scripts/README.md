@@ -94,7 +94,7 @@ The current workflow does not produce Flatpak acceptance evidence. The
 Flathub policy decision remains separate from sandbox execution.
 
 For the opt-in real-process test, run
-`cargo test --features automation-smoke --test streaming_runtime_smoke -- --ignored`
+`cargo test --features automation-smoke --test integration streaming_runtime_smoke:: -- --ignored`
 on the target operating system with network access. Distributed candidates,
 not a development executable, are required for platform acceptance.
 

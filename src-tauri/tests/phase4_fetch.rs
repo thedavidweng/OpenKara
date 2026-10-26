@@ -3,11 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::support;
 use lofty::{
     config::WriteOptions,
     tag::{ItemKey, Tag, TagExt, TagType},
 };
-mod support;
 
 use openkara_lib::{
     cache,

@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::support;
 use lofty::{
     config::WriteOptions,
     file::{AudioFile, TaggedFileExt},
@@ -11,7 +12,6 @@ use lofty::{
     probe::Probe,
     tag::{Tag, TagType},
 };
-mod support;
 
 use openkara_lib::{
     cache::{self, lyrics},

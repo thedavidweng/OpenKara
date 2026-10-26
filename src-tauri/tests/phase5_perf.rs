@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-mod support;
+use crate::support;
 
 use openkara_lib::{
     cache,
