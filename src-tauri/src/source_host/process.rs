@@ -1,7 +1,7 @@
 use super::{
     install,
     runtime::{
-        unavailable, Admission, BoxFuture, PreparedRuntime, Progress, RequestHandle,
+        source_error, unavailable, Admission, BoxFuture, PreparedRuntime, Progress, RequestHandle,
         SourceInstance, SourceRuntime,
     },
     types::*,
@@ -336,31 +336,10 @@ impl Process {
             let request = pending.remove(id).ok_or_else(unavailable)?;
             let result = if let Some(error) = object.get("error") {
                 let code = error["code"].as_str().ok_or_else(unavailable)?;
-                if ![
-                    "invalid_request",
-                    "handshake_required",
-                    "incompatible_plugin",
-                    "unsupported_operation",
-                    "authentication_required",
-                    "session_expired",
-                    "challenge_expired",
-                    "invalid_cursor",
-                    "not_found",
-                    "network",
-                    "rate_limited",
-                    "busy",
-                    "cancelled",
-                    "source_disabled",
-                    "source_unavailable",
-                    "internal",
-                ]
-                .contains(&code)
-                    || error["message"].as_str().is_none()
-                    || error["retryable"].as_bool().is_none()
-                {
+                if error["message"].as_str().is_none() || error["retryable"].as_bool().is_none() {
                     return Err(unavailable());
                 }
-                Err(HostError::new(code,format!("Source request failed ({code}). Retry, sign in, or update the source as appropriate.")))
+                Err(source_error(code).ok_or_else(unavailable)?)
             } else {
                 Ok(frame["result"].clone())
             };

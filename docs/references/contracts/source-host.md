@@ -91,6 +91,30 @@ requires a package/application update. There is no runtime download fallback.
 Both modes execute a bounded version/platform probe and compare exact Node
 version, platform, and architecture with the signed release.
 
+### Embedded engine (protocol major 2)
+
+A release with runtime kind `openkara-js` and major 1 runs in the embedded
+QuickJS engine, not in a Node process. The signed index lists an empty runtime
+version and no runtime targets for this kind. The host reads the manifest
+`entry` file as one ES module. It does not download a runtime or start a
+process. The module's default export is an object. Each protocol method is a
+method of that object with the method name. The host calls the method with the
+request params as one JSON argument. The method returns a JSON-compatible
+value or a promise. A thrown object with a known protocol error `code` becomes
+that error; other throws become `internal`. A missing method returns
+`unsupported_operation`. A result is at most 1 MiB of JSON.
+
+Each running source has its own engine runtime, context, and thread. Sources
+share no globals. The context has no `eval` and no `Function` constructor
+(including the async and generator variants). The host calls `describe` first
+with a 10-second deadline. The result must contain protocol major 2 and the
+manifest `source_id`, `package_id`, and `package_version`; otherwise the host
+returns `incompatible_plugin` and stops the source. Other operations have the
+30-second operation deadline. Each source has a 64 MiB memory limit and a
+1 MiB script stack limit. When a source passes a deadline or a limit, the host
+stops the source and returns `source_unavailable` to all of its pending calls.
+The next call starts the source fresh. An embedded source has no crash-restart
+backoff.
 Package archives contain the protocol manifest, relative `.mjs` entry,
 `package-lock.json`, `LICENSE`, `NOTICE`, and locked production dependencies.
 The host rejects traversal, absolute paths, links, devices, duplicate paths,
