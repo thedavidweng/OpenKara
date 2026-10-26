@@ -17,8 +17,16 @@ The provider-specific folder, path, or URL. A remote provider stores a **Remote 
 _Avoid_: Locator, root, cloud folder
 
 **Local Working Copy**:
-The local cached copy of a **Remote Repository**. OpenKara opens and edits it.
+The local cached copy of a **Remote Repository**. Desktop opens and edits it. A phone opens it read-only.
 _Avoid_: Local mirror, cache
+
+**Read-Only Local Working Copy**:
+A phone's **Local Working Copy** of a **Remote Repository**. The phone refreshes and reads it, but never edits or publishes it.
+_Avoid_: Offline library, synced phone library, phone mirror
+
+**Offline Pin**:
+A user mark on a **Remote Repository** song that keeps its verified media files in the local cache for offline playback. The media cache exempts pinned songs from LRU eviction.
+_Avoid_: Offline download, local import, permanent cache
 
 **Repository Credentials**:
 The OAuth tokens or WebDAV username and password. They let OpenKara access a **Remote Repository**.
@@ -65,7 +73,7 @@ The automatic refresh. OpenKara performs it before a local edit. The remote revi
 _Avoid_: Conflict merge, background sync
 
 **Pre-Publish Conflict**:
-A safety stop. It occurs when the remote revision changes after the local edit. This happens before OpenKara publishes the result.
+A safety stop before **Publish Changes** commits. It occurs when a newer **Remote Revision** also changed a song in the local outbox, or when the local outbox contains a whole-repository change. It names the conflicting songs.
 _Avoid_: Sync failure, upload error
 
 **Online Source (在线来源)**:
@@ -190,6 +198,8 @@ _Avoid_: Official romanization, TTML roman, x-roman
 
 - A **Remote Repository** belongs to exactly one **Remote Provider** account and one **Remote Repository Location**.
 - A **Remote Repository** has one **Local Working Copy** on each device. The device opens it.
+- A phone opens a **Read-Only Local Working Copy**. It performs **Refresh Repository** and never performs **Publish Changes**, **Publish Song**, **Mirror Local Library**, or **Delete Repository**.
+- An **Offline Pin** keeps a song's verified media in the local cache and exempts it from LRU cache eviction. It does not turn the song into a standalone local library song.
 - A **Local Working Copy** records the last known **Remote Revision**. This prevents conflicts.
 - **Repository Credentials** grant access to a **Remote Repository**. They are not the repository itself.
 - **Reauthorize Repository** updates **Repository Credentials** for the same **Remote Repository**. It must not change the **Remote Repository Location**.
@@ -202,7 +212,8 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - **Disconnect Repository** removes OpenKara's local registration and credentials. It leaves repository contents in place.
 - **Delete Repository** removes repository contents and then disconnects the repository from OpenKara.
 - A **Pre-Mutation Refresh** can proceed automatically. The system did not apply the user edit yet.
-- A **Pre-Publish Conflict** stops publication. The remote database is newer than the finished local edit. If OpenKara publishes the edit, it could overwrite another device.
+- When the **Remote Revision** moves after a local edit, **Publish Changes** rebases song-scoped outbox changes onto the newer remote database for every song that the other device did not change.
+- A **Pre-Publish Conflict** stops publication only for songs that both devices changed and for whole-repository changes. It names the conflicting songs so OpenKara never overwrites another device silently.
 - **Lyrics Acquisition** may perform a **Word-timed Upgrade** when the
   cached winner is **Line-timed Lyrics** from an **Online Lyrics Source**. A
   Word-timed Upgrade does not replace manual, sidecar, or embedded lyrics.
@@ -250,7 +261,7 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - People treated "Remove" and "delete" as similar Settings actions. Resolved: **Disconnect Repository** preserves repository contents. **Delete Repository** deletes them from storage.
 - People treated "Reconnect provider" and "update credentials" as separate user recovery actions. Resolved: use **Reauthorize Repository (重新授权)** for both OAuth renewal and WebDAV credential renewal. The remote repository location must not change.
 - "Overwrite the old one" during reauthorization means OpenKara replaces its registered remote location. It does not delete or write over data at the old remote location. Resolved: call this **Relocate Repository**. It requires explicit confirmation with a cancel path.
-- People used remote revision conflicts as one broad failure class. Resolved: **Pre-Mutation Refresh** is automatic. **Pre-Publish Conflict** is a user-visible safety stop.
+- People used remote revision conflicts as one broad failure class. Resolved: **Pre-Mutation Refresh** is automatic, **Publish Changes** automatically rebases song-scoped edits to songs the other device did not touch, and **Pre-Publish Conflict** is a user-visible safety stop only for songs both devices changed or for whole-repository changes.
 - People used "provider" for NetEase, Kugou, or YouTube. Resolved: **Remote Provider** stays storage-only. Streaming brands are **Streaming Sources**. YouTube is a **Video Source**.
 - People used "catalog" for an importable music service. That reads as Last.fm or ListenBrainz. Resolved: use **Streaming Source**.
 - People used "online source" for AMLL, LRCLIB, and LrcApi. That collides with **Online Source**. Resolved: those lookups are **Online Lyrics Sources**. Last.fm and ListenBrainz are **Scrobblers**.
