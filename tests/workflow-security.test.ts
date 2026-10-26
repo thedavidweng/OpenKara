@@ -132,7 +132,7 @@ describe("workflow security", () => {
       "Prepare ONNX Runtime",
     ).filter((step) => step.includes("ORT_TARGET: ${{ matrix.ort_target }}"));
 
-    expect(matrixPrepareSteps).toHaveLength(2);
+    expect(matrixPrepareSteps).toHaveLength(1);
 
     for (const step of matrixPrepareSteps) {
       expect(step).toContain("shell: bash");
