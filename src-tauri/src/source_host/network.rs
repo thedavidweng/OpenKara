@@ -23,7 +23,7 @@ pub(crate) fn origin(value: &str) -> HostResult<String> {
     }
     Ok(url.origin().ascii_serialization())
 }
-fn invalid() -> HostError {
+pub(crate) fn invalid() -> HostError {
     HostError::new(
         "invalid_resource",
         "Source resource must use an approved public HTTPS origin and permitted headers.",

@@ -56,7 +56,7 @@ impl SourceHost {
         }
         let result = async {
             let config = &self.inner.config;
-            let package = self.inner.distribution.verified_package(config, &release)?;
+            let package = self.inner.verified_package(&release)?;
             self.inner.runtime.require_installed(config, &release)?;
             let runtime = self
                 .inner
