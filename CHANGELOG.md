@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.18.1](https://github.com/thedavidweng/OpenKara/compare/v0.18.0...v0.18.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ci:** run Docker workflow scanner on full Ubuntu runner ([#585](https://github.com/thedavidweng/OpenKara/issues/585)) ([f3ebef4](https://github.com/thedavidweng/OpenKara/commit/f3ebef45aaecfe6fc3a0366b5bf909e1e5a370d7))
+* **security:** move the source runtime and CI to Node 24.22.1 ([#577](https://github.com/thedavidweng/OpenKara/issues/577)) ([#581](https://github.com/thedavidweng/OpenKara/issues/581)) ([28a79c9](https://github.com/thedavidweng/OpenKara/commit/28a79c962a2aac3ef8157f9ba6d63c3d8d7f130e))
+* **security:** resolve open code-scanning alerts ([#582](https://github.com/thedavidweng/OpenKara/issues/582)) ([dc82bae](https://github.com/thedavidweng/OpenKara/commit/dc82bae110bb440516b8bef9fceb6bf192cb67f3))
+
 ## [0.18.0](https://github.com/thedavidweng/OpenKara/compare/v0.17.3...v0.18.0) (2026-10-23)
 
 
