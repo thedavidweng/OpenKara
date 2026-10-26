@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn conflict_prompt_json_omits_hash() {
         let prompt = ImportConflictPrompt {
-            source_id: "netease".to_owned(),
+            source_id: "fixture".to_owned(),
             remote_track_id: "1".to_owned(),
             library: LibraryDecisionMeta {
                 title: Some("A".to_owned()),

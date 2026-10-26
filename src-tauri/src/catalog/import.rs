@@ -719,7 +719,7 @@ mod tests {
         let library = LibraryRoot::create(&tmp.path().join("lib")).expect("library");
         let connection = Connection::open_in_memory().expect("db");
         cache::apply_migrations(&connection).expect("migrations");
-        let source = FakeStreamingSource::new("netease");
+        let source = FakeStreamingSource::new("fixture");
         source.authenticate();
         (tmp, library, connection, source, copies)
     }
@@ -780,7 +780,7 @@ mod tests {
         add_file_track(&source, &copies, "t2", "metadata", "fixture.flac");
         source.insert_playlist(
             crate::catalog::types::StreamingPlaylistSummary {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 remote_id: "pl-1".to_owned(),
                 name: "Night set".to_owned(),
                 track_count: Some(2),
@@ -794,7 +794,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "t1".to_owned(),
@@ -825,7 +825,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "t1".to_owned(),
@@ -861,7 +861,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "t1".to_owned(),
@@ -888,7 +888,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "t1".to_owned(),
                     title: "t1".to_owned(),
@@ -923,7 +923,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "playable".to_owned(),
                     title: "Playable".to_owned(),
@@ -942,7 +942,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "playable".to_owned(),
@@ -979,7 +979,7 @@ mod tests {
         let sink = events.clone();
         let job = StreamingImportJob::new(
             "job-1".to_owned(),
-            "netease".to_owned(),
+            "fixture".to_owned(),
             ids.iter()
                 .map(|id| ((*id).to_owned(), (*id).to_owned(), "Artist".to_owned()))
                 .collect(),
@@ -1010,7 +1010,7 @@ mod tests {
         });
         let (job, events) = job_for(&["ok", "trial"]);
         let mut session = StreamingImportSession::new(StreamingImportRequest {
-            source_id: "netease".to_owned(),
+            source_id: "fixture".to_owned(),
             items: vec![item("ok"), item("trial")],
             playlist: None,
         })
@@ -1057,7 +1057,7 @@ mod tests {
         let (job, events) = job_for(&["a", "b"]);
         job.cancel();
         let mut session = StreamingImportSession::new(StreamingImportRequest {
-            source_id: "netease".to_owned(),
+            source_id: "fixture".to_owned(),
             items: vec![item("a"), item("b")],
             playlist: None,
         })
@@ -1083,7 +1083,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![item("a")],
                 playlist: None,
             },
@@ -1094,7 +1094,7 @@ mod tests {
         add_tone_track(&source, &copies, "b", 7);
         let (job, _) = job_for(&["a", "b"]);
         let mut session = StreamingImportSession::new(StreamingImportRequest {
-            source_id: "netease".to_owned(),
+            source_id: "fixture".to_owned(),
             items: vec![item("a"), item("b")],
             playlist: None,
         })
@@ -1119,7 +1119,7 @@ mod tests {
             .iter()
             .all(|failure| failure.reason == StreamingImportFailureReason::Cancelled));
         let mut annotated = vec![source_track("a"), source_track("b")];
-        crate::catalog::annotate_library_songs(&connection, "netease", &mut annotated)
+        crate::catalog::annotate_library_songs(&connection, "fixture", &mut annotated)
             .expect("library matches");
         assert_eq!(
             annotated[0].library_song_id.as_deref(),
@@ -1137,7 +1137,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![item("a")],
                 playlist: None,
             },
@@ -1145,7 +1145,7 @@ mod tests {
         )
         .expect("import");
         let mut tracks = vec![source_track("a"), source_track("never-imported")];
-        crate::catalog::annotate_library_songs(&connection, "netease", &mut tracks)
+        crate::catalog::annotate_library_songs(&connection, "fixture", &mut tracks)
             .expect("annotate");
         assert_eq!(
             tracks[0].library_song_id.as_deref(),
@@ -1156,7 +1156,7 @@ mod tests {
 
     fn source_track(id: &str) -> StreamingTrack {
         StreamingTrack {
-            source_id: "netease".to_owned(),
+            source_id: "fixture".to_owned(),
             remote_track_id: id.to_owned(),
             title: id.to_owned(),
             artist: "Artist".to_owned(),
@@ -1177,7 +1177,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "a".to_owned(),
                     title: "A".to_owned(),
@@ -1217,7 +1217,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "a".to_owned(),
                     title: "A".to_owned(),
@@ -1240,7 +1240,7 @@ mod tests {
         .expect("keep");
         assert!(kept.imported_song_ids.is_empty());
         let identity = crate::catalog::identity::StreamingTrackIdentity {
-            source: "netease".to_owned(),
+            source: "fixture".to_owned(),
             remote_track_id: "a".to_owned(),
         };
         assert_eq!(
@@ -1256,7 +1256,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "a".to_owned(),
                     title: "A".to_owned(),
@@ -1293,7 +1293,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "b".to_owned(),
                     title: "B".to_owned(),
@@ -1311,7 +1311,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "c".to_owned(),
                     title: "C".to_owned(),
@@ -1329,7 +1329,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "b".to_owned(),
@@ -1359,7 +1359,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "d".to_owned(),
                     title: "D".to_owned(),
@@ -1377,7 +1377,7 @@ mod tests {
             &library,
             &source,
             StreamingImportRequest {
-                source_id: "netease".to_owned(),
+                source_id: "fixture".to_owned(),
                 items: vec![
                     StreamingImportItem {
                         remote_track_id: "d".to_owned(),
