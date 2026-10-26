@@ -1,5 +1,5 @@
 use super::types::*;
-use super::{unknown, Inner, SourceHost, State};
+use super::{registry, unknown, Inner, SourceHost, State};
 
 impl Inner {
     pub(super) fn publish(&self, id: &str) {
@@ -16,9 +16,14 @@ impl Inner {
 fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot> {
     let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
     let live = state.sources.get(id);
+    let listed = stored
+        .package
+        .as_ref()
+        .and_then(|identity| registry::package(&state.registries, identity));
     let available = state
         .index
         .as_ref()
+        .filter(|_| stored.package.is_none())
         .and_then(|index| index.sources.iter().find(|source| source.source_id == id))
         .and_then(|source| {
             source
@@ -72,17 +77,23 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
         name: manifest
             .as_ref()
             .map(|manifest| manifest.name.clone())
+            .or_else(|| listed.map(|package| package.name.clone()))
             .unwrap_or_else(|| id.into()),
         description: manifest
             .as_ref()
             .map(|manifest| manifest.description.clone())
+            .or_else(|| listed.map(|package| package.description.clone()))
             .unwrap_or_default(),
         license: manifest
             .as_ref()
             .map(|manifest| manifest.license.clone())
+            .or_else(|| listed.map(|package| package.license.clone()))
             .unwrap_or_default(),
         installed_version: stored.active.as_ref().map(|r| r.manifest.version.clone()),
-        available_version: available.map(|r| r.manifest.version.clone()),
+        available_version: match listed {
+            Some(package) => registry::newest(package).map(|version| version.version.clone()),
+            None => available.map(|r| r.manifest.version.clone()),
+        },
         staged_version: stored.staged.as_ref().map(|r| r.manifest.version.clone()),
         pinned_version: stored.pinned_version.clone(),
         enabled: stored.enabled,

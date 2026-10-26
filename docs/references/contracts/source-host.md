@@ -72,6 +72,91 @@ The host cancels affected work and reports the storage error. An unusable
 discovery cache, including a retired signing root, does not block a new trusted
 refresh. Corrupt installation state remains a separate actionable failure.
 
+## Source Registry distribution
+
+A Source Registry is a UTF-8 JSON document at an HTTPS URL. OpenKara ships
+with no registry. `add_registry(url)` fetches and validates the document before
+it stores the URL. Adding a registry installs nothing. `registries()` returns
+`{url, registry_id, display_name, homepage, refreshed_at, last_error}` for each
+added registry. `refreshed_at` is the Unix time in milliseconds of the last
+successful fetch. Two added URLs cannot use the same `registry_id`. A URL that
+starts to serve a different `registry_id` keeps its last good listing.
+
+Format version 1 has this shape:
+
+```text
+{
+  format_version: 1,
+  registry_id, display_name, homepage: HTTPS URL,
+  packages: [{
+    package_id, source_id, name, description, license: SPDX expression,
+    versions: [{
+      version: SemVer, protocol_majors: [unsigned integer],
+      minimum_host_version: SemVer,
+      size: byte count, integrity: "sha512-<standard base64>",
+      urls: [HTTPS URL],
+      resource_origins: [exact HTTPS origin],
+      media_origins: [exact HTTPS origin],
+      capabilities: [capability]
+    }]
+  }]
+}
+```
+
+`registry_id` and `package_id` use lowercase ASCII letters, digits, `.`, `-` and
+`_`, start with a letter or digit, and have at most 128 bytes. `source_id` uses
+the protocol source id rule. Package ids and versions are unique in their
+parent list. `integrity` is the npm Subresource Integrity form with exactly one
+SHA-512 digest. A version lists one to eight download URLs and a size of at most
+32 MiB. The host refuses the complete document if one field is invalid. The
+document is at most 4 MiB.
+
+The host fetches registries over HTTPS only, with the same public-address and
+redirect policy as source downloads. `refresh()` fetches every added registry.
+The maintenance loop also fetches a registry when its last fetch is six hours
+old. A failed fetch keeps the last good listing, stores the error in
+`last_error`, and does not fail `refresh()`. Installed sources keep working.
+`registry-cache.json` keeps the last good listing of each registry across
+restarts.
+
+### Registry packages
+
+`install_package(registry_id, package_id, optional_version)` installs a listed
+package. The installed package identity is the pair of `registry_id` and
+`package_id`. Its `owner_binding` is `registry:<registry_id>/<package_id>`.
+Only one installed package can hold a source id. When another identity holds an
+active or staged release for that source id, the install returns
+`source_id_taken`. After an uninstall, a different identity can take the source
+id. `install(source_id, optional_version)` updates an installed registry
+package from its own registry entry.
+
+The host selects the newest listed version whose `protocol_majors` contain 2
+and whose `minimum_host_version` is at most the host version. A pin or an
+explicit version must match a listed version. If no version qualifies, the host
+returns `incompatible_plugin` and downloads nothing. `HostConfig`
+`current_protocol` applies only to the Node stdio transport. The embedded
+engine and registry packages always use protocol major 2.
+
+The host tries the download URLs in their listed order and stops at the first
+URL that serves the exact bytes. It stops a download when the bytes exceed the
+declared size, before verification. It checks the byte count and the SHA-512
+integrity before it extracts or loads the bytes. When every URL fails, the
+error message names each URL that the host tried and its failure reason. The
+code is `invalid_package` when a URL served wrong bytes, otherwise `network`.
+
+A package is an npm-style gzip tarball with every member under `package/`. The
+package root has `manifest.json` and the manifest `entry` module. The manifest
+runtime is `openkara-js` major 1. The manifest must match its registry entry:
+source id, package id, version, minimum host version, license, protocol majors,
+capabilities, resource origins and media origins. A mismatch returns
+`invalid_package`. The host seals the extracted tree in
+`packages/<archive-sha256>/`.
+
+A registry candidate passes the engine `describe` compatibility check before it
+can become active. Protocol major mismatches return `incompatible_plugin`. A
+failed candidate does not replace the active release. A staged update waits for
+work leases and requests to finish. The previous package tree stays on disk.
+
 ## Installation and runtime
 
 `HostConfig::production(data_root, resource_root, host_version)` creates the
@@ -126,8 +211,10 @@ limit does not apply to source dependencies. An individual archive is at most
 The data directory is `<data_root>/streaming-sources/`:
 
 - `verified-index.json`: the signed cached envelope.
-- `state.json`: owner bindings, enablement, pins, active and staged releases,
-  and accumulated revocations.
+- `registry-cache.json`: the last good listing of each added Source Registry.
+- `state.json`: added registry URLs, owner bindings, registry package
+  identities, enablement, pins, active and staged releases, and accumulated
+  revocations.
 - `packages/<archive-sha256>/`: immutable source trees and verified file records.
 - `runtimes/<archive-sha256>/`: immutable managed runtime files.
 - `staging/<unique-id>/`: temporary download and extraction state.
