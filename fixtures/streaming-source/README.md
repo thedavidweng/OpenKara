@@ -6,6 +6,7 @@ It is executable acceptance infrastructure, not a production music service.
 It imports no host internals and needs no npm packages, user credentials, or
 music vendor. `worker.mjs` is its stdio entry. Node 24 is the runtime family;
 release signing must pin an exact runtime and platform digests in the index.
+`source.mjs` below is the same fixture for the embedded engine.
 
 The package has one Streaming Playlist (`42`) and three tracks (`1`, `2`, `3`).
 These ids deliberately collide with ids that other Streaming Sources use.
@@ -60,29 +61,51 @@ browse/resolve only after authentication, so the host can distinguish upstream
 failure from expiry. Environment scenarios are test setup, not protocol
 capabilities or a user-facing vendor setting.
 
+## Embedded-engine fixture (`source.mjs`)
+
+`source.mjs` is the same fixture as one ES module for the embedded engine
+(protocol major 2, runtime `openkara-js`). It has no Node APIs; it uses only
+the sandboxed host object: `openkara.request` for media lookups against its
+declared API origin, `openkara.storage` for the signed-in account marker,
+`openkara.log`, and `setTimeout` in polling. It keeps the deliberate
+properties above: the colliding ids, the 1-then-2 cursor pages, the refused
+track, and QR plus text sign-in presentations. A stale `session.restore`
+expires the session.
+
+The host test support (`source_host::test_support::RegistryFixture`) bakes a
+package manifest into the module's `__MANIFEST__` placeholder, packs the
+result as an npm-style tarball, and serves it from a mock Source Registry, so
+tests install it through the real registry download, integrity, and describe
+checks. An inline copy would not exercise that path.
+
 ## Installed application workflow tests
 
-`workflow-worker.mjs` implements two manifest-driven test packages. The official-page
-package declares search, liked tracks, preview and import. The challenge package
-declares playlist browsing and import, with QR polling. Both use track `1` and
-playlist `42`, but return different metadata, cursors, accounts and audio.
-Neither package is a production discovery entry.
+`catalog::plugin_tests` builds two packages from `source.mjs`. The
+official-page package declares search, liked tracks, preview and import. The
+challenge package declares playlist browsing and import, with QR and text
+polling. Both use track `1` and playlist `42`, but return different
+metadata, cursors, accounts and audio. Neither package is a production
+discovery entry.
 
-The catalog consumer test builds both archives, signs an index with independent
-ephemeral keys, installs them through `SourceHost`, and runs their real stdio
-processes. Its exact public HTTPS media URLs use constructor-injected public DNS
-addresses and fixture bytes. It does not permit loopback media in production.
-Prepare the exact Node 24.22.1 runtime, then run from `src-tauri`:
+The catalog consumer test adds the mock registry, installs both packages
+through `SourceHost`, and runs them in the embedded engine with no Node
+runtime and no network. The fixture's media lookups reach a local mock origin
+(`HostConfig::add_fixture_upstream`); the public HTTPS media bytes use
+constructor-injected public DNS addresses and fixture bytes. It does not
+permit loopback media in production. Run from `src-tauri`:
 
 ```sh
-OPENKARA_SOURCE_TEST_NODE=/absolute/path/to/node \
-  cargo test --lib catalog::plugin_tests -- --ignored --nocapture
+cargo test --lib catalog::plugin_tests
 ```
 
 This proves source-domain authentication verification, capability failures,
 source-bound opaque pages and metadata, verified-owner credential isolation,
-and the shared library writer with different accepted audio. It does not prove
-native official-window cookie capture, rendered UI, or distributed-app policy.
+per-package KV storage across an engine restart, and the shared library writer
+with different accepted audio. It does not prove native official-window cookie
+capture, rendered UI, or distributed-app policy.
+
+`workflow-worker.mjs` is the retired Node variant of these test packages.
+Nothing references it; it leaves the repository with the Node runtime path.
 
 ## Real media smoke
 
