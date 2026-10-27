@@ -1,8 +1,10 @@
 pub mod conformance;
 mod memory;
+mod webdav;
 
 pub use conformance::ConformanceFixture;
 pub use memory::MemoryStorage;
+pub use webdav::TestWebDavServer;
 
 /// A failure scripted into a storage. Each fault fires once, on the first
 /// operation it matches.
