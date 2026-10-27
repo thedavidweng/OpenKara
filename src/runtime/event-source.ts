@@ -57,6 +57,7 @@ export interface RuntimeEventMap {
   "streaming-source-status": SourceSnapshot;
   "streaming-import-progress": StreamingImportEvent;
   "streaming-import-complete": StreamingImportCompleteEvent;
+  "source-registry-link": null;
 }
 
 export type RuntimeEventName = keyof RuntimeEventMap;
@@ -128,6 +129,7 @@ export function createRecordingRuntimeEventSource(): RuntimeEventSource & {
     "streaming-source-status": new Set(),
     "streaming-import-progress": new Set(),
     "streaming-import-complete": new Set(),
+    "source-registry-link": new Set(),
   };
 
   return {

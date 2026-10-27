@@ -8,12 +8,21 @@ import { eventSubscription } from "@/runtime/event-source";
 import { useCatalogStore } from "@/stores/catalog-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let activeRuntime: RuntimeEventRuntime | null = null;
+async function receiveRegistryLinks() {
+  if (await useCatalogStore.getState().receiveRegistryLinks())
+    useSettingsStore.getState().open();
+}
 export function startStreamingRuntime() {
   activeRuntime?.stop();
   const runtime = createRuntimeEventRuntime([
+    eventSubscription(
+      "source-registry-link",
+      () => void receiveRegistryLinks(),
+    ),
     eventSubscription("streaming-sign-in-complete", (session) =>
       useCatalogStore.getState().acceptSignIn(session),
     ),
@@ -57,7 +66,8 @@ export function startStreamingRuntime() {
     }),
   ]);
   activeRuntime = runtime;
-  void runtime.start().catch(notifyError);
+  // Subscribe before collecting so a link that arrives in between is not lost.
+  void runtime.start().then(receiveRegistryLinks).catch(notifyError);
   return () => {
     runtime.stop();
     if (activeRuntime === runtime) activeRuntime = null;

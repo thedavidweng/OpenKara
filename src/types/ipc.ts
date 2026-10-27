@@ -139,6 +139,9 @@ export interface SourceSnapshot {
   active_work: ActiveWork[];
   manifest: SourceManifest | null;
 }
+export type SourceRegistryLink =
+  | { kind: "add_registry"; url: string }
+  | { kind: "invalid"; link: string };
 export interface RegistryStatus {
   url: string;
   registry_id: string;

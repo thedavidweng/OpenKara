@@ -2,6 +2,7 @@ use crate::catalog;
 use crate::commands::catalog::{app_data_dir, cancel_authentication, host_error, source};
 use crate::commands::error::{internal_error, state_lock_error, CommandResult};
 use crate::source_host::{MarketPackage, RegistryStatus, SourceHost, SourceSnapshot};
+use crate::source_registry_link::{PendingRegistryLinks, SourceRegistryLink};
 use crate::AppState;
 use tauri::{AppHandle, Manager, State};
 
@@ -53,6 +54,12 @@ pub fn remove_source_registry(app_handle: AppHandle, registry_id: String) -> Com
 #[tauri::command]
 pub fn list_source_registries(app_handle: AppHandle) -> Vec<RegistryStatus> {
     app_handle.state::<SourceHost>().registries()
+}
+#[tauri::command]
+pub fn take_source_registry_links(
+    links: State<'_, PendingRegistryLinks>,
+) -> Vec<SourceRegistryLink> {
+    links.take()
 }
 #[tauri::command]
 pub fn list_source_market(app_handle: AppHandle) -> Vec<MarketPackage> {

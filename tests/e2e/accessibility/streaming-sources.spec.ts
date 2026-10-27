@@ -60,6 +60,49 @@ test("source registries and the market work from the keyboard", async ({
   await expect(dialog).toBeHidden();
 });
 
+test("a registry link opens the add confirmation from anywhere in the app", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() =>
+    window.__OPENKARA_E2E__.openSourceRegistryLink({
+      kind: "add_registry",
+      url: "https://linked.demo.test/registry.json",
+    }),
+  );
+  const addConfirm = page.getByRole("dialog", { name: "Add Source Registry" });
+  await expect(addConfirm).toBeVisible();
+  await expect(addConfirm).toContainText(
+    "https://linked.demo.test/registry.json",
+  );
+  await expect(addConfirm).toContainText("maintained outside OpenKara");
+  await expect(
+    addConfirm.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await a11y.axeCheck();
+  await addConfirm.getByRole("button", { name: "Add registry" }).press("Enter");
+  const registries = page
+    .getByRole("dialog", { name: "Preferences" })
+    .getByRole("region", { name: "Source Registries" });
+  await expect(
+    registries.getByRole("heading", { name: "linked.demo.test" }),
+  ).toBeVisible();
+
+  await page.evaluate(() =>
+    window.__OPENKARA_E2E__.openSourceRegistryLink({
+      kind: "invalid",
+      link: "openkara://add-registry?url=http%3A%2F%2Flinked.demo.test",
+    }),
+  );
+  await expect(registries.getByRole("alert")).toContainText(
+    "A registry link must name one HTTPS registry URL",
+  );
+  await expect(
+    page.getByRole("dialog", { name: "Add Source Registry" }),
+  ).toHaveCount(0);
+});
+
 test("source authentication and capability tabs work from the keyboard", async ({
   page,
   a11y,

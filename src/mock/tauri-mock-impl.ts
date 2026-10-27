@@ -2,6 +2,7 @@ import type { InvokeCommand } from "@/lib/tauri/invoke";
 import type {
   MarketPackage,
   RegistryStatus,
+  SourceRegistryLink,
   SourceSnapshot,
   StreamingImportJobSnapshot,
   StreamingImportProgress,
@@ -108,6 +109,7 @@ export interface TauriMockHelpers {
   ) => Record<string, unknown>;
   setSeparationCompleted: (songHash: string) => void;
   getPlaybackSnapshot: () => Record<string, unknown>;
+  openSourceRegistryLink: (link: SourceRegistryLink) => void;
 }
 
 export interface TauriMockResult {
@@ -222,6 +224,7 @@ export function createTauriMock(data: any): TauriMockResult {
       },
     }),
   );
+  const pendingRegistryLinks: SourceRegistryLink[] = [];
   const sourceRegistries: RegistryStatus[] = [
     {
       url: "https://sources.demo.test/registry.json",
@@ -1361,6 +1364,7 @@ export function createTauriMock(data: any): TauriMockResult {
       return changed(args.sourceId);
     },
     list_source_registries: () => clone(sourceRegistries),
+    take_source_registry_links: () => pendingRegistryLinks.splice(0),
     add_source_registry: (args: { url: string }) => {
       let parsed: URL;
       try {
@@ -1914,6 +1918,10 @@ export function createTauriMock(data: any): TauriMockResult {
     helpers: {
       emitEvent: (eventName: string, payload: any) =>
         emitMockEvent(eventName, payload),
+      openSourceRegistryLink: (link: SourceRegistryLink) => {
+        pendingRegistryLinks.push(link);
+        emitMockEvent("source-registry-link", null);
+      },
       setCommandDelayMs: (cmd: string, delayMs: number) => {
         commandDelayMs.set(cmd, Math.max(0, delayMs));
       },

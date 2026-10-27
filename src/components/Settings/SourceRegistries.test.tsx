@@ -41,6 +41,7 @@ function preset(registries: RegistryStatus[]) {
     market: [],
     marketStatus: "ready",
     marketError: null,
+    registryLink: null,
   });
 }
 
@@ -161,6 +162,82 @@ test("a refused registry add surfaces the refusal message", async () => {
     );
   });
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("a registry link opens the same add confirmation as a pasted URL", async () => {
+  const linked = "https://linked.example.com/registry.json";
+  const addSourceRegistry = vi
+    .fn()
+    .mockResolvedValue({ ...registry, registry_id: "linked", url: linked });
+  const listSourceMarket = vi.fn().mockResolvedValue([]);
+  const backend = createMockBackend({
+    overrides: { catalog: { addSourceRegistry, listSourceMarket } },
+  });
+  preset([]);
+  useCatalogStore.setState({
+    registryLink: { kind: "add_registry", url: linked },
+  });
+  render(
+    <BackendProvider backend={backend}>
+      <SourceRegistries />
+    </BackendProvider>,
+  );
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain(
+    "settings.streaming.registries.addTitle",
+  );
+  expect(dialog.textContent).toContain(
+    `settings.streaming.registries.addBody {"url":"${linked}"}`,
+  );
+  expect(useCatalogStore.getState().registryLink).toBeNull();
+  expect(addSourceRegistry).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "settings.streaming.registries.addConfirm",
+    }),
+  );
+  await waitFor(() => expect(addSourceRegistry).toHaveBeenCalledWith(linked));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+test("cancelling a registry link adds nothing", async () => {
+  const addSourceRegistry = vi.fn();
+  const backend = createMockBackend({
+    overrides: { catalog: { addSourceRegistry } },
+  });
+  preset([]);
+  useCatalogStore.setState({
+    registryLink: {
+      kind: "add_registry",
+      url: "https://linked.example.com/registry.json",
+    },
+  });
+  render(
+    <BackendProvider backend={backend}>
+      <SourceRegistries />
+    </BackendProvider>,
+  );
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(addSourceRegistry).not.toHaveBeenCalled();
+});
+
+test("an invalid registry link explains why nothing opens", async () => {
+  const link = "openkara://add-registry?url=http%3A%2F%2Finsecure.example.com";
+  preset([]);
+  useCatalogStore.setState({ registryLink: { kind: "invalid", link } });
+  render(
+    <BackendProvider backend={createMockBackend()}>
+      <SourceRegistries />
+    </BackendProvider>,
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe(
+    `settings.streaming.registries.linkInvalid ${JSON.stringify({ link })}`,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(useCatalogStore.getState().registryLink).toBeNull();
 });
 
 test("removing a registry confirms and explains that installs keep working", async () => {
