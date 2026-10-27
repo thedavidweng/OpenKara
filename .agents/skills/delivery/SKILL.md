@@ -24,7 +24,7 @@ description: Format delivery reports and PR descriptions. Use when preparing a c
 ## Verification
 - [x] pnpm lint — PASS
 - [x] pnpm test — PASS (X tests)
-- [ ] pnpm tauri build — SKIPPED (docs-only change)
+- [ ] cargo build --manifest-path src-tauri/Cargo.toml --profile optimized — SKIPPED (docs-only change)
 
 ## Residual risk
 [none / describe known limitations]
