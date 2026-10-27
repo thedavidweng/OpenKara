@@ -1279,9 +1279,21 @@ jobs:
       - playwright-ui-smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write # open or update a tracking issue when main or nightly CI fails
     steps:
       - name: Verify expected jobs succeeded and non-expected jobs skipped
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
           EXPECTED_JOBS: ${{ needs.triage.outputs.expected-jobs }}
           TRIAGE: ${{ needs.triage.result }}
           CONVENTIONAL_COMMITS: ${{ needs.conventional-commits.result }}
@@ -1325,45 +1337,100 @@ jobs:
             "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"
           )
 
+          fail=0
+          failed_jobs=()
+
           # Verify triage produced valid expected-jobs JSON.
           if ! echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
             echo "::error::Triage did not produce valid expected-jobs JSON: ${EXPECTED_JOBS:-<empty>}"
-            exit 1
-          fi
-
-          fail=0
-
-          for entry in "${JOBS[@]}"; do
-            job="${entry%%:*}"
-            result="${entry#*:}"
-            is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
-
-            echo "$job: result=$result expected=$is_expected"
-
-            if [ "$is_expected" = "true" ]; then
-              if [ "$result" != "success" ]; then
-                echo "::error::Expected job '$job' did not succeed (result: $result)"
-                fail=1
-              fi
-            else
-              if [ "$result" != "skipped" ]; then
-                echo "::error::Unexpected job '$job' ran (result: $result) — gate regression"
-                fail=1
-              fi
-            fi
-          done
-
-          # Verify unknown files trigger the safety fallback (both frontend
-          # and Rust test suites must be expected).
-          UNKNOWN=$(echo "$EXPECTED_JOBS" | jq 'any(. == "app-frontend") and any(. == "rust-test")')
-          if [ "$UNKNOWN_FLAG" = "true" ] && [ "$UNKNOWN" != "true" ]; then
-            echo "::error::Unknown files exist but full safety fallback (app-frontend + rust-test) was not expected"
             fail=1
+            failed_jobs+=("triage:${TRIAGE:-failure}")
+          else
+            for entry in "${JOBS[@]}"; do
+              job="${entry%%:*}"
+              result="${entry#*:}"
+              is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
+
+              echo "$job: result=$result expected=$is_expected"
+
+              if [ "$is_expected" = "true" ]; then
+                if [ "$result" != "success" ]; then
+                  echo "::error::Expected job '$job' did not succeed (result: $result)"
+                  fail=1
+                  failed_jobs+=("$job:$result")
+                fi
+              else
+                if [ "$result" != "skipped" ]; then
+                  echo "::error::Unexpected job '$job' ran (result: $result) — gate regression"
+                  fail=1
+                  failed_jobs+=("$job:$result")
+                fi
+              fi
+            done
+
+            # Verify unknown files trigger the safety fallback (both frontend
+            # and Rust test suites must be expected).
+            UNKNOWN=$(echo "$EXPECTED_JOBS" | jq 'any(. == "app-frontend") and any(. == "rust-test")')
+            if [ "$UNKNOWN_FLAG" = "true" ] && [ "$UNKNOWN" != "true" ]; then
+              echo "::error::Unknown files exist but full safety fallback (app-frontend + rust-test) was not expected"
+              fail=1
+              failed_jobs+=("triage:unknown-fallback")
+            fi
           fi
 
           if [ "$fail" -ne 0 ]; then
             echo ""
-            echo "Expected jobs: $(echo "$EXPECTED_JOBS" | jq -r '. | join(", ")')"
+            if echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              echo "Expected jobs: $(echo "$EXPECTED_JOBS" | jq -r '. | join(", ")')"
+            fi
+
+            if [ -n "${GH_REPO:-}" ] && { { [ "${EVENT_NAME:-}" = "push" ] && [ "${REF_NAME:-main}" = "main" ]; } || [ "${EVENT_NAME:-}" = "schedule" ]; }; then
+              job_links=""
+              if [ -n "${RUN_ID:-}" ]; then
+                job_links="$(gh run view "${RUN_ID}" \
+                  --repo "${GH_REPO}" \
+                  --json jobs \
+                  --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (`\(.conclusion)`)"' 2>/dev/null || true)"
+              fi
+              if [ -z "${job_links}" ]; then
+                for entry in "${failed_jobs[@]}"; do
+                  job="${entry%%:*}"
+                  result="${entry#*:}"
+                  job_links="${job_links:+${job_links}$'\n'}- [${job}](${RUN_URL:-}) (\`${result}\`)"
+                done
+              fi
+
+              title="CI failure on main/nightly"
+              body="$(printf '%s\n' \
+                "A **${WORKFLOW_NAME:-CI}** workflow run failed on \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)." \
+                "" \
+                "- **Workflow:** ${WORKFLOW_NAME:-CI}" \
+                "- **Trigger:** \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)" \
+                "- **Commit:** \`${HEAD_SHA:-unknown}\`" \
+                "- **Failed run:** [${RUN_URL:-}](${RUN_URL:-})" \
+                "" \
+                "### Failed jobs" \
+                "${job_links}")"
+
+              existing_issue="$(gh issue list \
+                --repo "${GH_REPO}" \
+                --state open \
+                --search "in:title ${title}" \
+                --json number,title \
+                --jq '.[0].number // empty')"
+
+              if [ -n "${existing_issue}" ]; then
+                gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+                echo "Commented on existing issue #${existing_issue}"
+              else
+                issue_url="$(gh issue create \
+                  --repo "${GH_REPO}" \
+                  --title "${title}" \
+                  --body "${body}" \
+                  --label "bug")"
+                echo "Opened issue: ${issue_url}"
+              fi
+            fi
           fi
 
           exit $fail
