@@ -14,10 +14,12 @@
 //      the same version as the lockfile, without the apt-based install.
 
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -534,5 +536,409 @@ describe("Playwright container contract", () => {
     expect(written).toContain("- `wobbly`");
     expect(written).not.toContain("`stable`");
     expect(output).toContain("::warning::1 flaky Playwright test(s) detected");
+  });
+});
+
+function withStubbedGh(
+  existingIssueNumber: string,
+  runJobsJson: string,
+  fn: (ctx: { dir: string; callLog: string; bodyLog: string }) => void,
+) {
+  const dir = mkdtempSync(join(tmpdir(), "ci-failure-issue-"));
+  const callLog = join(dir, "gh-calls.log");
+  const bodyLog = join(dir, "gh-body.md");
+  const jobsFile = join(dir, "run-jobs.json");
+  try {
+    if (runJobsJson) {
+      writeFileSync(jobsFile, runJobsJson);
+    }
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${callLog}"
+if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "view" ]; then
+  if [ -f "${jobsFile}" ]; then
+    jq -r "\${@: -1}" "${jobsFile}"
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = "issue" ] && [ "\${2:-}" = "list" ]; then
+  printf '%s\\n' "${existingIssueNumber}"
+  exit 0
+fi
+if [ "\${1:-}" = "issue" ] && { [ "\${2:-}" = "create" ] || [ "\${2:-}" = "comment" ]; }; then
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--body" ]; then
+      printf '%s\\n' "$2" > "${bodyLog}"
+      break
+    fi
+    shift
+  done
+  printf 'https://github.com/thedavidweng/OpenKara/issues/99\\n'
+  exit 0
+fi
+`,
+      { mode: 0o755 },
+    );
+    fn({ dir, callLog, bodyLog });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("Main and nightly failure tracking contract", () => {
+  const ciYaml = readProjectFile(".github/workflows/ci.yml");
+
+  test("ci.yml scopes issues: write to ci-gate and keeps top-level permissions read-only", () => {
+    expect(ciYaml).toMatch(/^permissions:\n  contents: read$/m);
+    const gateSection = extractJobSection(ciYaml, "ci-gate");
+    expect(gateSection).toContain("issues: write");
+  });
+
+  test("ci-gate opens a new tracking issue on main push failure and comments on existing issue on nightly failure", () => {
+    const gateSection = extractJobSection(ciYaml, "ci-gate");
+    const script = extractStepScript(
+      gateSection,
+      "Verify expected jobs succeeded and non-expected jobs skipped",
+    );
+    const classification = classifyChanges(["src/App.tsx"], "push");
+    const runJobs = JSON.stringify({
+      jobs: [
+        {
+          name: "Tauri build (macos-14)",
+          conclusion: "failure",
+          url: "https://github.com/thedavidweng/OpenKara/actions/runs/1001/job/2002",
+        },
+        {
+          name: "Rust tests (ubuntu-22.04)",
+          conclusion: "success",
+          url: "https://github.com/thedavidweng/OpenKara/actions/runs/1001/job/2003",
+        },
+      ],
+    });
+
+    // 1. Main push failure with no open tracking issue -> creates new issue with run + job links
+    withStubbedGh("", runJobs, ({ dir, callLog, bodyLog }) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        GH_TOKEN: "test-token",
+        GH_REPO: "thedavidweng/OpenKara",
+        EVENT_NAME: "push",
+        REF_NAME: "main",
+        WORKFLOW_NAME: "CI",
+        RUN_ID: "1001",
+        RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/1001",
+        HEAD_SHA: "0123456789abcdef0123456789abcdef01234567",
+        EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
+        UNKNOWN_FLAG: "false",
+      };
+      for (const job of ALL_JOBS) {
+        env[job.replaceAll("-", "_").toUpperCase()] =
+          job === "tauri-build"
+            ? "failure"
+            : classification.run[job]
+              ? "success"
+              : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", script], {
+        env,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(1);
+      expect(existsSync(callLog)).toBe(true);
+      const calls = readFileSync(callLog, "utf8");
+      expect(calls).toContain(
+        "issue list --repo thedavidweng/OpenKara --state open --search in:title CI failure on main/nightly",
+      );
+      expect(calls).toContain("issue create --repo thedavidweng/OpenKara");
+      expect(calls).toContain("--label bug");
+      const body = readFileSync(bodyLog, "utf8");
+      expect(body).toContain(
+        "https://github.com/thedavidweng/OpenKara/actions/runs/1001",
+      );
+      expect(body).toContain(
+        "[Tauri build (macos-14)](https://github.com/thedavidweng/OpenKara/actions/runs/1001/job/2002)",
+      );
+    });
+
+    // 2. Nightly schedule failure with existing open tracking issue #42 -> comments on #42 instead of opening a new one
+    withStubbedGh("42", runJobs, ({ dir, callLog, bodyLog }) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        GH_TOKEN: "test-token",
+        GH_REPO: "thedavidweng/OpenKara",
+        EVENT_NAME: "schedule",
+        REF_NAME: "main",
+        WORKFLOW_NAME: "CI",
+        RUN_ID: "1002",
+        RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/1002",
+        HEAD_SHA: "0123456789abcdef0123456789abcdef01234567",
+        EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
+        UNKNOWN_FLAG: "false",
+      };
+      for (const job of ALL_JOBS) {
+        env[job.replaceAll("-", "_").toUpperCase()] =
+          job === "tauri-build"
+            ? "failure"
+            : classification.run[job]
+              ? "success"
+              : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", script], {
+        env,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(1);
+      const calls = readFileSync(callLog, "utf8");
+      expect(calls).toContain(
+        "issue comment 42 --repo thedavidweng/OpenKara --body",
+      );
+      expect(calls).not.toContain("issue create");
+      const body = readFileSync(bodyLog, "utf8");
+      expect(body).toContain(
+        "https://github.com/thedavidweng/OpenKara/actions/runs/1002",
+      );
+      expect(body).toContain(
+        "[Tauri build (macos-14)](https://github.com/thedavidweng/OpenKara/actions/runs/1001/job/2002)",
+      );
+    });
+  });
+
+  test("ci-gate does not open or update an issue on green runs or PR failures", () => {
+    const gateSection = extractJobSection(ciYaml, "ci-gate");
+    const script = extractStepScript(
+      gateSection,
+      "Verify expected jobs succeeded and non-expected jobs skipped",
+    );
+
+    // 1. Green main push run -> no issue calls
+    const pushClass = classifyChanges(["src/App.tsx"], "push");
+    withStubbedGh("", "", ({ dir, callLog }) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        GH_TOKEN: "test-token",
+        GH_REPO: "thedavidweng/OpenKara",
+        EVENT_NAME: "push",
+        REF_NAME: "main",
+        WORKFLOW_NAME: "CI",
+        RUN_ID: "1003",
+        RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/1003",
+        EXPECTED_JOBS: JSON.stringify(pushClass.expectedJobs),
+        UNKNOWN_FLAG: "false",
+      };
+      for (const job of ALL_JOBS) {
+        env[job.replaceAll("-", "_").toUpperCase()] = pushClass.run[job]
+          ? "success"
+          : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", script], {
+        env,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(0);
+      expect(existsSync(callLog)).toBe(false);
+    });
+
+    // 2. Red PR run (even with ci:full) -> no issue calls
+    const prFullClass = classifyChanges(["src/App.tsx"], "pull_request", [
+      "ci:full",
+    ]);
+    withStubbedGh("", "", ({ dir, callLog }) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        GH_TOKEN: "test-token",
+        GH_REPO: "thedavidweng/OpenKara",
+        EVENT_NAME: "pull_request",
+        REF_NAME: "feature-branch",
+        WORKFLOW_NAME: "CI",
+        RUN_ID: "1004",
+        RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/1004",
+        EXPECTED_JOBS: JSON.stringify(prFullClass.expectedJobs),
+        UNKNOWN_FLAG: "false",
+      };
+      for (const job of ALL_JOBS) {
+        env[job.replaceAll("-", "_").toUpperCase()] =
+          job === "tauri-build"
+            ? "failure"
+            : prFullClass.run[job]
+              ? "success"
+              : "skipped";
+      }
+      const result = spawnSync("bash", ["-c", script], {
+        env,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(1);
+      expect(existsSync(callLog)).toBe(false);
+    });
+  });
+
+  test("packaging-gate opens or updates a tracking issue only on main or nightly failures", () => {
+    const packagingYaml = readProjectFile(".github/workflows/packaging.yml");
+    expect(packagingYaml).toMatch(/^permissions:\n  contents: read$/m);
+    const gateSection = extractJobSection(packagingYaml, "packaging-gate");
+    expect(gateSection).toContain("issues: write");
+    const script = extractStepScript(gateSection, "Verify packaging status");
+
+    withStubbedGh("", "", ({ dir, callLog, bodyLog }) => {
+      const result = spawnSync("bash", ["-c", script], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          GH_TOKEN: "test-token",
+          GH_REPO: "thedavidweng/OpenKara",
+          EVENT_NAME: "schedule",
+          REF_NAME: "main",
+          WORKFLOW_NAME: "Packaging",
+          RUN_ID: "2001",
+          RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/2001",
+          HEAD_SHA: "0123456789abcdef0123456789abcdef01234567",
+          TRIAGE: "success",
+          WINGET: "success",
+          FLATPAK_VAL: "success",
+          FLATPAK_BUILD: "failure",
+          FULL_CI: "true",
+          PKG_INPUTS: "false",
+          PKG_WORKFLOW: "false",
+          REL_META: "false",
+        },
+      });
+      expect(result.status).toBe(1);
+      expect(existsSync(callLog)).toBe(true);
+      const calls = readFileSync(callLog, "utf8");
+      expect(calls).toContain("issue create --repo thedavidweng/OpenKara");
+      const body = readFileSync(bodyLog, "utf8");
+      expect(body).toContain(
+        "https://github.com/thedavidweng/OpenKara/actions/runs/2001",
+      );
+      expect(body).toContain(
+        "[build-flatpak](https://github.com/thedavidweng/OpenKara/actions/runs/2001)",
+      );
+    });
+
+    // PR failure must not open an issue
+    withStubbedGh("", "", ({ dir, callLog }) => {
+      const result = spawnSync("bash", ["-c", script], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          GH_TOKEN: "test-token",
+          GH_REPO: "thedavidweng/OpenKara",
+          EVENT_NAME: "pull_request",
+          REF_NAME: "feature-branch",
+          WORKFLOW_NAME: "Packaging",
+          RUN_ID: "2002",
+          RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/2002",
+          TRIAGE: "success",
+          WINGET: "success",
+          FLATPAK_VAL: "success",
+          FLATPAK_BUILD: "failure",
+          FULL_CI: "true",
+          PKG_INPUTS: "true",
+          PKG_WORKFLOW: "false",
+          REL_META: "false",
+        },
+      });
+      expect(result.status).toBe(1);
+      expect(existsSync(callLog)).toBe(false);
+    });
+  });
+
+  test("windows-installed-app-smoke-test and nightly-hardening report main/nightly failures via tracking issues", () => {
+    const winGateYaml = readProjectFile(
+      ".github/workflows/windows-installed-app-smoke-test.yml",
+    );
+    expect(winGateYaml).toMatch(/^permissions:\n  contents: read$/m);
+    const winReportJob = extractJobSection(winGateYaml, "report-failure");
+    expect(winReportJob).toContain("issues: write");
+    expect(winReportJob).toContain("github.event_name == 'schedule'");
+    expect(winReportJob).toContain("github.event_name == 'push'");
+    expect(winReportJob).not.toContain("pull_request");
+    const winScript = extractStepScript(
+      winReportJob,
+      "Open or update tracking issue",
+    );
+
+    withStubbedGh("77", "", ({ dir, callLog, bodyLog }) => {
+      const result = spawnSync("bash", ["-c", winScript], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          GH_TOKEN: "test-token",
+          GH_REPO: "thedavidweng/OpenKara",
+          EVENT_NAME: "push",
+          REF_NAME: "main",
+          WORKFLOW_NAME: "Branch Windows installed-app gate",
+          RUN_ID: "3001",
+          RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/3001",
+          HEAD_SHA: "0123456789abcdef0123456789abcdef01234567",
+          WINDOWS_INSTALLED_APP: "failure",
+        },
+      });
+      expect(result.status).toBe(0);
+      const calls = readFileSync(callLog, "utf8");
+      expect(calls).toContain(
+        "issue comment 77 --repo thedavidweng/OpenKara --body",
+      );
+      const body = readFileSync(bodyLog, "utf8");
+      expect(body).toContain(
+        "https://github.com/thedavidweng/OpenKara/actions/runs/3001",
+      );
+      expect(body).toContain("windows-installed-app");
+    });
+
+    const nightlyYaml = readProjectFile(
+      ".github/workflows/nightly-hardening.yml",
+    );
+    expect(nightlyYaml).toMatch(/^permissions:\n  contents: read$/m);
+    const nightlyReportJob = extractJobSection(nightlyYaml, "report-failure");
+    expect(nightlyReportJob).toContain("issues: write");
+    expect(nightlyReportJob).toContain("github.event_name == 'schedule'");
+    const nightlyScript = extractStepScript(
+      nightlyReportJob,
+      "Open or update tracking issue",
+    );
+
+    withStubbedGh("", "", ({ dir, callLog, bodyLog }) => {
+      const result = spawnSync("bash", ["-c", nightlyScript], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          GH_TOKEN: "test-token",
+          GH_REPO: "thedavidweng/OpenKara",
+          EVENT_NAME: "schedule",
+          REF_NAME: "main",
+          WORKFLOW_NAME: "Nightly hardening",
+          RUN_ID: "4001",
+          RUN_URL: "https://github.com/thedavidweng/OpenKara/actions/runs/4001",
+          HEAD_SHA: "0123456789abcdef0123456789abcdef01234567",
+          WINDOWS_MATRIX: "success",
+          SEPARATION_SMOKE: "failure",
+          WINDOWS_INSTALLED_APP: "success",
+          MACOS_INSTALLED_APP: "success",
+          LINUX_INSTALLED_APP: "success",
+          AGGREGATE_REPORTS: "failure",
+        },
+      });
+      expect(result.status).toBe(0);
+      const calls = readFileSync(callLog, "utf8");
+      expect(calls).toContain("issue create --repo thedavidweng/OpenKara");
+      const body = readFileSync(bodyLog, "utf8");
+      expect(body).toContain(
+        "https://github.com/thedavidweng/OpenKara/actions/runs/4001",
+      );
+      expect(body).toContain(
+        "[separation-smoke](https://github.com/thedavidweng/OpenKara/actions/runs/4001)",
+      );
+    });
   });
 });

@@ -41,6 +41,11 @@ smoke, macOS Rust tests, Windows Rust compile, packaging, and the Windows
 installed-app gate). A docs-only merge still skips heavy jobs. Nightly
 `schedule` and manual `workflow_dispatch` force the full heavy job set.
 
+A red `main` push or `schedule` run opens or comments on the open
+`CI failure on main/nightly` tracking issue (`bug` label) with links to the
+failed workflow run and failed jobs. PR failures and green runs never open or
+update tracking issues.
+
 ## Nightly
 
 Full quality line. It does not block PR merge. It blocks Release when the

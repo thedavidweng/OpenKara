@@ -411,9 +411,20 @@ jobs:
       - build-flatpak
     runs-on: ubuntu-slim
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write # open or update a tracking issue when main or nightly packaging fails
     steps:
       - name: Verify packaging status
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
           TRIAGE: ${{ needs.triage.result }}
           WINGET: ${{ needs.validate-winget.result }}
           FLATPAK_VAL: ${{ needs.validate-flatpak.result }}
@@ -431,55 +442,112 @@ jobs:
           echo "Flatpak Validate: $FLATPAK_VAL"
           echo "Flatpak Build: $FLATPAK_BUILD"
 
+          fail=0
+          failed_jobs=()
+
           if [ "$TRIAGE" != "success" ]; then
             echo "::error::Triage failed"
-            exit 1
-          fi
-
-          fail=0
-          should_run_packaging="false"
-          if [ "$FULL_CI" = "true" ]; then
-            if [ "$PKG_INPUTS" = "true" ] || [ "$PKG_WORKFLOW" = "true" ] || [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              should_run_packaging="true"
-            fi
-          fi
-
-          if [ "$should_run_packaging" = "true" ]; then
-            if [ "$FLATPAK_VAL" != "success" ]; then
-              echo "::error::Expected validate-flatpak to succeed (result: $FLATPAK_VAL)"
-              fail=1
-            fi
-            if [ "$FLATPAK_BUILD" != "success" ]; then
-              echo "::error::Expected build-flatpak to succeed (result: $FLATPAK_BUILD)"
-              fail=1
-            fi
+            fail=1
+            failed_jobs+=("triage:$TRIAGE")
           else
-            if [ "$FLATPAK_VAL" != "skipped" ]; then
-              echo "::error::Unexpected validate-flatpak ran when packaging was not expected (result: $FLATPAK_VAL)"
-              fail=1
+            should_run_packaging="false"
+            if [ "$FULL_CI" = "true" ]; then
+              if [ "$PKG_INPUTS" = "true" ] || [ "$PKG_WORKFLOW" = "true" ] || [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+                should_run_packaging="true"
+              fi
             fi
-            if [ "$FLATPAK_BUILD" != "skipped" ]; then
-              echo "::error::Unexpected build-flatpak ran when packaging was not expected (result: $FLATPAK_BUILD)"
-              fail=1
+
+            if [ "$should_run_packaging" = "true" ]; then
+              if [ "$FLATPAK_VAL" != "success" ]; then
+                echo "::error::Expected validate-flatpak to succeed (result: $FLATPAK_VAL)"
+                fail=1
+                failed_jobs+=("validate-flatpak:$FLATPAK_VAL")
+              fi
+              if [ "$FLATPAK_BUILD" != "success" ]; then
+                echo "::error::Expected build-flatpak to succeed (result: $FLATPAK_BUILD)"
+                fail=1
+                failed_jobs+=("build-flatpak:$FLATPAK_BUILD")
+              fi
+            else
+              if [ "$FLATPAK_VAL" != "skipped" ]; then
+                echo "::error::Unexpected validate-flatpak ran when packaging was not expected (result: $FLATPAK_VAL)"
+                fail=1
+                failed_jobs+=("validate-flatpak:$FLATPAK_VAL")
+              fi
+              if [ "$FLATPAK_BUILD" != "skipped" ]; then
+                echo "::error::Unexpected build-flatpak ran when packaging was not expected (result: $FLATPAK_BUILD)"
+                fail=1
+                failed_jobs+=("build-flatpak:$FLATPAK_BUILD")
+              fi
+            fi
+
+            should_run_winget="false"
+            if [ "$FULL_CI" = "true" ]; then
+              if [ "$should_run_packaging" = "true" ] || [ "$REL_META" = "true" ]; then
+                should_run_winget="true"
+              fi
+            fi
+
+            if [ "$should_run_winget" = "true" ]; then
+              if [ "$WINGET" != "success" ]; then
+                echo "::error::Expected validate-winget to succeed (result: $WINGET)"
+                fail=1
+                failed_jobs+=("validate-winget:$WINGET")
+              fi
+            else
+              if [ "$WINGET" != "skipped" ]; then
+                echo "::error::Unexpected validate-winget ran when WinGet validation was not expected (result: $WINGET)"
+                fail=1
+                failed_jobs+=("validate-winget:$WINGET")
+              fi
             fi
           fi
 
-          should_run_winget="false"
-          if [ "$FULL_CI" = "true" ]; then
-            if [ "$should_run_packaging" = "true" ] || [ "$REL_META" = "true" ]; then
-              should_run_winget="true"
+          if [ "$fail" -ne 0 ] && [ -n "${GH_REPO:-}" ] && { { [ "${EVENT_NAME:-}" = "push" ] && [ "${REF_NAME:-main}" = "main" ]; } || [ "${EVENT_NAME:-}" = "schedule" ]; }; then
+            job_links=""
+            if [ -n "${RUN_ID:-}" ]; then
+              job_links="$(gh run view "${RUN_ID}" \
+                --repo "${GH_REPO}" \
+                --json jobs \
+                --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (`\(.conclusion)`)"' 2>/dev/null || true)"
             fi
-          fi
+            if [ -z "${job_links}" ]; then
+              for entry in "${failed_jobs[@]}"; do
+                job="${entry%%:*}"
+                result="${entry#*:}"
+                job_links="${job_links:+${job_links}$'\n'}- [${job}](${RUN_URL:-}) (\`${result}\`)"
+              done
+            fi
 
-          if [ "$should_run_winget" = "true" ]; then
-            if [ "$WINGET" != "success" ]; then
-              echo "::error::Expected validate-winget to succeed (result: $WINGET)"
-              fail=1
-            fi
-          else
-            if [ "$WINGET" != "skipped" ]; then
-              echo "::error::Unexpected validate-winget ran when WinGet validation was not expected (result: $WINGET)"
-              fail=1
+            title="CI failure on main/nightly"
+            body="$(printf '%s\n' \
+              "A **${WORKFLOW_NAME:-Packaging}** workflow run failed on \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)." \
+              "" \
+              "- **Workflow:** ${WORKFLOW_NAME:-Packaging}" \
+              "- **Trigger:** \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)" \
+              "- **Commit:** \`${HEAD_SHA:-unknown}\`" \
+              "- **Failed run:** [${RUN_URL:-}](${RUN_URL:-})" \
+              "" \
+              "### Failed jobs" \
+              "${job_links}")"
+
+            existing_issue="$(gh issue list \
+              --repo "${GH_REPO}" \
+              --state open \
+              --search "in:title ${title}" \
+              --json number,title \
+              --jq '.[0].number // empty')"
+
+            if [ -n "${existing_issue}" ]; then
+              gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+              echo "Commented on existing issue #${existing_issue}"
+            else
+              issue_url="$(gh issue create \
+                --repo "${GH_REPO}" \
+                --title "${title}" \
+                --body "${body}" \
+                --label "bug")"
+              echo "Opened issue: ${issue_url}"
             fi
           fi
 
