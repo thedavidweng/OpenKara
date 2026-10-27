@@ -73,11 +73,6 @@ on:
         required: false
         type: string
         default: x86_64-pc-windows-msvc
-      streaming_runtime_smoke:
-        description: "Run the pinned Node feasibility spike from the installed application"
-        required: false
-        type: boolean
-        default: false
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         description: "Minisign private key for updater artifacts"
@@ -384,37 +379,6 @@ jobs:
 
           "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "OPENKARA_INSTALL_DIR=$($env:INSTALL_DIR)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Observe installed Streaming Source runtime
-        if: ${{ inputs.streaming_runtime_smoke }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $root = Join-Path $env:RUNNER_TEMP "streaming-runtime-evidence"
-          New-Item -ItemType Directory -Path $root | Out-Null
-          Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | ConvertTo-Json | Set-Content "$root/os.json"
-          Get-FileHash -Algorithm SHA256 $env:OPENKARA_INSTALLED_APP | ConvertTo-Json | Set-Content "$root/app-hash.json"
-          $before = Get-MpComputerStatus
-          $before | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureVersion | ConvertTo-Json | Set-Content "$root/defender-before.json"
-          Get-MpPreference | Select-Object ExclusionPath,ExclusionProcess,ExclusionExtension | ConvertTo-Json | Set-Content "$root/defender-exclusions.json"
-          if (-not ($before.AMServiceEnabled -and $before.AntivirusEnabled -and $before.RealTimeProtectionEnabled)) { throw "Defender must be enabled for this observation" }
-          foreach ($phase in @("install", "restart")) {
-            $process = Start-Process -FilePath $env:OPENKARA_INSTALLED_APP -ArgumentList @("--automation-streaming-runtime", $phase, "`"$root`"") -PassThru -Wait
-            if ($process.ExitCode -ne 0) { throw "Streaming runtime $phase failed: $($process.ExitCode)" }
-          }
-          $after = Get-MpComputerStatus
-          $after | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureVersion | ConvertTo-Json | Set-Content "$root/defender-after.json"
-          if (-not ($after.AMServiceEnabled -and $after.AntivirusEnabled -and $after.RealTimeProtectionEnabled)) { throw "Defender was not enabled after execution" }
-          $runtime = Get-ChildItem "$root/node-*/node.exe" | Select-Object -First 1
-          Get-AuthenticodeSignature $runtime.FullName | Select-Object Status,StatusMessage,@{Name="Signer";Expression={$_.SignerCertificate.Subject}} | ConvertTo-Json | Set-Content "$root/runtime-signature.json"
-
-      - name: Upload Streaming Source runtime observation
-        if: ${{ always() && inputs.streaming_runtime_smoke }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ inputs.artifact_prefix }}-streaming-runtime
-          path: ${{ runner.temp }}/streaming-runtime-evidence/*.json
-          retention-days: ${{ inputs.retention_days }}
 
       - name: Seed user-library marker outside install dir
         shell: pwsh

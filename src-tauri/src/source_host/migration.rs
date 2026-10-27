@@ -10,12 +10,13 @@ pub(super) fn replacement_required() -> HostError {
     )
 }
 
-pub(super) fn is_node(release: &Release) -> bool {
+fn is_node(release: &Release) -> bool {
     release.manifest.runtime.kind == NODE_RUNTIME
 }
 
-/// Marks every signed-index installation whose active or staged release runs
-/// on Node as needing replacement. Returns whether any source changed.
+/// Marks every installation without a Source Registry identity whose active or
+/// staged release runs on Node as needing replacement. Returns whether any
+/// source changed.
 pub(super) fn retire_node_installs(stored: &mut StoredState) -> bool {
     let mut changed = false;
     for source in stored.sources.values_mut() {
@@ -44,9 +45,16 @@ pub(super) fn retire_node_installs(stored: &mut StoredState) -> bool {
     changed
 }
 
-/// Deletes the managed Node runtimes and every package tree whose manifest
-/// names the Node runtime. A failed deletion is retried on the next launch.
+/// Deletes the managed Node runtimes, the cached signed source index, and every
+/// package tree whose manifest names the Node runtime. A failed deletion is
+/// retried on the next launch.
 pub(super) fn remove_node_files(config: &HostConfig) {
+    let index = config.data_root.join("verified-index.json");
+    if let Err(error) = fs::remove_file(&index) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(%error, "could not delete the retired signed source index");
+        }
+    }
     let runtimes = config.data_root.join("runtimes");
     if runtimes.exists() {
         if let Err(error) = fs::remove_dir_all(&runtimes) {

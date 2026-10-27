@@ -6,7 +6,7 @@ The source boundary is specified in [Streaming Source protocol 2.0](streaming-so
 
 `OnlineSourceId` is an open string. Source ids use safe lowercase ASCII. The native `list_online_sources()` registry contains only YouTube. `set_online_source_enabled(source_id, enabled)` changes its `AppSettings.youtube_source_enabled` flag. Streaming Sources use independent lifecycle commands, not AppSettings flags.
 
-`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, nullable `registry_id` and `package_id` (the registry identity of a registry package), `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `loaded` (renames `runtime_ready`, which stays readable during the transition), `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
+`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, nullable `registry_id` and `package_id` (the registry identity of a registry package), `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `loaded`, `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
 
 `state` is `not_installed`, `installing`, `ready`, `disabled`, `update_required`, `unavailable`, `waiting_for_idle`, or `cancelling`. Installation, enablement, runtime readiness and sign-in are separate states. `progress` contains `phase`, `completed`, and nullable `total`. `last_error` is `{code,message,retryable}`. Active work contains numeric `id`, `kind` (`authentication`, `preview`, or `import`), and `cancelling`.
 

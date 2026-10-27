@@ -36,8 +36,6 @@ pub mod smoke;
 pub mod source_host;
 pub mod source_registry_link;
 pub mod state;
-#[cfg(feature = "automation-smoke")]
-pub mod streaming_runtime_smoke;
 pub mod system_credentials;
 mod window_shell;
 

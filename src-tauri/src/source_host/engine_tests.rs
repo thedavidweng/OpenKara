@@ -1,4 +1,4 @@
-use super::test_support::{fixture_manifest, FixtureDistribution, FixturePackage};
+use super::test_support::{fixture_manifest, RegistryFixture};
 use super::*;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -101,7 +101,7 @@ impl Package {
             ..Self::default()
         }
     }
-    fn fixture(&self) -> FixturePackage {
+    fn fixture(&self) -> (SourceManifest, String) {
         let mut manifest = fixture_manifest(self.source_id, "1.0.0");
         manifest.runtime = RuntimeRequirement {
             kind: "openkara-js".into(),
@@ -115,48 +115,54 @@ impl Package {
         manifest.capabilities = vec!["playlists".into()];
         manifest.authentication = json!({"flow":"none"});
         manifest.requires_authentication = vec![];
-        FixturePackage {
-            worker: SOURCE
-                .replace("__SOURCE__", self.source_id)
-                .replace("__VERSION__", &manifest.version)
-                .replace("__TOP_LEVEL__", self.top_level)
-                .replace("__DESCRIBE__", self.describe),
-            manifest,
-            revoked_versions: vec![],
-        }
+        let source = SOURCE
+            .replace("__SOURCE__", self.source_id)
+            .replace("__VERSION__", &manifest.version)
+            .replace("__TOP_LEVEL__", self.top_level)
+            .replace("__DESCRIBE__", self.describe);
+        (manifest, source)
     }
 }
 
 struct Fixture {
     _root: tempfile::TempDir,
-    _distribution: FixtureDistribution,
+    registry: RegistryFixture,
     host: SourceHost,
 }
 impl Fixture {
     async fn new(packages: Vec<Package>) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let mut distribution = FixtureDistribution::new().await;
-        distribution
-            .publish(packages.iter().map(Package::fixture).collect())
-            .await;
-        let mut config = distribution.engine_config(root.path().to_path_buf());
+        let mut registry = RegistryFixture::new("org.openkara").await;
+        let sources: Vec<_> = packages.iter().map(Package::fixture).collect();
+        registry.publish_sources(&sources).await;
+        let mut config = HostConfig::fixture(root.path().to_path_buf(), "0.17.0".into());
         config.describe_timeout = Duration::from_millis(1500);
         config.operation_timeout = Duration::from_millis(300);
-        config.backoff_unit = Duration::from_millis(1);
         config.engine_memory_limit = 16 * 1024 * 1024;
         let host = SourceHost::new(config).await.unwrap();
-        host.refresh().await.unwrap();
+        host.add_registry(&registry.url()).await.unwrap();
         Self {
             _root: root,
-            _distribution: distribution,
+            registry,
             host,
         }
+    }
+    async fn install(&self, id: &str) -> HostResult<SourceSnapshot> {
+        self.host
+            .install_package(
+                self.registry.registry_id(),
+                &self.registry.package_id(id),
+                None,
+                false,
+                false,
+            )
+            .await
     }
     async fn enabled(packages: Vec<Package>) -> Self {
         let ids: Vec<_> = packages.iter().map(|package| package.source_id).collect();
         let fixture = Self::new(packages).await;
         for id in ids {
-            fixture.host.install(id, None, false).await.unwrap();
+            fixture.install(id).await.unwrap();
             fixture.host.set_enabled(id, true, false).await.unwrap();
         }
         fixture
@@ -340,11 +346,7 @@ async fn describe_deadline_and_compatibility_check_gate_installation() {
         ("old_protocol", "incompatible_plugin"),
     ] {
         let started = Instant::now();
-        assert_eq!(
-            host.install(id, None, false).await.unwrap_err().code,
-            code,
-            "{id}"
-        );
+        assert_eq!(fixture.install(id).await.unwrap_err().code, code, "{id}");
         assert!(started.elapsed() < Duration::from_secs(5), "{id}");
         assert_eq!(host.snapshot(id).unwrap().installed_version, None, "{id}");
     }
