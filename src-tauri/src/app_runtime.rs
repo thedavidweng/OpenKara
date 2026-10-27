@@ -210,6 +210,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     }
     let mut source_updates = source_host.subscribe();
     app.manage(source_host);
+    crate::source_registry_link::listen(app);
     let source_app = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         loop {

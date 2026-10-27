@@ -403,6 +403,7 @@
         "addTitle": "Add Source Registry",
         "addBody": "{{url}} is maintained outside OpenKara. Its maintainers decide which packages it offers. OpenKara verifies every download against the registry's integrity record before it runs.",
         "addConfirm": "Add registry",
+        "linkInvalid": "This link cannot add a Source Registry. A registry link must name one HTTPS registry URL: {{link}}",
         "empty": "No Source Registries. OpenKara ships without one.",
         "homepage": "Homepage",
         "refreshed": "Last refresh",

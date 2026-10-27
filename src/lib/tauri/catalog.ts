@@ -11,6 +11,7 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
     removeSourceRegistry: (registryId) =>
       invoke("remove_source_registry", { registryId }),
     listSourceRegistries: () => invoke("list_source_registries"),
+    takeSourceRegistryLinks: () => invoke("take_source_registry_links"),
     listSourceMarket: () => invoke("list_source_market"),
     installMarketPackage: (
       registryId,

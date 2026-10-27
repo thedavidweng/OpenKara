@@ -10,6 +10,7 @@ import type {
   MarketPackage,
   PreviewQueueItem,
   RegistryStatus,
+  SourceRegistryLink,
   SourceSnapshot,
   StreamingImportEvent,
   StreamingImportCompleteEvent,
@@ -74,6 +75,7 @@ export interface CatalogState extends SourceBrowseState {
   registries: RegistryStatus[];
   registriesStatus: LoadStatus;
   registriesError: string | null;
+  registryLink: SourceRegistryLink | null;
   market: MarketPackage[];
   marketStatus: LoadStatus;
   marketError: string | null;
@@ -91,6 +93,8 @@ export interface CatalogState extends SourceBrowseState {
   applyRegistries: (registries: RegistryStatus[]) => void;
   applyMarket: (market: MarketPackage[]) => void;
   loadRegistries: () => Promise<void>;
+  receiveRegistryLinks: () => Promise<boolean>;
+  clearRegistryLink: () => void;
   loadMarket: () => Promise<void>;
   setActiveView: (view: "library") => void;
   setActiveSource: (sourceId: string) => void;
@@ -408,6 +412,7 @@ export function createCatalogStore(
     registries: [],
     registriesStatus: "idle",
     registriesError: null,
+    registryLink: null,
     market: [],
     marketStatus: "idle",
     marketError: null,
@@ -476,6 +481,19 @@ export function createCatalogStore(
           set({ registriesStatus: "error", registriesError: message(error) });
       }
     },
+    receiveRegistryLinks: async () => {
+      try {
+        const links = await backend.catalog.takeSourceRegistryLinks();
+        if (links.length === 0) return false;
+        const latest = links[links.length - 1];
+        set({ registryLink: latest });
+        return true;
+      } catch (error) {
+        notifyError(error);
+        return false;
+      }
+    },
+    clearRegistryLink: () => set({ registryLink: null }),
     loadMarket: async () => {
       const current = generation("_host", "market");
       set({ marketStatus: "loading", marketError: null });

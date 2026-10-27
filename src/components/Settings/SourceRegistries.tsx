@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBackend } from "@/lib/backend";
 import { useCatalogStore } from "@/stores/catalog-store";
@@ -19,6 +19,8 @@ export function SourceRegistries() {
   const registries = useCatalogStore((state) => state.registries);
   const status = useCatalogStore((state) => state.registriesStatus);
   const loadError = useCatalogStore((state) => state.registriesError);
+  const registryLink = useCatalogStore((state) => state.registryLink);
+  const section = useRef<HTMLElement>(null);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +30,24 @@ export function SourceRegistries() {
   useEffect(() => {
     if (status === "idle") void useCatalogStore.getState().loadRegistries();
   }, [status]);
+
+  useEffect(() => {
+    if (!registryLink || busy) return;
+    useCatalogStore.getState().clearRegistryLink();
+    section.current?.scrollIntoView?.({ block: "start" });
+    setRemoveTarget(null);
+    if (registryLink.kind === "add_registry") {
+      setError(null);
+      setAddTarget(registryLink.url);
+    } else {
+      setAddTarget(null);
+      setError(
+        t("settings.streaming.registries.linkInvalid", {
+          link: registryLink.link,
+        }),
+      );
+    }
+  }, [registryLink, busy, t]);
 
   const refreshMarket = async () => {
     useCatalogStore.getState().applyMarket(await catalog.listSourceMarket());
@@ -75,7 +95,11 @@ export function SourceRegistries() {
   };
 
   return (
-    <section aria-labelledby="source-registries-title" className="space-y-3">
+    <section
+      ref={section}
+      aria-labelledby="source-registries-title"
+      className="space-y-3"
+    >
       <h3 id="source-registries-title" className="text-sm font-semibold">
         {t("settings.streaming.registries.title")}
       </h3>

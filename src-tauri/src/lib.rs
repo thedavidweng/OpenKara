@@ -34,6 +34,7 @@ pub mod separator;
 pub mod services;
 pub mod smoke;
 pub mod source_host;
+pub mod source_registry_link;
 pub mod state;
 #[cfg(feature = "automation-smoke")]
 pub mod streaming_runtime_smoke;
@@ -105,6 +106,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -220,6 +222,7 @@ pub fn run() {
             commands::source_host::add_source_registry,
             commands::source_host::remove_source_registry,
             commands::source_host::list_source_registries,
+            commands::source_host::take_source_registry_links,
             commands::source_host::list_source_market,
             commands::source_host::install_market_package,
             commands::source_host::get_source_replacement_notice,

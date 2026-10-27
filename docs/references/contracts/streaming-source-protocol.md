@@ -382,6 +382,12 @@ contract gives the full format; the author-facing summary:
 - A registry entry and its package manifest must agree; sign nothing. The
   integrity declaration, the origin allowlist, and the sandbox are the
   security boundary.
+- A registry website can offer a one-click add link:
+  `openkara://add-registry?url=<percent-encoded registry URL>`. The link
+  only opens OpenKara's add confirmation, which names the URL and states
+  that the registry is maintained outside OpenKara; nothing is added until
+  the user confirms. See the [catalog contract](catalog.md#source-registry-links)
+  for the accepted form.
 
 The [deterministic fixture package](../../../fixtures/streaming-source/README.md)
 is a complete working protocol 2.0 package: one ES module with colliding

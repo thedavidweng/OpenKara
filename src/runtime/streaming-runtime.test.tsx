@@ -4,23 +4,29 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { StreamingImportBar } from "@/components/Catalog/StreamingImportBar";
 import { LibraryDecisionDialog } from "@/components/Library/LibraryDecisionDialog";
 import { useCatalogStore } from "@/stores/catalog-store";
-import type { StreamingImportCompleteEvent } from "@/types/ipc";
+import { useSettingsStore } from "@/stores/settings-store";
+import type {
+  SourceRegistryLink,
+  StreamingImportCompleteEvent,
+} from "@/types/ipc";
 import { startStreamingRuntime } from "./streaming-runtime";
 
-const { handlers } = vi.hoisted(() => ({
-  handlers: new Map<
-    string,
-    (event: { payload: StreamingImportCompleteEvent }) => void
-  >(),
+const { handlers, pendingLinks } = vi.hoisted(() => ({
+  handlers: new Map<string, (event: { payload: unknown }) => void>(),
+  pendingLinks: [] as SourceRegistryLink[],
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (
     name: string,
-    handler: (event: { payload: StreamingImportCompleteEvent }) => void,
+    handler: (event: { payload: unknown }) => void,
   ) => {
     handlers.set(name, handler);
     return () => handlers.delete(name);
   },
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async (command: string) =>
+    command === "take_source_registry_links" ? pendingLinks.splice(0) : [],
 }));
 vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: () => {} },
@@ -30,7 +36,10 @@ vi.mock("react-i18next", () => ({
 afterEach(() => {
   cleanup();
   handlers.clear();
+  pendingLinks.splice(0);
+  useSettingsStore.setState({ isOpen: false });
   useCatalogStore.setState({
+    registryLink: null,
     importRun: null,
     pendingConflict: null,
     activeImportIds: [],
@@ -140,4 +149,46 @@ describe("global streaming import completion", () => {
       }
     },
   );
+});
+
+describe("source registry links", () => {
+  const link: SourceRegistryLink = {
+    kind: "add_registry",
+    url: "https://sources.example.com/registry.json",
+  };
+
+  test("a link that started the app opens Settings once the runtime starts", async () => {
+    pendingLinks.push(link);
+    const stop = startStreamingRuntime();
+    try {
+      await waitFor(() =>
+        expect(useSettingsStore.getState().isOpen).toBe(true),
+      );
+      expect(useCatalogStore.getState().registryLink).toEqual(link);
+    } finally {
+      stop();
+    }
+  });
+
+  test("a link opened while running opens Settings with the newest request", async () => {
+    const stop = startStreamingRuntime();
+    try {
+      await waitFor(() =>
+        expect(handlers.has("source-registry-link")).toBe(true),
+      );
+      expect(useSettingsStore.getState().isOpen).toBe(false);
+      const invalid: SourceRegistryLink = {
+        kind: "invalid",
+        link: "openkara://add-registry",
+      };
+      pendingLinks.push(invalid, link);
+      act(() => handlers.get("source-registry-link")?.({ payload: null }));
+      await waitFor(() =>
+        expect(useSettingsStore.getState().isOpen).toBe(true),
+      );
+      expect(useCatalogStore.getState().registryLink).toEqual(link);
+    } finally {
+      stop();
+    }
+  });
 });
