@@ -144,6 +144,15 @@ pub fn kind_from_http_status_code(status: u16) -> RemoteErrorKind {
     }
 }
 
+pub fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorKind {
+    kind_from_http_status_code(status.as_u16())
+}
+
+pub fn remote_error_from_status(status: reqwest::StatusCode, context: &str) -> RemoteError {
+    let kind = kind_from_http_status(status);
+    RemoteError::new(kind, format!("{context} failed with HTTP {status}"))
+}
+
 pub fn kind_from_io_error(error: &std::io::Error) -> RemoteErrorKind {
     if error.kind() == std::io::ErrorKind::StorageFull
         || (error.kind() == std::io::ErrorKind::Other && error.raw_os_error() == Some(28))
@@ -172,7 +181,7 @@ pub fn verify_content_range(header: &str, offset: u64, length: u64) -> RemoteRes
         ));
     }
 
-    let (range_part, _total_part) = rest.split_once('/').unwrap_or((rest, ""));
+    let (range_part, total_part) = rest.split_once('/').unwrap_or((rest, ""));
     let (start_str, end_str) = range_part.split_once('-').ok_or_else(|| {
         RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
@@ -192,12 +201,17 @@ pub fn verify_content_range(header: &str, offset: u64, length: u64) -> RemoteRes
         )
     })?;
 
-    if start != expected_start || end != expected_end {
+    let clamped_expected_end = match total_part.trim().parse::<u64>().ok() {
+        Some(total) if total > expected_start => expected_end.min(total - 1),
+        _ => expected_end,
+    };
+
+    if start != expected_start || end != clamped_expected_end {
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
             format!(
                 "Content-Range mismatch: header says {start}-{end}, \
-                 requested {expected_start}-{expected_end}"
+                 requested {expected_start}-{clamped_expected_end}"
             ),
         ));
     }
@@ -301,6 +315,7 @@ mod tests {
     fn verify_content_range_accepts_matching_and_rejects_mismatched_windows() {
         assert!(verify_content_range("bytes 100-199/1000", 100, 100).is_ok());
         assert!(verify_content_range("bytes 0-0/1", 0, 1).is_ok());
+        assert!(verify_content_range("bytes 90-99/100", 90, 50).is_ok());
 
         let mismatch = verify_content_range("bytes 0-50/500", 0, 100).unwrap_err();
         assert_eq!(mismatch.kind, RemoteErrorKind::RemoteIntegrityFailed);
