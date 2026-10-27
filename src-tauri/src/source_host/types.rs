@@ -100,12 +100,15 @@ pub struct HostConfig {
     pub(crate) index_url: String,
     pub(crate) trusted_keys: BTreeMap<String, [u8; 32]>,
     pub(crate) target: String,
+    /// Protocol major of the Node stdio transport. Embedded-engine and Source
+    /// Registry packages use `engine::PROTOCOL_MAJOR` regardless of this value.
     pub(crate) current_protocol: u32,
     pub(crate) idle_timeout: Duration,
     pub(crate) describe_timeout: Duration,
     pub(crate) operation_timeout: Duration,
     pub(crate) backoff_unit: Duration,
     pub(crate) engine_memory_limit: usize,
+    pub(crate) registry_refresh_interval: Duration,
     #[cfg(test)]
     pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)]
@@ -162,6 +165,7 @@ impl HostConfig {
             operation_timeout: Duration::from_secs(30),
             backoff_unit: Duration::from_secs(1),
             engine_memory_limit: 64 * 1024 * 1024,
+            registry_refresh_interval: Duration::from_secs(6 * 60 * 60),
             #[cfg(test)]
             allow_test_distribution_http: false,
             #[cfg(test)]
@@ -319,6 +323,8 @@ pub(crate) struct Release {
     pub installed_package: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_runtime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<PackageIdentity>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct IndexSource {
@@ -349,11 +355,42 @@ pub(crate) struct StoredSource {
     pub staged: Option<Release>,
     #[serde(default)]
     pub revoked: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackageIdentity>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct StoredState {
     pub generation: u64,
     pub sources: BTreeMap<String, StoredSource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registries: Vec<StoredRegistry>,
+}
+/// An installed package's identity: the Source Registry that lists it and its package id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PackageIdentity {
+    pub registry_id: String,
+    pub package_id: String,
+}
+impl PackageIdentity {
+    /// The prefix keeps registry identities apart from signed-index `publisher/package` bindings.
+    pub(crate) fn owner_binding(&self) -> String {
+        format!("registry:{}/{}", self.registry_id, self.package_id)
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct StoredRegistry {
+    pub url: String,
+    pub registry_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryStatus {
+    pub url: String,
+    pub registry_id: String,
+    pub display_name: String,
+    pub homepage: String,
+    /// Unix time in milliseconds of the last successful fetch.
+    pub refreshed_at: Option<u64>,
+    pub last_error: Option<HostError>,
 }
 
 #[cfg(test)]

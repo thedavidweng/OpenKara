@@ -930,12 +930,12 @@ pub(crate) fn dropbox_download_file(
                 serde_json::json!({ "path": path_owned }).to_string(),
             );
         Ok(builder)
-    })
-    .map_err(|e| e.to_command_error())?;
+    })?;
     if !response.status().is_success() {
-        return Err(
-            remote_error_from_status(response.status(), "Dropbox download").to_command_error(),
-        );
+        return Err(CommandError::from(remote_error_from_status(
+            response.status(),
+            "Dropbox download",
+        )));
     }
 
     if let Some(parent) = destination.parent() {

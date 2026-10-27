@@ -100,6 +100,7 @@ const CATEGORY_PATTERNS = {
   rust: [
     "src-tauri/build.rs",
     "src-tauri/src/**",
+    "src-tauri/crates/**",
     "src-tauri/tests/**",
     // Source-tree smoke binaries compile against the production crate and
     // need the same native validation as any other Rust entry point.
@@ -124,7 +125,11 @@ const CATEGORY_PATTERNS = {
     "packaging/flatpak/generated/node-sources.0.json",
   ],
 
-  deps_rust: ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"],
+  deps_rust: [
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/crates/**/Cargo.toml",
+  ],
 
   ci_workflow: [
     ".github/workflows/ci.yml",
@@ -158,21 +163,19 @@ const CATEGORY_PATTERNS = {
     // ci.yml. This category is reserved for when one is added.
   ],
 
-  // Workflows whose behavior is asserted by tests/ci/*.test.ts. A policy
-  // change here touches no product code, so without this category the PR
-  // runs only workflow lint and a stale contract test can land unnoticed
-  // (that is how #568 turned main red for 13 minutes).
-  workflow_contracts: [".github/workflows/dependabot-automerge.yml"],
+  workflow_contracts: [
+    ".github/dependabot.yml",
+    ".github/workflows/cla.yml",
+    ".github/workflows/dependabot-sync.yml",
+  ],
 
   other_workflow: [
     ".github/jactionlint*.yaml",
     ".github/jactionlint*.yml",
     ".github/jactionlint-matcher.json",
     ".github/actions/**",
-    ".github/workflows/dependabot-sync.yml",
     ".github/workflows/mirror.yml",
     ".github/workflows/pages.yml",
-    ".github/dependabot.yml",
     ".github/ISSUE_TEMPLATE/**",
     ".github/PULL_REQUEST_TEMPLATE.md",
   ],
