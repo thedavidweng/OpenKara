@@ -1,3 +1,5 @@
+pub mod asset;
+pub(crate) mod download;
 pub mod error;
 pub mod manifest;
 pub mod net_policy;
@@ -7,6 +9,10 @@ pub mod storage;
 pub mod testing;
 pub mod webdav;
 
+pub use asset::{
+    asset_operation_id, content_digest_from_asset_path, fetch_asset, plan_asset_fetch, AssetSource,
+    FetchedAsset, RangeReader, ASSET_DOWNLOAD_CHUNK_SIZE,
+};
 pub use error::{
     kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
     remote_error_from_status, verify_content_range, RemoteError, RemoteErrorKind,
