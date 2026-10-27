@@ -115,6 +115,8 @@ pub struct HostConfig {
     pub(crate) fixture_resources: BTreeMap<String, (Vec<std::net::IpAddr>, Vec<u8>)>,
     #[cfg(test)]
     pub(crate) fixture_statuses: BTreeMap<String, u16>,
+    #[cfg(test)]
+    pub(crate) fixture_upstreams: BTreeMap<String, String>,
 }
 impl HostConfig {
     pub fn production(data_root: PathBuf, resource_root: PathBuf, host_version: String) -> Self {
@@ -172,6 +174,8 @@ impl HostConfig {
             fixture_resources: BTreeMap::new(),
             #[cfg(test)]
             fixture_statuses: BTreeMap::new(),
+            #[cfg(test)]
+            fixture_upstreams: BTreeMap::new(),
         }
     }
     #[cfg(test)]
@@ -201,6 +205,11 @@ impl HostConfig {
     #[cfg(test)]
     pub(crate) fn set_fixture_status(&mut self, url: String, status: u16) {
         self.fixture_statuses.insert(url, status);
+    }
+    /// Serves source requests for a declared HTTPS origin from a local plain-HTTP server.
+    #[cfg(test)]
+    pub(crate) fn add_fixture_upstream(&mut self, origin: String, server: String) {
+        self.fixture_upstreams.insert(origin, server);
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -326,6 +335,15 @@ pub(crate) struct Release {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<PackageIdentity>,
 }
+impl Release {
+    /// The identity that owns the source's credentials and storage.
+    pub(crate) fn owner_binding(&self) -> String {
+        self.registry.as_ref().map_or_else(
+            || super::binding(&self.manifest.publisher, &self.manifest.package_id),
+            PackageIdentity::owner_binding,
+        )
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct IndexSource {
     pub source_id: String,
@@ -395,6 +413,40 @@ pub struct RegistryStatus {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn a_release_is_owned_by_its_registry_identity_or_its_signed_publisher() {
+        let mut release = Release {
+            manifest: crate::source_host::test_support::fixture_manifest("fixture", "1.0.0"),
+            archive: Artifact {
+                url: "https://packages.example.test/fixture.tgz".into(),
+                size: 1,
+                sha256: String::new(),
+                format: "tgz".into(),
+                executable: String::new(),
+            },
+            runtime: RuntimeRelease::default(),
+            installed_package: None,
+            installed_runtime: None,
+            registry: None,
+        };
+        assert_eq!(
+            release.owner_binding(),
+            format!(
+                "{}/{}",
+                release.manifest.publisher, release.manifest.package_id
+            )
+        );
+        release.registry = Some(PackageIdentity {
+            registry_id: "org.example.registry".into(),
+            package_id: "org.example.registry.fixture".into(),
+        });
+        assert_eq!(
+            release.owner_binding(),
+            "registry:org.example.registry/org.example.registry.fixture"
+        );
+    }
     #[test]
     fn the_bundled_runtime_version_matches_the_packaged_pin() {
         let pin: serde_json::Value =

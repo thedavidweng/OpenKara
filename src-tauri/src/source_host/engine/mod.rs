@@ -1,8 +1,13 @@
 mod allocator;
+mod crypto;
+mod host_api;
+mod log;
 mod sandbox;
+mod storage;
 
 use super::{
     install,
+    network::SourceNetwork,
     runtime::{
         unavailable, Admission, BoxFuture, PreparedRuntime, Progress, RequestHandle,
         SourceInstance, SourceRuntime,
@@ -142,6 +147,7 @@ impl Instance {
             source,
             name: release.manifest.entry.clone(),
             memory_limit: config.engine_memory_limit,
+            host: host_setup(config, release),
             calls: receiver,
             ready,
         });
@@ -257,6 +263,30 @@ impl Instance {
             first_progress,
             cancellation,
         ))
+    }
+}
+
+fn host_setup(config: &HostConfig, release: &Release) -> host_api::HostSetup {
+    let manifest = &release.manifest;
+    let mut origins = manifest.resource_origins.clone();
+    for origin in &manifest.media_origins {
+        if !origins.contains(origin) {
+            origins.push(origin.clone());
+        }
+    }
+    host_api::HostSetup {
+        source_id: manifest.source_id.clone(),
+        owner_binding: release.owner_binding(),
+        storage_root: config.data_root.clone(),
+        network: SourceNetwork {
+            origins,
+            cookies: Default::default(),
+            timeout: config.operation_timeout,
+            #[cfg(test)]
+            upstreams: config.fixture_upstreams.clone(),
+        },
+        runtime: tokio::runtime::Handle::current(),
+        dispatch: tracing::dispatcher::get_default(Clone::clone),
     }
 }
 
