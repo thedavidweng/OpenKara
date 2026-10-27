@@ -9,6 +9,7 @@ pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod webdav;
+pub mod writer;
 
 pub use asset::{
     asset_operation_id, content_digest_from_asset_path, fetch_asset, plan_asset_fetch, AssetSource,
@@ -38,3 +39,7 @@ pub use storage::{
     RepositoryStorage, StorageCapabilities,
 };
 pub use webdav::WebDavStorage;
+pub use writer::{
+    ensure_referenced_assets, publish_changes, CommittedSnapshot, PublishOutcome, PublishRequest,
+    PublishStep,
+};
