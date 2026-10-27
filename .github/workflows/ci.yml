@@ -850,22 +850,41 @@ jobs:
           cargo test -q --lib source_host::registry_tests::tar_windows_separator_and_malicious_members_are_rejected_without_extraction
 
       # The installed-app smoke proves the packaged app installs and separates
-      # audio; it never touches the streaming-source host. The registry
-      # consumer acceptance below is the new-architecture gate: an explicitly
-      # added Source Registry, a real downloaded tarball with SHA-512
+      # audio; it never touches the streaming-source host. The two registry
+      # gates below share one Windows job. The offline unit tests prove the
+      # tar extractor and the mock-registry consumer contract on Windows
+      # itself; the live test that follows is the real production gate and is
+      # expected to fail until a published registry URL is configured.
+      - name: Verify registry tar extraction on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::registry_tests::tar_windows_separator_and_malicious_members_are_rejected_without_extraction
+
+      - name: Verify mock registry consumer contract on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::registry_tests::registry_consumer_acceptance_installs_starts_and_describes_with_verified_identity
+
+      # Live production gate: an explicitly added real Source Registry over
+      # HTTPS (OPENKARA_LIVE_REGISTRY_URL), real tarball with SHA-512
       # integrity and package seal, registry manifest identity (source,
       # version, protocol majors 2, openkara-js major 1), enablement, a live
       # QuickJS `describe`, and a `signed_out`/null-account session check.
-      # It runs against a mock registry over loopback HTTP: no public
-      # compatible registry URL is known in this checkout, so this gate must
-      # not be presented as a production consumer pass. Live acceptance
-      # against a real public registry still needs a published URL.
-      - name: Accept registry streaming source on Windows
+      # This is the user-gesture path with production HostConfig, so loopback
+      # HTTP fixtures can never satisfy it. The URL is a non-secret repo
+      # variable the source owner publishes after the real package and
+      # external publication freeze; until then this step fails by design and
+      # must not be skipped, weakened, or replaced by the mock gate above.
+      - name: Accept live registry streaming source on Windows
         working-directory: src-tauri
         shell: pwsh
         timeout-minutes: 15
+        env:
+          OPENKARA_LIVE_REGISTRY_URL: ${{ vars.OPENKARA_LIVE_REGISTRY_URL }}
         run: |
-          cargo test -q --lib source_host::registry_tests::registry_consumer_acceptance_installs_starts_and_describes_with_verified_identity
+          cargo test -q --test integration registry_live_consumer -- --ignored --nocapture
 
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without
