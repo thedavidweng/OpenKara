@@ -3392,9 +3392,15 @@ dependencies = [
 name = "openkara-remote"
 version = "0.1.0"
 dependencies = [
+ "httpdate",
+ "quick-xml",
+ "rand 0.10.3",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tiny_http",
+ "tracing",
 ]
 
 [[package]]
