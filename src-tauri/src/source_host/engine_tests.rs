@@ -156,7 +156,7 @@ impl Fixture {
         let ids: Vec<_> = packages.iter().map(|package| package.source_id).collect();
         let fixture = Self::new(packages).await;
         for id in ids {
-            fixture.host.install(id, None).await.unwrap();
+            fixture.host.install(id, None, false).await.unwrap();
             fixture.host.set_enabled(id, true, false).await.unwrap();
         }
         fixture
@@ -340,7 +340,11 @@ async fn describe_deadline_and_compatibility_check_gate_installation() {
         ("old_protocol", "incompatible_plugin"),
     ] {
         let started = Instant::now();
-        assert_eq!(host.install(id, None).await.unwrap_err().code, code, "{id}");
+        assert_eq!(
+            host.install(id, None, false).await.unwrap_err().code,
+            code,
+            "{id}"
+        );
         assert!(started.elapsed() < Duration::from_secs(5), "{id}");
         assert_eq!(host.snapshot(id).unwrap().installed_version, None, "{id}");
     }

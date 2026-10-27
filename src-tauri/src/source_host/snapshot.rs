@@ -74,6 +74,14 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
     Ok(SourceSnapshot {
         source_id: id.into(),
         owner_binding: stored.owner_binding.clone(),
+        registry_id: stored
+            .package
+            .as_ref()
+            .map(|identity| identity.registry_id.clone()),
+        package_id: stored
+            .package
+            .as_ref()
+            .map(|identity| identity.package_id.clone()),
         name: manifest
             .as_ref()
             .map(|manifest| manifest.name.clone())
@@ -97,6 +105,7 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
         staged_version: stored.staged.as_ref().map(|r| r.manifest.version.clone()),
         pinned_version: stored.pinned_version.clone(),
         enabled: stored.enabled,
+        loaded: stored.active.is_some() && !invalid,
         runtime_ready: stored.active.is_some() && !invalid,
         running: live
             .and_then(|live| live.instance.as_ref())

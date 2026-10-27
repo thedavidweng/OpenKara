@@ -172,6 +172,7 @@ describe("Sidebar catalog source rows", () => {
         name: "Alpha",
         installed_version: "1",
         enabled: true,
+        loaded: true,
         runtime_ready: true,
         state: "ready",
       } as SourceSnapshot,

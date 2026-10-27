@@ -116,9 +116,15 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         .await
         .expect("add the fixture registry");
     for id in ["official", "challenge"] {
-        host.install_package(registry.registry_id(), &registry.package_id(id), None)
-            .await
-            .expect("verified registry install and describe");
+        host.install_package(
+            registry.registry_id(),
+            &registry.package_id(id),
+            None,
+            false,
+            false,
+        )
+        .await
+        .expect("verified registry install and describe");
         host.set_enabled(id, true, false).await.expect("enable");
     }
     let cache = Arc::new(TrackMetadataCache::default());
