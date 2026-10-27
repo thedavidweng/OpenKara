@@ -371,7 +371,7 @@ fn activate_candidate(candidate: &Path, working_copy: &WorkingCopyDatabase) -> R
     Ok(())
 }
 
-fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
+pub(crate) fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
     let connection = open_readonly(candidate)?;
 
     let quick_check: String = connection
@@ -430,7 +430,7 @@ fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
     Ok(())
 }
 
-fn open_readonly(path: &Path) -> RemoteResult<Connection> {
+pub(crate) fn open_readonly(path: &Path) -> RemoteResult<Connection> {
     let flags =
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
     Connection::open_with_flags(path, flags).map_err(|error| {
