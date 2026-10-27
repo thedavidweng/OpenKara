@@ -1,3 +1,4 @@
+pub(crate) mod describe;
 mod discovery;
 mod engine;
 mod install;

@@ -20,9 +20,7 @@
 //! Until the real registry URL exists, CI stays red on this step by design:
 //! no env-empty skip, no retry/timeout weakening, no mock substitution.
 
-use openkara_lib::source_host::{
-    HostConfig, ProtocolDeclaration, RuntimeRequirement, SourceHost, SourceManifest, SourceState,
-};
+use openkara_lib::source_host::{HostConfig, SourceHost, SourceManifest, SourceState};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
@@ -55,6 +53,10 @@ fn production_config(root: &std::path::Path) -> HostConfig {
 /// message, so `assert!(...)` and panic output cannot carry PII into logs.
 /// This is the same shape as the 632 offline proof; the live test below and
 /// the offline regression below both call this exact helper.
+/// NOTE: this helper deliberately mirrors the crate-private lib contract in
+/// `source_host::describe` (which an integration target cannot import). If
+/// the two drift, the mocked-worker contract test below catches it: the mock
+/// now reports the same full capability set the lib asserts.
 fn check_worker_description(description: &Value, manifest: &SourceManifest) -> Result<(), String> {
     const FAIL: &str = "worker description failed contract";
     if description["protocol"]["major"].as_u64() != Some(2) {

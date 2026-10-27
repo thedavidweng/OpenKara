@@ -17,15 +17,18 @@ export default {
       source_id: "__SOURCE__",
       package_id: "__PACKAGE__",
       package_version: "__VERSION__",
-      name: "Registry Fixture",
+      name: "__NAME__",
       description: "Source Registry test source.",
-      capabilities: ["playlists"],
+      capabilities: __CAPABILITIES__,
       authentication: { flow: "none" },
       requires_authentication: [],
       session: { state: "signed_out", account: null },
     };
   },
   playlists() {
+    return { items: [], next_cursor: null, version: "__VERSION__" };
+  },
+  search() {
     return { items: [], next_cursor: null, version: "__VERSION__" };
   },
 };
@@ -147,11 +150,15 @@ impl MockRegistry {
         let mut entries = Vec::new();
         for version in versions {
             let manifest = manifest(self.source_id, &package_id, version);
+            let capabilities =
+                serde_json::to_string(&manifest.capabilities).expect("capabilities encode");
             let source = SOURCE
                 .replace("__MAJOR__", &version.describe_major.to_string())
                 .replace("__SOURCE__", self.source_id)
                 .replace("__PACKAGE__", &package_id)
-                .replace("__VERSION__", version.version);
+                .replace("__VERSION__", version.version)
+                .replace("__NAME__", &manifest.name)
+                .replace("__CAPABILITIES__", &capabilities);
             let bytes = tarball(&manifest, &source);
             entries.push(json!({
                 "version": version.version,
@@ -1081,7 +1088,12 @@ async fn tar_windows_separator_and_malicious_members_are_rejected_without_extrac
         .replace("__MAJOR__", "2")
         .replace("__SOURCE__", "fixture")
         .replace("__PACKAGE__", "org.example.registry.fixture")
-        .replace("__VERSION__", "1.0.0");
+        .replace("__VERSION__", "1.0.0")
+        .replace("__NAME__", &manifest.name)
+        .replace(
+            "__CAPABILITIES__",
+            &serde_json::to_string(&manifest.capabilities).expect("capabilities encode"),
+        );
 
     // A Windows-shaped entry name keeps its `/` separators and resolves to the
     // nested path after the 629 `relative()` join, not to a lost file.
@@ -1119,7 +1131,47 @@ async fn tar_windows_separator_and_malicious_members_are_rejected_without_extrac
     assert!(landed.join("package/manifest.json").is_file());
     assert!(landed.join("package/source.mjs").is_file());
 
-    // Symlinks and non-regular members never reach the member writer.
+    // Hostile names pass through as raw tar members: the typed tar-builder
+    // API refuses `..` at append time, so hostile records are written as
+    // minimal ustar headers verbatim. The shared extractor refuses every
+    // one and lands nothing. The `..\` / backslash names cannot be appended
+    // through the typed API either, so they are stored verbatim as the same
+    // raw header.
+    for hostile in [
+        "package/../escape.mjs",
+        "package/C:\\Windows\\evil.mjs",
+        "package\\evil.mjs",
+    ] {
+        // Minimal ustar record with the hostile name verbatim.
+        let mut header_bytes = vec![0u8; 512];
+        let name_bytes = hostile.as_bytes();
+        header_bytes[..name_bytes.len().min(100)]
+            .copy_from_slice(&name_bytes[..name_bytes.len().min(100)]);
+        header_bytes[156] = b'0';
+        header_bytes[257..262].copy_from_slice(b"ustar");
+        let data = b"hostile";
+        let size_field = format!("{:o}\0", data.len());
+        header_bytes[124..124 + size_field.len()].copy_from_slice(size_field.as_bytes());
+        let mut member = Vec::new();
+        member.extend_from_slice(&header_bytes);
+        let mut padded = data.to_vec();
+        padded.resize(512, 0);
+        member.extend_from_slice(&padded);
+        member.extend_from_slice(&[0u8; 1024]);
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut encoder, &member).unwrap();
+        let gzipped = encoder.finish().unwrap();
+        let tar_path = root.path().join("hostile.tar.gz");
+        std::fs::write(&tar_path, &gzipped).unwrap();
+        let out = root.path().join(format!("hostile-out-{}", hostile.len()));
+        std::fs::create_dir(&out).unwrap();
+        super::install::extract_tar_gz(&tar_path, &out, &super::types::Cancellation::new())
+            .unwrap_err();
+        assert!(
+            std::fs::read_dir(&out).unwrap().next().is_none(),
+            "{hostile} as a tar member must land nothing on disk"
+        );
+    }
     let evil = root.path().join("evil.tar.gz");
     let mut archive = tar::Builder::new(Vec::new());
     let mut header = tar::Header::new_gnu();
@@ -1215,29 +1267,60 @@ async fn registry_consumer_acceptance_installs_starts_and_describes_with_verifie
         host.snapshot("fixture").unwrap().running,
         "a served describe proves the source runs in the embedded engine"
     );
-    assert_eq!(description["protocol"]["major"], 2);
-    assert_eq!(description["source_id"], "fixture");
-    assert_eq!(description["package_id"], manifest.package_id);
-    assert_eq!(description["package_version"], "1.0.0");
-    // The mock registry sets its own name and a fixed `playlists` describe;
-    // the identity that matters is source/package/version plus the sealed
-    // manifest and the search-capable acceptance below.
-    assert_eq!(description["name"], "Registry Fixture");
-    // The mock describe above reports only `playlists`; the search-capable
-    // contract is enforced by the manifest check in `install` and by the
-    // unit test below, which exercises the same worker contract.
-    let reported: std::collections::BTreeSet<&str> = description["capabilities"]
-        .as_array()
-        .expect("describe reports capabilities")
-        .iter()
-        .map(|value| value.as_str().expect("capabilities are strings"))
-        .collect();
-    assert!(reported.contains("playlists"));
-    let declared: std::collections::BTreeSet<&str> =
-        manifest.capabilities.iter().map(String::as_str).collect();
-    assert_eq!(declared, ["playlists", "search"].iter().copied().collect());
-    assert_eq!(description["session"]["state"], "signed_out");
-    assert_eq!(description["session"]["account"], Value::Null);
+    // The worker must prove it honors the search capability it was
+    // installed for: a search call runs inside the same engine.
+    let search = host
+        .request("fixture", "search", json!({"cursor": null}))
+        .await
+        .unwrap();
+    assert_eq!(search["version"], "1.0.0");
+    crate::source_host::describe::must_match_worker(&description, &manifest)
+        .expect("installed worker describe matches its sealed registry manifest");
+
+    // Negative mutations through the same checker: each hostile payload
+    // must fail with the constant text and never echo worker bytes (sentinel
+    // absence is asserted, not just the error string).
+    for (label, hostile) in [
+        (
+            "missing-account",
+            json!({"capabilities": ["playlists", "search"], "name": manifest.name, "protocol": {"major": 2}, "source_id": "fixture", "package_id": manifest.package_id, "package_version": "1.0.0", "session": {"state": "signed_out"}}),
+        ),
+        (
+            "state-object-with-account",
+            json!({"capabilities": ["playlists", "search"], "name": manifest.name, "protocol": {"major": 2}, "source_id": "fixture", "package_id": manifest.package_id, "package_version": "1.0.0", "session": {"state": {"pii": "REAL_ACCOUNT_pii-state"}, "account": null}}),
+        ),
+        (
+            "raw-name-sentinel",
+            json!({"capabilities": ["playlists", "search"], "name": "REAL_NAME_pii-name", "protocol": {"major": 2}, "source_id": "fixture", "package_id": manifest.package_id, "package_version": "1.0.0", "session": {"state": "signed_out", "account": null}}),
+        ),
+        (
+            "missing-search",
+            json!({"capabilities": ["playlists"], "name": manifest.name, "protocol": {"major": 2}, "source_id": "fixture", "package_id": manifest.package_id, "package_version": "1.0.0", "session": {"state": "signed_out", "account": null}}),
+        ),
+        (
+            "extra-capability",
+            json!({"capabilities": ["playlists", "search", "REAL_CAP_pii-cap"], "name": manifest.name, "protocol": {"major": 2}, "source_id": "fixture", "package_id": manifest.package_id, "package_version": "1.0.0", "session": {"state": "signed_out", "account": null}}),
+        ),
+    ] {
+        let error = crate::source_host::describe::must_match_worker(&hostile, &manifest)
+            .expect_err("hostile describe must fail");
+        assert_eq!(
+            error,
+            crate::source_host::describe::CONTRACT_FAILURE,
+            "case {label}"
+        );
+        assert!(
+            !error.contains("REAL_"),
+            "rejection must not echo worker bytes: {label}"
+        );
+    }
+
+    // Positive control: the served describe passes the same checker.
+    assert_eq!(
+        crate::source_host::describe::must_match_worker(&description, &manifest),
+        Ok(()),
+        "the real worker describe is the positive control"
+    );
 
     // Enablement persists across a host restart with the seal intact.
     drop(fixture.host);
