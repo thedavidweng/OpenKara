@@ -112,6 +112,8 @@ pub struct HostConfig {
     pub(crate) fixture_resources: BTreeMap<String, (Vec<std::net::IpAddr>, Vec<u8>)>,
     #[cfg(test)]
     pub(crate) fixture_statuses: BTreeMap<String, u16>,
+    #[cfg(test)]
+    pub(crate) fixture_upstreams: BTreeMap<String, String>,
 }
 impl HostConfig {
     pub fn production(data_root: PathBuf, resource_root: PathBuf, host_version: String) -> Self {
@@ -168,6 +170,8 @@ impl HostConfig {
             fixture_resources: BTreeMap::new(),
             #[cfg(test)]
             fixture_statuses: BTreeMap::new(),
+            #[cfg(test)]
+            fixture_upstreams: BTreeMap::new(),
         }
     }
     #[cfg(test)]
@@ -197,6 +201,11 @@ impl HostConfig {
     #[cfg(test)]
     pub(crate) fn set_fixture_status(&mut self, url: String, status: u16) {
         self.fixture_statuses.insert(url, status);
+    }
+    /// Serves source requests for a declared HTTPS origin from a local plain-HTTP server.
+    #[cfg(test)]
+    pub(crate) fn add_fixture_upstream(&mut self, origin: String, server: String) {
+        self.fixture_upstreams.insert(origin, server);
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

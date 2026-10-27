@@ -115,6 +115,70 @@ returns `incompatible_plugin` and stops the source. Other operations have the
 stops the source and returns `source_unavailable` to all of its pending calls.
 The next call starts the source fresh. An embedded source has no crash-restart
 backoff.
+
+#### Host API
+
+The global `openkara` object is the only capability an embedded source gets,
+together with `setTimeout` and `clearTimeout`. Binary inputs accept a
+`Uint8Array`, an `ArrayBuffer`, or a string (encoded as UTF-8); binary outputs
+are `Uint8Array`. Invalid crypto or encoding input throws a `TypeError`.
+
+- `openkara.request({url, method?, headers?, body?, responseType?})` resolves
+  to `{status, url, headers, setCookies, body}`. `url` must be HTTPS and its
+  exact origin must appear in `resource_origins` or `media_origins`; no
+  wildcard, subdomain, port, or userinfo variation is accepted. Methods are
+  `GET` (default), `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE`.
+  `responseType` is `text` (default), `json`, or `bytes`. The host follows at
+  most 5 redirects and checks the scheme, origin, and public DNS destination at
+  every hop; a redirect to an undeclared origin fails. Cross-origin redirects
+  drop `Cookie` and `Authorization`. A source may not set `Host`,
+  `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Upgrade`,
+  `TE`, `Trailer`, `Expect`, or any `Proxy-*` or `Sec-*` header; `Referer` and
+  `Origin` must be HTTPS URLs without userinfo. Request bodies are at most 1 MiB and
+  responses at most 8 MiB. At most 8 requests per source are in flight; more
+  reject with `busy`. Rejections carry the host error `code`
+  (`invalid_resource`, `network`, `busy`, `cancelled`), so a source that
+  rethrows them returns the matching protocol error.
+- Each source has its own cookie jar. The host stores `Set-Cookie` responses
+  and sends matching cookies on later requests from the same source only;
+  explicit `Cookie` headers are sent before stored cookies. `auth.sign_out`
+  discards the jar. The jar lives in memory for the running source.
+- `openkara.crypto`: `digest(algorithm, data)` and
+  `hmac(algorithm, key, data)` with `md5`, `sha1`, `sha256`, `sha384`, or
+  `sha512`; `aesEncrypt(options, data)` and `aesDecrypt(options, data)` with
+  `options` `{mode, key, iv?, padding?, aad?}`, where `mode` is `ecb`, `cbc`,
+  `ctr` (128-bit big-endian counter), or `gcm` (12-byte IV, 16-byte tag
+  appended; 128- or 256-bit keys), and `padding` is `pkcs7` (default) or
+  `none` for ECB and CBC; `rsaPublic(key, data)` computes the raw RSA public
+  operation without padding, with `key` either `{pem}` (`PUBLIC KEY` or
+  `RSA PUBLIC KEY`) or `{modulus, exponent}` as big-endian bytes, moduli of
+  512 to 8192 bits, and the output left-padded to the modulus length;
+  `randomBytes(length)` returns at most 64 KiB of secure random bytes.
+- `openkara.encoding`: `base64Encode(data, {urlSafe?, padding?})`,
+  `base64Decode(text)` (standard or URL-safe alphabet, padding optional),
+  `hexEncode`, `hexDecode`, `utf8Encode`, and `utf8Decode`.
+- `openkara.storage`: `get(key)`, `set(key, value)`, `remove(key)`, `clear()`,
+  and `keys()` over string keys of 1 to 256 bytes and string values, capped at
+  1 MiB of keys and values per source. A write over the cap throws and changes
+  nothing. Storage persists in
+  `<data_root>/streaming-sources/source-storage/<source_id>.json`, bound to the
+  package's owner binding: another package that later takes the same source id
+  starts empty. Storage is for source state that is not Streaming Credentials.
+- `openkara.log.debug|info|warn|error(message, fields?)` writes a structured
+  record to the host log with target `openkara::streaming_source` and the
+  source id. Before the record leaves the engine the host replaces credential
+  values seen in `session.restore`, sign-in results and `Cookie` or
+  `Authorization` request headers, received cookie values, values under
+  sensitive field names (for example `token`, `cookie`, `session`, `secret`),
+  and URL queries and fragments with `[redacted]`. Messages are cut at 1,024
+  characters, fields at 4,096, and each source may write 100 records a minute.
+- `setTimeout(callback, delay)` and `clearTimeout(id)` support at most 256
+  pending timers per source with delays of at most 60 seconds. Timers run only
+  while the source has a call in progress.
+
+`session.restore` receives only the credentials saved for the package's own
+owner binding. A source has no API to read the host keychain, another source's
+credentials, cookies, or storage.
 Package archives contain the protocol manifest, relative `.mjs` entry,
 `package-lock.json`, `LICENSE`, `NOTICE`, and locked production dependencies.
 The host rejects traversal, absolute paths, links, devices, duplicate paths,

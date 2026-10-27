@@ -1,4 +1,8 @@
-use super::{allocator::BudgetAllocator, stopped_at_limit, Call, Shared};
+use super::{
+    allocator::BudgetAllocator,
+    host_api::{self, Host, HostSetup},
+    stopped_at_limit, Call, Shared,
+};
 use crate::source_host::{runtime::source_error, types::*};
 use rquickjs::{
     context::intrinsic, function::This, promise::MaybePromise, AsyncContext, AsyncRuntime,
@@ -11,10 +15,10 @@ pub(super) const THREAD_STACK: usize = 8 * 1024 * 1024;
 const SCRIPT_STACK: usize = 1024 * 1024;
 const MAX_RESULT: usize = 1024 * 1024;
 
-/// Everything a source context gets: language built-ins without `eval`, the
-/// `Function` constructors, timers, or host objects. Without the `Eval`
-/// intrinsic QuickJS has no compiler in this context, so `eval` and every
-/// function constructor throw.
+/// The language built-ins a source context gets: no `eval` and no `Function`
+/// constructors. Without the `Eval` intrinsic QuickJS has no compiler in this
+/// context, so `eval` and every function constructor throw. The host API is
+/// added on top by `host_api::install`.
 type Sandbox = (
     intrinsic::Date,
     intrinsic::RegExpCompiler,
@@ -33,6 +37,7 @@ pub(super) struct Launch {
     pub(super) source: Vec<u8>,
     pub(super) name: String,
     pub(super) memory_limit: usize,
+    pub(super) host: HostSetup,
     pub(super) calls: mpsc::UnboundedReceiver<Call>,
     pub(super) ready: oneshot::Sender<HostResult<()>>,
 }
@@ -57,10 +62,12 @@ async fn serve(launch: Launch) {
         source,
         name,
         memory_limit,
+        host,
         mut calls,
         ready,
     } = launch;
-    let engine = match Engine::load(&shared, &name, source, memory_limit).await {
+    let host = Host::new(host, shared.shutdown.clone());
+    let engine = match Engine::load(&shared, &name, source, memory_limit, host).await {
         Ok(engine) => Rc::new(engine),
         Err(error) => {
             let _ = ready.send(Err(error));
@@ -92,6 +99,7 @@ enum Outcome {
 struct Engine {
     exports: Persistent<Object<'static>>,
     context: AsyncContext,
+    host: Rc<Host>,
 }
 impl Engine {
     async fn load(
@@ -99,6 +107,7 @@ impl Engine {
         name: &str,
         source: Vec<u8>,
         memory_limit: usize,
+        host: Rc<Host>,
     ) -> HostResult<Self> {
         let failed = || {
             if shared.limit_reached() {
@@ -129,6 +138,11 @@ impl Engine {
         let context = AsyncContext::custom::<Sandbox>(&runtime)
             .await
             .map_err(|_| failed())?;
+        let installed = host.clone();
+        context
+            .with(|ctx| host_api::install(&ctx, &installed))
+            .await
+            .map_err(|_| failed())?;
         let exports = context
             .async_with(
                 async |ctx| -> rquickjs::Result<Persistent<Object<'static>>> {
@@ -143,15 +157,26 @@ impl Engine {
             )
             .await
             .map_err(|_| failed())?;
-        Ok(Self { exports, context })
+        Ok(Self {
+            exports,
+            context,
+            host,
+        })
     }
     async fn dispatch(self: Rc<Self>, shared: Arc<Shared>, call: Call) {
         let exports = self.exports.clone();
         let Call { id, method, params } = call;
+        self.host.observe_credentials(&params);
+        if method == "auth.sign_out" {
+            self.host.forget_cookies();
+        }
         let outcome = self
             .context
             .async_with(async |ctx| invoke(&ctx, exports, &method, params).await)
             .await;
+        if let Outcome::Settled(Ok(result)) = &outcome {
+            self.host.observe_credentials(result);
+        }
         match outcome {
             Outcome::Settled(result) if !shared.limit_reached() => shared.settle(id, result),
             _ => shared.terminate(),
