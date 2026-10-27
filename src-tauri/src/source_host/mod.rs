@@ -290,6 +290,8 @@ impl SourceHost {
 #[cfg(test)]
 mod engine_tests;
 #[cfg(test)]
+mod host_api_tests;
+#[cfg(test)]
 mod registry_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
