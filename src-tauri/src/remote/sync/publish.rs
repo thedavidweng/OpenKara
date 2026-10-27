@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, CommandResult},
-    config::RegisteredLibrary,
+    config::{RegisteredLibrary, RemoteLibraryProvider},
     library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     remote::control_db::{
@@ -10,7 +10,8 @@ use crate::{
         OperationState, RepositoryStateRow,
     },
     remote::executor::{
-        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
+        execute_publish, execute_publish_via_core, generate_repository_id, generate_writer_id,
+        PublishContext,
     },
     AppState,
 };
@@ -1308,6 +1309,26 @@ fn commit_via_executor(
     let exec_conn = crate::remote::control_db::open_control_db(&control_db_path).map_err(|e| {
         crate::commands::error::database_error(format!("failed to open control DB: {e:?}"))
     })?;
+
+    if matches!(
+        remote_library.provider(),
+        Some(RemoteLibraryProvider::WebDav)
+    ) {
+        let ctx = PublishContext {
+            control_db: &exec_conn,
+            provider: provider.as_ref(),
+            working_copy_root: remote_root.root(),
+            library_id: remote_library_id,
+            writer_id: &writer_id,
+            repository_id: &repository_id,
+        };
+        return execute_publish_via_core(
+            &ctx,
+            &state.shell.app_data_dir,
+            remote_library,
+            operation_id,
+        );
+    }
 
     run_publication_driver(
         &exec_conn,

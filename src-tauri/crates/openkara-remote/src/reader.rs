@@ -501,7 +501,7 @@ fn activate_candidate(candidate: &Path, working_copy: &WorkingCopyDatabase) -> R
     Ok(())
 }
 
-fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
+pub(crate) fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
     let connection = open_readonly(candidate)?;
 
     let quick_check: String = connection
@@ -552,22 +552,22 @@ fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
     Ok(())
 }
 
-fn open_readonly(path: &Path) -> RemoteResult<Connection> {
+pub(crate) fn open_readonly(path: &Path) -> RemoteResult<Connection> {
     let flags =
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
     Connection::open_with_flags(path, flags)
         .map_err(|error| integrity_error(format!("failed to open candidate read-only: {error}")))
 }
 
-fn integrity_error(detail: impl Into<String>) -> RemoteError {
+pub(crate) fn integrity_error(detail: impl Into<String>) -> RemoteError {
     RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, detail)
 }
 
-fn io_error(context: String, error: std::io::Error) -> RemoteError {
+pub(crate) fn io_error(context: String, error: std::io::Error) -> RemoteError {
     RemoteError::new(kind_from_io_error(&error), format!("{context}: {error}"))
 }
 
-fn sha256_file(path: &Path) -> RemoteResult<String> {
+pub(crate) fn sha256_file(path: &Path) -> RemoteResult<String> {
     let mut file = fs::File::open(path).map_err(|error| {
         io_error(
             format!("failed to open {} for digest", path.display()),
@@ -592,7 +592,7 @@ fn sha256_file(path: &Path) -> RemoteResult<String> {
     Ok(hex_lower(&hasher.finalize()))
 }
 
-fn hex_lower(bytes: &[u8]) -> String {
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

@@ -6,6 +6,7 @@ pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod webdav;
+pub mod writer;
 
 pub use error::{
     kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
@@ -28,3 +29,7 @@ pub use storage::{
     RepositoryStorage, StorageCapabilities,
 };
 pub use webdav::WebDavStorage;
+pub use writer::{
+    ensure_referenced_assets, publish_changes, CommittedSnapshot, PublishOutcome, PublishRequest,
+    PublishStep,
+};
