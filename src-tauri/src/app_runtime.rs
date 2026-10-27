@@ -205,6 +205,9 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         Ok(host) => host,
         Err(error) => crate::source_host::SourceHost::unavailable(source_config, error),
     };
+    if let Err(error) = crate::catalog::clear_retired_sessions(&source_host, &app_data_dir) {
+        tracing::warn!(%error, "could not remove credentials of retired Node-era sources");
+    }
     let mut source_updates = source_host.subscribe();
     app.manage(source_host);
     let source_app = app.handle().clone();

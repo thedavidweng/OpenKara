@@ -5,6 +5,7 @@ mod install;
 mod lifecycle;
 mod market;
 mod media;
+mod migration;
 mod network;
 mod process;
 mod registry;
@@ -163,6 +164,7 @@ impl Inner {
             .ok()
             .zip(semver::Version::parse(&release.manifest.minimum_host_version).ok())
             .is_some_and(|(host, min)| host >= min)
+            && !(self.config.retire_node_installs && migration::is_node(release))
             && self.runtime.supports(&self.config, release)
     }
     fn blocked(&self, source: &StoredSource, release: &Release) -> bool {
@@ -211,6 +213,12 @@ impl SourceHost {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => StoredState::default(),
             Err(error) => return Err(error.into()),
         };
+        if config.retire_node_installs {
+            if migration::retire_node_installs(&mut stored) {
+                save(&config, &stored)?;
+            }
+            migration::remove_node_files(&config);
+        }
         let distribution: Box<dyn SourceDistribution> = Box::new(SignedIndexDistribution);
         let (index, cache_error) = distribution.cached_index(&config);
         if let Some(index) = &index {
@@ -292,6 +300,8 @@ impl SourceHost {
 mod engine_tests;
 #[cfg(test)]
 mod host_api_tests;
+#[cfg(test)]
+mod migration_tests;
 #[cfg(test)]
 mod registry_tests;
 #[cfg(test)]

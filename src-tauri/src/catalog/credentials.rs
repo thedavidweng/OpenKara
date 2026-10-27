@@ -1,4 +1,5 @@
 use super::types::StreamingCredentials;
+use crate::source_host::{HostResult, SourceHost};
 use crate::system_credentials::{self, STREAMING_SOURCE_SERVICE};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -60,6 +61,14 @@ pub fn clear_session(
         system_credentials::delete_in(STREAMING_SOURCE_SERVICE, app_data_dir, owner_binding)?;
     }
     system_credentials::delete_in(STREAMING_SOURCE_SERVICE, app_data_dir, source_id)
+}
+
+/// Removes the Streaming Credentials of the Node-era sources that the host
+/// retired, from both accounts. Each source is cleared once.
+pub fn clear_retired_sessions(host: &SourceHost, app_data_dir: &Path) -> HostResult<()> {
+    host.remove_retired_credentials(|source_id, owner_binding| {
+        clear_session(app_data_dir, source_id, Some(owner_binding))
+    })
 }
 
 /// Writes a session under the legacy source id account, as releases before the
@@ -164,6 +173,58 @@ mod tests {
                 .expect("identity load"),
             Some(credentials),
             "later reads come from the identity key"
+        );
+    }
+
+    #[tokio::test]
+    async fn retired_node_sources_lose_their_credentials_once() {
+        use crate::source_host::test_support::{seed_node_install, NODE_ERA_OWNER};
+        use crate::source_host::{HostConfig, RuntimePolicy};
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        seed_node_install(&dir.path().join("host/streaming-sources"));
+        let credentials =
+            StreamingCredentials::from([("opaque_key".into(), "node-era-value".into())]);
+        store_session(dir.path(), NODE_ERA_OWNER, credentials.clone()).expect("identity save");
+        store_legacy_session(dir.path(), "fixture", NODE_ERA_OWNER, credentials.clone())
+            .expect("legacy save");
+        store_session(
+            dir.path(),
+            "registry:org.example/other",
+            credentials.clone(),
+        )
+        .expect("other save");
+        let host = SourceHost::new(HostConfig::fixture(
+            dir.path().join("host"),
+            "0.17.0".into(),
+            String::new(),
+            Default::default(),
+            RuntimePolicy::Downloaded,
+        ))
+        .await
+        .expect("open host");
+
+        clear_retired_sessions(&host, dir.path()).expect("clear retired");
+
+        assert_eq!(
+            load_credentials(dir.path(), "fixture", NODE_ERA_OWNER).expect("load"),
+            None
+        );
+        assert!(load_session(dir.path(), "fixture")
+            .expect("legacy gone")
+            .is_none());
+        assert_eq!(
+            load_credentials(dir.path(), "other", "registry:org.example/other").expect("other"),
+            Some(credentials.clone()),
+            "other sources keep their credentials"
+        );
+
+        store_session(dir.path(), NODE_ERA_OWNER, credentials.clone()).expect("later save");
+        clear_retired_sessions(&host, dir.path()).expect("second clear");
+        assert_eq!(
+            load_credentials(dir.path(), "fixture", NODE_ERA_OWNER).expect("load"),
+            Some(credentials),
+            "a retired source is cleared only once"
         );
     }
 

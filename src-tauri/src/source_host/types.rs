@@ -109,6 +109,9 @@ pub struct HostConfig {
     pub(crate) backoff_unit: Duration,
     pub(crate) engine_memory_limit: usize,
     pub(crate) registry_refresh_interval: Duration,
+    /// Marks Node-era installations as needing replacement and deletes their
+    /// files at startup. Only the Node-runtime test configuration turns it off.
+    pub(crate) retire_node_installs: bool,
     #[cfg(test)]
     pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)]
@@ -168,6 +171,7 @@ impl HostConfig {
             backoff_unit: Duration::from_secs(1),
             engine_memory_limit: 64 * 1024 * 1024,
             registry_refresh_interval: Duration::from_secs(6 * 60 * 60),
+            retire_node_installs: true,
             #[cfg(test)]
             allow_test_distribution_http: false,
             #[cfg(test)]
@@ -382,6 +386,26 @@ pub(crate) struct StoredSource {
     pub revoked: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<PackageIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired: Option<RetiredInstall>,
+}
+/// A Node-era installation that the embedded engine cannot run. Its files are
+/// deleted; the source id waits for a replacement from a Source Registry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct RetiredInstall {
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub credentials_removed: bool,
+    #[serde(default)]
+    pub notice_dismissed: bool,
+}
+/// A source that the one-time replacement notice names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetiredSource {
+    pub source_id: String,
+    pub name: String,
+    pub version: String,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct StoredState {

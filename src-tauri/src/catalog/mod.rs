@@ -14,7 +14,7 @@ mod youtube;
 
 #[cfg(test)]
 pub(crate) use credentials::store_legacy_session;
-pub use credentials::{clear_session, load_credentials, store_session};
+pub use credentials::{clear_retired_sessions, clear_session, load_credentials, store_session};
 pub use identity::{
     annotate_library_songs, lookup_playlist_id, lookup_song_hash, StreamingTrackIdentity,
 };
