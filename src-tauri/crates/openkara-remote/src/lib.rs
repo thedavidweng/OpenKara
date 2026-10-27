@@ -1,6 +1,7 @@
 pub mod error;
 pub mod manifest;
 pub mod net_policy;
+pub mod reader;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -15,6 +16,12 @@ pub use manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     staging_dir_for_operation, validate_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
     MANIFEST_PATH,
+};
+pub use reader::{
+    plan_refresh, probe_remote_revision, pull_database_snapshot, refresh_repository,
+    remote_revision_is_stale, snapshot_operation_id, RefreshOutcome, RefreshPlan, RefreshPolicy,
+    RefreshedSnapshot, SnapshotSource, WorkingCopyDatabase, LEGACY_DATABASE_PATH,
+    SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
 };
 pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,

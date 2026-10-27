@@ -3396,9 +3396,11 @@ dependencies = [
  "quick-xml",
  "rand 0.10.3",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "tiny_http",
  "tracing",
 ]

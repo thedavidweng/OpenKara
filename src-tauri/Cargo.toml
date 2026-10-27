@@ -124,6 +124,7 @@ undocumented_unsafe_blocks = "warn"
 filetime = "0.2.29"
 hound = "3.5.1"
 mockito = "1.7.2"
+openkara-remote = { path = "crates/openkara-remote", features = ["testing"] }
 tauri = { version = "2.12.5", features = ["test", "unstable"] }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["sync", "rt", "macros"] }

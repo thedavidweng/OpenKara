@@ -26,6 +26,7 @@ struct WebDavServerState {
     revisions_issued: u64,
     faults: VecDeque<Fault>,
     stale_listings: VecDeque<BTreeMap<String, StoredObject>>,
+    get_requests: BTreeMap<String, usize>,
 }
 
 impl WebDavServerState {
@@ -182,6 +183,19 @@ impl TestWebDavServer {
             || state.files.keys().any(|k| k.starts_with(&normalized))
     }
 
+    /// GET requests received for the repository-relative `path`, so tests can
+    /// prove a refresh did not re-download an object.
+    pub fn get_request_count(&self, path: &str) -> usize {
+        let url_path = format!("/{}", path.trim_start_matches('/'));
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_requests
+            .get(&url_path)
+            .copied()
+            .unwrap_or(0)
+    }
+
     pub fn file(&self, path: &str) -> Option<Vec<u8>> {
         let normalized = normalize_url_path(path);
         self.state
@@ -286,13 +300,16 @@ fn handle_head(request: tiny_http::Request, state: &Arc<Mutex<WebDavServerState>
         guard.move_revision_after_access(rel);
         drop(guard);
         let headers = vec![make_header("ETag", &obj.etag)];
+        // tiny_http switches to chunked transfer encoding (no Content-Length)
+        // above 32 KiB; real WebDAV servers always send Content-Length on HEAD.
         let response = Response::new(
             HttpStatusCode(200),
             headers,
             std::io::empty(),
             Some(obj.bytes.len()),
             None,
-        );
+        )
+        .with_chunked_threshold(usize::MAX);
         let _ = request.respond(response);
         return;
     }
@@ -310,6 +327,7 @@ fn handle_get(
     range_header: Option<&str>,
 ) {
     let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+    *guard.get_requests.entry(url_path.to_string()).or_insert(0) += 1;
     let Some(obj) = guard.files.get(url_path).cloned() else {
         drop(guard);
         let _ = request.respond(Response::empty(HttpStatusCode(404)));
