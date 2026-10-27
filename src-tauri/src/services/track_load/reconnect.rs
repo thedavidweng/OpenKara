@@ -6,27 +6,22 @@
 //! Emits Reconnecting, Resync (seek snap), and Failed via the event sink.
 
 use crate::audio::remote_source::FetchEvent;
-use crate::remote::cache_catalog::CachePinGuard;
 #[cfg(test)]
 use crate::remote::net_policy::SeededJitter;
 use crate::remote::net_policy::{full_jitter_delay, production_sleep, RetryPolicy};
+use openkara_remote::media_cache::CacheLease;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// RAII container for the remote streaming source's cache pin guard and
-/// fetch event receiver. The caller must keep this alive for the lifetime
-/// of the reconnected playback (until the track is skipped, stopped, or
-/// replaced). Dropping it unpins the cache entry and stops consuming fetch
-/// events.
-///
-/// This replaces the previous approach of leaking the pin guard into a
-/// detached `thread::park()` thread, which permanently leaked a thread and
-/// pinned the cache entry for the process lifetime.
+/// RAII container for the remote streaming source's cache lease and fetch
+/// event receiver. The caller must keep this alive for the lifetime of the
+/// reconnected playback (until the track is skipped, stopped, or replaced).
+/// Dropping it releases the cache entry and stops consuming fetch events.
 pub(crate) struct RemoteStreamingRuntime {
-    /// RAII pin guard. Unpins the cache entry on drop.
-    pub(crate) cache_pin_guard: Option<CachePinGuard>,
+    /// Releases the cache entry on drop.
+    pub(crate) cache_lease: Option<CacheLease>,
     /// Fetch event receiver. The caller should drain this in a dedicated
     /// listener thread to handle ConsecutiveFailures, UrlExpired, etc.
     /// `None` for cache-fast-path sources that have no fetch thread.
@@ -36,7 +31,7 @@ pub(crate) struct RemoteStreamingRuntime {
 impl std::fmt::Debug for RemoteStreamingRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RemoteStreamingRuntime")
-            .field("cache_pin_guard", &self.cache_pin_guard.is_some())
+            .field("cache_lease", &self.cache_lease.is_some())
             .field("fetch_event_rx", &self.fetch_event_rx.is_some())
             .finish()
     }
@@ -423,7 +418,7 @@ mod tests {
                     },
                     from_cache: false,
                     runtime: RemoteStreamingRuntime {
-                        cache_pin_guard: None,
+                        cache_lease: None,
                         fetch_event_rx: None,
                     },
                 })
@@ -600,7 +595,7 @@ mod tests {
                     },
                     from_cache: false,
                     runtime: RemoteStreamingRuntime {
-                        cache_pin_guard: None,
+                        cache_lease: None,
                         fetch_event_rx: None,
                     },
                 })
@@ -648,7 +643,7 @@ mod tests {
                     },
                     from_cache: false,
                     runtime: RemoteStreamingRuntime {
-                        cache_pin_guard: None,
+                        cache_lease: None,
                         fetch_event_rx: None,
                     },
                 })
@@ -685,7 +680,7 @@ mod tests {
                     },
                     from_cache: true,
                     runtime: RemoteStreamingRuntime {
-                        cache_pin_guard: None,
+                        cache_lease: None,
                         fetch_event_rx: None,
                     },
                 })

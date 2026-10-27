@@ -1351,7 +1351,8 @@ fn record_failure(
         | RemoteErrorKind::PermissionDenied
         | RemoteErrorKind::ObjectNotFound
         | RemoteErrorKind::RemoteIntegrityFailed
-        | RemoteErrorKind::DiskFull => (OperationState::Failed, LocalState::Dirty),
+        | RemoteErrorKind::DiskFull
+        | RemoteErrorKind::LocalStorageFailed => (OperationState::Failed, LocalState::Dirty),
         RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
             (OperationState::RetryWait, LocalState::Publishing)
         }

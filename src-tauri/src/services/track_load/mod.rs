@@ -217,7 +217,7 @@ fn run_load<R: Runtime>(ctx: &LoadContext<R>, song: &Song) -> Result<(), Playbac
     let chunk_cache = ctx
         .state
         .remote
-        .remote_chunk_cache()
+        .media_cache()
         .map_err(|error| PlaybackError::Internal(error.message))?;
     let streaming_source = source::load_playback_source_streaming(
         Some(&ctx.app_data_dir),
@@ -294,7 +294,7 @@ fn install_streaming<R: Runtime>(
     if let Some(fetch_event_rx) = streaming_source.fetch_event_rx {
         streaming::spawn_fetch_event_listener(
             ctx.clone(),
-            streaming_source.cache_pin_guard,
+            streaming_source.cache_lease,
             fetch_event_rx,
             streaming::INITIAL_FETCH,
         );
