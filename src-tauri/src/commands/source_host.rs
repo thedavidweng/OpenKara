@@ -1,7 +1,10 @@
 use crate::catalog;
 use crate::commands::catalog::{app_data_dir, cancel_authentication, host_error, source};
 use crate::commands::error::{internal_error, state_lock_error, CommandResult};
-use crate::source_host::{MarketPackage, RegistryStatus, SourceHost, SourceSnapshot};
+use crate::source_host::{
+    MarketPackage, RegistryStatus, RetiredSource, SourceHost, SourceSnapshot,
+};
+use crate::source_registry_link::{PendingRegistryLinks, SourceRegistryLink};
 use crate::AppState;
 use tauri::{AppHandle, Manager, State};
 
@@ -55,6 +58,12 @@ pub fn list_source_registries(app_handle: AppHandle) -> Vec<RegistryStatus> {
     app_handle.state::<SourceHost>().registries()
 }
 #[tauri::command]
+pub fn take_source_registry_links(
+    links: State<'_, PendingRegistryLinks>,
+) -> Vec<SourceRegistryLink> {
+    links.take()
+}
+#[tauri::command]
 pub fn list_source_market(app_handle: AppHandle) -> Vec<MarketPackage> {
     app_handle.state::<SourceHost>().market()
 }
@@ -96,6 +105,17 @@ pub async fn install_market_package(
         .map_err(|_| internal_error("could not remove the replaced source's credentials"))?;
     }
     Ok(snapshot)
+}
+#[tauri::command]
+pub fn get_source_replacement_notice(app_handle: AppHandle) -> Vec<RetiredSource> {
+    app_handle.state::<SourceHost>().replacement_notice()
+}
+#[tauri::command]
+pub fn dismiss_source_replacement_notice(app_handle: AppHandle) -> CommandResult<()> {
+    app_handle
+        .state::<SourceHost>()
+        .dismiss_replacement_notice()
+        .map_err(host_error)
 }
 #[tauri::command]
 pub fn cancel_streaming_source_install(

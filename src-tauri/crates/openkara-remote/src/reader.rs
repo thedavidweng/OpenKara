@@ -14,12 +14,11 @@
 //! [`RefreshPolicy`] hook.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 
+use crate::download::{self, VerifiedFile};
 use crate::error::{kind_from_io_error, RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{RepositoryManifest, MANIFEST_PATH};
 use crate::storage::RepositoryStorage;
@@ -52,12 +51,7 @@ impl WorkingCopyDatabase {
 
     /// Sibling temp file a snapshot downloads into before activation.
     pub fn part_path(&self, operation_id: &str) -> PathBuf {
-        let file_name = self
-            .path
-            .file_name()
-            .map(|name| format!("{}.part.{}", name.to_string_lossy(), operation_id))
-            .unwrap_or_else(|| format!("openkara.part.{operation_id}"));
-        self.path.with_file_name(file_name)
+        download::part_path_for(&self.path, operation_id)
     }
 
     fn last_known_good_path(&self) -> PathBuf {
@@ -257,7 +251,14 @@ pub fn pull_database_snapshot(
     }
     let source = &plan.database;
     let part_path = working_copy.part_path(operation_id);
-    download_snapshot(storage, source, &part_path, on_progress)?;
+    download::download_object(
+        storage,
+        &source.remote_path,
+        source.expected_size,
+        &part_path,
+        SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
+        on_progress,
+    )?;
     let verified = match verify_snapshot(&part_path, source) {
         Ok(verified) => verified,
         Err(error) => {
@@ -316,159 +317,28 @@ pub fn refresh_repository(
     })
 }
 
-struct VerifiedCandidate {
-    size: u64,
-    digest: String,
-}
-
-fn download_snapshot(
-    storage: &dyn RepositoryStorage,
-    source: &SnapshotSource,
-    part_path: &Path,
-    on_progress: &mut dyn FnMut(u64),
-) -> RemoteResult<()> {
-    if let Some(parent) = part_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            io_error(
-                format!("failed to create directory {}", parent.display()),
-                error,
-            )
-        })?;
-    }
-
-    let resumable = storage.capabilities().range_read && source.expected_size.is_some();
-    if !resumable {
-        return download_snapshot_whole(storage, source, part_path, on_progress);
-    }
-
-    let expected_size = source.expected_size.unwrap_or(0);
-    let mut offset = fs::metadata(part_path).map(|meta| meta.len()).unwrap_or(0);
-    if offset > expected_size {
-        let _ = fs::remove_file(part_path);
-        offset = 0;
-    }
-    if offset == expected_size {
-        return Ok(());
-    }
-
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(part_path)
-        .map_err(|error| {
-            io_error(
-                format!("failed to open part file {}", part_path.display()),
-                error,
-            )
-        })?;
-    while offset < expected_size {
-        let length = SNAPSHOT_DOWNLOAD_CHUNK_SIZE.min(expected_size - offset);
-        match storage.read_range(&source.remote_path, offset, length, &mut file) {
-            Ok(0) => {
-                return Err(RemoteError::new(
-                    RemoteErrorKind::RemoteIntegrityFailed,
-                    format!(
-                        "snapshot download of {} made no progress at offset {offset}",
-                        source.remote_path
-                    ),
-                ));
-            }
-            Ok(written) => {
-                offset += written;
-                file.flush().map_err(|error| {
-                    io_error(
-                        format!("failed to flush part file {}", part_path.display()),
-                        error,
-                    )
-                })?;
-                on_progress(offset);
-            }
-            Err(error) => {
-                let durable = fs::metadata(part_path)
-                    .map(|meta| meta.len())
-                    .unwrap_or(offset)
-                    .min(expected_size);
-                on_progress(durable);
-                if durable == 0 {
-                    let _ = fs::remove_file(part_path);
-                }
-                return Err(error);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn download_snapshot_whole(
-    storage: &dyn RepositoryStorage,
-    source: &SnapshotSource,
-    part_path: &Path,
-    on_progress: &mut dyn FnMut(u64),
-) -> RemoteResult<()> {
-    let _ = fs::remove_file(part_path);
-    let mut file = fs::File::create(part_path).map_err(|error| {
-        io_error(
-            format!("failed to create part file {}", part_path.display()),
-            error,
-        )
-    })?;
-    match storage.read(&source.remote_path, &mut file) {
-        Ok(written) => {
-            on_progress(written);
-            Ok(())
-        }
-        Err(error) => {
-            // Without range reads a partial file can never resume.
-            let _ = fs::remove_file(part_path);
-            Err(error)
-        }
-    }
-}
-
-fn verify_snapshot(part_path: &Path, source: &SnapshotSource) -> RemoteResult<VerifiedCandidate> {
-    let size = fs::metadata(part_path)
-        .map(|meta| meta.len())
-        .map_err(|error| {
-            io_error(
-                format!("failed to stat candidate {}", part_path.display()),
-                error,
-            )
-        })?;
-    if let Some(expected_size) = source.expected_size {
-        if size != expected_size {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                format!("downloaded database size {size} does not match expected {expected_size}"),
-            ));
-        }
-    }
-    let digest = sha256_file(part_path)?;
-    if let Some(expected_digest) = &source.expected_digest {
-        if !digest.eq_ignore_ascii_case(expected_digest) {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                format!(
-                    "downloaded database digest {digest} does not match expected {expected_digest}"
-                ),
-            ));
-        }
-    }
+fn verify_snapshot(part_path: &Path, source: &SnapshotSource) -> RemoteResult<VerifiedFile> {
+    let verified = download::verify_file(
+        part_path,
+        source.expected_size,
+        source.expected_digest.as_deref(),
+    )?;
     verify_sqlite_candidate(part_path)?;
-    Ok(VerifiedCandidate { size, digest })
+    Ok(verified)
 }
 
 /// Swap a verified candidate into the working copy, preserving the current
 /// database as last-known-good and restoring it when the install fails.
 fn activate_candidate(candidate: &Path, working_copy: &WorkingCopyDatabase) -> RemoteResult<()> {
     let destination = working_copy.path();
-    fsync_file(candidate)?;
+    download::fsync_file(candidate)?;
 
     let lkg_path = working_copy.last_known_good_path();
     let mut preserved_lkg = false;
     if destination.exists() {
         let _ = fs::remove_file(&lkg_path);
         fs::rename(destination, &lkg_path).map_err(|error| {
-            io_error(
+            download::io_error(
                 format!("failed to preserve last-known-good {}", lkg_path.display()),
                 error,
             )
@@ -488,7 +358,7 @@ fn activate_candidate(candidate: &Path, working_copy: &WorkingCopyDatabase) -> R
                 ));
             }
         }
-        return Err(io_error(
+        return Err(download::io_error(
             format!(
                 "failed to install candidate database as {}",
                 destination.display()
@@ -497,7 +367,7 @@ fn activate_candidate(candidate: &Path, working_copy: &WorkingCopyDatabase) -> R
         ));
     }
 
-    fsync_parent(destination)?;
+    download::fsync_parent(destination)?;
     Ok(())
 }
 
@@ -506,9 +376,9 @@ pub(crate) fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
 
     let quick_check: String = connection
         .query_row("PRAGMA quick_check;", [], |row| row.get(0))
-        .map_err(|error| integrity_error(format!("quick_check failed: {error}")))?;
+        .map_err(|error| download::integrity_error(format!("quick_check failed: {error}")))?;
     if quick_check != "ok" {
-        return Err(integrity_error(format!(
+        return Err(download::integrity_error(format!(
             "quick_check reported corruption: {quick_check}"
         )));
     }
@@ -519,33 +389,41 @@ pub(crate) fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
             [],
             |row| row.get(0),
         )
-        .map_err(|error| integrity_error(format!("foreign_key_check failed: {error}")))?;
+        .map_err(|error| download::integrity_error(format!("foreign_key_check failed: {error}")))?;
     if fk_violations > 0 {
-        return Err(integrity_error(format!(
+        return Err(download::integrity_error(format!(
             "foreign_key_check reported {fk_violations} violation(s)"
         )));
     }
 
     let table_exists: bool = connection
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='songs' LIMIT 1;")
-        .map_err(|error| integrity_error(format!("schema check prepare failed: {error}")))?
+        .map_err(|error| {
+            download::integrity_error(format!("schema check prepare failed: {error}"))
+        })?
         .exists::<&[&dyn rusqlite::ToSql]>(&[])
-        .map_err(|error| integrity_error(format!("schema check query failed: {error}")))?;
+        .map_err(|error| {
+            download::integrity_error(format!("schema check query failed: {error}"))
+        })?;
     if !table_exists {
-        return Err(integrity_error(
+        return Err(download::integrity_error(
             "candidate database is missing the required 'songs' table",
         ));
     }
     let mut statement = connection
         .prepare("PRAGMA table_info(\"songs\")")
-        .map_err(|error| integrity_error(format!("schema check prepare failed: {error}")))?;
+        .map_err(|error| {
+            download::integrity_error(format!("schema check prepare failed: {error}"))
+        })?;
     let columns: Vec<String> = statement
         .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|error| integrity_error(format!("schema check query failed: {error}")))?
+        .map_err(|error| download::integrity_error(format!("schema check query failed: {error}")))?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|error| integrity_error(format!("schema check query failed: {error}")))?;
+        .map_err(|error| {
+            download::integrity_error(format!("schema check query failed: {error}"))
+        })?;
     if !columns.iter().any(|column| column == "hash") {
-        return Err(integrity_error(
+        return Err(download::integrity_error(
             "candidate database 'songs' table is missing the 'hash' column",
         ));
     }
@@ -555,98 +433,23 @@ pub(crate) fn verify_sqlite_candidate(candidate: &Path) -> RemoteResult<()> {
 pub(crate) fn open_readonly(path: &Path) -> RemoteResult<Connection> {
     let flags =
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    Connection::open_with_flags(path, flags)
-        .map_err(|error| integrity_error(format!("failed to open candidate read-only: {error}")))
-}
-
-pub(crate) fn integrity_error(detail: impl Into<String>) -> RemoteError {
-    RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, detail)
-}
-
-pub(crate) fn io_error(context: String, error: std::io::Error) -> RemoteError {
-    RemoteError::new(kind_from_io_error(&error), format!("{context}: {error}"))
-}
-
-pub(crate) fn sha256_file(path: &Path) -> RemoteResult<String> {
-    let mut file = fs::File::open(path).map_err(|error| {
-        io_error(
-            format!("failed to open {} for digest", path.display()),
-            error,
-        )
-    })?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        use std::io::Read;
-        let read = file.read(&mut buffer).map_err(|error| {
-            io_error(
-                format!("failed to read {} for digest", path.display()),
-                error,
-            )
-        })?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hex_lower(&hasher.finalize()))
-}
-
-pub(crate) fn hex_lower(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
-fn fsync_file(path: &Path) -> RemoteResult<()> {
-    let file = fs::File::open(path).map_err(|error| {
-        io_error(
-            format!("failed to open {} for fsync", path.display()),
-            error,
-        )
-    })?;
-    file.sync_all()
-        .map_err(|error| io_error(format!("failed to fsync {}", path.display()), error))
-}
-
-fn fsync_parent(path: &Path) -> RemoteResult<()> {
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    #[cfg(unix)]
-    {
-        let dir = fs::File::open(parent).map_err(|error| {
-            io_error(
-                format!("failed to open {} for fsync", parent.display()),
-                error,
-            )
-        })?;
-        dir.sync_all().map_err(|error| {
-            io_error(
-                format!("failed to fsync directory {}", parent.display()),
-                error,
-            )
-        })?;
-    }
-    #[cfg(not(unix))]
-    {
-        // Directory fsync is not meaningful on Windows.
-        let _ = parent;
-    }
-    Ok(())
+    Connection::open_with_flags(path, flags).map_err(|error| {
+        download::integrity_error(format!("failed to open candidate read-only: {error}"))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::download::hex_lower;
+    use crate::error::RemoteErrorKind;
     use crate::manifest::{
         database_path_for_generation, database_path_for_operation, CURRENT_SCHEMA_VERSION,
     };
     use crate::storage::{ObjectMetadata, StorageCapabilities};
     use crate::testing::{Fault, MemoryStorage, TestWebDavServer};
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
     use std::sync::{Arc, Mutex};
 
     struct AllowAll;

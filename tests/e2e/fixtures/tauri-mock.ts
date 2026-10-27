@@ -15,7 +15,7 @@
  * JSON, producing a self-contained script that runs without imports.
  */
 import { E2E_MOCK_DATA, MOCK_SIDEBAR_WIDTH } from "@/mock/tauri-mock-data";
-import { createTauriMock } from "@/mock/tauri-mock-impl";
+import { createTauriMock, type MockData } from "@/mock/tauri-mock-impl";
 
 export { MOCK_SIDEBAR_WIDTH };
 
@@ -23,9 +23,11 @@ export { MOCK_SIDEBAR_WIDTH };
 // createTauriMock is self-contained (no external references), so
 // toString() produces a valid standalone function expression.
 const fnSource = createTauriMock.toString();
-const dataJson = JSON.stringify(E2E_MOCK_DATA);
 
-export const TAURI_MOCK_SCRIPT = `
+/** Builds the init script for a test that needs different mock data. */
+export function createTauriMockScript(data: MockData): string {
+  const dataJson = JSON.stringify(data);
+  return `
 (() => {
   const result = (${fnSource})(${dataJson});
   window.__TAURI_INTERNALS__ = result.internals;
@@ -40,3 +42,6 @@ export const TAURI_MOCK_SCRIPT = `
   }
 })();
 `;
+}
+
+export const TAURI_MOCK_SCRIPT = createTauriMockScript(E2E_MOCK_DATA);

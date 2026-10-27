@@ -89,7 +89,7 @@ tauri = { version = "2.12.5", features = ["unstable", "protocol-asset"] }
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-process = "2.4.0"
-tauri-plugin-single-instance = "2.5.4"
+tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
 # Releases use raw NSIS/AppImage payloads; macOS tar support is unconditional.
 tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 uuid = { version = "1.28.0", features = ["v4"] }
@@ -112,6 +112,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-appender = "0.2.5"
 tauri-plugin-notification = "2.7.0"
 tauri-plugin-window-state = "2.5.0"
+tauri-plugin-deep-link = "2.6.2"
 
 # Every `unsafe` block carries a SAFETY comment. The lint is what keeps that
 # true: the FFI bridges are the only unsafe surface in the app, and an
@@ -142,6 +143,15 @@ lto = false
 opt-level = 2
 codegen-units = 16
 incremental = true
+
+# tauri-plugin-deep-link 2.6.2 builds rust-ini's ParseOption as a struct
+# literal; rust-ini 0.21.3 added fields to it and 0.21.2 is yanked. Hold the
+# Linux build on 0.21.1 until the plugin ships a fix.
+[target.'cfg(target_os = "linux")'.dependencies]
+rust-ini = "=0.21.1"
+
+[package.metadata.cargo-shear]
+ignored = ["rust-ini"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [

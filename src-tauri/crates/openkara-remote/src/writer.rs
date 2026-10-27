@@ -40,13 +40,12 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
+use crate::download::{hex_lower, integrity_error, io_error, sha256_file};
 use crate::error::{RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{
     database_path_for_operation, RepositoryManifest, CURRENT_SCHEMA_VERSION, MANIFEST_PATH,
 };
-use crate::reader::{
-    hex_lower, integrity_error, io_error, open_readonly, sha256_file, verify_sqlite_candidate,
-};
+use crate::reader::{open_readonly, verify_sqlite_candidate};
 use crate::storage::{validate_object_path, RepositoryStorage};
 
 /// Managed top-level directories a database row may reference. Paths outside

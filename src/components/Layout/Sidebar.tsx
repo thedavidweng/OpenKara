@@ -245,7 +245,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
                     aria-label={t("catalog.streaming.signedIn")}
                     className="size-2 rounded-full bg-[var(--color-success)]"
                   />
-                ) : !source.runtime_ready || source.state !== "ready" ? (
+                ) : !source.loaded || source.state !== "ready" ? (
                   <span className="text-[11px] text-[var(--color-warning)]">
                     {t("catalog.streaming.unavailable")}
                   </span>

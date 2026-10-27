@@ -69,7 +69,7 @@ fn fetch_preview_lyrics(
         .try_state::<crate::source_host::SourceHost>()
         .and_then(|host| host.snapshot(source_id).ok())
         .is_some_and(|source| {
-            source.installed_version.is_some() && source.enabled && source.runtime_ready
+            source.installed_version.is_some() && source.enabled && source.loaded
         });
     if !available {
         return empty_lyrics_payload(song_id);

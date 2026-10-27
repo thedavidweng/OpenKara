@@ -2,9 +2,10 @@
 Type=Application
 Name=OpenKara
 Comment=Turn your music library into a karaoke stage.
-Exec=openkara
+Exec=openkara %u
 Icon=io.github.thedavidweng.OpenKara
 Categories=AudioVideo;Audio;Music;
 Keywords=karaoke;lyrics;music;audio;
+MimeType=x-scheme-handler/openkara;
 StartupNotify=true
 Terminal=false

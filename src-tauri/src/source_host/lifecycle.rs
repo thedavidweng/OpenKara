@@ -1,5 +1,6 @@
 use super::{
-    incompatible, market, registry, runtime::PreparedRuntime, save, types::*, unknown, SourceHost,
+    incompatible, market, migration::replacement_required, registry, runtime::PreparedRuntime,
+    save, types::*, unknown, SourceHost,
 };
 use std::path::PathBuf;
 
@@ -165,6 +166,9 @@ impl SourceHost {
     ) -> HostResult<(Plan, Cancellation)> {
         let mut state = self.inner.state.lock().unwrap();
         let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
+        if stored.retired.is_some() {
+            return Err(replacement_required());
+        }
         let wanted = version.or(stored.pinned_version.as_deref());
         let plan = if let Some(identity) = &stored.package {
             let package = registry::package(&state.registries, identity).ok_or_else(not_listed)?;

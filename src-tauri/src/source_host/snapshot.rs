@@ -1,5 +1,5 @@
 use super::types::*;
-use super::{registry, unknown, Inner, SourceHost, State};
+use super::{migration::replacement_required, registry, unknown, Inner, SourceHost, State};
 
 impl Inner {
     pub(super) fn publish(&self, id: &str) {
@@ -16,6 +16,7 @@ impl Inner {
 fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot> {
     let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
     let live = state.sources.get(id);
+    let retired = stored.retired.as_ref();
     let listed = stored
         .package
         .as_ref()
@@ -23,7 +24,7 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
     let available = state
         .index
         .as_ref()
-        .filter(|_| stored.package.is_none())
+        .filter(|_| stored.package.is_none() && retired.is_none())
         .and_then(|index| index.sources.iter().find(|source| source.source_id == id))
         .and_then(|source| {
             source
@@ -54,7 +55,7 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
                 .collect()
         })
         .unwrap_or_default();
-    let status = if invalid {
+    let status = if invalid || retired.is_some() {
         SourceState::UpdateRequired
     } else if live.is_some_and(|live| live.stopping) {
         SourceState::Cancelling
@@ -86,6 +87,7 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
             .as_ref()
             .map(|manifest| manifest.name.clone())
             .or_else(|| listed.map(|package| package.name.clone()))
+            .or_else(|| retired.map(|retired| retired.name.clone()))
             .unwrap_or_else(|| id.into()),
         description: manifest
             .as_ref()
@@ -112,7 +114,10 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
             .is_some_and(|instance| instance.alive()),
         state: status,
         progress: live.and_then(|live| live.progress.clone()),
-        last_error: live.and_then(|live| live.error.clone()),
+        last_error: match retired {
+            Some(_) => Some(replacement_required()),
+            None => live.and_then(|live| live.error.clone()),
+        },
         active_work,
         manifest,
     })

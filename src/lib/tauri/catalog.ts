@@ -11,6 +11,7 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
     removeSourceRegistry: (registryId) =>
       invoke("remove_source_registry", { registryId }),
     listSourceRegistries: () => invoke("list_source_registries"),
+    takeSourceRegistryLinks: () => invoke("take_source_registry_links"),
     listSourceMarket: () => invoke("list_source_market"),
     installMarketPackage: (
       registryId,
@@ -26,6 +27,9 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
         consent,
         replace,
       }),
+    getSourceReplacementNotice: () => invoke("get_source_replacement_notice"),
+    dismissSourceReplacementNotice: () =>
+      invoke("dismiss_source_replacement_notice"),
     cancelStreamingSourceInstall: (sourceId) =>
       invoke("cancel_streaming_source_install", { sourceId }),
     setStreamingSourceEnabled: (sourceId, enabled, stopWork = false) =>

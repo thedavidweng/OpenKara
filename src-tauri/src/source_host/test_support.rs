@@ -84,7 +84,7 @@ impl FixtureDistribution {
         }
     }
     pub(crate) fn config(&self, data_root: PathBuf) -> HostConfig {
-        HostConfig::fixture(
+        let mut config = HostConfig::fixture(
             data_root,
             "0.17.0".into(),
             format!("{}/index.json", self.server.url()),
@@ -103,7 +103,9 @@ impl FixtureDistribution {
                 version: "24.22.1".into(),
                 target: target(),
             },
-        )
+        );
+        config.retire_node_installs = false;
+        config
     }
     /// Configuration for sources that run in the embedded engine; it needs no Node.
     pub(crate) fn engine_config(&self, data_root: PathBuf) -> HostConfig {
@@ -266,6 +268,71 @@ fn registry_tarball(manifest: &SourceManifest) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
+/// The owner binding of the Node-era install that `seed_node_install` leaves.
+pub(crate) const NODE_ERA_OWNER: &str = "org.openkara/org.openkara.fixture";
+
+/// The files that a seeded Node-era install leaves on disk.
+pub(crate) struct NodeEraInstall {
+    pub(crate) packages: Vec<PathBuf>,
+    pub(crate) runtimes: PathBuf,
+}
+
+fn node_release(version: &str, package_sha256: &str, runtime_sha256: &str) -> Value {
+    json!({
+        "manifest": fixture_manifest("fixture", version),
+        "archive": {"url": "https://packages.openkara.test/fixture.tar", "size": 1, "sha256": package_sha256, "format": "tar"},
+        "runtime": {"version": "24.22.1", "targets": {(target()): {
+            "url": "https://nodejs.org/fixture.tar.gz", "size": 1, "sha256": runtime_sha256,
+            "format": "tar.gz", "executable": "node/bin/node"
+        }}}
+    })
+}
+
+/// Writes a package tree that holds only the manifest, which is all the host
+/// reads to tell a Node package from an embedded-engine package.
+pub(crate) fn write_package_tree(root: &std::path::Path, manifest: &SourceManifest) {
+    std::fs::create_dir_all(root).unwrap();
+    std::fs::write(
+        root.join("manifest.json"),
+        serde_json::to_vec(manifest).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Seeds what a Node-era host leaves in `data_root`: an enabled, pinned
+/// signed-index install of `fixture` with a staged update, both package trees
+/// and the managed Node runtime.
+pub(crate) fn seed_node_install(data_root: &std::path::Path) -> NodeEraInstall {
+    let (active, staged, runtime) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+    std::fs::create_dir_all(data_root).unwrap();
+    let state = json!({
+        "generation": 3,
+        "sources": {"fixture": {
+            "owner_binding": NODE_ERA_OWNER,
+            "enabled": true,
+            "pinned_version": "1.0.0",
+            "active": node_release("1.0.0", &active, &runtime),
+            "staged": node_release("1.1.0", &staged, &runtime),
+            "revoked": []
+        }}
+    });
+    std::fs::write(
+        data_root.join("state.json"),
+        serde_json::to_vec(&state).unwrap(),
+    )
+    .unwrap();
+    let mut packages = Vec::new();
+    for (sha256, version) in [(active, "1.0.0"), (staged, "1.1.0")] {
+        let tree = data_root.join("packages").join(sha256);
+        write_package_tree(&tree, &fixture_manifest("fixture", version));
+        packages.push(tree);
+    }
+    let runtimes = data_root.join("runtimes");
+    let node = runtimes.join(runtime).join("node/bin");
+    std::fs::create_dir_all(&node).unwrap();
+    std::fs::write(node.join("node"), b"node").unwrap();
+    NodeEraInstall { packages, runtimes }
+}
 fn sha512_sri(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha512};
     format!(
