@@ -20,6 +20,7 @@ use openkara_lib::source_host::{
     HostConfig, ProtocolDeclaration, RuntimeRequirement, SourceHost, SourceManifest, SourceState,
 };
 use serde_json::{json, Value};
+use std::io::Write;
 
 #[tokio::test]
 #[ignore = "needs network access to the published signed source index and pinned Node runtime"]
@@ -70,22 +71,13 @@ async fn published_source_installs_and_starts_with_production_trust() {
         .await
         .unwrap();
 
-    // Print only a fixed summary with no worker-controlled bytes. `state` is
-    // checked against the allowed literal before printing as a fixed tag, so
-    // a malformed worker cannot smuggle an account object or other PII into
-    // the state field and have it land in a public log.
-    let state_tag = match description["session"].get("state").and_then(Value::as_str) {
-        Some("signed_out") => "signed_out",
-        Some(_) => "unexpected_state",
-        None => "missing_state",
-    };
-    let capability_count = description["capabilities"].as_array().map_or(0, Vec::len);
-    println!(
-        "published source consumer acceptance: source=netease version={version} runtime_ready={} state_tag={state_tag} session_validated=false capabilities={capability_count}",
+    accept_description(
+        &description,
+        &manifest,
+        &version,
         enabled.runtime_ready,
+        &mut std::io::stdout(),
     );
-
-    assert_valid_worker_description(&description, &manifest);
 }
 
 /// Validate the untrusted worker `describe` payload using only boolean
@@ -121,13 +113,18 @@ fn check_worker_description(description: &Value, manifest: &SourceManifest) -> R
     }
 }
 
-/// Assert the same contract the live acceptance enforces. Shared so the
-/// synthetic regression below exercises the exact assertions the real test
-/// runs, not a mirrored copy.
-fn assert_valid_worker_description(description: &Value, manifest: &SourceManifest) {
-    if let Err(message) = check_worker_description(description, manifest) {
-        panic!("{message}");
+// Both the live test and offline regression use this exact output and failure path.
+fn accept_description(
+    description: &Value,
+    manifest: &SourceManifest,
+    version: &str,
+    runtime_ready: bool,
+    output: &mut impl Write,
+) {
+    if check_worker_description(description, manifest).is_err() {
+        panic!("worker description failed contract");
     }
+    writeln!(output, "published source consumer acceptance: source=netease version={version} runtime_ready={runtime_ready} state=Ready session=signed_out capabilities={}", manifest.capabilities.len()).expect("failed to write acceptance summary");
 }
 
 #[cfg(test)]
@@ -178,21 +175,12 @@ mod malformed {
         })
     }
 
-    fn show(result: Result<(), String>) -> String {
-        match result {
-            Ok(()) => "accepted".into(),
-            Err(message) => message,
-        }
-    }
-
     #[test]
     fn malformed_descriptions_are_rejected_without_echoing_worker_values() {
         let manifest = manifest();
-        // Well-formed control: accepted.
-        assert_eq!(
-            show(check_worker_description(&valid(), &manifest)),
-            "accepted"
-        );
+        let mut output = Vec::new();
+        accept_description(&valid(), &manifest, "1.0.1", true, &mut output);
+        assert_eq!(String::from_utf8(output).unwrap(), "published source consumer acceptance: source=netease version=1.0.1 runtime_ready=true state=Ready session=signed_out capabilities=2\n");
 
         // Each malformed case carries a PII sentinel that must never appear in
         // the rejection message. The rejection uses constant text only.
@@ -263,20 +251,35 @@ mod malformed {
             ),
         ];
         for (label, description) in cases {
-            let failure = show(check_worker_description(&description, &manifest));
-            assert_ne!(failure, "accepted", "malformed case accepted: {label}");
-            for sentinel in [
-                "REAL_ACCOUNT_pii-acct",
-                "REAL_DISPLAY_NAME_pii-state",
-                "REAL_ACCOUNT_pii-state",
-                "REAL_NAME_pii-name",
-                "REAL_CAP_pii-cap",
-            ] {
-                assert!(
-                    !failure.contains(sentinel),
-                    "rejection for {label} echoes worker value"
-                );
-            }
+            let mut output = Vec::new();
+            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                accept_description(&description, &manifest, "1.0.1", true, &mut output);
+            }))
+            .expect_err("malformed description must panic");
+            let message = panic
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+                .expect("panic must have a string message");
+            assert_eq!(
+                message, "worker description failed contract",
+                "case {label}"
+            );
+            assert!(
+                output.is_empty(),
+                "invalid description must produce no summary: {label}"
+            );
         }
+        // Equal capability sets isolate the mandatory search guard.
+        let mut no_search_manifest = manifest.clone();
+        no_search_manifest.capabilities = vec!["preview".into()];
+        let mut no_search = valid();
+        no_search["capabilities"] = json!(["preview"]);
+        let mut output = Vec::new();
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            accept_description(&no_search, &no_search_manifest, "1.0.1", true, &mut output);
+        }))
+        .is_err());
+        assert!(output.is_empty());
     }
 }
