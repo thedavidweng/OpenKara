@@ -7,7 +7,9 @@ import type {
   CommandError,
   ImportConflictPrompt,
   LibraryDecisionAction,
+  MarketPackage,
   PreviewQueueItem,
+  RegistryStatus,
   SourceSnapshot,
   StreamingImportEvent,
   StreamingImportCompleteEvent,
@@ -69,6 +71,12 @@ export interface CatalogState extends SourceBrowseState {
   sourceStates: Record<string, SourceBrowseState>;
   sourcesStatus: LoadStatus;
   sourcesError: string | null;
+  registries: RegistryStatus[];
+  registriesStatus: LoadStatus;
+  registriesError: string | null;
+  market: MarketPackage[];
+  marketStatus: LoadStatus;
+  marketError: string | null;
   importFailures: StreamingImportFailure[];
   pendingConflict: ImportConflictPrompt | null;
   videoItems: Record<string, VideoQueueItem>;
@@ -80,6 +88,10 @@ export interface CatalogState extends SourceBrowseState {
   applySources: (sources: SourceSnapshot[]) => void;
   loadSources: (refresh?: boolean) => Promise<void>;
   applySource: (source: SourceSnapshot) => void;
+  applyRegistries: (registries: RegistryStatus[]) => void;
+  applyMarket: (market: MarketPackage[]) => void;
+  loadRegistries: () => Promise<void>;
+  loadMarket: () => Promise<void>;
   setActiveView: (view: "library") => void;
   setActiveSource: (sourceId: string) => void;
   setBrowserTab: (tab: StreamingTab) => void;
@@ -167,7 +179,7 @@ export function sourceAllows(
   return (
     !!source?.installed_version &&
     source.enabled &&
-    source.runtime_ready &&
+    source.loaded &&
     ![
       "not_installed",
       "disabled",
@@ -393,6 +405,12 @@ export function createCatalogStore(
     sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
     sourcesStatus: "idle",
     sourcesError: null,
+    registries: [],
+    registriesStatus: "idle",
+    registriesError: null,
+    market: [],
+    marketStatus: "idle",
+    marketError: null,
     importFailures: [],
     pendingConflict: null,
     videoItems: {},
@@ -441,6 +459,32 @@ export function createCatalogStore(
       } catch (error) {
         if (current())
           set({ sourcesStatus: "error", sourcesError: message(error) });
+      }
+    },
+    applyRegistries: (registries) =>
+      set({ registries, registriesStatus: "ready", registriesError: null }),
+    applyMarket: (market) =>
+      set({ market, marketStatus: "ready", marketError: null }),
+    loadRegistries: async () => {
+      const current = generation("_host", "registries");
+      set({ registriesStatus: "loading", registriesError: null });
+      try {
+        const registries = await backend.catalog.listSourceRegistries();
+        if (current()) get().applyRegistries(registries);
+      } catch (error) {
+        if (current())
+          set({ registriesStatus: "error", registriesError: message(error) });
+      }
+    },
+    loadMarket: async () => {
+      const current = generation("_host", "market");
+      set({ marketStatus: "loading", marketError: null });
+      try {
+        const market = await backend.catalog.listSourceMarket();
+        if (current()) get().applyMarket(market);
+      } catch (error) {
+        if (current())
+          set({ marketStatus: "error", marketError: message(error) });
       }
     },
     setActiveView: () =>

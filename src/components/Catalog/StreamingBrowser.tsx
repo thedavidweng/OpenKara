@@ -48,7 +48,7 @@ export function StreamingBrowser() {
   const ready =
     !!source?.installed_version &&
     source.enabled &&
-    source.runtime_ready &&
+    source.loaded &&
     ![
       "not_installed",
       "disabled",

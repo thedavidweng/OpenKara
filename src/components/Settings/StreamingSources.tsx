@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useBackend } from "@/lib/backend";
 import { useCatalogStore } from "@/stores/catalog-store";
-import type { SourceSnapshot } from "@/types/ipc";
+import type { MarketUpdate, SourceSnapshot } from "@/types/ipc";
 import { StreamingSignIn } from "@/components/Catalog/StreamingSignIn";
+import { SourceActionDialog } from "./SourceActionDialog";
+import { AddedAccessReview } from "./SourceMarket";
 
 const button =
   "min-h-9 rounded-full border border-[var(--color-border)] px-4 text-xs focus-visible:outline-2 disabled:opacity-50";
@@ -20,9 +22,16 @@ export function StreamingSources() {
   const error = useCatalogStore((state) => state.sourcesError);
   const sessions = useCatalogStore((state) => state.sourceStates);
   const apply = useCatalogStore((state) => state.applySource);
+  const market = useCatalogStore((state) => state.market);
+  const registries = useCatalogStore((state) => state.registries);
+  const registriesStatus = useCatalogStore((state) => state.registriesStatus);
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [decision, setDecision] = useState<Decision | null>(null);
+  const [consentUpdate, setConsentUpdate] = useState<{
+    source: SourceSnapshot;
+    update: MarketUpdate;
+  } | null>(null);
   const [removeCredentials, setRemoveCredentials] = useState<boolean | null>(
     null,
   );
@@ -64,6 +73,36 @@ export function StreamingSources() {
       setBusy(null);
     }
   };
+  const marketUpdate = (source: SourceSnapshot) =>
+    source.registry_id && source.package_id
+      ? market.find(
+          (pkg) =>
+            pkg.registry_id === source.registry_id &&
+            pkg.package_id === source.package_id,
+        )?.update
+      : undefined;
+  const installOrUpdate = (source: SourceSnapshot) => {
+    const update = marketUpdate(source);
+    if (source.installed_version && update?.requires_consent) {
+      setConsentUpdate({ source, update });
+      return;
+    }
+    void run(source, () =>
+      catalog.installStreamingSource(source.source_id, null, false),
+    );
+  };
+  const confirmConsentUpdate = async () => {
+    const target = consentUpdate;
+    if (!target) return;
+    const succeeded = await run(target.source, () =>
+      catalog.installStreamingSource(target.source.source_id, null, true),
+    );
+    if (succeeded) setConsentUpdate(null);
+  };
+  const registryRemoved = (source: SourceSnapshot) =>
+    source.registry_id !== null &&
+    registriesStatus === "ready" &&
+    !registries.some((entry) => entry.registry_id === source.registry_id);
   const decide = (source: SourceSnapshot, kind: Decision["kind"]) => {
     setRemoveCredentials(null);
     setStopWork(false);
@@ -103,7 +142,13 @@ export function StreamingSources() {
         <button
           className={button}
           disabled={status === "loading"}
-          onClick={() => void useCatalogStore.getState().loadSources(true)}
+          onClick={() =>
+            void (async () => {
+              const store = useCatalogStore.getState();
+              await store.loadSources(true);
+              await Promise.all([store.loadRegistries(), store.loadMarket()]);
+            })()
+          }
         >
           {t("settings.streaming.refresh")}
         </button>
@@ -147,12 +192,12 @@ export function StreamingSources() {
               </dd>
               <dt>{t("settings.streaming.available")}</dt>
               <dd>{source.available_version ?? "—"}</dd>
-              <dt>{t("settings.streaming.runtime")}</dt>
+              <dt>{t("settings.streaming.loaded")}</dt>
               <dd>
                 {t(
-                  source.runtime_ready
-                    ? "settings.streaming.runtimeReady"
-                    : "settings.streaming.runtimeMissing",
+                  source.loaded
+                    ? "settings.streaming.loadedReady"
+                    : "settings.streaming.loadedNotReady",
                 )}
               </dd>
               <dt>{t("settings.streaming.state")}</dt>
@@ -200,6 +245,11 @@ export function StreamingSources() {
             {source.last_error ? (
               <p role="alert">{source.last_error.message}</p>
             ) : null}
+            {registryRemoved(source) ? (
+              <p className="text-xs text-[var(--color-text-dim)]">
+                {t("settings.streaming.registryRemoved")}
+              </p>
+            ) : null}
             {errors[source.source_id] ? (
               <p role="alert">{errors[source.source_id]}</p>
             ) : null}
@@ -233,14 +283,7 @@ export function StreamingSources() {
                     <button
                       className={button}
                       disabled={pending || !source.available_version}
-                      onClick={() =>
-                        void run(source, () =>
-                          catalog.installStreamingSource(
-                            source.source_id,
-                            null,
-                          ),
-                        )
-                      }
+                      onClick={() => installOrUpdate(source)}
                     >
                       {t(
                         !source.installed_version
@@ -317,9 +360,7 @@ export function StreamingSources() {
                 </>
               )}
             </div>
-            {source.enabled &&
-            source.runtime_ready &&
-            source.state === "ready" ? (
+            {source.enabled && source.loaded && source.state === "ready" ? (
               session?.signed_in && !session.expired ? (
                 <button
                   className={button}
@@ -434,6 +475,29 @@ export function StreamingSources() {
             </div>
           </div>
         </div>
+      ) : null}
+      {consentUpdate ? (
+        <SourceActionDialog
+          title={t("settings.streaming.market.consentTitle")}
+          confirmLabel={t("settings.streaming.market.consentConfirm")}
+          busy={busy !== null}
+          onConfirm={() => void confirmConsentUpdate()}
+          onCancel={() => setConsentUpdate(null)}
+        >
+          <p>
+            {t("settings.streaming.market.consentBody", {
+              name: consentUpdate.source.name,
+              version: consentUpdate.update.version,
+            })}
+          </p>
+          <AddedAccessReview
+            addedOrigins={consentUpdate.update.added_origins}
+            addedCapabilities={consentUpdate.update.added_capabilities}
+          />
+          {errors[consentUpdate.source.source_id] ? (
+            <p role="alert">{errors[consentUpdate.source.source_id]}</p>
+          ) : null}
+        </SourceActionDialog>
       ) : null}
     </div>
   );

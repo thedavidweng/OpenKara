@@ -80,6 +80,24 @@ native Video Source. A failed source refresh keeps existing snapshots usable.
 The local-library view is separate from the active source id. A valid source
 id such as `library` does not alias local-library navigation.
 
+Settings lists the added Source Registries with their last fetch error and
+offers add and remove. Adding a registry first shows a confirmation that names
+the URL and states that the registry is maintained outside OpenKara. The
+refusal of a registry id conflict (`invalid_registry`) stays visible. Removing
+a registry explains that installed sources keep working but cannot update.
+The market lists each package with its registry, package id, source id,
+license, versions, capabilities, and declared origins. Install confirms the
+declared origins and capabilities first. An update whose entry carries
+`requires_consent` opens a review that names `added_origins` and
+`added_capabilities` before the update runs with consent. Installing a package
+whose source id another installed package holds opens a replacement
+confirmation before it retries with `replace`; the confirmation states that
+the previous package's saved credentials are removed and the new package
+installs disabled. A pinned install shows its pin and no update offer. An
+installed source whose registry is no longer added states that it keeps
+working without updates. Install errors show the backend message, which names
+each failed download URL.
+
 The browser shows liked tracks for `liked_tracks`, search for `search`, and
 playlists only when both `playlists` and `playlist_tracks` are declared. Import
 and preview controls require their own capabilities. A library-song mapping

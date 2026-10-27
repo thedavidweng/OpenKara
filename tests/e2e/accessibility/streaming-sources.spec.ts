@@ -1,5 +1,65 @@
 import { expect, test } from "./fixtures/accessibility-test";
 
+test("source registries and the market work from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+
+  const registries = dialog.getByRole("region", { name: "Source Registries" });
+  await expect(
+    registries.getByRole("heading", { name: "Demo Registry" }),
+  ).toBeVisible();
+
+  const url = registries.getByRole("textbox", { name: "Registry URL" });
+  await url.fill("https://extra.demo.test/registry.json");
+  await registries.getByRole("button", { name: "Add registry" }).click();
+  const addConfirm = page.getByRole("dialog", { name: "Add Source Registry" });
+  await expect(addConfirm).toBeVisible();
+  await expect(addConfirm).toContainText(
+    "https://extra.demo.test/registry.json",
+  );
+  await expect(addConfirm).toContainText("maintained outside OpenKara");
+  await addConfirm.getByRole("button", { name: "Add registry" }).press("Enter");
+  await expect(
+    registries.getByRole("heading", { name: "extra.demo.test" }),
+  ).toBeVisible();
+
+  const market = dialog.getByRole("region", { name: "Source Market" });
+  const fresh = market.getByRole("article", { name: "Fresh Library" });
+  await expect(fresh).toBeVisible();
+  await expect(fresh).toContainText("https://fresh.demo.test");
+  await a11y.axeCheck();
+
+  await fresh.getByRole("button", { name: "Install", exact: true }).click();
+  const install = page.getByRole("dialog", { name: "Install Fresh Library" });
+  await expect(install).toBeVisible();
+  await expect(install).toContainText("https://fresh.demo.test");
+  await install.getByRole("button", { name: "Install package" }).press("Enter");
+  await expect(fresh).toContainText("Installed");
+  await expect(fresh).toContainText("Disabled");
+
+  const web = market.getByRole("article", { name: "Web Library" });
+  await web.getByRole("button", { name: "Update to 1.1.0" }).click();
+  const consent = page.getByRole("dialog", { name: "Review new access" });
+  await expect(consent).toBeVisible();
+  await expect(consent).toContainText("https://api.demo.test");
+  await consent
+    .getByRole("button", { name: "Allow and update" })
+    .press("Enter");
+  await expect(
+    web.getByRole("button", { name: "Update to 1.1.0" }),
+  ).toHaveCount(0);
+  await expect(web.getByText("1.1.0 · Ready")).toBeVisible();
+  await a11y.axeCheck();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
 test("source authentication and capability tabs work from the keyboard", async ({
   page,
   a11y,
