@@ -351,6 +351,16 @@ mod tests {
                 .map(|d| d.len() as u64))
         }
     }
+    /// Adapt a fake provider to the download closure `ensure_stem_set_cached` takes.
+    fn download_via(
+        provider: &dyn RepositoryStorage,
+    ) -> impl Fn(&str, &Path) -> anyhow::Result<()> + '_ {
+        move |relative_path, destination| {
+            provider
+                .download_file(relative_path, destination)
+                .map_err(|error| anyhow::anyhow!(error.message))
+        }
+    }
 
     /// Generate a minimal valid WAV file with the given sample rate, channel
     /// count, and number of PCM frames.  Each sample is a deterministic
@@ -509,7 +519,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -557,7 +567,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -591,7 +601,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -625,7 +635,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -658,7 +668,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -688,7 +698,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -732,7 +742,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -780,7 +790,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song_a,
@@ -907,7 +917,7 @@ mod tests {
 
         // Guard is always stale — aborts before any download/rename.
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -960,7 +970,7 @@ mod tests {
         // stem 1 (vocals) is downloaded before the abort.
         let guard = move || download_count.load(std::sync::atomic::Ordering::SeqCst) < 1;
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -1005,7 +1015,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
