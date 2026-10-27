@@ -1,8 +1,7 @@
 use super::{
-    incompatible, market, migration::replacement_required, registry, runtime::PreparedRuntime,
-    save, types::*, unknown, SourceHost,
+    engine, incompatible, market, migration::replacement_required, registry, save, types::*,
+    unknown, SourceHost,
 };
-use std::path::PathBuf;
 
 const SOURCE_ID_TAKEN: &str =
     "Another installed source package already uses this source id. Uninstall it before you install this package.";
@@ -30,19 +29,6 @@ fn consent_required(added_origins: &[String], added_capabilities: &[String]) -> 
     )
 }
 
-enum Plan {
-    Index(Box<Release>),
-    Registry(Box<registry::Candidate>),
-}
-impl Plan {
-    fn version(&self) -> &str {
-        match self {
-            Self::Index(release) => &release.manifest.version,
-            Self::Registry(candidate) => &candidate.version.version,
-        }
-    }
-}
-
 impl SourceHost {
     fn progress(&self, id: &str, phase: &str, completed: u64, total: Option<u64>) {
         self.inner
@@ -68,9 +54,8 @@ impl SourceHost {
         }
         Ok(())
     }
-    /// Installs or updates an installed source from where it came from: its
-    /// Source Registry package, or the signed index. An update that adds
-    /// origins or capabilities needs `consent`.
+    /// Installs or updates an installed source from its Source Registry
+    /// package. An update that adds origins or capabilities needs `consent`.
     pub async fn install(
         &self,
         id: &str,
@@ -163,64 +148,35 @@ impl SourceHost {
         id: &str,
         version: Option<&str>,
         consent: bool,
-    ) -> HostResult<(Plan, Cancellation)> {
+    ) -> HostResult<(registry::Candidate, Cancellation)> {
         let mut state = self.inner.state.lock().unwrap();
         let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
         if stored.retired.is_some() {
             return Err(replacement_required());
         }
+        let identity = stored.package.as_ref().ok_or_else(not_listed)?;
         let wanted = version.or(stored.pinned_version.as_deref());
-        let plan = if let Some(identity) = &stored.package {
-            let package = registry::package(&state.registries, identity).ok_or_else(not_listed)?;
-            if package.source_id != id {
-                return Err(HostError::new(
-                    "invalid_package",
-                    "The Source Registry now lists this package under another source id. Ask the registry maintainer.",
-                ));
-            }
-            let version = registry::select(&self.inner.config, package, wanted)?.clone();
-            Plan::Registry(Box::new(registry::Candidate {
-                identity: identity.clone(),
-                package: package.clone(),
-                version,
-            }))
-        } else {
-            let source = state
-                .index
-                .as_ref()
-                .and_then(|index| index.sources.iter().find(|source| source.source_id == id))
-                .ok_or_else(unknown)?;
-            Plan::Index(Box::new(
-                source
-                    .releases
-                    .iter()
-                    .filter(|release| {
-                        !stored.revoked.contains(&release.manifest.version)
-                            && wanted.is_none_or(|wanted| wanted == release.manifest.version)
-                            && self.inner.compatible(release)
-                    })
-                    .max_by_key(|release| semver::Version::parse(&release.manifest.version).ok())
-                    .cloned()
-                    .ok_or_else(incompatible)?,
-            ))
+        let package = registry::package(&state.registries, identity).ok_or_else(not_listed)?;
+        if package.source_id != id {
+            return Err(HostError::new(
+                "invalid_package",
+                "The Source Registry now lists this package under another source id. Ask the registry maintainer.",
+            ));
+        }
+        let candidate = registry::Candidate {
+            identity: identity.clone(),
+            package: package.clone(),
+            version: registry::select(&self.inner.config, package, wanted)?.clone(),
         };
         if !consent {
             if let Some(active) = &stored.active {
-                if active.manifest.version != plan.version() {
-                    let (added_origins, added_capabilities) = match &plan {
-                        Plan::Index(release) => market::added_declarations(
-                            &active.manifest,
-                            &release.manifest.resource_origins,
-                            &release.manifest.media_origins,
-                            &release.manifest.capabilities,
-                        ),
-                        Plan::Registry(candidate) => market::added_declarations(
-                            &active.manifest,
-                            &candidate.version.resource_origins,
-                            &candidate.version.media_origins,
-                            &candidate.version.capabilities,
-                        ),
-                    };
+                if active.manifest.version != candidate.version.version {
+                    let (added_origins, added_capabilities) = market::added_declarations(
+                        &active.manifest,
+                        &candidate.version.resource_origins,
+                        &candidate.version.media_origins,
+                        &candidate.version.capabilities,
+                    );
                     if !added_origins.is_empty() || !added_capabilities.is_empty() {
                         return Err(consent_required(&added_origins, &added_capabilities));
                     }
@@ -231,7 +187,7 @@ impl SourceHost {
         let live = state.sources.entry(id.into()).or_default();
         live.install = Some(cancel.clone());
         live.error = None;
-        Ok((plan, cancel))
+        Ok((candidate, cancel))
     }
     async fn install_locked(
         &self,
@@ -239,7 +195,7 @@ impl SourceHost {
         version: Option<&str>,
         consent: bool,
     ) -> HostResult<SourceSnapshot> {
-        let (plan, cancel) = match self.plan(id, version, consent) {
+        let (candidate, cancel) = match self.plan(id, version, consent) {
             Ok(selection) => selection,
             Err(error) => {
                 self.inner
@@ -254,25 +210,8 @@ impl SourceHost {
                 return Err(error);
             }
         };
-        let planned_version = plan.version().to_string();
-        let result = match plan {
-            Plan::Index(mut release) => {
-                async {
-                    let config = &self.inner.config;
-                    self.inner
-                        .distribution
-                        .choose_repair_slot(config, &mut release);
-                    self.inner
-                        .runtime
-                        .choose_repair_slot(config, &mut release)?;
-                    self.install_release(id, &release, &cancel).await
-                }
-                .await
-            }
-            Plan::Registry(candidate) => {
-                self.install_registry_release(id, &candidate, &cancel).await
-            }
-        };
+        let planned_version = candidate.version.version.clone();
+        let result = self.install_registry_release(id, &candidate, &cancel).await;
         {
             let mut state = self.inner.state.lock().unwrap();
             let live = state.sources.entry(id.into()).or_default();
@@ -289,31 +228,6 @@ impl SourceHost {
         result?;
         self.snapshot(id)
     }
-    async fn install_release(
-        &self,
-        id: &str,
-        release: &Release,
-        cancel: &Cancellation,
-    ) -> HostResult<()> {
-        let config = &self.inner.config;
-        self.progress(id, "runtime", 0, None);
-        let runtime = self
-            .inner
-            .runtime
-            .prepare(config, release, cancel, &|done, total| {
-                self.progress(id, "runtime", done, total)
-            })
-            .await?;
-        let package = self
-            .inner
-            .distribution
-            .install_package(config, release, cancel, &|done, total| {
-                self.progress(id, "package", done, total)
-            })
-            .await?;
-        self.stage_candidate(id, release, runtime, package, cancel)
-            .await
-    }
     async fn install_registry_release(
         &self,
         id: &str,
@@ -325,14 +239,8 @@ impl SourceHost {
             self.progress(id, "package", done, total)
         })
         .await?;
-        let runtime = self
-            .inner
-            .runtime
-            .prepare(config, &release, cancel, &|_, _| {})
-            .await?;
         let package = self.inner.verified_package(&release)?;
-        self.stage_candidate(id, &release, runtime, package, cancel)
-            .await
+        self.stage_candidate(id, &release, package, cancel).await
     }
     /// Starts a downloaded candidate to pass its compatibility check, then
     /// stages it to replace the active release once the source is idle.
@@ -340,44 +248,37 @@ impl SourceHost {
         &self,
         id: &str,
         release: &Release,
-        runtime: Box<dyn PreparedRuntime>,
-        package: PathBuf,
+        package: std::path::PathBuf,
         cancel: &Cancellation,
     ) -> HostResult<()> {
         let config = &self.inner.config;
         cancel.check()?;
-        self.progress(id, "handshake", 0, None);
+        self.progress(id, "describe", 0, None);
         {
             let state = self.inner.state.lock().unwrap();
-            let source = state.stored.sources.get(id).ok_or_else(unknown)?;
-            if self.inner.blocked(source, release) {
+            state.stored.sources.get(id).ok_or_else(unknown)?;
+            if !self.inner.compatible(release) {
                 return Err(incompatible());
             }
         }
         cancel.check()?;
         let admit = |launch: &mut dyn FnMut() -> HostResult<()>| {
             let state = self.inner.state.lock().unwrap();
-            let source = state.stored.sources.get(id).ok_or_else(unknown)?;
+            state.stored.sources.get(id).ok_or_else(unknown)?;
             cancel.check()?;
-            if self.inner.blocked(source, release) {
-                return Err(incompatible());
-            }
             launch()
         };
         let candidate = tokio::select! {
             _ = cancel.cancelled() => return cancel.check(),
-            candidate = runtime.start(config, release, &package, &admit) => candidate?,
+            candidate = engine::start(config, release, &package, &admit) => candidate?,
         };
         candidate.stop().await;
         cancel.check()?;
-        self.inner.verify_installed(release)?;
+        self.inner.verified_package(release)?;
         {
             let mut state = self.inner.state.lock().unwrap();
             let mut stored = state.stored.clone();
             let source = stored.sources.get_mut(id).ok_or_else(unknown)?;
-            if source.revoked.contains(&release.manifest.version) {
-                return Err(incompatible());
-            }
             source.staged = Some(release.clone());
             save(config, &stored)?;
             state.stored = stored;
@@ -393,7 +294,7 @@ impl SourceHost {
             if source
                 .staged
                 .as_ref()
-                .is_some_and(|release| self.inner.blocked(source, release))
+                .is_some_and(|release| !self.inner.compatible(release))
             {
                 let mut stored = state.stored.clone();
                 stored.sources.get_mut(id).ok_or_else(unknown)?.staged = None;
@@ -412,7 +313,7 @@ impl SourceHost {
             .get(id)
             .and_then(|source| source.staged.clone());
         if let Some(staged) = staged {
-            if let Err(error) = self.inner.verify_installed(&staged) {
+            if let Err(error) = self.inner.verified_package(&staged) {
                 let mut state = self.inner.state.lock().unwrap();
                 let mut stored = state.stored.clone();
                 stored.sources.get_mut(id).ok_or_else(unknown)?.staged = None;
@@ -445,17 +346,13 @@ impl SourceHost {
             let mut stored = state.stored.clone();
             let source = stored.sources.get_mut(id).ok_or_else(unknown)?;
             let result = if let Some(release) = source.staged.take() {
-                if source.revoked.contains(&release.manifest.version) {
-                    Err(incompatible())
-                } else {
-                    source.active = Some(release);
-                    save(&self.inner.config, &stored).map(|_| {
-                        state.stored = stored;
-                        let live = state.sources.entry(id.into()).or_default();
-                        live.failures = 0;
-                        live.error = None;
-                    })
-                }
+                source.active = Some(release);
+                save(&self.inner.config, &stored).map(|_| {
+                    state.stored = stored;
+                    let live = state.sources.entry(id.into()).or_default();
+                    live.start_failures = 0;
+                    live.error = None;
+                })
             } else {
                 Ok(())
             };
@@ -544,8 +441,7 @@ impl SourceHost {
         let failed = {
             let mut state = self.inner.state.lock().unwrap();
             let live = state.sources.entry(id.into()).or_default();
-            live.failures = 0;
-            live.retry_at = None;
+            live.start_failures = 0;
             live.error = None;
             live.failed_install.clone()
         };

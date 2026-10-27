@@ -200,13 +200,7 @@ impl MockRegistry {
 }
 
 fn config(root: &Path) -> HostConfig {
-    let mut config = HostConfig::fixture(
-        root.to_path_buf(),
-        "0.17.0".into(),
-        String::new(),
-        BTreeMap::new(),
-        RuntimePolicy::Downloaded,
-    );
+    let mut config = HostConfig::fixture(root.to_path_buf(), "0.17.0".into());
     config.describe_timeout = Duration::from_millis(1500);
     config.operation_timeout = Duration::from_millis(1500);
     config
@@ -789,10 +783,6 @@ async fn the_market_lists_packages_with_identity_and_update_status() {
         Some("org.example.registry.fixture")
     );
     assert!(installed.loaded);
-    assert_eq!(
-        installed.loaded, installed.runtime_ready,
-        "both names read the same state during the transition"
-    );
     let market = fixture.host.market();
     let package = market
         .iter()
@@ -847,7 +837,6 @@ async fn the_market_lists_packages_with_identity_and_update_status() {
     fixture.host.uninstall("fixture", false).await.unwrap();
     let snapshot = fixture.host.snapshot("fixture").unwrap();
     assert!(!snapshot.loaded);
-    assert_eq!(snapshot.loaded, snapshot.runtime_ready);
 }
 
 #[tokio::test]
@@ -976,13 +965,12 @@ async fn a_confirmed_replacement_takes_the_source_id_without_carrying_credential
         "a replacement installs like a first install"
     );
     assert_eq!(
-        crate::catalog::load_credentials(fixture.root.path(), "fixture", &replaced.owner_binding)
-            .unwrap(),
+        crate::catalog::load_credentials(fixture.root.path(), &replaced.owner_binding).unwrap(),
         None,
         "credentials do not carry over to the replacement"
     );
     assert_eq!(
-        crate::catalog::load_credentials(fixture.root.path(), "fixture", &owner).unwrap(),
+        crate::catalog::load_credentials(fixture.root.path(), &owner).unwrap(),
         Some(credentials),
         "the replaced package's own credentials stay under its identity"
     );

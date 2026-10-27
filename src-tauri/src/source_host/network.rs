@@ -9,9 +9,7 @@ use reqwest::{
 };
 use std::{
     collections::BTreeMap,
-    io::Write,
     net::{IpAddr, SocketAddr},
-    path::Path,
     time::Duration,
 };
 
@@ -543,31 +541,4 @@ pub(crate) async fn read_bounded(
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
-}
-pub(crate) async fn download(
-    mut response: reqwest::Response,
-    path: &Path,
-    max: u64,
-    cancel: &Cancellation,
-    mut progress: impl FnMut(u64),
-) -> HostResult<(u64, String)> {
-    use sha2::{Digest, Sha256};
-    let mut file = std::fs::File::create(path)?;
-    let mut hash = Sha256::new();
-    let mut size = 0;
-    let result=async {
-        loop {
-            let chunk=tokio::select! { _=cancel.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled. Retry when ready.")), chunk=response.chunk()=>chunk.map_err(|_|HostError::new("network","Source download was interrupted. Retry the download."))? };
-            let Some(chunk)=chunk else { break };
-            size+=chunk.len() as u64;
-            if size>max { return Err(HostError::new("invalid_resource","Downloaded bytes exceed the declared size.")); }
-            file.write_all(&chunk)?; hash.update(&chunk); progress(size);
-        }
-        cancel.check()?; file.sync_all()?;
-        Ok((size,super::digest_hex(hash.finalize())))
-    }.await;
-    if result.is_err() {
-        let _ = std::fs::remove_file(path);
-    }
-    result
 }

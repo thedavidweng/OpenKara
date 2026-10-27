@@ -8,10 +8,7 @@ mod storage;
 use super::{
     install,
     network::SourceNetwork,
-    runtime::{
-        unavailable, Admission, BoxFuture, PreparedRuntime, Progress, RequestHandle,
-        SourceInstance, SourceRuntime,
-    },
+    runtime::{unavailable, Admission, BoxFuture, RequestHandle, SourceInstance},
     types::*,
 };
 use serde_json::{json, Value};
@@ -147,7 +144,7 @@ impl Instance {
             source,
             name: release.manifest.entry.clone(),
             memory_limit: config.engine_memory_limit,
-            host: host_setup(config, release),
+            host: host_setup(config, release)?,
             calls: receiver,
             ready,
         });
@@ -266,17 +263,27 @@ impl Instance {
     }
 }
 
-fn host_setup(config: &HostConfig, release: &Release) -> host_api::HostSetup {
+fn host_setup(config: &HostConfig, release: &Release) -> HostResult<host_api::HostSetup> {
     let manifest = &release.manifest;
+    let owner_binding = release
+        .registry
+        .as_ref()
+        .map(PackageIdentity::owner_binding)
+        .ok_or_else(|| {
+            HostError::new(
+                "incompatible_plugin",
+                "This source does not come from a Source Registry. Install it from a registry.",
+            )
+        })?;
     let mut origins = manifest.resource_origins.clone();
     for origin in &manifest.media_origins {
         if !origins.contains(origin) {
             origins.push(origin.clone());
         }
     }
-    host_api::HostSetup {
+    Ok(host_api::HostSetup {
         source_id: manifest.source_id.clone(),
-        owner_binding: release.owner_binding(),
+        owner_binding,
         storage_root: config.data_root.clone(),
         network: SourceNetwork {
             origins,
@@ -287,7 +294,7 @@ fn host_setup(config: &HostConfig, release: &Release) -> host_api::HostSetup {
         },
         runtime: tokio::runtime::Handle::current(),
         dispatch: tracing::dispatcher::get_default(Clone::clone),
-    }
+    })
 }
 
 /// Answers a cancelled request at once and stops the source when a request
@@ -329,9 +336,6 @@ impl SourceInstance for Instance {
     fn pending_count(&self) -> usize {
         self.shared.pending.lock().unwrap().len()
     }
-    fn backs_off_after_stop(&self) -> bool {
-        false
-    }
     fn send<'a>(
         self: Arc<Self>,
         method: &'a str,
@@ -345,47 +349,25 @@ impl SourceInstance for Instance {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct EngineRuntime;
-struct EngineLaunch;
-impl SourceRuntime for EngineRuntime {
-    fn supports(&self, _config: &HostConfig, release: &Release) -> bool {
-        let manifest = &release.manifest;
-        manifest.runtime.kind == RUNTIME_KIND
-            && manifest.runtime.major == RUNTIME_MAJOR
-            && manifest.protocol.majors.contains(&PROTOCOL_MAJOR)
-    }
-    fn require_installed(&self, _config: &HostConfig, _release: &Release) -> HostResult<()> {
-        Ok(())
-    }
-    fn verify_installed(&self, _config: &HostConfig, _release: &Release) -> HostResult<()> {
-        Ok(())
-    }
-    fn choose_repair_slot(&self, _config: &HostConfig, _release: &mut Release) -> HostResult<()> {
-        Ok(())
-    }
-    fn prepare<'a>(
-        &'a self,
-        _config: &'a HostConfig,
-        _release: &'a Release,
-        _cancel: &'a Cancellation,
-        _progress: Progress<'a>,
-    ) -> BoxFuture<'a, HostResult<Box<dyn PreparedRuntime>>> {
-        Box::pin(async { Ok(Box::new(EngineLaunch) as Box<dyn PreparedRuntime>) })
-    }
+/// Whether this host's engine runs the release: an engine package from a
+/// Source Registry that offers the engine's protocol major.
+pub(crate) fn supports(release: &Release) -> bool {
+    let manifest = &release.manifest;
+    release.registry.is_some()
+        && manifest.runtime.kind == RUNTIME_KIND
+        && manifest.runtime.major == RUNTIME_MAJOR
+        && manifest.protocol.majors.contains(&PROTOCOL_MAJOR)
 }
-impl PreparedRuntime for EngineLaunch {
-    fn start<'a>(
-        self: Box<Self>,
-        config: &'a HostConfig,
-        release: &'a Release,
-        package: &'a Path,
-        admit: Admission<'a>,
-    ) -> BoxFuture<'a, HostResult<Arc<dyn SourceInstance>>> {
-        Box::pin(async move {
-            let source = std::fs::read(package.join(install::relative(&release.manifest.entry)?))?;
-            let instance = Instance::start(config, release, source, admit).await?;
-            Ok(instance as Arc<dyn SourceInstance>)
-        })
-    }
+
+/// Loads the release's entry module from its verified package directory and
+/// starts it once `admit` allows the launch.
+pub(crate) async fn start(
+    config: &HostConfig,
+    release: &Release,
+    package: &Path,
+    admit: Admission<'_>,
+) -> HostResult<Arc<dyn SourceInstance>> {
+    let source = std::fs::read(package.join(install::relative(&release.manifest.entry)?))?;
+    let instance = Instance::start(config, release, source, admit).await?;
+    Ok(instance as Arc<dyn SourceInstance>)
 }

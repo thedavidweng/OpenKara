@@ -13,10 +13,10 @@ flows, cursors, and error codes of protocol 1.0. The runtime and the
 transport changed: a protocol 2.0 package is one ES module that the host
 runs in an embedded QuickJS engine instead of a Node stdio process. The
 [changes from protocol 1.0](#changes-from-protocol-10) section lists every
-difference. The application no longer runs protocol 1.0 packages: it marks
-Node-based installations as needing replacement
-([Node-era migration](source-host.md#node-era-migration)), and the stdio
-transport code stays only until its removal. New packages use protocol major 2.
+difference. The application no longer runs protocol 1.0 packages and has no
+stdio transport: it marks Node-based installations as needing replacement
+([Node-era migration](source-host.md#node-era-migration)). New packages use
+protocol major 2.
 
 ## Runtime and transport
 
@@ -284,7 +284,6 @@ inside one call and its deadline.
 | Error code                | Meaning / host action                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------------------ |
 | `invalid_request`         | Bad params; do not retry unchanged.                                                        |
-| `handshake_required`      | Protocol 1.0 stdio transport only; protocol 2.0 has no handshake.                          |
 | `incompatible_plugin`     | No compatible protocol, or identity mismatch; update required.                             |
 | `unsupported_operation`   | Missing capability or wrong auth flow; the host removes the unavailable action.            |
 | `authentication_required` | Sign in for this operation.                                                                |

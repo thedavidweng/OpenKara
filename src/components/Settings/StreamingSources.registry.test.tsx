@@ -51,7 +51,6 @@ const registrySource: SourceSnapshot = {
   pinned_version: null,
   enabled: true,
   loaded: true,
-  runtime_ready: true,
   running: false,
   state: "ready",
   progress: null,

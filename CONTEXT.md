@@ -93,7 +93,7 @@ The client address the NetEase **Streaming Source** sends as `X-Real-IP`. NetEas
 _Avoid_: UNM, unblock, real IP as a user identity, VPN, proxy server
 
 **Streaming Credentials (流媒体凭据)**:
-An opaque string map that a **Streaming Source** verifies for a signed-in user. OpenKara stores it under that source's verified publisher/package ownership. Official-page cookies or a plugin challenge can produce it. It is not **Repository Credentials**.
+An opaque string map that a **Streaming Source** verifies for a signed-in user. OpenKara stores it under the installed package's identity: its **Source Registry** and package id. Official-page cookies or a plugin challenge can produce it. It is not **Repository Credentials**.
 _Avoid_: Login, account, password, repository credentials, MUSIC_U as the user
 
 **Streaming Playlist (流媒体歌单)**:

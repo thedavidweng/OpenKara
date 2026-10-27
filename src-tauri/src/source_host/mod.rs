@@ -1,5 +1,4 @@
 mod discovery;
-mod distribution;
 mod engine;
 mod install;
 mod lifecycle;
@@ -7,7 +6,6 @@ mod market;
 mod media;
 mod migration;
 mod network;
-mod process;
 mod registry;
 mod runtime;
 mod snapshot;
@@ -20,14 +18,13 @@ pub use runtime::RequestHandle;
 pub use types::*;
 pub use work::WorkLease;
 
-use distribution::{SignedIndexDistribution, SourceDistribution};
-use runtime::{Runtimes, SourceInstance, SourceRuntime};
+use runtime::SourceInstance;
 use std::{
     collections::BTreeMap,
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[derive(Clone)]
@@ -36,8 +33,6 @@ pub struct SourceHost {
 }
 struct Inner {
     config: HostConfig,
-    distribution: Box<dyn SourceDistribution>,
-    runtime: Box<dyn SourceRuntime>,
     state: Mutex<State>,
     changes: tokio::sync::broadcast::Sender<SourceSnapshot>,
     starts: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -47,7 +42,6 @@ struct Inner {
 }
 struct State {
     stored: StoredState,
-    index: Option<SourceIndex>,
     registries: Vec<registry::RegistryEntry>,
     sources: BTreeMap<String, Live>,
     sequence: u64,
@@ -59,24 +53,11 @@ struct Live {
     error: Option<HostError>,
     install: Option<Cancellation>,
     work: BTreeMap<u64, (WorkKind, Cancellation)>,
-    failures: u32,
-    retry_at: Option<Instant>,
+    start_failures: u32,
     stopping: bool,
     failed_install: Option<String>,
 }
-impl Live {
-    fn schedule_retry(&mut self, backoff_unit: Duration) {
-        self.failures += 1;
-        self.retry_at =
-            Some(Instant::now() + backoff_unit * 2u32.pow(self.failures.saturating_sub(1).min(2)));
-    }
-}
 
-#[cfg(test)]
-pub(crate) fn digest(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    digest_hex(Sha256::digest(bytes))
-}
 pub(crate) fn digest_hex(bytes: impl AsRef<[u8]>) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
     let bytes = bytes.as_ref();
@@ -101,7 +82,7 @@ pub(crate) fn test_http(config: &HostConfig) -> bool {
 fn unknown() -> HostError {
     HostError::new(
         "not_found",
-        "Source is not present in the verified source index. Refresh available sources.",
+        "This source is not installed. Install it from an added Source Registry.",
     )
 }
 fn incompatible() -> HostError {
@@ -109,9 +90,6 @@ fn incompatible() -> HostError {
         "incompatible_plugin",
         "This source needs a compatible update. Update the source or OpenKara.",
     )
-}
-fn binding(publisher: &str, package: &str) -> String {
-    format!("{publisher}/{package}")
 }
 fn save(config: &HostConfig, state: &StoredState) -> HostResult<()> {
     fs::create_dir_all(&config.data_root)?;
@@ -125,21 +103,15 @@ fn save(config: &HostConfig, state: &StoredState) -> HostResult<()> {
     fs::rename(temp, path)?;
     Ok(())
 }
-const CACHED_OWNER_MISMATCH: &str =
-    "Cached source identity conflicts with the installed publisher. Restore source settings from backup.";
-
 impl Inner {
     fn open(
         config: HostConfig,
-        distribution: Box<dyn SourceDistribution>,
         state: State,
         changes: tokio::sync::broadcast::Sender<SourceSnapshot>,
         initialization_error: Option<HostError>,
     ) -> Arc<Self> {
         Arc::new(Self {
             config,
-            distribution,
-            runtime: Box::new(Runtimes::default()),
             state: Mutex::new(state),
             changes,
             starts: Mutex::new(BTreeMap::new()),
@@ -164,22 +136,10 @@ impl Inner {
             .ok()
             .zip(semver::Version::parse(&release.manifest.minimum_host_version).ok())
             .is_some_and(|(host, min)| host >= min)
-            && !(self.config.retire_node_installs && migration::is_node(release))
-            && self.runtime.supports(&self.config, release)
-    }
-    fn blocked(&self, source: &StoredSource, release: &Release) -> bool {
-        source.revoked.contains(&release.manifest.version) || !self.compatible(release)
+            && engine::supports(release)
     }
     fn verified_package(&self, release: &Release) -> HostResult<PathBuf> {
-        if release.registry.is_some() {
-            registry::verified_package(&self.config, release)
-        } else {
-            self.distribution.verified_package(&self.config, release)
-        }
-    }
-    fn verify_installed(&self, release: &Release) -> HostResult<()> {
-        self.verified_package(release)?;
-        self.runtime.verify_installed(&self.config, release)
+        registry::verified_package(&self.config, release)
     }
 }
 impl SourceHost {
@@ -188,10 +148,8 @@ impl SourceHost {
         Self {
             inner: Inner::open(
                 config,
-                Box::new(SignedIndexDistribution),
                 State {
                     stored: StoredState::default(),
-                    index: None,
                     registries: Vec::new(),
                     sources: BTreeMap::new(),
                     sequence: 0,
@@ -213,56 +171,22 @@ impl SourceHost {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => StoredState::default(),
             Err(error) => return Err(error.into()),
         };
-        if config.retire_node_installs {
-            if migration::retire_node_installs(&mut stored) {
-                save(&config, &stored)?;
-            }
-            migration::remove_node_files(&config);
-        }
-        let distribution: Box<dyn SourceDistribution> = Box::new(SignedIndexDistribution);
-        let (index, cache_error) = distribution.cached_index(&config);
-        if let Some(index) = &index {
-            for source in &index.sources {
-                let owner = binding(&source.publisher, &source.package_id);
-                let entry = stored.sources.entry(source.source_id.clone()).or_default();
-                if entry.package.is_some() {
-                    continue;
-                }
-                if !entry.owner_binding.is_empty() && entry.owner_binding != owner {
-                    return Err(HostError::new("owner_mismatch", CACHED_OWNER_MISMATCH));
-                }
-                entry.owner_binding = owner;
-                for version in &source.revoked_versions {
-                    if !entry.revoked.contains(version) {
-                        entry.revoked.push(version.clone());
-                    }
-                }
-            }
-            stored.generation = stored.generation.max(index.generation);
+        if migration::retire_node_installs(&mut stored) {
             save(&config, &stored)?;
         }
+        migration::remove_node_files(&config);
         let registries = registry::restore(&config, &stored.registries)?;
         let (changes, _) = tokio::sync::broadcast::channel(128);
         let sources = stored
             .sources
             .keys()
-            .map(|id| {
-                (
-                    id.clone(),
-                    Live {
-                        error: cache_error.clone(),
-                        ..Live::default()
-                    },
-                )
-            })
+            .map(|id| (id.clone(), Live::default()))
             .collect();
         let host = Self {
             inner: Inner::open(
                 config,
-                distribution,
                 State {
                     stored,
-                    index,
                     registries,
                     sources,
                     sequence: 0,
@@ -301,10 +225,10 @@ mod engine_tests;
 #[cfg(test)]
 mod host_api_tests;
 #[cfg(test)]
+mod media_tests;
+#[cfg(test)]
 mod migration_tests;
 #[cfg(test)]
 mod registry_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
-#[cfg(test)]
-mod tests;
