@@ -496,15 +496,35 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             Err(_) => continue,
         };
 
-        let _ = run_publication_driver(
-            &exec_conn,
-            provider.as_ref(),
-            remote_root.root(),
-            &library_id,
-            &writer_id,
-            &repository_id,
-            &operation_id,
-        );
+        let _ = if matches!(
+            remote_library.provider(),
+            Some(crate::config::RemoteLibraryProvider::WebDav)
+        ) {
+            let ctx = crate::remote::executor::PublishContext {
+                control_db: &exec_conn,
+                provider: provider.as_ref(),
+                working_copy_root: remote_root.root(),
+                library_id: &library_id,
+                writer_id: &writer_id,
+                repository_id: &repository_id,
+            };
+            crate::remote::executor::execute_publish_via_core(
+                &ctx,
+                &state.shell.app_data_dir,
+                &remote_library,
+                &operation_id,
+            )
+        } else {
+            run_publication_driver(
+                &exec_conn,
+                provider.as_ref(),
+                remote_root.root(),
+                &library_id,
+                &writer_id,
+                &repository_id,
+                &operation_id,
+            )
+        };
     }
 
     Ok(())
