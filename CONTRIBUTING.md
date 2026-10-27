@@ -16,8 +16,11 @@ pnpm install
 
 ```bash
 pnpm tauri dev      # dev server with hot reload
-pnpm tauri build    # release bundle
+cargo build --manifest-path src-tauri/Cargo.toml --profile optimized  # local optimized build
 ```
+
+Packaging is verified in CI. Run the optimized build above for local
+release-sensitive or cross-stack checks.
 
 ## Checks
 
