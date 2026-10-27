@@ -81,8 +81,12 @@ A switchable music or video origin inside OpenKara. A **Streaming Source** or a 
 _Avoid_: Provider, catalog, integration, remote provider, online lyrics source as a synonym
 
 **Streaming Source (流媒体源)**:
-A separately installed, trusted music-service package. Its verified description declares supported browsing, authentication, preview, and import operations. A source can serve public operations without an account. NetEase Cloud Music is one source; deterministic fixtures are not production services.
+A separately installed music-service package. It comes from a **Source Registry** the user added, OpenKara checks its bytes against the registry's integrity declaration, and it runs in a sandbox with only the declared host API. Its verified description declares supported browsing, authentication, preview, and import operations. A source can serve public operations without an account. NetEase Cloud Music is one source; deterministic fixtures are not production services.
 _Avoid_: Catalog, provider, catalog import source, scrobbler, video source, UNM
+
+**Source Registry (源注册表)**:
+An HTTPS document, maintained outside OpenKara, that lists **Streaming Source** packages with versions, declared origins, capabilities, sizes, and SHA-512 integrity. OpenKara ships with none. The user adds registries by URL. Its registry id, not its URL, is its identity.
+_Avoid_: App store, marketplace, plugin index, signed index
 
 **China Client Address (国内客户端地址)**:
 The client address the NetEase **Streaming Source** sends as `X-Real-IP`. NetEase then treats the request as mainland traffic. It is not a second source and not UNM.
