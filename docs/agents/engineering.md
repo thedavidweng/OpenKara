@@ -61,6 +61,28 @@ Easy-to-miss paths: `pnpm-lock.yaml`, `website/**/*.html`, `website/**/*.css`,
 `src-tauri/tauri.conf.json`, `.github/workflows/*.yml`, and any Markdown, JSON,
 HTML, CSS, or YAML you touch.
 
+## Build measurement
+
+The Rust workspace root is `src-tauri/Cargo.toml`. The `optimized` profile
+inherits `release` without LTO. It keeps symbols and uses incremental
+compilation. Use it for local performance checks. CI keeps the `release`
+profile.
+
+Use this protocol to measure build times:
+
+1. Use an idle machine. Stop other builds and tests.
+2. Use a clean clone of the branch.
+3. Warm the build. Run each command once:
+   - `cd src-tauri && cargo build`
+   - `cd src-tauri && cargo test --no-run`
+   - `cd src-tauri && cargo build --profile optimized`
+4. Edit one line in a library module.
+5. Time each command in the same order: dev build, full test build, and
+   optimized build. Record the time that cargo reports.
+
+Record the before and after timings in the pull request that changes build
+behavior.
+
 ## Project skills
 
 - `.agents/skills/verify/SKILL.md` — verification commands by change type
