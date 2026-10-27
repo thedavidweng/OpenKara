@@ -1,26 +1,33 @@
 # Catalog Contract
 
-The source process boundary is specified in [Streaming Source protocol 1.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
+The source boundary is specified in [Streaming Source protocol 2.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
 
 ## Identity and lifecycle
 
 `OnlineSourceId` is an open string. Source ids use safe lowercase ASCII. The native `list_online_sources()` registry contains only YouTube. `set_online_source_enabled(source_id, enabled)` changes its `AppSettings.youtube_source_enabled` flag. Streaming Sources use independent lifecycle commands, not AppSettings flags.
 
-`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `runtime_ready`, `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
+`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, nullable `registry_id` and `package_id` (the registry identity of a registry package), `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `loaded` (renames `runtime_ready`, which stays readable during the transition), `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
 
 `state` is `not_installed`, `installing`, `ready`, `disabled`, `update_required`, `unavailable`, `waiting_for_idle`, or `cancelling`. Installation, enablement, runtime readiness and sign-in are separate states. `progress` contains `phase`, `completed`, and nullable `total`. `last_error` is `{code,message,retryable}`. Active work contains numeric `id`, `kind` (`authentication`, `preview`, or `import`), and `cancelling`.
 
 `SourceManifest` contains `manifest_version`, `source_id`, `package_id`, `publisher`, `version`, `minimum_host_version`, `protocol: {majors:number[],minor:number}`, `runtime: {kind:string,major:number}`, `entry`, `name`, `description`, `license`, string arrays `capabilities`, `requires_authentication`, `resource_origins`, `media_origins`, and the protocol-defined `authentication` value.
 
-| Command                                                                      | Result             |
-| ---------------------------------------------------------------------------- | ------------------ |
-| `list_streaming_sources()`                                                   | `SourceSnapshot[]` |
-| `refresh_streaming_sources()`                                                | `SourceSnapshot[]` |
-| `install_streaming_source(source_id, version=null)`                          | `SourceSnapshot`   |
-| `cancel_streaming_source_install(source_id)`                                 | void               |
-| `set_streaming_source_enabled(source_id, enabled, stop_work=false)`          | `SourceSnapshot`   |
-| `uninstall_streaming_source(source_id, stop_work=false, remove_credentials)` | `SourceSnapshot`   |
-| `pin_streaming_source(source_id, version=null)`                              | `SourceSnapshot`   |
+| Command                                                                                       | Result             |
+| --------------------------------------------------------------------------------------------- | ------------------ |
+| `list_streaming_sources()`                                                                    | `SourceSnapshot[]` |
+| `refresh_streaming_sources()`                                                                 | `SourceSnapshot[]` |
+| `install_streaming_source(source_id, version=null, consent=false)`                            | `SourceSnapshot`   |
+| `cancel_streaming_source_install(source_id)`                                                  | void               |
+| `set_streaming_source_enabled(source_id, enabled, stop_work=false)`                           | `SourceSnapshot`   |
+| `uninstall_streaming_source(source_id, stop_work=false, remove_credentials)`                  | `SourceSnapshot`   |
+| `pin_streaming_source(source_id, version=null)`                                               | `SourceSnapshot`   |
+| `add_source_registry(url)`                                                                    | `RegistryStatus`   |
+| `remove_source_registry(registry_id)`                                                         | void               |
+| `list_source_registries()`                                                                    | `RegistryStatus[]` |
+| `list_source_market()`                                                                        | `MarketPackage[]`  |
+| `install_market_package(registry_id, package_id, version=null, consent=false, replace=false)` | `SourceSnapshot`   |
+
+`RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), and nullable `last_error`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), and nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package and its saved session never carries over.
 
 Disable and uninstall refuse active work unless `stop_work` is explicit. A stop cancels source-bound work and waits for it to stop before removing resources. Uninstall requires an explicit credential-retention choice. A failed refresh remains visible and does not erase prior snapshots. `streaming-source-status` carries the changed `SourceSnapshot`.
 

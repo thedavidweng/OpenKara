@@ -19,6 +19,8 @@ afterEach(cleanup);
 test("uninstall requires an explicit credential choice and active-work stop decision", async () => {
   const source = {
     source_id: "fixture",
+    registry_id: null,
+    package_id: null,
     owner_binding: "test/fixture",
     name: "Fixture",
     description: "A source",
@@ -28,6 +30,7 @@ test("uninstall requires an explicit credential choice and active-work stop deci
     staged_version: null,
     pinned_version: null,
     enabled: true,
+    loaded: true,
     runtime_ready: true,
     running: true,
     state: "ready" as const,
@@ -92,6 +95,8 @@ test("uninstall requires an explicit credential choice and active-work stop deci
 test("declining active-work interruption leaves the source enabled", () => {
   const source = {
     source_id: "fixture",
+    registry_id: null,
+    package_id: null,
     owner_binding: "test/fixture",
     name: "Fixture",
     description: "A source",
@@ -101,6 +106,7 @@ test("declining active-work interruption leaves the source enabled", () => {
     staged_version: null,
     pinned_version: null,
     enabled: true,
+    loaded: true,
     runtime_ready: true,
     running: true,
     state: "ready" as const,

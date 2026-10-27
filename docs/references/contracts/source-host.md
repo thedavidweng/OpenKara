@@ -63,6 +63,11 @@ handshake identity. It stores `owner_binding` as `publisher/package_id`. This
 binding survives uninstall. A different publisher or package cannot acquire
 that source's saved credentials. The adapter must compare this verified binding
 before it reads credentials. Plugin stdout never selects a credential key.
+The adapter stores Streaming Credentials under the owner binding as the
+credential account: `registry:<registry_id>/<package_id>` for a registry
+package, `publisher/package_id` for a signed-index release. A record written
+under the legacy source id account is read once and moved to the identity
+account.
 
 The host caches the signed envelope and persists verified revocations. It merges
 revocations across index generations. Discovery failure does not remove usable
@@ -81,6 +86,37 @@ it stores the URL. Adding a registry installs nothing. `registries()` returns
 added registry. `refreshed_at` is the Unix time in milliseconds of the last
 successful fetch. Two added URLs cannot use the same `registry_id`. A URL that
 starts to serve a different `registry_id` keeps its last good listing.
+`remove_registry(registry_id)` removes an added registry. Its packages leave
+the market. Installed packages from it keep working but can no longer update.
+
+`market()` lists every package that the added registries currently offer, one
+entry per (registry, package id):
+
+```text
+{
+  registry_id, package_id, source_id, name, description, license,
+  versions: [{
+    version, size,
+    resource_origins: [exact HTTPS origin],
+    media_origins: [exact HTTPS origin],
+    capabilities: [capability]
+  }],
+  installed: {version, pinned_version} | null,
+  update: {
+    version,
+    added_origins: [origin],
+    added_capabilities: [capability],
+    requires_consent: boolean
+  } | null
+}
+```
+
+`installed` is present when this device has an active release of that exact
+package identity. `update` is present when the registry lists a newer
+compatible version and no pin holds the installed one. `added_origins` and
+`added_capabilities` compare the update's declarations with the installed
+manifest; `requires_consent` is true when either is non-empty. An update that
+only removes origins or capabilities never needs consent.
 
 Format version 1 has this shape:
 
@@ -121,14 +157,22 @@ restarts.
 
 ### Registry packages
 
-`install_package(registry_id, package_id, optional_version)` installs a listed
-package. The installed package identity is the pair of `registry_id` and
-`package_id`. Its `owner_binding` is `registry:<registry_id>/<package_id>`.
-Only one installed package can hold a source id. When another identity holds an
-active or staged release for that source id, the install returns
-`source_id_taken`. After an uninstall, a different identity can take the source
-id. `install(source_id, optional_version)` updates an installed registry
-package from its own registry entry.
+`install_package(registry_id, package_id, optional_version, consent, replace)`
+installs a listed package. The installed package identity is the pair of
+`registry_id` and `package_id`. Its `owner_binding` is
+`registry:<registry_id>/<package_id>`. Only one installed package can hold a
+source id. When another identity holds an active or staged release for that
+source id, the install returns `source_id_taken` unless the caller confirms
+the replacement with `replace`. A confirmed replacement stops the installed
+package's work (refusing while work is active), removes its claim, and installs
+the new package disabled, like a first install. Its credentials and key-value
+storage do not carry over: both are bound to the owner binding. After an
+uninstall, a different identity can take the source id.
+`install(source_id, optional_version, consent)` updates an installed registry
+package from its own registry entry. When an update adds origins or
+capabilities compared with the installed manifest, install returns
+`consent_required` (naming what was added) until the caller passes
+`consent`. Reinstalling the active version never needs consent.
 
 The host selects the newest listed version whose `protocol_majors` contain 2
 and whose `minimum_host_version` is at most the host version. A pin or an
@@ -203,8 +247,10 @@ backoff.
 
 #### Host API
 
-The global `openkara` object is the only capability an embedded source gets,
-together with `setTimeout` and `clearTimeout`. Binary inputs accept a
+The [host API reference](streaming-source-host-api.md) is the author-facing
+specification of this surface. The global `openkara` object is the only
+capability an embedded source gets, together with `setTimeout` and
+`clearTimeout`. Binary inputs accept a
 `Uint8Array`, an `ArrayBuffer`, or a string (encoded as UTF-8); binary outputs
 are `Uint8Array`. Invalid crypto or encoding input throws a `TypeError`.
 
@@ -298,7 +344,9 @@ The application presents the credential retention choice separately.
 ## Public lifecycle interface
 
 `SourceHost` is cloneable and thread-safe. Its async operations are `refresh`,
-`install(source_id, optional_version)`, `retry`, `set_enabled(source_id, enabled,
+`install(source_id, optional_version, consent)`,
+`install_package(registry_id, package_id, optional_version, consent, replace)`,
+`add_registry(url)`, `retry`, `set_enabled(source_id, enabled,
 stop_work)`, and `uninstall(source_id, stop_work)`. `install` is also the manual
 update action. Without an explicit version it honors a pin, then selects the
 newest compatible non-revoked release. It never performs an automatic update.
@@ -308,18 +356,21 @@ failure without file writes or processes. The application can keep local
 workflows available and report the original source error.
 
 Synchronous operations are `snapshots`, `snapshot`, `description`,
-`cancel_install`, `set_pin`, `acquire_work`, and `subscribe`. Pins apply to the
+`cancel_install`, `set_pin`, `acquire_work`, `remove_registry`, `registries`,
+`market`, and `subscribe`. Pins apply to the
 installed version. `description` returns the verified `owner_binding` and manifest.
 Snapshots and change subscriptions use:
 
 ```text
 {
-  source_id, owner_binding, name, description, license,
+  source_id, owner_binding,
+  registry_id: string | null, package_id: string | null,
+  name, description, license,
   installed_version: string | null,
   available_version: string | null,
   staged_version: string | null,
   pinned_version: string | null,
-  enabled: boolean, runtime_ready: boolean, running: boolean,
+  enabled: boolean, loaded: boolean, runtime_ready: boolean, running: boolean,
   state: not_installed | installing | ready | disabled | update_required |
          unavailable | waiting_for_idle | cancelling,
   progress: {phase, completed, total: integer | null} | null,
@@ -329,8 +380,11 @@ Snapshots and change subscriptions use:
 }
 ```
 
-Installation, enablement, runtime readiness, process state, and authentication
-are separate. Authentication state comes from the plugin through the adapter,
+`registry_id` and `package_id` carry the registry identity of a registry
+package and are null for signed-index releases. `loaded` reports a verified
+active release and renames `runtime_ready`; both stay readable until the Node
+path is removed. Installation, enablement, runtime readiness, process state,
+and authentication are separate. Authentication state comes from the plugin through the adapter,
 not from an installation snapshot. Errors contain a stable code, a safe message,
 and a retryable flag. They do not contain credentials or upstream response bodies.
 

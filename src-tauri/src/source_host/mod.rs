@@ -3,6 +3,7 @@ mod distribution;
 mod engine;
 mod install;
 mod lifecycle;
+mod market;
 mod media;
 mod network;
 mod process;

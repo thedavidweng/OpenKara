@@ -5,8 +5,27 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
   return {
     listStreamingSources: () => invoke("list_streaming_sources"),
     refreshStreamingSources: () => invoke("refresh_streaming_sources"),
-    installStreamingSource: (sourceId, version = null) =>
-      invoke("install_streaming_source", { sourceId, version }),
+    installStreamingSource: (sourceId, version = null, consent = false) =>
+      invoke("install_streaming_source", { sourceId, version, consent }),
+    addSourceRegistry: (url) => invoke("add_source_registry", { url }),
+    removeSourceRegistry: (registryId) =>
+      invoke("remove_source_registry", { registryId }),
+    listSourceRegistries: () => invoke("list_source_registries"),
+    listSourceMarket: () => invoke("list_source_market"),
+    installMarketPackage: (
+      registryId,
+      packageId,
+      version = null,
+      consent = false,
+      replace = false,
+    ) =>
+      invoke("install_market_package", {
+        registryId,
+        packageId,
+        version,
+        consent,
+        replace,
+      }),
     cancelStreamingSourceInstall: (sourceId) =>
       invoke("cancel_streaming_source_install", { sourceId }),
     setStreamingSourceEnabled: (sourceId, enabled, stopWork = false) =>

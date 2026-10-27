@@ -283,6 +283,10 @@ pub struct ActiveWork {
 pub struct SourceSnapshot {
     pub source_id: String,
     pub owner_binding: String,
+    /// The Source Registry and package that own this source, when the source
+    /// came from a registry.
+    pub registry_id: Option<String>,
+    pub package_id: Option<String>,
     pub name: String,
     pub description: String,
     pub license: String,
@@ -291,6 +295,9 @@ pub struct SourceSnapshot {
     pub staged_version: Option<String>,
     pub pinned_version: Option<String>,
     pub enabled: bool,
+    /// The source has a verified active release. Renames `runtime_ready`,
+    /// which stays readable until the Node path is removed.
+    pub loaded: bool,
     pub runtime_ready: bool,
     pub running: bool,
     pub state: SourceState,
@@ -400,6 +407,44 @@ pub(crate) struct StoredRegistry {
     pub url: String,
     pub registry_id: String,
 }
+/// One package version as the market lists it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketVersion {
+    pub version: String,
+    pub size: u64,
+    pub resource_origins: Vec<String>,
+    pub media_origins: Vec<String>,
+    pub capabilities: Vec<String>,
+}
+/// The install state of a market package on this device.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketInstall {
+    pub version: String,
+    pub pinned_version: Option<String>,
+}
+/// An update the market offers for an installed package, with the origins and
+/// capabilities it adds. `requires_consent` is true when it adds any.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketUpdate {
+    pub version: String,
+    pub added_origins: Vec<String>,
+    pub added_capabilities: Vec<String>,
+    pub requires_consent: bool,
+}
+/// One package that an added Source Registry lists on the market.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketPackage {
+    pub registry_id: String,
+    pub package_id: String,
+    pub source_id: String,
+    pub name: String,
+    pub description: String,
+    pub license: String,
+    pub versions: Vec<MarketVersion>,
+    pub installed: Option<MarketInstall>,
+    pub update: Option<MarketUpdate>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RegistryStatus {
     pub url: String,

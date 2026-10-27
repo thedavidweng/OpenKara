@@ -172,6 +172,8 @@ export function createTauriMock(data: any): TauriMockResult {
   const sourceSnapshots = ["demo-web", "demo-plugin"].map<SourceSnapshot>(
     (source_id, index) => ({
       source_id,
+      registry_id: null,
+      package_id: null,
       owner_binding: `demo/${source_id}`,
       name: index ? "Plugin Library" : "Web Library",
       description: "Deterministic UI-only source",
@@ -181,6 +183,7 @@ export function createTauriMock(data: any): TauriMockResult {
       staged_version: null,
       pinned_version: null,
       enabled: true,
+      loaded: true,
       runtime_ready: true,
       running: false,
       state: "ready",

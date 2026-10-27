@@ -157,6 +157,49 @@ impl SourceHost {
         entry.error = cached.err();
         Ok(entry.status())
     }
+    /// Removes an added Source Registry. Its packages leave the market.
+    /// Installed packages keep working but can no longer update.
+    pub fn remove_registry(&self, registry_id: &str) -> HostResult<()> {
+        self.inner.check()?;
+        let mut state = self.inner.state.lock().unwrap();
+        if !state
+            .registries
+            .iter()
+            .any(|entry| entry.registry_id == registry_id)
+        {
+            return Err(HostError::new(
+                "not_found",
+                "No added Source Registry uses this registry id.",
+            ));
+        }
+        let mut stored = state.stored.clone();
+        stored
+            .registries
+            .retain(|entry| entry.registry_id != registry_id);
+        save(&self.inner.config, &stored)?;
+        state
+            .registries
+            .retain(|entry| entry.registry_id != registry_id);
+        state.stored = stored;
+        let _ = registry::save_cache(&self.inner.config, &state.registries);
+        let affected: Vec<String> = state
+            .stored
+            .sources
+            .iter()
+            .filter(|(_, source)| {
+                source
+                    .package
+                    .as_ref()
+                    .is_some_and(|identity| identity.registry_id == registry_id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        drop(state);
+        for id in affected {
+            self.inner.publish(&id);
+        }
+        Ok(())
+    }
     pub fn registries(&self) -> Vec<RegistryStatus> {
         self.inner
             .state

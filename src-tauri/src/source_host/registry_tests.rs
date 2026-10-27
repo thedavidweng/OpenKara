@@ -36,6 +36,9 @@ struct Version {
     registry_majors: Vec<u32>,
     manifest_majors: Vec<u32>,
     describe_major: u32,
+    resource_origins: Option<Vec<String>>,
+    media_origins: Option<Vec<String>>,
+    capabilities: Option<Vec<String>>,
 }
 impl Version {
     fn new(version: &'static str) -> Self {
@@ -44,6 +47,9 @@ impl Version {
             registry_majors: vec![2],
             manifest_majors: vec![2],
             describe_major: 2,
+            resource_origins: None,
+            media_origins: None,
+            capabilities: None,
         }
     }
 }
@@ -60,7 +66,16 @@ fn manifest(source_id: &str, package_id: &str, version: &Version) -> SourceManif
         minor: 0,
     };
     manifest.entry = "source.mjs".into();
-    manifest.capabilities = vec!["playlists".into()];
+    manifest.capabilities = version
+        .capabilities
+        .clone()
+        .unwrap_or_else(|| vec!["playlists".into()]);
+    if let Some(origins) = &version.resource_origins {
+        manifest.resource_origins = origins.clone();
+    }
+    if let Some(origins) = &version.media_origins {
+        manifest.media_origins = origins.clone();
+    }
     manifest.authentication = json!({"flow":"none"});
     manifest.requires_authentication = vec![];
     manifest
@@ -217,7 +232,13 @@ impl Fixture {
     }
     async fn install(&self, version: Option<&str>) -> HostResult<SourceSnapshot> {
         self.host
-            .install_package(self.registry.id, &self.registry.package_id(), version)
+            .install_package(
+                self.registry.id,
+                &self.registry.package_id(),
+                version,
+                false,
+                false,
+            )
             .await
     }
     async fn served_version(&self) -> HostResult<Value> {
@@ -441,7 +462,7 @@ async fn registries_refresh_periodically() {
     config.registry_refresh_interval = Duration::from_millis(100);
     let host = SourceHost::new(config).await.unwrap();
     host.add_registry(&registry.url()).await.unwrap();
-    host.install_package(registry.id, &registry.package_id(), None)
+    host.install_package(registry.id, &registry.package_id(), None, false, false)
         .await
         .unwrap();
 
@@ -571,7 +592,7 @@ async fn only_one_installed_package_can_hold_a_source_id() {
     fixture.install(None).await.unwrap();
     let error = fixture
         .host
-        .install_package(other.id, &other.package_id(), None)
+        .install_package(other.id, &other.package_id(), None, false, false)
         .await
         .unwrap_err();
     assert_eq!(error.code, "source_id_taken");
@@ -598,7 +619,7 @@ async fn only_one_installed_package_can_hold_a_source_id() {
     fixture.host.uninstall("fixture", false).await.unwrap();
     let replaced = fixture
         .host
-        .install_package(other.id, &other.package_id(), None)
+        .install_package(other.id, &other.package_id(), None, false, false)
         .await
         .unwrap();
     assert_eq!(replaced.installed_version.as_deref(), Some("5.0.0"));
@@ -634,7 +655,11 @@ async fn an_update_must_pass_describe_before_it_replaces_the_active_version() {
         ])
         .await;
     fixture.host.refresh().await.unwrap();
-    let error = fixture.host.install("fixture", None).await.unwrap_err();
+    let error = fixture
+        .host
+        .install("fixture", None, false)
+        .await
+        .unwrap_err();
     assert_eq!(error.code, "incompatible_plugin");
     let snapshot = fixture.host.snapshot("fixture").unwrap();
     assert_eq!(snapshot.installed_version.as_deref(), Some("1.0.0"));
@@ -650,7 +675,7 @@ async fn an_update_must_pass_describe_before_it_replaces_the_active_version() {
         .host
         .acquire_work("fixture", WorkKind::Import)
         .unwrap();
-    let staged = fixture.host.install("fixture", None).await.unwrap();
+    let staged = fixture.host.install("fixture", None, false).await.unwrap();
     assert_eq!(staged.state, SourceState::WaitingForIdle);
     assert_eq!(staged.installed_version.as_deref(), Some("1.0.0"));
     assert_eq!(staged.staged_version.as_deref(), Some("3.0.0"));
@@ -722,12 +747,318 @@ async fn protocol_major_mismatches_are_incompatible_and_registry_disagreement_is
 }
 
 #[tokio::test]
+async fn the_market_lists_packages_with_identity_and_update_status() {
+    let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
+    let mut other = MockRegistry::new("org.example.other", "other").await;
+    other.publish(&[Version::new("2.1.0")]).await;
+    fixture.host.add_registry(&other.url()).await.unwrap();
+
+    let market = fixture.host.market();
+    assert_eq!(market.len(), 2);
+    let package = market
+        .iter()
+        .find(|package| package.registry_id == "org.example.registry")
+        .unwrap();
+    assert_eq!(package.package_id, "org.example.registry.fixture");
+    assert_eq!(package.source_id, "fixture");
+    assert_eq!(package.name, "Registry Fixture");
+    assert_eq!(package.license, "AGPL-3.0-only");
+    assert_eq!(package.versions.len(), 1);
+    assert_eq!(package.versions[0].version, "1.0.0");
+    assert_eq!(package.versions[0].capabilities, ["playlists"]);
+    assert!(!package.versions[0].resource_origins.is_empty());
+    assert!(package.versions[0].size > 0);
+    assert_eq!(package.installed, None);
+    assert_eq!(package.update, None);
+    assert_eq!(
+        market
+            .iter()
+            .find(|package| package.registry_id == "org.example.other")
+            .unwrap()
+            .source_id,
+        "other"
+    );
+
+    let installed = fixture.install(None).await.unwrap();
+    assert_eq!(
+        installed.registry_id.as_deref(),
+        Some("org.example.registry")
+    );
+    assert_eq!(
+        installed.package_id.as_deref(),
+        Some("org.example.registry.fixture")
+    );
+    assert!(installed.loaded);
+    assert_eq!(
+        installed.loaded, installed.runtime_ready,
+        "both names read the same state during the transition"
+    );
+    let market = fixture.host.market();
+    let package = market
+        .iter()
+        .find(|package| package.package_id == "org.example.registry.fixture")
+        .unwrap();
+    assert_eq!(
+        package.installed,
+        Some(MarketInstall {
+            version: "1.0.0".into(),
+            pinned_version: None,
+        })
+    );
+    assert_eq!(package.update, None);
+
+    let mut fixture = fixture;
+    let mut widened = fixture_manifest("fixture", "2.0.0").resource_origins;
+    widened.push("https://added-origin.fixture.test".into());
+    fixture
+        .registry
+        .publish(&[
+            Version::new("1.0.0"),
+            Version {
+                resource_origins: Some(widened),
+                capabilities: Some(vec!["playlists".into(), "search".into()]),
+                ..Version::new("2.0.0")
+            },
+        ])
+        .await;
+    fixture.host.refresh().await.unwrap();
+    let market = fixture.host.market();
+    let update = market
+        .iter()
+        .find(|package| package.package_id == "org.example.registry.fixture")
+        .and_then(|package| package.update.clone())
+        .expect("an update is listed");
+    assert_eq!(update.version, "2.0.0");
+    assert_eq!(update.added_origins, ["https://added-origin.fixture.test"]);
+    assert_eq!(update.added_capabilities, ["search"]);
+    assert!(update.requires_consent);
+
+    fixture.host.set_pin("fixture", Some("1.0.0")).unwrap();
+    let market = fixture.host.market();
+    assert_eq!(
+        market
+            .iter()
+            .find(|package| package.package_id == "org.example.registry.fixture")
+            .and_then(|package| package.update.clone()),
+        None,
+        "a pin holds the installed version back"
+    );
+
+    fixture.host.uninstall("fixture", false).await.unwrap();
+    let snapshot = fixture.host.snapshot("fixture").unwrap();
+    assert!(!snapshot.loaded);
+    assert_eq!(snapshot.loaded, snapshot.runtime_ready);
+}
+
+#[tokio::test]
+async fn an_update_that_adds_origins_or_capabilities_requires_consent() {
+    let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
+    fixture.install(None).await.unwrap();
+
+    let mut fixture = fixture;
+    let mut widened = fixture_manifest("fixture", "2.0.0").resource_origins;
+    widened.push("https://added-origin.fixture.test".into());
+    fixture
+        .registry
+        .publish(&[
+            Version::new("1.0.0"),
+            Version {
+                resource_origins: Some(widened),
+                capabilities: Some(vec!["playlists".into(), "search".into()]),
+                ..Version::new("2.0.0")
+            },
+        ])
+        .await;
+    fixture.host.refresh().await.unwrap();
+
+    let error = fixture
+        .host
+        .install("fixture", None, false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "consent_required");
+    assert!(
+        error.message.contains("https://added-origin.fixture.test"),
+        "{error}"
+    );
+    assert!(error.message.contains("search"), "{error}");
+    assert_eq!(
+        fixture
+            .host
+            .snapshot("fixture")
+            .unwrap()
+            .installed_version
+            .as_deref(),
+        Some("1.0.0"),
+        "the refused update changes nothing"
+    );
+    assert_eq!(
+        fixture
+            .host
+            .install_package(
+                fixture.registry.id,
+                &fixture.registry.package_id(),
+                None,
+                false,
+                false,
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "consent_required",
+        "the market install path enforces the same consent"
+    );
+
+    let updated = fixture.host.install("fixture", None, true).await.unwrap();
+    assert_eq!(updated.installed_version.as_deref(), Some("2.0.0"));
+
+    fixture
+        .registry
+        .publish(&[Version::new("2.0.0"), Version::new("3.0.0")])
+        .await;
+    fixture.host.refresh().await.unwrap();
+    let updated = fixture.host.install("fixture", None, false).await.unwrap();
+    assert_eq!(
+        updated.installed_version.as_deref(),
+        Some("3.0.0"),
+        "an update that only removes origins and capabilities needs no consent"
+    );
+
+    let repaired = fixture.host.install("fixture", None, false).await.unwrap();
+    assert_eq!(
+        repaired.installed_version.as_deref(),
+        Some("3.0.0"),
+        "reinstalling the active version never needs consent"
+    );
+}
+
+#[tokio::test]
+async fn a_confirmed_replacement_takes_the_source_id_without_carrying_credentials() {
+    let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
+    let mut other = MockRegistry::new("org.example.other", "fixture").await;
+    other.publish(&[Version::new("5.0.0")]).await;
+    fixture.host.add_registry(&other.url()).await.unwrap();
+    fixture.install(None).await.unwrap();
+    fixture
+        .host
+        .set_enabled("fixture", true, false)
+        .await
+        .unwrap();
+
+    let owner = fixture.host.description("fixture").unwrap().owner_binding;
+    let credentials =
+        crate::catalog::StreamingCredentials::from([("token".into(), "first-token".into())]);
+    crate::catalog::store_session(fixture.root.path(), &owner, credentials.clone()).unwrap();
+
+    assert_eq!(
+        fixture
+            .host
+            .install_package(other.id, &other.package_id(), None, false, false)
+            .await
+            .unwrap_err()
+            .code,
+        "source_id_taken",
+        "an unconfirmed replacement is refused"
+    );
+
+    let replaced = fixture
+        .host
+        .install_package(other.id, &other.package_id(), None, false, true)
+        .await
+        .unwrap();
+    assert_eq!(replaced.installed_version.as_deref(), Some("5.0.0"));
+    assert_eq!(
+        replaced.owner_binding,
+        "registry:org.example.other/org.example.other.fixture"
+    );
+    assert!(
+        !replaced.enabled,
+        "a replacement installs like a first install"
+    );
+    assert_eq!(
+        crate::catalog::load_credentials(fixture.root.path(), "fixture", &replaced.owner_binding)
+            .unwrap(),
+        None,
+        "credentials do not carry over to the replacement"
+    );
+    assert_eq!(
+        crate::catalog::load_credentials(fixture.root.path(), "fixture", &owner).unwrap(),
+        Some(credentials),
+        "the replaced package's own credentials stay under its identity"
+    );
+}
+
+#[tokio::test]
+async fn removing_a_registry_keeps_installed_sources_and_ends_updates() {
+    let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
+    fixture.install(None).await.unwrap();
+    fixture
+        .host
+        .set_enabled("fixture", true, false)
+        .await
+        .unwrap();
+    assert_eq!(fixture.host.market().len(), 1);
+
+    assert_eq!(
+        fixture
+            .host
+            .remove_registry("org.example.unknown")
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    fixture
+        .host
+        .remove_registry("org.example.registry")
+        .unwrap();
+    assert!(fixture.host.registries().is_empty());
+    assert!(
+        fixture.host.market().is_empty(),
+        "its packages leave the market"
+    );
+
+    let snapshot = fixture.host.snapshot("fixture").unwrap();
+    assert_eq!(snapshot.installed_version.as_deref(), Some("1.0.0"));
+    assert_eq!(snapshot.available_version, None);
+    assert_eq!(
+        fixture.served_version().await.unwrap(),
+        "1.0.0",
+        "the installed source keeps working"
+    );
+    assert_eq!(
+        fixture
+            .host
+            .install("fixture", None, false)
+            .await
+            .unwrap_err()
+            .code,
+        "not_found",
+        "without its registry the package cannot update"
+    );
+
+    let mut fixture = fixture;
+    drop(fixture.host);
+    fixture.host = SourceHost::new(config(fixture.root.path())).await.unwrap();
+    assert!(fixture.host.registries().is_empty(), "the removal persists");
+    assert!(fixture.host.market().is_empty());
+    assert_eq!(
+        fixture
+            .host
+            .snapshot("fixture")
+            .unwrap()
+            .installed_version
+            .as_deref(),
+        Some("1.0.0")
+    );
+}
+
+#[tokio::test]
 async fn unknown_registry_packages_are_not_found() {
     let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
     assert_eq!(
         fixture
             .host
-            .install_package("org.example.registry", "missing", None)
+            .install_package("org.example.registry", "missing", None, false, false)
             .await
             .unwrap_err()
             .code,
@@ -736,7 +1067,13 @@ async fn unknown_registry_packages_are_not_found() {
     assert_eq!(
         fixture
             .host
-            .install_package("org.example.missing", "org.example.registry.fixture", None)
+            .install_package(
+                "org.example.missing",
+                "org.example.registry.fixture",
+                None,
+                false,
+                false
+            )
             .await
             .unwrap_err()
             .code,

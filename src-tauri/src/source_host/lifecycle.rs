@@ -1,5 +1,5 @@
 use super::{
-    incompatible, registry, runtime::PreparedRuntime, save, types::*, unknown, SourceHost,
+    incompatible, market, registry, runtime::PreparedRuntime, save, types::*, unknown, SourceHost,
 };
 use std::path::PathBuf;
 
@@ -10,6 +10,22 @@ fn not_listed() -> HostError {
     HostError::new(
         "not_found",
         "No added Source Registry lists this package. Add or refresh the registry.",
+    )
+}
+fn consent_required(added_origins: &[String], added_capabilities: &[String]) -> HostError {
+    let mut added = Vec::new();
+    if !added_origins.is_empty() {
+        added.push(format!("origins {}", added_origins.join(", ")));
+    }
+    if !added_capabilities.is_empty() {
+        added.push(format!("capabilities {}", added_capabilities.join(", ")));
+    }
+    HostError::new(
+        "consent_required",
+        format!(
+            "This update adds {}. Review the new access and confirm the update.",
+            added.join(" and ")
+        ),
     )
 }
 
@@ -52,23 +68,32 @@ impl SourceHost {
         Ok(())
     }
     /// Installs or updates an installed source from where it came from: its
-    /// Source Registry package, or the signed index.
-    pub async fn install(&self, id: &str, version: Option<&str>) -> HostResult<SourceSnapshot> {
+    /// Source Registry package, or the signed index. An update that adds
+    /// origins or capabilities needs `consent`.
+    pub async fn install(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        consent: bool,
+    ) -> HostResult<SourceSnapshot> {
         self.inner.check()?;
         let gate = self.inner.gate(id, true);
         let _guard = gate
             .try_lock()
             .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
-        self.install_locked(id, version).await
+        self.install_locked(id, version, consent).await
     }
     /// Installs a package that an added Source Registry lists. The package
-    /// identity is the registry id and package id; it cannot take a source id
-    /// that another installed package holds.
+    /// identity is the registry id and package id. When another package holds
+    /// the source id, only a confirmed replacement (`replace`) takes it over:
+    /// the previous package is removed and its credentials do not carry over.
     pub async fn install_package(
         &self,
         registry_id: &str,
         package_id: &str,
         version: Option<&str>,
+        consent: bool,
+        replace: bool,
     ) -> HostResult<SourceSnapshot> {
         self.inner.check()?;
         let identity = PackageIdentity {
@@ -82,38 +107,62 @@ impl SourceHost {
         let _guard = gate
             .try_lock()
             .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
-        self.claim(&id, &identity)?;
-        self.install_locked(&id, version).await
+        self.claim(&id, &identity, replace).await?;
+        self.install_locked(&id, version, consent).await
     }
-    fn claim(&self, id: &str, identity: &PackageIdentity) -> HostResult<()> {
-        let mut state = self.inner.state.lock().unwrap();
+    async fn claim(&self, id: &str, identity: &PackageIdentity, replace: bool) -> HostResult<()> {
         let owner = identity.owner_binding();
-        if state
-            .stored
-            .sources
-            .get(id)
-            .is_some_and(|source| source.owner_binding == owner)
         {
-            return Ok(());
+            let state = self.inner.state.lock().unwrap();
+            if state
+                .stored
+                .sources
+                .get(id)
+                .is_some_and(|source| source.owner_binding == owner)
+            {
+                return Ok(());
+            }
+            let taken = state
+                .stored
+                .sources
+                .get(id)
+                .is_some_and(|source| source.active.is_some() || source.staged.is_some());
+            if !taken {
+                drop(state);
+                return self.claim_free(id, identity);
+            }
+            if !replace {
+                return Err(HostError::new("source_id_taken", SOURCE_ID_TAKEN));
+            }
         }
+        // A confirmed replacement stops the current package's work before its
+        // claim is cleared; it refuses while work is active.
+        self.stop_work(id, false).await?;
+        self.claim_free(id, identity)
+    }
+    fn claim_free(&self, id: &str, identity: &PackageIdentity) -> HostResult<()> {
+        let mut state = self.inner.state.lock().unwrap();
         let mut stored = state.stored.clone();
-        let source = stored.sources.entry(id.into()).or_default();
-        if source.active.is_some() || source.staged.is_some() {
-            return Err(HostError::new("source_id_taken", SOURCE_ID_TAKEN));
-        }
-        *source = StoredSource {
-            owner_binding: owner,
+        *stored.sources.entry(id.into()).or_default() = StoredSource {
+            owner_binding: identity.owner_binding(),
             package: Some(identity.clone()),
             ..StoredSource::default()
         };
         save(&self.inner.config, &stored)?;
         state.stored = stored;
-        state.sources.entry(id.into()).or_default().error = None;
+        let live = state.sources.entry(id.into()).or_default();
+        live.error = None;
+        live.stopping = false;
         drop(state);
         self.inner.publish(id);
         Ok(())
     }
-    fn plan(&self, id: &str, version: Option<&str>) -> HostResult<(Plan, Cancellation)> {
+    fn plan(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        consent: bool,
+    ) -> HostResult<(Plan, Cancellation)> {
         let mut state = self.inner.state.lock().unwrap();
         let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
         let wanted = version.or(stored.pinned_version.as_deref());
@@ -151,14 +200,42 @@ impl SourceHost {
                     .ok_or_else(incompatible)?,
             ))
         };
+        if !consent {
+            if let Some(active) = &stored.active {
+                if active.manifest.version != plan.version() {
+                    let (added_origins, added_capabilities) = match &plan {
+                        Plan::Index(release) => market::added_declarations(
+                            &active.manifest,
+                            &release.manifest.resource_origins,
+                            &release.manifest.media_origins,
+                            &release.manifest.capabilities,
+                        ),
+                        Plan::Registry(candidate) => market::added_declarations(
+                            &active.manifest,
+                            &candidate.version.resource_origins,
+                            &candidate.version.media_origins,
+                            &candidate.version.capabilities,
+                        ),
+                    };
+                    if !added_origins.is_empty() || !added_capabilities.is_empty() {
+                        return Err(consent_required(&added_origins, &added_capabilities));
+                    }
+                }
+            }
+        }
         let cancel = Cancellation::new();
         let live = state.sources.entry(id.into()).or_default();
         live.install = Some(cancel.clone());
         live.error = None;
         Ok((plan, cancel))
     }
-    async fn install_locked(&self, id: &str, version: Option<&str>) -> HostResult<SourceSnapshot> {
-        let (plan, cancel) = match self.plan(id, version) {
+    async fn install_locked(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        consent: bool,
+    ) -> HostResult<SourceSnapshot> {
+        let (plan, cancel) = match self.plan(id, version, consent) {
             Ok(selection) => selection,
             Err(error) => {
                 self.inner
@@ -469,10 +546,10 @@ impl SourceHost {
             live.failed_install.clone()
         };
         if let Some(version) = failed {
-            return self.install(id, Some(&version)).await;
+            return self.install(id, Some(&version), false).await;
         }
         if snapshot.installed_version.is_none() {
-            return self.install(id, None).await;
+            return self.install(id, None, false).await;
         }
         if snapshot.enabled {
             self.running(id).await?;

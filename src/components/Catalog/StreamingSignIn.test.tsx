@@ -27,6 +27,8 @@ vi.mock("react-i18next", () => ({
 }));
 const source: SourceSnapshot = {
   source_id: "alpha",
+  registry_id: null,
+  package_id: null,
   owner_binding: "test/alpha",
   name: "Alpha",
   description: "Fixture source",
@@ -36,6 +38,7 @@ const source: SourceSnapshot = {
   staged_version: null,
   pinned_version: null,
   enabled: true,
+  loaded: true,
   runtime_ready: true,
   running: false,
   state: "ready",

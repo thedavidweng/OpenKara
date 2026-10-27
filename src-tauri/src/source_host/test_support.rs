@@ -215,3 +215,131 @@ impl FixtureDistribution {
             .await;
     }
 }
+
+/// The repo's single-file engine fixture (protocol 2, openkara-js). Its
+/// placeholder line is replaced with the package manifest when a registry
+/// tarball is built.
+pub(crate) const ENGINE_FIXTURE_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../fixtures/streaming-source/source.mjs"
+));
+
+/// A manifest for the single-file engine fixture; callers adjust name,
+/// authentication, capabilities and origins per package.
+pub(crate) fn engine_fixture_manifest(source_id: &str, version: &str) -> SourceManifest {
+    let mut manifest = fixture_manifest(source_id, version);
+    manifest.runtime = RuntimeRequirement {
+        kind: super::engine::RUNTIME_KIND.into(),
+        major: super::engine::RUNTIME_MAJOR,
+    };
+    manifest.protocol = ProtocolDeclaration {
+        majors: vec![super::engine::PROTOCOL_MAJOR],
+        minor: 0,
+    };
+    manifest.entry = "source.mjs".into();
+    manifest
+}
+
+fn registry_tarball(manifest: &SourceManifest) -> Vec<u8> {
+    let manifest_json = serde_json::to_vec(manifest).unwrap();
+    let source =
+        ENGINE_FIXTURE_SOURCE.replace("__MANIFEST__", std::str::from_utf8(&manifest_json).unwrap());
+    assert!(
+        !source.contains("__MANIFEST__"),
+        "the engine fixture carries exactly one manifest placeholder"
+    );
+    let mut archive = tar::Builder::new(Vec::new());
+    for (path, bytes) in [
+        ("package/manifest.json".to_owned(), manifest_json),
+        (format!("package/{}", manifest.entry), source.into_bytes()),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, path, bytes.as_slice())
+            .unwrap();
+    }
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut encoder, &archive.into_inner().unwrap()).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn sha512_sri(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
+}
+
+/// A mock Source Registry that serves the repo's single-file engine fixture
+/// as npm-style tarballs, so tests install it through the real registry path.
+pub(crate) struct RegistryFixture {
+    pub(crate) server: mockito::ServerGuard,
+    registry_id: String,
+}
+impl RegistryFixture {
+    pub(crate) async fn new(registry_id: &str) -> Self {
+        Self {
+            server: mockito::Server::new_async().await,
+            registry_id: registry_id.into(),
+        }
+    }
+    pub(crate) fn registry_id(&self) -> &str {
+        &self.registry_id
+    }
+    pub(crate) fn package_id(&self, source_id: &str) -> String {
+        format!("{}.{source_id}", self.registry_id)
+    }
+    pub(crate) fn url(&self) -> String {
+        format!("{}/registry.json", self.server.url())
+    }
+    /// Publishes each manifest's single version; every package's entry module
+    /// is the repo fixture with that manifest baked in.
+    pub(crate) async fn publish(&mut self, manifests: &[SourceManifest]) {
+        let mut packages = Vec::new();
+        for manifest in manifests {
+            let manifest = manifest.clone();
+            let bytes = registry_tarball(&manifest);
+            let path = format!("/{}-{}.tgz", manifest.source_id, manifest.version);
+            let url = format!("{}{path}", self.server.url());
+            packages.push(json!({
+                "package_id": manifest.package_id,
+                "source_id": manifest.source_id,
+                "name": manifest.name,
+                "description": manifest.description,
+                "license": manifest.license,
+                "versions": [{
+                    "version": manifest.version,
+                    "protocol_majors": manifest.protocol.majors,
+                    "minimum_host_version": manifest.minimum_host_version,
+                    "size": bytes.len(),
+                    "integrity": sha512_sri(&bytes),
+                    "urls": [url],
+                    "resource_origins": manifest.resource_origins,
+                    "media_origins": manifest.media_origins,
+                    "capabilities": manifest.capabilities,
+                }],
+            }));
+            self.server
+                .mock("GET", path.as_str())
+                .with_body(bytes)
+                .create_async()
+                .await;
+        }
+        let document = json!({
+            "format_version": 1,
+            "registry_id": self.registry_id,
+            "display_name": "Fixture Source Registry",
+            "homepage": "https://registry.openkara.test/",
+            "packages": packages,
+        });
+        self.server
+            .mock("GET", "/registry.json")
+            .with_body(serde_json::to_vec(&document).unwrap())
+            .create_async()
+            .await;
+    }
+}
