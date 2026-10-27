@@ -27,8 +27,12 @@ The source boundary is specified in [Streaming Source protocol 2.0](streaming-so
 | `take_source_registry_links()`                                                                | `SourceRegistryLink[]` |
 | `list_source_market()`                                                                        | `MarketPackage[]`      |
 | `install_market_package(registry_id, package_id, version=null, consent=false, replace=false)` | `SourceSnapshot`       |
+| `get_source_replacement_notice()`                                                             | `RetiredSource[]`      |
+| `dismiss_source_replacement_notice()`                                                         | void                   |
 
 `RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), and nullable `last_error`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), and nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package and its saved session never carries over.
+
+On launch the host retires installs that ran on the removed Node runtime. A retired source keeps its snapshot with state `update_required`, null `installed_version` and `available_version`, and `last_error.code` `replacement_required`; install and retry return that code. The application deletes its saved session and the Node runtime and package files, and keeps library songs, Streaming Track Identities and Playlist Origin Stamps. Installing a registry package with the same source id replaces it; nothing carries over and the user signs in again. `get_source_replacement_notice()` returns each retired source as `RetiredSource` (`source_id`, `name`, `version`) until `dismiss_source_replacement_notice()` hides the notice for good.
 
 Disable and uninstall refuse active work unless `stop_work` is explicit. A stop cancels source-bound work and waits for it to stop before removing resources. Uninstall requires an explicit credential-retention choice. A failed refresh remains visible and does not erase prior snapshots. `streaming-source-status` carries the changed `SourceSnapshot`.
 
@@ -125,6 +129,11 @@ installs disabled. A pinned install shows its pin and no update offer. An
 installed source whose registry is no longer added states that it keeps
 working without updates. Install errors show the backend message, which names
 each failed download URL.
+
+While `get_source_replacement_notice()` returns retired sources, the main view
+shows a one-time notice that names them and tells the user to add a Source
+Registry, install the replacement, and sign in again. It offers a Settings
+shortcut and a dismiss action that calls `dismiss_source_replacement_notice()`.
 
 The browser shows liked tracks for `liked_tracks`, search for `search`, and
 playlists only when both `playlists` and `playlist_tracks` are declared. Import

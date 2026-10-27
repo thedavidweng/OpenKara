@@ -357,6 +357,12 @@
       "signedOut": "Signed out",
       "staged": "Version {{version}} waits for active work to finish.",
       "registryRemoved": "Its Source Registry was removed. This source keeps working but cannot update.",
+      "replacementNotice": {
+        "title": "Streaming Sources need replacement",
+        "body": "OpenKara no longer runs Node-based Streaming Sources. It removed {{names}} and the saved sign-in. Your library songs and playlists stay. To keep using a source, add a Source Registry, install the replacement, and sign in again.",
+        "openSettings": "Open Settings",
+        "dismiss": "Dismiss"
+      },
       "activeWork": "Active work",
       "install": "Install",
       "update": "Update",

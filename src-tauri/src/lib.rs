@@ -225,6 +225,8 @@ pub fn run() {
             commands::source_host::take_source_registry_links,
             commands::source_host::list_source_market,
             commands::source_host::install_market_package,
+            commands::source_host::get_source_replacement_notice,
+            commands::source_host::dismiss_source_replacement_notice,
             commands::source_host::cancel_streaming_source_install,
             commands::source_host::set_streaming_source_enabled,
             commands::source_host::uninstall_streaming_source,

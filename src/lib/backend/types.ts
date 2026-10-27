@@ -32,6 +32,7 @@ import type {
   StreamingPlaylistListing,
   SourceSnapshot,
   RegistryStatus,
+  RetiredSource,
   SourceRegistryLink,
   MarketPackage,
   AuthChallenge,
@@ -356,6 +357,8 @@ export interface CatalogBackend {
     consent?: boolean,
     replace?: boolean,
   ): Promise<SourceSnapshot>;
+  getSourceReplacementNotice(): Promise<RetiredSource[]>;
+  dismissSourceReplacementNotice(): Promise<void>;
   cancelStreamingSourceInstall(sourceId: OnlineSourceId): Promise<void>;
   setStreamingSourceEnabled(
     sourceId: OnlineSourceId,

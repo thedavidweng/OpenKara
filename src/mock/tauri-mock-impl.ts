@@ -2,6 +2,7 @@ import type { InvokeCommand } from "@/lib/tauri/invoke";
 import type {
   MarketPackage,
   RegistryStatus,
+  RetiredSource,
   SourceRegistryLink,
   SourceSnapshot,
   StreamingImportJobSnapshot,
@@ -61,6 +62,7 @@ export interface MockData {
   playStartPositionBySongId?: Record<string, number>;
   coverArtUrls?: Record<string, string>;
   stemsCompleted?: boolean;
+  retiredSources?: RetiredSource[];
 }
 
 export interface MockSong {
@@ -224,6 +226,7 @@ export function createTauriMock(data: any): TauriMockResult {
       },
     }),
   );
+  const retiredSources: RetiredSource[] = [...(data.retiredSources ?? [])];
   const pendingRegistryLinks: SourceRegistryLink[] = [];
   const sourceRegistries: RegistryStatus[] = [
     {
@@ -1463,6 +1466,10 @@ export function createTauriMock(data: any): TauriMockResult {
       }
       sourceSnapshots.push(marketSnapshot(pkg, versionDef));
       return changed(pkg.source_id);
+    },
+    get_source_replacement_notice: () => clone(retiredSources),
+    dismiss_source_replacement_notice: () => {
+      retiredSources.length = 0;
     },
     get_streaming_session: (args: { sourceId: string }) =>
       session(args.sourceId),
