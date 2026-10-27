@@ -760,7 +760,9 @@
       "recentOps": "Opérations récentes",
       "refresh": "Actualiser",
       "conflictTitle": "Votre bibliothèque a changé côté distant avant la publication de ces modifications.",
-      "conflictBody": "Conserver vos modifications les republie par-dessus la version distante. Cela est refusé quand les deux côtés ont modifié les mêmes morceaux, car choisir automatiquement pourrait faire perdre du travail.",
+      "conflictBody": "Conserver vos modifications publie votre version de ce que les deux appareils ont modifié et garde toutes les autres modifications distantes. Utiliser la version distante abandonne vos modifications non publiées.",
+      "conflictSongs": "Modifié sur les deux appareils :",
+      "conflictWholeRepository": "Des modifications de toute la bibliothèque font partie de ce conflit.",
       "conflictKeepLocal": "Conserver mes modifications",
       "conflictUseRemote": "Utiliser la version distante"
     },

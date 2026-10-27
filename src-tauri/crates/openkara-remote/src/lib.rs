@@ -4,6 +4,7 @@ pub mod error;
 pub mod manifest;
 pub mod net_policy;
 pub mod reader;
+pub mod rebase;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -29,6 +30,11 @@ pub use reader::{
     remote_revision_is_stale, snapshot_operation_id, RefreshOutcome, RefreshPlan, RefreshPolicy,
     RefreshedSnapshot, SnapshotSource, WorkingCopyDatabase, LEGACY_DATABASE_PATH,
     SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
+};
+pub use rebase::{
+    base_snapshot_path, discard_rebase_state, retain_base_snapshot,
+    retain_base_snapshot_if_missing, ChangeSet, ConflictPolicy, ConflictingSong,
+    PrePublishConflict,
 };
 pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,

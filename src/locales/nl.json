@@ -759,7 +759,9 @@
       "recentOps": "Recente bewerkingen",
       "refresh": "Vernieuwen",
       "conflictTitle": "Je bibliotheek is extern gewijzigd voordat deze bewerkingen werden gepubliceerd.",
-      "conflictBody": "Je wijzigingen behouden publiceert ze opnieuw bovenop de externe versie. Dat wordt geweigerd als beide kanten dezelfde nummers wijzigden, omdat automatisch kiezen werk kan kosten.",
+      "conflictBody": "Je wijzigingen behouden publiceert jouw versie van wat beide apparaten wijzigden en behoudt alle andere externe wijzigingen. De externe versie gebruiken verwijdert je niet-gepubliceerde wijzigingen.",
+      "conflictSongs": "Gewijzigd op beide apparaten:",
+      "conflictWholeRepository": "Wijzigingen aan de hele bibliotheek horen bij dit conflict.",
       "conflictKeepLocal": "Mijn wijzigingen behouden",
       "conflictUseRemote": "Externe versie gebruiken"
     },

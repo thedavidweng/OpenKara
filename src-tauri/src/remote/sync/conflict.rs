@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use crate::commands::error::{CommandError, CommandResult};
-use crate::config::RegisteredLibrary;
+use crate::config::{RegisteredLibrary, RemoteLibraryProvider};
 use crate::library::error::LibraryError;
 use crate::remote::control_db::{get_repository_state, LocalState};
 use crate::remote::executor::{
     conflict_keep_local_as_new_generation, conflict_use_remote, pull_conflict_candidate,
-    PublishContext,
+    resolve_conflict_keep_local_via_core, PublishContext,
 };
 use crate::remote::provider::create_repository_storage;
 use crate::remote::types::load_app_config;
@@ -43,6 +43,12 @@ pub fn resolve_active_remote_conflict(
         ))
     })?;
 
+    // Both exits rewrite the working database, so they serialize with
+    // mutations and publications like every other working-copy writer.
+    let commit_lock = state.remote.commit_lock(&library_id);
+    let _commit_guard = commit_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let control_db =
         state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -78,22 +84,46 @@ pub fn resolve_active_remote_conflict(
         repository_id: &repository_id,
     };
 
-    // Both strategies compare against the winning remote database, so it is
-    // pulled to a candidate path rather than over the working copy — the local
-    // side is still the user's only copy of their pending changes until they
-    // choose to discard it.
+    let uses_core_writer = matches!(
+        active_library.provider(),
+        Some(RemoteLibraryProvider::WebDav)
+    );
+    if uses_core_writer && resolution == ConflictResolution::KeepLocal {
+        return resolve_conflict_keep_local_via_core(
+            &ctx,
+            &state.shell.app_data_dir,
+            active_library,
+            &operation_id,
+        );
+    }
+
+    // Both legacy strategies compare against the winning remote database, so
+    // it is pulled to a candidate path rather than over the working copy —
+    // the local side is still the user's only copy of their pending changes
+    // until they choose to discard it.
     let candidate = candidate_path(&working_copy_root, &operation_id);
     let result =
-        pull_conflict_candidate(provider.as_ref(), &candidate).and_then(|_| match resolution {
-            ConflictResolution::KeepLocal => {
-                conflict_keep_local_as_new_generation(&ctx, &operation_id, &candidate)
-            }
-            ConflictResolution::UseRemote => conflict_use_remote(&ctx, &operation_id, &candidate),
-        });
+        pull_conflict_candidate(provider.as_ref(), &candidate).and_then(
+            |manifest| match resolution {
+                ConflictResolution::KeepLocal => {
+                    conflict_keep_local_as_new_generation(&ctx, &operation_id, &candidate)
+                }
+                ConflictResolution::UseRemote => {
+                    conflict_use_remote(&ctx, &operation_id, &candidate)?;
+                    openkara_remote::retain_base_snapshot(
+                        &working_copy_root,
+                        manifest.generation,
+                        &candidate,
+                    )
+                    .map_err(CommandError::from)?;
+                    openkara_remote::discard_rebase_state(&working_copy_root, &operation_id);
+                    Ok(())
+                }
+            },
+        );
     let _ = std::fs::remove_file(&candidate);
     result
 }
-
 fn candidate_path(working_copy_root: &std::path::Path, operation_id: &str) -> PathBuf {
     working_copy_root.join(format!(
         ".openkara/candidates/{operation_id}.conflict-candidate.sqlite"
