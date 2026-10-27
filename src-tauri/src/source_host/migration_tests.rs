@@ -1,23 +1,16 @@
 use super::test_support::{
-    engine_fixture_manifest, fixture_manifest, seed_node_install, write_package_tree,
-    FixtureDistribution, FixturePackage, RegistryFixture, NODE_ERA_OWNER,
+    fixture_manifest, seed_node_install, write_package_tree, RegistryFixture, NODE_ERA_OWNER,
 };
 use super::*;
 use serde_json::json;
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{fs, path::Path};
 
 fn config(root: &Path) -> HostConfig {
-    HostConfig::fixture(
-        root.to_path_buf(),
-        "0.17.0".into(),
-        String::new(),
-        BTreeMap::new(),
-        RuntimePolicy::Downloaded,
-    )
+    HostConfig::fixture(root.to_path_buf(), "0.17.0".into())
 }
 
 fn engine_manifest(registry: &RegistryFixture) -> SourceManifest {
-    let mut manifest = engine_fixture_manifest("fixture", "2.0.0");
+    let mut manifest = fixture_manifest("fixture", "2.0.0");
     manifest.package_id = registry.package_id("fixture");
     manifest
 }
@@ -50,6 +43,10 @@ async fn the_first_launch_marks_node_installs_as_needing_replacement_and_deletes
         Some("replacement_required")
     );
     assert!(!node.runtimes.exists(), "the Node runtime is deleted");
+    assert!(
+        !node.signed_index.exists(),
+        "the cached signed index is deleted"
+    );
     for package in &node.packages {
         assert!(!package.exists(), "Node package trees are deleted");
     }
@@ -226,46 +223,4 @@ async fn without_a_registry_replacement_the_source_stays_marked() {
         Some("replacement_required")
     );
     assert_eq!(host.replacement_notice().len(), 1);
-}
-
-#[tokio::test]
-async fn a_host_that_keeps_the_node_path_leaves_node_installs_alone() {
-    let root = tempfile::tempdir().unwrap();
-    let node = seed_node_install(&root.path().join("streaming-sources"));
-    let mut config = config(root.path());
-    config.retire_node_installs = false;
-    let host = SourceHost::new(config).await.unwrap();
-    let snapshot = host.snapshot("fixture").unwrap();
-    assert_eq!(snapshot.installed_version.as_deref(), Some("1.0.0"));
-    assert!(snapshot.enabled);
-    assert!(node.runtimes.exists());
-    assert!(node.packages.iter().all(|package| package.exists()));
-    assert!(host.replacement_notice().is_empty());
-}
-
-#[tokio::test]
-async fn a_retiring_host_never_installs_a_node_release() {
-    let root = tempfile::tempdir().unwrap();
-    let mut distribution = FixtureDistribution::new().await;
-    distribution
-        .publish(vec![FixturePackage {
-            manifest: fixture_manifest("fixture", "1.0.0"),
-            worker: "process.exit(0)".into(),
-            revoked_versions: vec![],
-        }])
-        .await;
-    let config = distribution.engine_config(root.path().to_path_buf());
-    let data_root = config.data_root.clone();
-    let host = SourceHost::new(config).await.unwrap();
-    host.refresh().await.unwrap();
-
-    assert_eq!(
-        host.install("fixture", None, false).await.unwrap_err().code,
-        "incompatible_plugin"
-    );
-    assert!(
-        !data_root.join("runtimes").exists(),
-        "no Node runtime is downloaded"
-    );
-    assert_eq!(host.snapshot("fixture").unwrap().installed_version, None);
 }

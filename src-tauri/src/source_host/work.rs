@@ -44,7 +44,7 @@ impl SourceHost {
         if source
             .active
             .as_ref()
-            .is_none_or(|release| self.inner.blocked(source, release))
+            .is_none_or(|release| !self.inner.compatible(release))
         {
             return Err(incompatible());
         }

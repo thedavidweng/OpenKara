@@ -43,6 +43,4 @@ mod phase7_spectral_session;
 mod phase8_database_lifecycle;
 mod remote_config;
 mod remote_registry;
-#[cfg(feature = "automation-smoke")]
-mod streaming_runtime_smoke;
 mod window_config_flash_guard;

@@ -1,4 +1,4 @@
-use super::test_support::{fixture_manifest, FixtureDistribution, FixturePackage};
+use super::test_support::{fixture_manifest, RegistryFixture};
 use super::*;
 use crate::catalog::StreamingSource;
 use mockito::{Matcher, Server, ServerGuard};
@@ -141,7 +141,7 @@ export default {
 };
 "#;
 
-fn package(source_id: &str, origins: &[&str], media: &[&str]) -> FixturePackage {
+fn package(source_id: &str, origins: &[&str], media: &[&str]) -> (SourceManifest, String) {
     let mut manifest = fixture_manifest(source_id, "1.0.0");
     manifest.runtime = RuntimeRequirement {
         kind: "openkara-js".into(),
@@ -157,44 +157,48 @@ fn package(source_id: &str, origins: &[&str], media: &[&str]) -> FixturePackage 
     manifest.requires_authentication = vec![];
     manifest.resource_origins = origins.iter().map(|origin| origin.to_string()).collect();
     manifest.media_origins = media.iter().map(|origin| origin.to_string()).collect();
-    FixturePackage {
-        worker: SOURCE.replace("__SOURCE__", source_id),
-        manifest,
-        revoked_versions: vec![],
-    }
+    (manifest, SOURCE.replace("__SOURCE__", source_id))
 }
 
 struct Fixture {
     root: tempfile::TempDir,
-    _distribution: FixtureDistribution,
+    _registry: RegistryFixture,
     host: SourceHost,
 }
 impl Fixture {
-    async fn new(packages: Vec<FixturePackage>, upstreams: &[(&str, &ServerGuard)]) -> Self {
+    async fn new(
+        packages: Vec<(SourceManifest, String)>,
+        upstreams: &[(&str, &ServerGuard)],
+    ) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let ids: Vec<_> = packages
-            .iter()
-            .map(|package| package.manifest.source_id.clone())
-            .collect();
-        let mut distribution = FixtureDistribution::new().await;
-        distribution.publish(packages).await;
-        let mut config = distribution.engine_config(root.path().join("host"));
+        let mut registry = RegistryFixture::new("org.openkara").await;
+        registry.publish_sources(&packages).await;
+        let mut config = HostConfig::fixture(root.path().to_path_buf(), "0.17.0".into());
         config.describe_timeout = Duration::from_secs(5);
         config.operation_timeout = Duration::from_secs(10);
-        config.backoff_unit = Duration::from_millis(1);
         config.engine_memory_limit = 32 * 1024 * 1024;
         for (origin, server) in upstreams {
             config.add_fixture_upstream(origin.to_string(), server.url());
         }
         let host = SourceHost::new(config).await.unwrap();
-        host.refresh().await.unwrap();
-        for id in &ids {
-            host.install(id, None, false).await.unwrap();
-            host.set_enabled(id, true, false).await.unwrap();
+        host.add_registry(&registry.url()).await.unwrap();
+        for (manifest, _) in &packages {
+            host.install_package(
+                registry.registry_id(),
+                &registry.package_id(&manifest.source_id),
+                None,
+                false,
+                false,
+            )
+            .await
+            .unwrap();
+            host.set_enabled(&manifest.source_id, true, false)
+                .await
+                .unwrap();
         }
         Self {
             root,
-            _distribution: distribution,
+            _registry: registry,
             host,
         }
     }

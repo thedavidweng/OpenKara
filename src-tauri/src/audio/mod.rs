@@ -1,4 +1,3 @@
-pub mod chunked_cache;
 pub mod coordinator;
 pub mod crossfade;
 pub mod decode;
@@ -9,7 +8,6 @@ pub mod output;
 pub mod output_format;
 pub mod peaks;
 pub mod playback;
-pub mod range_set;
 pub mod remote_source;
 pub mod streaming;
 pub mod waveform;

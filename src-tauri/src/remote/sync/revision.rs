@@ -499,14 +499,14 @@ fn cached_asset_copy_is_current(
     let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
     if let Ok(conn) = crate::remote::control_db::open_control_db(&control_db_path) {
         if let (Some(size), Some(rev)) = (remote_size, revision) {
-            let identity = crate::remote::cache_catalog::CacheIdentity {
+            let identity = openkara_remote::media_cache::CacheIdentity {
                 library_id: library.id().to_owned(),
                 relative_path: relative_path.to_owned(),
                 provider_revision: Some(rev.to_owned()),
                 expected_size: size,
             };
             let cache_key = identity.cache_key();
-            if let Ok(Some(row)) = crate::remote::control_db::get_cache_entry(&conn, &cache_key) {
+            if let Ok(Some(row)) = openkara_remote::media_cache::read_entry(&conn, &cache_key) {
                 if row.complete
                     && row.expected_size == size as i64
                     && std::path::Path::new(&row.data_path).is_absolute()

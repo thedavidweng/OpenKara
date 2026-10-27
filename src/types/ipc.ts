@@ -131,7 +131,6 @@ export interface SourceSnapshot {
   pinned_version: string | null;
   enabled: boolean;
   loaded: boolean;
-  runtime_ready: boolean;
   running: boolean;
   state: SourceState;
   progress: InstallProgress | null;

@@ -1,6 +1,5 @@
 use super::{
-    digest_hex, distribution, engine, incompatible, install, network, runtime::Progress, test_http,
-    types::*,
+    digest_hex, engine, incompatible, install, network, runtime::Progress, test_http, types::*,
 };
 use base64::Engine;
 use reqwest::Url;
@@ -138,6 +137,14 @@ pub(crate) fn https_url(config: &HostConfig, value: &str) -> HostResult<String> 
     Ok(url.to_string())
 }
 
+fn valid_source_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.as_bytes()[0].is_ascii_lowercase()
+        && id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
+}
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -193,7 +200,7 @@ pub(crate) fn validate(config: &HostConfig, registry: &SourceRegistry) -> HostRe
     }
     for package in &registry.packages {
         if !valid_id(&package.package_id)
-            || !distribution::valid_source_id(&package.source_id)
+            || !valid_source_id(&package.source_id)
             || package.name.trim().is_empty()
             || !valid_license(&package.license)
             || package.versions.is_empty()
@@ -339,8 +346,7 @@ pub(crate) fn newest(package: &RegistryPackage) -> Option<&RegistryVersion> {
 }
 
 /// Selects the newest listed version that this host can run, honoring an exact
-/// version request. Protocol major 2 is the embedded engine's protocol; the
-/// Node transport's `current_protocol` window does not apply to registry packages.
+/// version request.
 pub(crate) fn select<'a>(
     config: &HostConfig,
     package: &'a RegistryPackage,
@@ -501,7 +507,7 @@ fn install_verified(
     fs::write(&archive, bytes)?;
     let files = staging.join("files");
     fs::create_dir(&files)?;
-    install::extract(&archive, &files, "tar.gz", cancel, None)?;
+    install::extract_tar_gz(&archive, &files, cancel)?;
     let mut members = fs::read_dir(&files)?.collect::<Result<Vec<_>, _>>()?;
     let root = match members.pop() {
         Some(member) if members.is_empty() && member.file_name() == "package" => member.path(),
@@ -525,11 +531,8 @@ fn install_verified(
             size: version.size,
             sha256: digest_hex(Sha256::digest(bytes)),
             format: "tar.gz".into(),
-            executable: String::new(),
         },
-        runtime: RuntimeRelease::default(),
         installed_package: None,
-        installed_runtime: None,
         registry: Some(identity.clone()),
     };
     install::choose_package_slot(config, &mut release);
@@ -551,8 +554,8 @@ fn check_manifest(
     let same = |left: &[String], right: &[String]| {
         left.iter().collect::<BTreeSet<_>>() == right.iter().collect::<BTreeSet<_>>()
     };
-    if !distribution::basic_manifest(manifest)
-        || distribution::validate_declarations(manifest, &mismatch).is_err()
+    if !basic_manifest(manifest)
+        || validate_declarations(manifest).is_err()
         || manifest.source_id != package.source_id
         || manifest.package_id != package.package_id
         || manifest.version != version.version
@@ -573,6 +576,77 @@ fn check_manifest(
             "incompatible_plugin",
             "Source Registry packages run only in the embedded engine. Ask the registry maintainer for a compatible release.",
         ));
+    }
+    Ok(())
+}
+
+/// Checks the manifest fields that do not depend on the registry entry.
+fn basic_manifest(manifest: &SourceManifest) -> bool {
+    manifest.manifest_version == 1
+        && semver::Version::parse(&manifest.version).is_ok()
+        && semver::Version::parse(&manifest.minimum_host_version).is_ok()
+        && !manifest.protocol.majors.is_empty()
+        && manifest.entry.ends_with(".mjs")
+        && install::relative(&manifest.entry).is_ok()
+        && !manifest.name.is_empty()
+        && !manifest.license.is_empty()
+}
+/// Checks the declared origins and authentication flow of a manifest.
+fn validate_declarations(manifest: &SourceManifest) -> HostResult<()> {
+    for origin in manifest
+        .resource_origins
+        .iter()
+        .chain(&manifest.media_origins)
+    {
+        if network::origin(origin)? != *origin {
+            return Err(mismatch());
+        }
+    }
+    match manifest.authentication["flow"].as_str() {
+        Some("none") => {
+            if !manifest.requires_authentication.is_empty() {
+                return Err(mismatch());
+            }
+        }
+        Some("plugin") => {
+            let presentations = manifest.authentication["presentations"]
+                .as_array()
+                .ok_or_else(mismatch)?;
+            if presentations.is_empty()
+                || presentations
+                    .iter()
+                    .any(|p| !matches!(p.as_str(), Some("qr" | "text")))
+            {
+                return Err(mismatch());
+            }
+        }
+        Some("web") => {
+            let auth = &manifest.authentication;
+            let url = auth["sign_in_url"].as_str().ok_or_else(mismatch)?;
+            let origin = network::origin(url)?;
+            let origins = auth["navigation_origins"].as_array().ok_or_else(mismatch)?;
+            if !origins
+                .iter()
+                .any(|value| value.as_str() == Some(origin.as_str()))
+                || auth["cookie_names"].as_array().is_none_or(|cookies| {
+                    cookies.is_empty()
+                        || cookies.iter().any(|cookie| {
+                            cookie.as_str().is_none_or(|name| {
+                                name.is_empty() || name.contains(['\r', '\n', ';', '=', ' '])
+                            })
+                        })
+                })
+            {
+                return Err(mismatch());
+            }
+            for origin in origins {
+                let origin = origin.as_str().ok_or_else(mismatch)?;
+                if network::origin(origin)? != origin {
+                    return Err(mismatch());
+                }
+            }
+        }
+        _ => return Err(mismatch()),
     }
     Ok(())
 }

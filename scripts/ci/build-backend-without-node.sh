@@ -6,7 +6,6 @@ test -f "$root/dist/index.html" || {
   echo "Build frontend assets with pnpm build before this backend-only scenario." >&2
   exit 1
 }
-test -f "$root/packaging/source-runtime.json"
 
 cd "$root/src-tauri"
 cargo_executable="$(rustup which cargo)"

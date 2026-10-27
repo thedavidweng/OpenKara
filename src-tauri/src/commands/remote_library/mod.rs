@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{internal_error, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     config::RemoteLibraryProvider,
     remote, AppState,
 };
@@ -10,7 +10,7 @@ pub use remote::{
     UploadState, UploadStatusSnapshot,
 };
 
-pub use remote::cache_catalog::CacheUsage;
+pub use openkara_remote::CacheUsage;
 
 /// Diagnostic snapshot of the remote repository state for the active remote
 /// library. Returned by `get_remote_diagnostics` so the frontend (PR #8) can
@@ -224,20 +224,20 @@ pub fn get_all_upload_statuses(
 pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<CacheUsage> {
     let manager = state
         .remote
-        .remote_chunk_cache()?
+        .media_cache()?
         .lock()
-        .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
-    manager.usage()
+        .map_err(|_| internal_error("media cache lock was poisoned"))?;
+    manager.usage().map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub fn clear_remote_cache(state: State<'_, AppState>) -> CommandResult<usize> {
     let mut manager = state
         .remote
-        .remote_chunk_cache()?
+        .media_cache()?
         .lock()
-        .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
-    manager.clear_unpinned()
+        .map_err(|_| internal_error("media cache lock was poisoned"))?;
+    manager.clear_evictable().map_err(CommandError::from)
 }
 
 /// Return a diagnostic snapshot of the remote repository state for the active
