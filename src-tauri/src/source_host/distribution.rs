@@ -133,12 +133,7 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
     let mut identities = BTreeMap::new();
     for source in &index.sources {
         let id = &source.source_id;
-        if id.is_empty()
-            || id.len() > 64
-            || !id.as_bytes()[0].is_ascii_lowercase()
-            || !id.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
-            })
+        if !valid_source_id(id)
             || identities
                 .insert(id, binding(&source.publisher, &source.package_id))
                 .is_some()
@@ -152,18 +147,11 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
         let mut versions = std::collections::BTreeSet::new();
         for release in &source.releases {
             let manifest = &release.manifest;
-            if manifest.manifest_version != 1
-                || manifest.source_id != *id
+            if manifest.source_id != *id
                 || manifest.publisher != source.publisher
                 || manifest.package_id != source.package_id
                 || !versions.insert(&manifest.version)
-                || semver::Version::parse(&manifest.version).is_err()
-                || semver::Version::parse(&manifest.minimum_host_version).is_err()
-                || manifest.protocol.majors.is_empty()
-                || !manifest.entry.ends_with(".mjs")
-                || install::relative(&manifest.entry).is_err()
-                || manifest.name.is_empty()
-                || manifest.license.is_empty()
+                || !basic_manifest(manifest)
             {
                 return Err(error());
             }
@@ -189,6 +177,7 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
             if !release.archive.executable.is_empty()
                 || release.installed_package.is_some()
                 || release.installed_runtime.is_some()
+                || release.registry.is_some()
             {
                 return Err(error());
             }
@@ -197,63 +186,90 @@ fn verify_index(config: &HostConfig, bytes: &[u8]) -> HostResult<SourceIndex> {
                 install::validate_artifact(artifact)?;
                 install::relative(&artifact.executable)?;
             }
-            for origin in manifest
-                .resource_origins
-                .iter()
-                .chain(&manifest.media_origins)
-            {
-                if network::origin(origin)? != *origin {
-                    return Err(error());
-                }
-            }
-            match manifest.authentication["flow"].as_str() {
-                Some("none") => {
-                    if !manifest.requires_authentication.is_empty() {
-                        return Err(error());
-                    }
-                }
-                Some("plugin") => {
-                    let presentations = manifest.authentication["presentations"]
-                        .as_array()
-                        .ok_or_else(error)?;
-                    if presentations.is_empty()
-                        || presentations
-                            .iter()
-                            .any(|p| !matches!(p.as_str(), Some("qr" | "text")))
-                    {
-                        return Err(error());
-                    }
-                }
-                Some("web") => {
-                    let auth = &manifest.authentication;
-                    let url = auth["sign_in_url"].as_str().ok_or_else(error)?;
-                    let origin = network::origin(url)?;
-                    let origins = auth["navigation_origins"].as_array().ok_or_else(error)?;
-                    if !origins
-                        .iter()
-                        .any(|value| value.as_str() == Some(origin.as_str()))
-                        || auth["cookie_names"].as_array().is_none_or(|cookies| {
-                            cookies.is_empty()
-                                || cookies.iter().any(|cookie| {
-                                    cookie.as_str().is_none_or(|name| {
-                                        name.is_empty()
-                                            || name.contains(['\r', '\n', ';', '=', ' '])
-                                    })
-                                })
-                        })
-                    {
-                        return Err(error());
-                    }
-                    for origin in origins {
-                        let origin = origin.as_str().ok_or_else(error)?;
-                        if network::origin(origin)? != origin {
-                            return Err(error());
-                        }
-                    }
-                }
-                _ => return Err(error()),
-            }
+            validate_declarations(manifest, &error)?;
         }
     }
     Ok(index)
+}
+
+pub(crate) fn valid_source_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.as_bytes()[0].is_ascii_lowercase()
+        && id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
+}
+/// Checks the manifest fields that do not depend on how the package is distributed.
+pub(crate) fn basic_manifest(manifest: &SourceManifest) -> bool {
+    manifest.manifest_version == 1
+        && semver::Version::parse(&manifest.version).is_ok()
+        && semver::Version::parse(&manifest.minimum_host_version).is_ok()
+        && !manifest.protocol.majors.is_empty()
+        && manifest.entry.ends_with(".mjs")
+        && install::relative(&manifest.entry).is_ok()
+        && !manifest.name.is_empty()
+        && !manifest.license.is_empty()
+}
+/// Checks the declared origins and authentication flow of a manifest.
+pub(crate) fn validate_declarations(
+    manifest: &SourceManifest,
+    error: &dyn Fn() -> HostError,
+) -> HostResult<()> {
+    for origin in manifest
+        .resource_origins
+        .iter()
+        .chain(&manifest.media_origins)
+    {
+        if network::origin(origin)? != *origin {
+            return Err(error());
+        }
+    }
+    match manifest.authentication["flow"].as_str() {
+        Some("none") => {
+            if !manifest.requires_authentication.is_empty() {
+                return Err(error());
+            }
+        }
+        Some("plugin") => {
+            let presentations = manifest.authentication["presentations"]
+                .as_array()
+                .ok_or_else(error)?;
+            if presentations.is_empty()
+                || presentations
+                    .iter()
+                    .any(|p| !matches!(p.as_str(), Some("qr" | "text")))
+            {
+                return Err(error());
+            }
+        }
+        Some("web") => {
+            let auth = &manifest.authentication;
+            let url = auth["sign_in_url"].as_str().ok_or_else(error)?;
+            let origin = network::origin(url)?;
+            let origins = auth["navigation_origins"].as_array().ok_or_else(error)?;
+            if !origins
+                .iter()
+                .any(|value| value.as_str() == Some(origin.as_str()))
+                || auth["cookie_names"].as_array().is_none_or(|cookies| {
+                    cookies.is_empty()
+                        || cookies.iter().any(|cookie| {
+                            cookie.as_str().is_none_or(|name| {
+                                name.is_empty() || name.contains(['\r', '\n', ';', '=', ' '])
+                            })
+                        })
+                })
+            {
+                return Err(error());
+            }
+            for origin in origins {
+                let origin = origin.as_str().ok_or_else(error)?;
+                if network::origin(origin)? != origin {
+                    return Err(error());
+                }
+            }
+        }
+        _ => return Err(error()),
+    }
+    Ok(())
 }
