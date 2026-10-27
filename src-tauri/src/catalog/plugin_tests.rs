@@ -99,7 +99,7 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
     let host = SourceHost::new(config).await.expect("open real host");
     assert_eq!(host.refresh().await.expect("verified discovery").len(), 2);
     for id in ["official", "challenge"] {
-        host.install(id, None)
+        host.install(id, None, false)
             .await
             .expect("actual signed install and handshake");
         host.set_enabled(id, true, false).await.expect("enable");

@@ -64,7 +64,7 @@ async fn signed_install_runs_real_source_and_untrusted_update_preserves_it() {
         host.refresh().await.unwrap()[0].state,
         SourceState::NotInstalled
     );
-    let installed = host.install("fixture", None).await.unwrap();
+    let installed = host.install("fixture", None, false).await.unwrap();
     assert_eq!(installed.installed_version.as_deref(), Some("1.0.0"));
     assert!(!installed.enabled);
     host.set_enabled("fixture", true, false).await.unwrap();
@@ -110,7 +110,7 @@ async fn pinned_revoked_release_stays_stopped_after_offline_restart() {
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     host.set_pin("fixture", Some("1.0.0")).unwrap();
     host.request("fixture", "describe", json!({}))
@@ -169,12 +169,12 @@ async fn manual_update_waits_for_work_and_failed_handshake_preserves_usable_rele
     fixture.publish("1.0.0", worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
     fixture.publish("1.1.0", worker, vec![], None).await;
     host.refresh().await.unwrap();
-    let staged = host.install("fixture", None).await.unwrap();
+    let staged = host.install("fixture", None, false).await.unwrap();
     assert_eq!(staged.state, SourceState::WaitingForIdle);
     assert_eq!(staged.installed_version.as_deref(), Some("1.0.0"));
     assert_eq!(staged.staged_version.as_deref(), Some("1.1.0"));
@@ -204,7 +204,7 @@ async fn manual_update_waits_for_work_and_failed_handshake_preserves_usable_rele
         .publish("2.0.0", "process.exit(77)", vec![], None)
         .await;
     host.refresh().await.unwrap();
-    assert!(host.install("fixture", None).await.is_err());
+    assert!(host.install("fixture", None, false).await.is_err());
     assert_eq!(
         host.snapshot("fixture")
             .unwrap()
@@ -237,14 +237,14 @@ async fn rotated_key_is_accepted_and_owner_claim_cannot_replace_uninstalled_iden
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.uninstall("fixture", false).await.unwrap();
     fixture.distribution.change_index(true, |_| {}).await;
     assert_eq!(
         host.refresh().await.unwrap()[0].owner_binding,
         "org.openkara/org.openkara.fixture"
     );
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     assert_eq!(
         host.snapshot("fixture")
             .unwrap()
@@ -284,7 +284,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     fixture
         .distribution
         .change_index(false, |index| {
@@ -293,7 +293,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "incompatible_plugin"
     );
     fixture
@@ -305,7 +305,7 @@ async fn bundled_wrong_runtime_and_incompatible_protocol_never_fetch_or_replace_
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "incompatible_plugin"
     );
     assert_eq!(
@@ -334,7 +334,7 @@ async fn real_stdio_multiplexes_progress_errors_cancellation_idle_and_restart() 
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
     host.request(
@@ -412,7 +412,7 @@ async fn approved_stop_waits_for_lease_acknowledgment_and_never_removes_other_so
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host
         .acquire_work("fixture", WorkKind::Authentication)
@@ -473,7 +473,7 @@ async fn downloaded_runtime_is_verified_and_shared_without_system_node() {
     config.runtime_policy = RuntimePolicy::Downloaded;
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     assert_eq!(
         host.request("fixture", "describe", json!({}))
@@ -514,7 +514,7 @@ async fn downloaded_runtime_is_verified_and_shared_without_system_node() {
         .join(digest)
         .join("node/bin/node");
     fs::write(&damaged, b"damaged runtime").unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     assert_eq!(fs::read(damaged).unwrap(), b"damaged runtime");
     host.set_enabled("fixture", true, false).await.unwrap();
     assert_eq!(
@@ -538,7 +538,7 @@ async fn fresh_offline_discovery_and_private_media_never_imply_installation() {
     assert_eq!(host.refresh().await.unwrap_err().code, "invalid_resource");
     assert!(host.snapshots().is_empty());
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "not_found"
     );
 }
@@ -558,7 +558,7 @@ async fn repeated_crashes_become_unavailable_until_explicit_retry() {
     fixture.publish("1.0.0", &worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     for _ in 0..5 {
         assert_eq!(
@@ -600,7 +600,7 @@ async fn media_policy_rejects_private_destinations_and_unapproved_headers_before
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     for url in [
         "file:///etc/passwd",
@@ -644,7 +644,7 @@ async fn cancelled_update_preserves_code_and_explicit_retry_retries_the_candidat
     fixture.publish("1.0.0", worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     fixture
         .publish(
             "1.1.0",
@@ -655,7 +655,7 @@ async fn cancelled_update_preserves_code_and_explicit_retry_retries_the_candidat
         .await;
     host.refresh().await.unwrap();
     let installer = host.clone();
-    let install = tokio::spawn(async move { installer.install("fixture", None).await });
+    let install = tokio::spawn(async move { installer.install("fixture", None, false).await });
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         assert!(
@@ -711,7 +711,7 @@ async fn current_previous_majors_work_but_upgrade_outside_window_requires_update
     config.current_protocol = 2;
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     host.set_pin("fixture", Some("1.0.0")).unwrap();
     assert_eq!(
@@ -749,7 +749,7 @@ async fn invalid_archive_bytes_and_handshake_identity_never_replace_usable_code(
     fixture.publish("1.0.0", worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     fixture.publish("1.1.0", worker, vec![], None).await;
     fixture
         .distribution
@@ -766,7 +766,7 @@ async fn invalid_archive_bytes_and_handshake_identity_never_replace_usable_code(
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "invalid_package"
     );
     fixture
@@ -779,7 +779,7 @@ async fn invalid_archive_bytes_and_handshake_identity_never_replace_usable_code(
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "incompatible_plugin"
     );
     assert_eq!(
@@ -806,7 +806,7 @@ async fn deadlines_and_concurrency_are_bounded_without_awaiting_handles() {
     fixture.publish("1.0.0", &worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
     host.request(
@@ -871,7 +871,10 @@ async fn corrupt_source_state_can_be_reported_without_overwriting_it_or_blocking
     let host = SourceHost::unavailable(config, error.clone());
     assert!(host.snapshots().is_empty());
     assert_eq!(host.refresh().await.unwrap_err(), error);
-    assert_eq!(host.install("fixture", None).await.unwrap_err(), error);
+    assert_eq!(
+        host.install("fixture", None, false).await.unwrap_err(),
+        error
+    );
     assert_eq!(
         host.request("fixture", "describe", json!({}))
             .await
@@ -911,7 +914,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     fixture.publish("1.1.0", worker, vec![], None).await;
     fixture
         .distribution
@@ -929,7 +932,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "invalid_package"
     );
     fixture.publish("1.2.0", worker, vec![], None).await;
@@ -948,7 +951,7 @@ async fn dependency_heavy_source_installs_but_archive_links_and_install_scripts_
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "invalid_package"
     );
     assert_eq!(
@@ -989,7 +992,7 @@ async fn injected_public_transport_still_enforces_origin_headers_and_dns_policy(
     );
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let descriptor = ResourceDescriptor {
         url: url.into(),
@@ -1048,7 +1051,7 @@ async fn auth_cancel_and_sign_out_remain_available_at_normal_request_limit() {
     config.operation_timeout = Duration::from_secs(5);
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host
         .acquire_work("fixture", WorkKind::Authentication)
@@ -1123,7 +1126,7 @@ async fn known_expired_media_is_refused_before_transport_for_bounded_preview_ref
     config.set_fixture_status(url.into(), 410);
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let descriptor = ResourceDescriptor {
         url: url.into(),
@@ -1190,7 +1193,7 @@ async fn requests_at_idle_boundary_are_not_terminated_by_maintenance() {
     config.idle_timeout = Duration::ZERO;
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     for _ in 0..30 {
         assert_eq!(
@@ -1213,7 +1216,7 @@ async fn aborted_backpressured_dispatch_stops_partial_frames_and_releases_activa
     config.operation_timeout = Duration::from_millis(100);
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let stalled = host
         .start_request("fixture", "tracks.get", json!({"track_ids":["1"]}))
@@ -1251,7 +1254,7 @@ async fn aborted_backpressured_dispatch_stops_partial_frames_and_releases_activa
         .await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None)
+        host.install("fixture", None, false)
             .await
             .unwrap()
             .installed_version
@@ -1283,7 +1286,7 @@ async fn verified_revocation_applies_even_when_settings_cannot_be_saved() {
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Preview).unwrap();
     let cancel = lease.cancellation();
@@ -1327,12 +1330,12 @@ async fn startup_mutation_and_damaged_staged_files_preserve_previous_release() {
     fixture.publish("1.0.0", worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     fixture.publish("1.1.0",&format!("import {{writeFileSync}} from 'node:fs';writeFileSync('startup-marker','changed');\n{worker}"),vec![],None).await;
     host.refresh().await.unwrap();
     assert_eq!(
-        host.install("fixture", None).await.unwrap_err().code,
+        host.install("fixture", None, false).await.unwrap_err().code,
         "invalid_package"
     );
     assert_eq!(
@@ -1345,7 +1348,7 @@ async fn startup_mutation_and_damaged_staged_files_preserve_previous_release() {
     let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
     fixture.publish("1.2.0", worker, vec![], None).await;
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     let sha = fixture.distribution.index["sources"][0]["releases"][0]["archive"]["sha256"]
         .as_str()
         .unwrap();
@@ -1392,7 +1395,7 @@ async fn retired_cached_root_does_not_block_new_trusted_discovery_or_working_ins
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     drop(host);
     let mut config = fixture.config();
@@ -1425,7 +1428,7 @@ async fn explicit_reinstall_repairs_damaged_package_without_overwriting_running_
         .await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     host.request("fixture", "describe", json!({}))
         .await
@@ -1441,7 +1444,7 @@ async fn explicit_reinstall_repairs_damaged_package_without_overwriting_running_
         .join(sha)
         .join("worker.mjs");
     fs::write(&original, b"damaged").unwrap();
-    let snapshot = host.install("fixture", None).await.unwrap();
+    let snapshot = host.install("fixture", None, false).await.unwrap();
     assert_eq!(snapshot.state, SourceState::WaitingForIdle);
     assert_eq!(fs::read(&original).unwrap(), b"damaged");
     drop(lease);
@@ -1466,7 +1469,7 @@ async fn revocation_during_download_prevents_candidate_execution() {
     fixture.publish("1.0.0", worker, vec![], None).await;
     let host = SourceHost::new(fixture.config()).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     let startup = format!(
         "import {{writeFileSync}} from 'node:fs';writeFileSync({},'executed');\n{worker}",
         serde_json::to_string(&marker).unwrap()
@@ -1488,7 +1491,7 @@ async fn revocation_during_download_prevents_candidate_execution() {
         .create_async()
         .await;
     let installer = host.clone();
-    let install = tokio::spawn(async move { installer.install("fixture", None).await });
+    let install = tokio::spawn(async move { installer.install("fixture", None, false).await });
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         assert!(
@@ -1548,7 +1551,7 @@ async fn cancelled_artwork_work_refuses_transfer_and_releases_stop_acknowledgmen
     );
     let host = SourceHost::new(config).await.unwrap();
     host.refresh().await.unwrap();
-    host.install("fixture", None).await.unwrap();
+    host.install("fixture", None, false).await.unwrap();
     host.set_enabled("fixture", true, false).await.unwrap();
     let lease = host.acquire_work("fixture", WorkKind::Import).unwrap();
     let cancellation = lease.cancellation();

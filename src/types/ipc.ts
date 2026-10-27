@@ -120,6 +120,8 @@ export interface SourceManifest {
 export interface SourceSnapshot {
   source_id: string;
   owner_binding: string;
+  registry_id: string | null;
+  package_id: string | null;
   name: string;
   description: string;
   license: string;
@@ -128,6 +130,7 @@ export interface SourceSnapshot {
   staged_version: string | null;
   pinned_version: string | null;
   enabled: boolean;
+  loaded: boolean;
   runtime_ready: boolean;
   running: boolean;
   state: SourceState;
@@ -135,6 +138,42 @@ export interface SourceSnapshot {
   last_error: HostError | null;
   active_work: ActiveWork[];
   manifest: SourceManifest | null;
+}
+export interface RegistryStatus {
+  url: string;
+  registry_id: string;
+  display_name: string;
+  homepage: string;
+  refreshed_at: number | null;
+  last_error: HostError | null;
+}
+export interface MarketVersion {
+  version: string;
+  size: number;
+  resource_origins: string[];
+  media_origins: string[];
+  capabilities: string[];
+}
+export interface MarketInstall {
+  version: string;
+  pinned_version: string | null;
+}
+export interface MarketUpdate {
+  version: string;
+  added_origins: string[];
+  added_capabilities: string[];
+  requires_consent: boolean;
+}
+export interface MarketPackage {
+  registry_id: string;
+  package_id: string;
+  source_id: string;
+  name: string;
+  description: string;
+  license: string;
+  versions: MarketVersion[];
+  installed: MarketInstall | null;
+  update: MarketUpdate | null;
 }
 export interface AuthChallenge {
   source_id: string;

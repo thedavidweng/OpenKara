@@ -189,7 +189,7 @@ impl Fixture {
         let host = SourceHost::new(config).await.unwrap();
         host.refresh().await.unwrap();
         for id in &ids {
-            host.install(id, None).await.unwrap();
+            host.install(id, None, false).await.unwrap();
             host.set_enabled(id, true, false).await.unwrap();
         }
         Self {
@@ -562,9 +562,9 @@ async fn a_source_cannot_read_another_sources_credentials() {
     let victim_owner = fixture.host.description("victim").unwrap().owner_binding;
     let victim_credentials =
         crate::catalog::StreamingCredentials::from([("token".into(), "victim-token".into())]);
-    crate::catalog::store_session(&root, "victim", &victim_owner, victim_credentials).unwrap();
+    crate::catalog::store_session(&root, &victim_owner, victim_credentials).unwrap();
     // A package that held the `thief` source id earlier left credentials behind.
-    crate::catalog::store_session(
+    crate::catalog::store_legacy_session(
         &root,
         "thief",
         "earlier-publisher/earlier-package",

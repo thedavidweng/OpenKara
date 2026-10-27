@@ -266,7 +266,7 @@ impl PluginStreamingSource {
             .description(&self.source_id)
             .map_err(host_error)?
             .owner_binding;
-        credentials::store_session(&self.data_root, &self.source_id, &owner, credentials)
+        credentials::store_session(&self.data_root, &owner, credentials)
             .map_err(|_| CatalogError::Internal("could not save source session".into()))?;
         Ok(session)
     }
@@ -500,7 +500,12 @@ impl StreamingSource for PluginStreamingSource {
         }
     }
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
-        credentials::clear_session(&self.data_root, &self.source_id)
+        let owner = self
+            .host
+            .description(&self.source_id)
+            .map_err(host_error)?
+            .owner_binding;
+        credentials::clear_session(&self.data_root, &self.source_id, Some(&owner))
             .map_err(|_| CatalogError::Internal("could not remove source session".into()))?;
         let _ = self.request("auth.sign_out", json!({}));
         Ok(StreamingSessionSnapshot {
