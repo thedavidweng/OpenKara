@@ -945,7 +945,7 @@ fn integrity_error(detail: impl std::fmt::Display) -> CommandError {
     internal_error(format!("{REMOTE_INTEGRITY_FAILED}: {detail}"))
 }
 
-fn update_repository_state_after_pull(
+pub(crate) fn update_repository_state_after_pull(
     connection: &Connection,
     library_id: &str,
     new_digest: &str,

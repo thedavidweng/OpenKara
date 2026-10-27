@@ -1,11 +1,17 @@
 use crate::{
     commands::error::{CommandError, CommandResult},
-    config::{AppConfig, RegisteredLibrary},
+    config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
     library::error::LibraryError,
-    remote::atomic_download::{atomic_database_pull, DatabasePullOptions},
-    remote::control_db::{get_repository_state, LocalState},
+    remote::atomic_download::{
+        atomic_database_pull, update_repository_state_after_pull, DatabasePullOptions,
+    },
+    remote::control_db::{
+        delete_transfer_parts, get_repository_state, upsert_transfer_part, LocalState,
+        TransferDirection, TransferPartRow,
+    },
     remote::manifest::{read_manifest, MANIFEST_PATH},
 };
+use openkara_remote::RepositoryStorage as CoreStorage;
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -56,6 +62,120 @@ pub(crate) fn load_registered_remote_library(
     Ok(library.clone())
 }
 
+/// Refresh the Local Working Copy of a WebDAV repository through the core
+/// reader: probe the revision, plan against the manifest (or the legacy
+/// `openkara.db`), then run the resumable snapshot download with the
+/// clean/dirty policy applied by the app.
+///
+/// The part file's durable progress is mirrored into `remote_transfer_parts`
+/// like the other providers' path, so a restart resumes the transfer. A
+/// failed pull leaves the current working copy in place and returns the
+/// library unchanged, so the caller can proceed offline.
+pub(in crate::remote) fn refresh_working_copy_via_core(
+    control_db_conn: &Connection,
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+) -> CommandResult<RegisteredLibrary> {
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+    let root = load_remote_root(app_data_dir, library)?;
+
+    let remote_revision =
+        openkara_remote::probe_remote_revision(&storage).map_err(CommandError::from)?;
+    if !openkara_remote::remote_revision_is_stale(
+        library.remote_revision(),
+        remote_revision.as_deref(),
+    ) {
+        return Ok(library.clone());
+    }
+    let plan = openkara_remote::plan_refresh(&storage).map_err(CommandError::from)?;
+
+    let operation_id = openkara_remote::snapshot_operation_id(plan.remote_revision.as_deref());
+    let working_copy = openkara_remote::WorkingCopyDatabase::new(root.database_path());
+    let policy = CleanWorkingCopyPolicy {
+        control_db_conn,
+        library,
+    };
+    let mut record_progress = |transferred: u64| {
+        let _ = upsert_transfer_part(
+            control_db_conn,
+            &TransferPartRow {
+                operation_id: operation_id.clone(),
+                relative_path: plan.database.remote_path.clone(),
+                direction: TransferDirection::Download,
+                expected_size: plan.database.expected_size.map(|size| size as i64),
+                expected_digest: plan.database.expected_digest.clone(),
+                provider_revision: None,
+                provider_session_id: None,
+                transferred_bytes: transferred as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: current_unix_time_ms(),
+            },
+        );
+    };
+
+    match openkara_remote::pull_database_snapshot(
+        &storage,
+        &plan,
+        &working_copy,
+        &operation_id,
+        &policy,
+        &mut record_progress,
+    ) {
+        Ok(None) => Ok(library.clone()),
+        Ok(Some(pulled)) => {
+            let _ = delete_transfer_parts(control_db_conn, &operation_id);
+            if let Err(error) = update_repository_state_after_pull(
+                control_db_conn,
+                library.id(),
+                &pulled.database_sha256,
+                pulled.generation,
+            ) {
+                tracing::info!(
+                    "failed to persist repository state after refreshing library {}: {:?}",
+                    library.id(),
+                    error
+                );
+                return Ok(library.clone());
+            }
+            let new_revision = if plan.manifest.is_some() {
+                storage
+                    .stat(MANIFEST_PATH)
+                    .map_err(CommandError::from)?
+                    .and_then(|metadata| metadata.revision)
+            } else {
+                plan.remote_revision.clone()
+            };
+            update_remote_revision_in_config(app_data_dir, library.id(), new_revision)?;
+            load_registered_remote_library(app_data_dir, library.id())
+        }
+        Err(error) => {
+            // Fall back to the last verified working copy; do not block the mutation.
+            tracing::info!(
+                "remote database pull failed for library {}; falling back to \
+                 the existing local database: {:?}",
+                library.id(),
+                error
+            );
+            Ok(library.clone())
+        }
+    }
+}
+
+/// Applies the app's clean/dirty policy to the core reader's policy hook.
+struct CleanWorkingCopyPolicy<'a> {
+    control_db_conn: &'a Connection,
+    library: &'a RegisteredLibrary,
+}
+
+impl openkara_remote::RefreshPolicy for CleanWorkingCopyPolicy<'_> {
+    fn may_replace_working_copy(&self) -> bool {
+        should_allow_automatic_pull(self.control_db_conn, self.library)
+    }
+}
+
 pub(in crate::remote) fn remote_database_revision(
     provider: &dyn RepositoryStorage,
 ) -> CommandResult<Option<String>> {
@@ -100,6 +220,10 @@ pub(crate) fn prepare_remote_database_for_mutation(
             library.id()
         );
         return Ok(library.clone());
+    }
+
+    if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+        return refresh_working_copy_via_core(control_db_conn, app_data_dir, library);
     }
 
     let provider = create_repository_storage(app_data_dir, library)?;
