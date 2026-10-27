@@ -1,12 +1,15 @@
 pub mod error;
 pub mod manifest;
+pub mod net_policy;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod webdav;
 
 pub use error::{
-    kind_from_http_status_code, kind_from_io_error, verify_content_range, RemoteError,
-    RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
+    kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
+    remote_error_from_status, verify_content_range, RemoteError, RemoteErrorKind,
+    RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
 };
 pub use manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
@@ -17,3 +20,4 @@ pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,
     RepositoryStorage, StorageCapabilities,
 };
+pub use webdav::WebDavStorage;

@@ -7,8 +7,8 @@
 use crate::commands::error::CommandError;
 
 pub(crate) use openkara_remote::error::{
-    kind_from_http_status_code, kind_from_io_error, verify_content_range, RemoteError,
-    RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
+    remote_error_from_status, verify_content_range, RemoteError, RemoteErrorKind,
+    RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
 };
 
 /// Map a core `RemoteError` into the Tauri IPC `CommandError` at the
@@ -40,48 +40,9 @@ impl From<RemoteError> for CommandError {
     }
 }
 
-pub(crate) fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorKind {
-    kind_from_http_status_code(status.as_u16())
-}
-
-/// Convenience: build a `RemoteError` from an HTTP status with a sanitized
-/// detail string (the status code only — never the response body).
-pub(crate) fn remote_error_from_status(status: reqwest::StatusCode, context: &str) -> RemoteError {
-    let kind = kind_from_http_status(status);
-    RemoteError::new(kind, format!("{context} failed with HTTP {status}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn http_status_maps_to_expected_kinds() {
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::UNAUTHORIZED),
-            RemoteErrorKind::AuthenticationExpired
-        );
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::FORBIDDEN),
-            RemoteErrorKind::PermissionDenied
-        );
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::CONFLICT),
-            RemoteErrorKind::RemoteConflict
-        );
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::PRECONDITION_FAILED),
-            RemoteErrorKind::RemoteConflict
-        );
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::TOO_MANY_REQUESTS),
-            RemoteErrorKind::RateLimited
-        );
-        assert_eq!(
-            kind_from_http_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
-            RemoteErrorKind::NetworkUnavailable
-        );
-    }
 
     #[test]
     fn from_remote_error_preserves_retryable_flag_and_message() {
