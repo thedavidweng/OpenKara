@@ -201,6 +201,29 @@ can become active. Protocol major mismatches return `incompatible_plugin`. A
 failed candidate does not replace the active release. A staged update waits for
 work leases and requests to finish. The previous package tree stays on disk.
 
+### Node-era migration
+
+`HostConfig::production` retires the Node stdio path. On every
+`SourceHost::new`, a signed-index installation whose active or staged release
+runs on the Node runtime is marked as needing replacement: the host clears its
+active and staged releases, enablement and pin, records the retired name and
+version in `state.json`, and deletes the managed Node runtimes and every
+package tree whose manifest names the Node runtime. A failed deletion is retried
+on the next launch. The migration never touches library songs, Streaming Track
+Identities or Playlist Origin Stamps, so a replacement under the same source id
+keeps matching them. Signed-index Node releases are incompatible on a retiring
+host, so it never installs one again.
+
+A retired source keeps its snapshot with state `update_required`, no installed
+or available version, its retired name, and `last_error` code
+`replacement_required`. `install` and `retry` return `replacement_required`.
+The replacement is a registry package installed under the same source id with
+`install_package`; it installs disabled, and the old credentials do not carry
+over. `replacement_notice()` lists the retired sources as
+`{source_id, name, version}` until `dismiss_replacement_notice()`.
+`remove_retired_credentials(remove)` calls `remove(source_id, owner_binding)`
+once per retired source; a failed removal stays pending for the next call.
+
 ## Installation and runtime
 
 `HostConfig::production(data_root, resource_root, host_version)` creates the
@@ -357,7 +380,8 @@ workflows available and report the original source error.
 
 Synchronous operations are `snapshots`, `snapshot`, `description`,
 `cancel_install`, `set_pin`, `acquire_work`, `remove_registry`, `registries`,
-`market`, and `subscribe`. Pins apply to the
+`market`, `replacement_notice`, `dismiss_replacement_notice`,
+`remove_retired_credentials`, and `subscribe`. Pins apply to the
 installed version. `description` returns the verified `owner_binding` and manifest.
 Snapshots and change subscriptions use:
 

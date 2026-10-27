@@ -1,3 +1,5 @@
+import { E2E_MOCK_DATA } from "@/mock/tauri-mock-data";
+import { createTauriMockScript } from "../fixtures/tauri-mock";
 import { expect, test } from "./fixtures/accessibility-test";
 
 test("source registries and the market work from the keyboard", async ({
@@ -174,4 +176,35 @@ test("source switching keeps colliding remote tracks and cursor pages distinct",
   await expect(
     browser.getByTestId("streaming-track-row").first(),
   ).toContainText("Web Library: Shared Track");
+});
+
+test("the Node-era replacement notice names the source and works from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.addInitScript(
+    createTauriMockScript({
+      ...E2E_MOCK_DATA,
+      retiredSources: [
+        { source_id: "legacy", name: "Legacy Library", version: "1.4.0" },
+      ],
+    }),
+  );
+  await page.goto("/");
+  const notice = page.getByRole("region", {
+    name: "Streaming Sources need replacement",
+  });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("Legacy Library");
+  await expect(notice).toContainText("add a Source Registry");
+  await a11y.axeCheck();
+
+  await notice.getByRole("button", { name: "Open Settings" }).press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await notice.getByRole("button", { name: "Dismiss" }).press("Enter");
+  await expect(notice).toBeHidden();
 });

@@ -139,6 +139,11 @@ export interface SourceSnapshot {
   active_work: ActiveWork[];
   manifest: SourceManifest | null;
 }
+export interface RetiredSource {
+  source_id: string;
+  name: string;
+  version: string;
+}
 export interface RegistryStatus {
   url: string;
   registry_id: string;

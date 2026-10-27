@@ -13,9 +13,10 @@ flows, cursors, and error codes of protocol 1.0. The runtime and the
 transport changed: a protocol 2.0 package is one ES module that the host
 runs in an embedded QuickJS engine instead of a Node stdio process. The
 [changes from protocol 1.0](#changes-from-protocol-10) section lists every
-difference. The protocol 1.0 stdio transport still serves the remaining
-Node-based installations until the migration and removal work retires it.
-New packages use protocol major 2.
+difference. The application no longer runs protocol 1.0 packages: it marks
+Node-based installations as needing replacement
+([Node-era migration](source-host.md#node-era-migration)), and the stdio
+transport code stays only until its removal. New packages use protocol major 2.
 
 ## Runtime and transport
 
@@ -325,6 +326,9 @@ depends on:
   replacement stops the old package's work, removes its claim, and installs
   the new package disabled. Credentials and key-value storage do not carry
   over.
+- A package that replaces a Node-era installation must keep its source id so
+  that library songs and playlists keep matching. The host removed the old
+  credentials, so the user signs in again.
 - Uninstall removes activation and enablement. It retains the verified
   package bytes and the source's key-value storage file. It does not touch
   library files or credentials; the application offers the credential

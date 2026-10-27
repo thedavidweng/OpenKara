@@ -26,6 +26,9 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
         consent,
         replace,
       }),
+    getSourceReplacementNotice: () => invoke("get_source_replacement_notice"),
+    dismissSourceReplacementNotice: () =>
+      invoke("dismiss_source_replacement_notice"),
     cancelStreamingSourceInstall: (sourceId) =>
       invoke("cancel_streaming_source_install", { sourceId }),
     setStreamingSourceEnabled: (sourceId, enabled, stopWork = false) =>
