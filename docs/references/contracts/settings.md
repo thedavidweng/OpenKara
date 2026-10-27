@@ -158,16 +158,23 @@ returns `false`. The frontend gates its launch update check on this probe.
 
 ## Remote streaming cache
 
-The remote streaming cache stores byte-range downloads of remote media files
-so playback can resume without re-fetching. The cache is content-addressed by
-the SHA-256 of `(library_id, relative_path, provider_revision,
-expected_size)`, so a replaced remote object (new revision or size) does not
-reuse bytes from an older version. The durable catalog lives in the local-only
-`remote_cache_entries` table (`remote-state.db`); on-disk data files live in
-`<app-data>/remote-cache/`.
+The remote streaming cache (the media cache of the Remote Repository core,
+`openkara_remote::media_cache`) stores byte-range downloads of remote media
+files so playback can resume without re-fetching. The cache is
+content-addressed by the SHA-256 of `(library_id, relative_path,
+provider_revision, expected_size)`, so a replaced remote object (new revision
+or size) does not reuse bytes from an older version. The durable catalog lives
+in the local-only `remote_cache_entries` and `remote_cache_pins` tables
+(`remote-state.db`); on-disk data files live in `<app-data>/remote-cache/`.
 
 When `remote_cache_bytes_limit` is unset, the cache defaults to a finite 2 GiB
-budget. The configured limit is read at startup from `AppConfig`.
+budget. The configured limit is read at startup from `AppConfig`. When a new
+entry does not fit, the least recently played entries are evicted first.
+Entries leased by active playback and entries kept by an Offline Pin are
+exempt; an Offline Pin covers only the most recently played revision of each
+pinned asset path. A completed copy of a content-addressed asset
+(`<top>/content/<sha256>.<ext>`) whose bytes do not match the digest in its
+path is discarded instead of kept.
 
 ### Commands
 
@@ -175,12 +182,12 @@ budget. The configured limit is read at startup from `AppConfig`.
   - `used_bytes`: total bytes used by reconciled catalog entries.
   - `limit_bytes`: the configured byte budget (2 GiB default).
   - `entry_count`: number of catalog entries.
-  - `pinned_count`: number of entries currently pinned by active playback
-    (exempt from eviction).
-- `clear_remote_cache() -> usize` — Evict all unpinned cache entries. Pinned
-  entries (files in active use by playback) remain until playback releases
-  them, then a subsequent clear or LRU eviction removes them. Returns the
-  number of entries evicted.
+  - `pinned_count`: number of entries exempt from eviction: leased by active
+    playback or kept by an Offline Pin.
+- `clear_remote_cache() -> usize` — Evict every cache entry that is neither
+  leased nor kept by an Offline Pin. Leased entries (files in active use by
+  playback) remain until playback releases them, then a subsequent clear or
+  LRU eviction removes them. Returns the number of entries evicted.
 
 ## Remote diagnostics
 

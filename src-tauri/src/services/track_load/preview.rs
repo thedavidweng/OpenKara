@@ -12,7 +12,6 @@ use super::{
 };
 use crate::{
     audio::{
-        chunked_cache::ChunkedCache,
         coordinator::{PlaybackCommand, ReadyTrack},
         error::PlaybackError,
         playback::{PlaybackStateSnapshot, PLAYBACK_ERROR_EVENT},
@@ -29,6 +28,7 @@ use crate::{
     source_host::{Cancellation, SourceHost, WorkKind, WorkLease},
     state::AppState,
 };
+use openkara_remote::ChunkedCache;
 use std::{
     path::Path,
     sync::{mpsc, Arc},

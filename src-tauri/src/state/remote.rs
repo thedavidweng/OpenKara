@@ -1,7 +1,7 @@
 use crate::commands::error::{remote_repository_unavailable, CommandResult};
-use crate::remote::cache_catalog::{CacheCatalog, DEFAULT_CACHE_BYTES_LIMIT};
 use crate::remote::control_db;
 use crate::remote::{RemoteAuthSession, UploadStatusSnapshot};
+use openkara_remote::{MediaCache, DEFAULT_CACHE_BYTES_LIMIT};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -19,11 +19,9 @@ pub struct RemoteState {
     /// source of truth is the `remote_operations` table in the control DB; this
     /// map is kept only so we avoid re-emitting events for unchanged state.
     pub remote_upload_statuses: Arc<Mutex<HashMap<String, UploadStatusSnapshot>>>,
-    /// Persistent, verified cache catalog for remote streaming playback. The
-    /// `remote_cache_entries` table in the control DB is the authoritative
-    /// catalog; on-disk data files are content-addressed by the cache key
-    /// digest. Replaces the old in-memory-only `CacheManager`.
-    remote_chunk_cache: Option<Arc<Mutex<CacheCatalog>>>,
+    /// Media cache for remote streaming playback; its catalog lives in the
+    /// control DB.
+    media_cache: Option<Arc<Mutex<MediaCache>>>,
     /// Durable control-plane database handle (`remote-state.db`). Holds the
     /// authoritative local record of remote operation/outbox state, repository
     /// cleanliness, and resumable transfer offsets. Never uploaded.
@@ -58,21 +56,22 @@ impl RemoteState {
         // Open the persistent cache catalog. This runs startup reconciliation
         // (orphaned files removed, inconsistent rows discarded) before any
         // playback uses the cache.
-        let remote_chunk_cache = control_db_handle.as_ref().and_then(|control_db| {
-            match CacheCatalog::open(cache_dir, Arc::clone(control_db), max_bytes) {
-                Ok(catalog) => Some(Arc::new(Mutex::new(catalog))),
-                Err(error) => {
-                    unavailable_reason =
-                        Some(format!("failed to open remote cache catalog: {error:?}"));
-                    None
+        let media_cache =
+            control_db_handle.as_ref().and_then(|control_db| {
+                match MediaCache::open(cache_dir, Arc::clone(control_db), max_bytes) {
+                    Ok(catalog) => Some(Arc::new(Mutex::new(catalog))),
+                    Err(error) => {
+                        unavailable_reason =
+                            Some(format!("failed to open the media cache: {error}"));
+                        None
+                    }
                 }
-            }
-        });
+            });
 
         Self {
             remote_auth_sessions: Arc::new(Mutex::new(HashMap::new())),
             remote_upload_statuses: Arc::new(Mutex::new(HashMap::new())),
-            remote_chunk_cache,
+            media_cache,
             control_db_handle,
             unavailable_reason,
             commit_locks: Arc::new(Mutex::new(HashMap::new())),
@@ -93,7 +92,7 @@ impl RemoteState {
     }
 
     pub fn is_available(&self) -> bool {
-        self.control_db_handle.is_some() && self.remote_chunk_cache.is_some()
+        self.control_db_handle.is_some() && self.media_cache.is_some()
     }
 
     pub fn ensure_available(&self) -> CommandResult<()> {
@@ -117,12 +116,12 @@ impl RemoteState {
         })
     }
 
-    pub fn remote_chunk_cache(&self) -> CommandResult<&Arc<Mutex<CacheCatalog>>> {
-        self.remote_chunk_cache.as_ref().ok_or_else(|| {
+    pub fn media_cache(&self) -> CommandResult<&Arc<Mutex<MediaCache>>> {
+        self.media_cache.as_ref().ok_or_else(|| {
             remote_repository_unavailable(
                 self.unavailable_reason
                     .as_deref()
-                    .unwrap_or("remote cache catalog is unavailable"),
+                    .unwrap_or("media cache is unavailable"),
             )
         })
     }

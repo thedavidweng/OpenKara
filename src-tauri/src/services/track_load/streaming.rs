@@ -23,9 +23,9 @@ use crate::{
     },
     cache,
     commands::error::{CommandError, ErrorCode, FallbackAction},
-    remote::cache_catalog::CachePinGuard,
     services::playback::PlaybackErrorEvent,
 };
+use openkara_remote::CacheLease;
 use std::{ops::ControlFlow, sync::mpsc, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -43,12 +43,12 @@ const RECONNECTED_FETCH: &str = "remote fetch (reconnect)";
 /// receiver, so exactly one listener is live per installed source.
 pub(super) fn spawn_fetch_event_listener<R: Runtime>(
     ctx: LoadContext<R>,
-    cache_pin_guard: Option<CachePinGuard>,
+    cache_lease: Option<CacheLease>,
     fetch_event_rx: mpsc::Receiver<FetchEvent>,
     label: &'static str,
 ) {
     std::thread::spawn(move || {
-        let _pin = cache_pin_guard;
+        let _lease = cache_lease;
         let song_id = ctx.song_id.clone();
         for event in fetch_event_rx {
             let flow = match event {
@@ -117,7 +117,7 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
         };
     };
 
-    let Ok(cache_catalog) = ctx.state.remote.remote_chunk_cache() else {
+    let Ok(cache_catalog) = ctx.state.remote.media_cache() else {
         return ControlFlow::Continue(());
     };
     let cache = Arc::clone(cache_catalog);
@@ -147,7 +147,7 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
             source: source.streaming_track,
             from_cache: false,
             runtime: RemoteStreamingRuntime {
-                cache_pin_guard: source.cache_pin_guard,
+                cache_lease: source.cache_lease,
                 fetch_event_rx: source.fetch_event_rx,
             },
         })
@@ -178,16 +178,16 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
     match result {
         Ok(success) => {
             let RemoteStreamingRuntime {
-                cache_pin_guard,
+                cache_lease,
                 fetch_event_rx,
             } = success.runtime;
             match fetch_event_rx {
                 Some(rx) => {
-                    spawn_fetch_event_listener(ctx.clone(), cache_pin_guard, rx, RECONNECTED_FETCH)
+                    spawn_fetch_event_listener(ctx.clone(), cache_lease, rx, RECONNECTED_FETCH)
                 }
                 None => {
-                    if let Some(pin) = cache_pin_guard {
-                        spawn_cache_pin_hold(pin, guard);
+                    if let Some(lease) = cache_lease {
+                        spawn_cache_lease_hold(lease, guard);
                     }
                 }
             }
@@ -221,10 +221,10 @@ fn attempt_reconnect<R: Runtime>(ctx: &LoadContext<R>, failure: ReconnectError) 
 }
 
 /// Cache fast path: the reconnected source has no fetch thread, so nothing
-/// else keeps the entry pinned for the rest of the track.
-fn spawn_cache_pin_hold(pin: CachePinGuard, guard: StalenessGuard) {
+/// else keeps the entry leased for the rest of the track.
+fn spawn_cache_lease_hold(lease: CacheLease, guard: StalenessGuard) {
     std::thread::spawn(move || {
-        let _pin = pin;
+        let _lease = lease;
         while guard.is_current() {
             std::thread::sleep(Duration::from_secs(1));
         }

@@ -25,6 +25,7 @@ pub enum RemoteErrorKind {
     AuthenticationExpired,
     PermissionDenied,
     DiskFull,
+    LocalStorageFailed,
     OperationCancelled,
     StaleRequest,
 }
@@ -41,6 +42,7 @@ impl RemoteErrorKind {
             Self::AuthenticationExpired => "authentication_expired",
             Self::PermissionDenied => "permission_denied",
             Self::DiskFull => "disk_full",
+            Self::LocalStorageFailed => "local_storage_failed",
             Self::OperationCancelled => "operation_cancelled",
             Self::StaleRequest => "stale_request",
         }
@@ -61,6 +63,7 @@ impl RemoteErrorKind {
             "authentication_expired" => Some(Self::AuthenticationExpired),
             "permission_denied" => Some(Self::PermissionDenied),
             "disk_full" => Some(Self::DiskFull),
+            "local_storage_failed" => Some(Self::LocalStorageFailed),
             "operation_cancelled" => Some(Self::OperationCancelled),
             "stale_request" => Some(Self::StaleRequest),
             _ => None,
@@ -234,6 +237,7 @@ mod tests {
             RemoteErrorKind::AuthenticationExpired,
             RemoteErrorKind::PermissionDenied,
             RemoteErrorKind::DiskFull,
+            RemoteErrorKind::LocalStorageFailed,
             RemoteErrorKind::OperationCancelled,
             RemoteErrorKind::StaleRequest,
         ];
@@ -255,6 +259,7 @@ mod tests {
         assert!(!RemoteErrorKind::AuthenticationExpired.retryable());
         assert!(!RemoteErrorKind::PermissionDenied.retryable());
         assert!(!RemoteErrorKind::DiskFull.retryable());
+        assert!(!RemoteErrorKind::LocalStorageFailed.retryable());
         assert!(!RemoteErrorKind::OperationCancelled.retryable());
         assert!(!RemoteErrorKind::StaleRequest.retryable());
     }

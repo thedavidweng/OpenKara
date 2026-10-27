@@ -11,7 +11,8 @@
 //! already on disk is not fetched twice for long: a restarted stream stops
 //! when it runs into a large cached run and resumes at the next gap.
 
-use crate::audio::{chunked_cache::ChunkedCache, remote_source::FetchEvent};
+use crate::audio::remote_source::FetchEvent;
+use openkara_remote::ChunkedCache;
 use std::{
     io::{self, Read, Seek, SeekFrom},
     sync::{mpsc, Arc},

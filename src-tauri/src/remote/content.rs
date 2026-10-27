@@ -11,10 +11,10 @@ use crate::{
     library::Song,
     library_root::LibraryRoot,
     remote,
-    remote::cache_catalog::{CacheCatalog, CacheIdentity, CachePinGuard},
     remote::provider::{create_remote_media_source, create_repository_storage},
 };
 use anyhow::{Context, Result};
+use openkara_remote::media_cache::{CacheIdentity, CacheLease, MediaCache};
 use rusqlite::Connection;
 use std::{
     fs,
@@ -32,7 +32,7 @@ pub(crate) struct StreamingPlaybackSource {
     pub(crate) metadata: StreamMetadata,
     pub(crate) decode_handle: std::thread::JoinHandle<Result<(), decode::DecodeError>>,
     pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
-    pub(crate) cache_pin_guard: Option<CachePinGuard>,
+    pub(crate) cache_lease: Option<CacheLease>,
 }
 
 pub(crate) struct RemoteContent<'a> {
@@ -177,7 +177,7 @@ impl<'a> RemoteContent<'a> {
 
     pub(crate) fn load_streaming_source(
         &self,
-        remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
+        media_cache: &Arc<Mutex<MediaCache>>,
         song: &Song,
     ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
         let Some(app_data_dir) = self.app_data_dir else {
@@ -259,19 +259,17 @@ impl<'a> RemoteContent<'a> {
         };
         let cache_key = identity.cache_key();
         let cache = {
-            let mut manager = remote_chunk_cache.lock().map_err(|_| {
-                PlaybackError::Internal("remote chunk cache manager lock was poisoned".to_owned())
-            })?;
+            let mut manager = media_cache
+                .lock()
+                .map_err(|_| PlaybackError::Internal("media cache lock was poisoned".to_owned()))?;
             manager.get_or_create(&identity).map_err(map_cache_error)?
         };
-        let cache_pin_guard = Some(
-            CacheCatalog::pin_cache_entry(remote_chunk_cache, &cache_key)
-                .map_err(map_cache_error)?,
-        );
-        let persist_catalog = Arc::clone(remote_chunk_cache);
+        let cache_lease =
+            Some(MediaCache::lease(media_cache, &cache_key).map_err(map_cache_error)?);
+        let persist_catalog = Arc::clone(media_cache);
         let persist_key = cache_key.clone();
         let on_range_written: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            if let Ok(manager) = persist_catalog.lock() {
+            if let Ok(mut manager) = persist_catalog.lock() {
                 let _ = manager.persist_ranges(&persist_key);
             }
         });
@@ -306,7 +304,7 @@ impl<'a> RemoteContent<'a> {
             metadata: probe_metadata,
             decode_handle,
             fetch_event_rx: Some(fetch_event_rx),
-            cache_pin_guard,
+            cache_lease,
         }))
     }
 }
@@ -815,6 +813,6 @@ pub(crate) fn probe_remote_source(
     })
 }
 
-fn map_cache_error(error: crate::commands::error::CommandError) -> PlaybackError {
-    PlaybackError::Internal(error.message)
+fn map_cache_error(error: openkara_remote::RemoteError) -> PlaybackError {
+    PlaybackError::Internal(error.message())
 }
