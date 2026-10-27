@@ -247,8 +247,10 @@ backoff.
 
 #### Host API
 
-The global `openkara` object is the only capability an embedded source gets,
-together with `setTimeout` and `clearTimeout`. Binary inputs accept a
+The [host API reference](streaming-source-host-api.md) is the author-facing
+specification of this surface. The global `openkara` object is the only
+capability an embedded source gets, together with `setTimeout` and
+`clearTimeout`. Binary inputs accept a
 `Uint8Array`, an `ArrayBuffer`, or a string (encoded as UTF-8); binary outputs
 are `Uint8Array`. Invalid crypto or encoding input throws a `TypeError`.
 

@@ -1,12 +1,12 @@
 # Deterministic Streaming Source package
 
-This AGPL-3.0-only package implements
-[protocol 1.0](../../docs/references/contracts/streaming-source-protocol.md).
+This AGPL-3.0-only package implements the
+[Streaming Source protocol](../../docs/references/contracts/streaming-source-protocol.md).
 It is executable acceptance infrastructure, not a production music service.
 It imports no host internals and needs no npm packages, user credentials, or
-music vendor. `worker.mjs` is its stdio entry. Node 24 is the runtime family;
-release signing must pin an exact runtime and platform digests in the index.
-`source.mjs` below is the same fixture for the embedded engine.
+music vendor. `worker.mjs` is its stdio entry on the protocol 1.0 transport,
+which retires with the Node runtime path. `source.mjs` below is the same
+fixture as a protocol 2.0 package for the embedded engine.
 
 The package has one Streaming Playlist (`42`) and three tracks (`1`, `2`, `3`).
 These ids deliberately collide with ids that other Streaming Sources use.
