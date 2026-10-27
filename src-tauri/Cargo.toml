@@ -134,6 +134,14 @@ lto = "fat"
 opt-level = "s"
 codegen-units = 1
 
+[profile.optimized]
+inherits = "release"
+strip = false
+lto = false
+opt-level = 2
+codegen-units = 16
+incremental = true
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",

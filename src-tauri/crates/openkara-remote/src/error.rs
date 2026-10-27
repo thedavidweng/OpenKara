@@ -19,6 +19,7 @@ pub enum RemoteErrorKind {
     RemoteConflict,
     ProviderCapabilityUnavailable,
     RemoteIntegrityFailed,
+    ObjectNotFound,
     NetworkUnavailable,
     RateLimited,
     AuthenticationExpired,
@@ -34,6 +35,7 @@ impl RemoteErrorKind {
             Self::RemoteConflict => "remote_conflict",
             Self::ProviderCapabilityUnavailable => "provider_capability_unavailable",
             Self::RemoteIntegrityFailed => "remote_integrity_failed",
+            Self::ObjectNotFound => "remote_object_not_found",
             Self::NetworkUnavailable => "network_unavailable",
             Self::RateLimited => "rate_limited",
             Self::AuthenticationExpired => "authentication_expired",
@@ -53,6 +55,7 @@ impl RemoteErrorKind {
             "remote_conflict" => Some(Self::RemoteConflict),
             "provider_capability_unavailable" => Some(Self::ProviderCapabilityUnavailable),
             "remote_integrity_failed" => Some(Self::RemoteIntegrityFailed),
+            "remote_object_not_found" => Some(Self::ObjectNotFound),
             "network_unavailable" => Some(Self::NetworkUnavailable),
             "rate_limited" => Some(Self::RateLimited),
             "authentication_expired" => Some(Self::AuthenticationExpired),
@@ -211,6 +214,7 @@ mod tests {
             RemoteErrorKind::RemoteConflict,
             RemoteErrorKind::ProviderCapabilityUnavailable,
             RemoteErrorKind::RemoteIntegrityFailed,
+            RemoteErrorKind::ObjectNotFound,
             RemoteErrorKind::NetworkUnavailable,
             RemoteErrorKind::RateLimited,
             RemoteErrorKind::AuthenticationExpired,
@@ -233,6 +237,7 @@ mod tests {
         assert!(!RemoteErrorKind::RemoteConflict.retryable());
         assert!(!RemoteErrorKind::ProviderCapabilityUnavailable.retryable());
         assert!(!RemoteErrorKind::RemoteIntegrityFailed.retryable());
+        assert!(!RemoteErrorKind::ObjectNotFound.retryable());
         assert!(!RemoteErrorKind::AuthenticationExpired.retryable());
         assert!(!RemoteErrorKind::PermissionDenied.retryable());
         assert!(!RemoteErrorKind::DiskFull.retryable());

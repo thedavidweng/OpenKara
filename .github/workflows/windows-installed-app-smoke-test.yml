@@ -65,3 +65,73 @@ jobs:
       run_display_matrix: false
       previous_version: none
       retention_days: 1
+
+  report-failure:
+    name: Report main or nightly failure
+    needs: [windows-installed-app]
+    if: >-
+      always() &&
+      ((github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'schedule') &&
+      (needs.windows-installed-app.result == 'failure' || needs.windows-installed-app.result == 'cancelled')
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write # open or update a tracking issue when main or nightly gate fails
+    steps:
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          WINDOWS_INSTALLED_APP: ${{ needs.windows-installed-app.result }}
+        run: |
+          set -euo pipefail
+
+          job_links=""
+          if [ -n "${RUN_ID:-}" ]; then
+            job_links="$(gh run view "${RUN_ID}" \
+              --repo "${GH_REPO}" \
+              --json jobs \
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (`\(.conclusion)`)"' 2>/dev/null || true)"
+          fi
+          if [ -z "${job_links}" ]; then
+            job_links="- [windows-installed-app](${RUN_URL:-}) (\`${WINDOWS_INSTALLED_APP:-failure}\`)"
+          fi
+
+          title="CI failure on main/nightly"
+          body="$(printf '%s\n' \
+            "A **${WORKFLOW_NAME:-Branch Windows installed-app gate}** workflow run failed on \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)." \
+            "" \
+            "- **Workflow:** ${WORKFLOW_NAME:-Branch Windows installed-app gate}" \
+            "- **Trigger:** \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)" \
+            "- **Commit:** \`${HEAD_SHA:-unknown}\`" \
+            "- **Failed run:** [${RUN_URL:-}](${RUN_URL:-})" \
+            "" \
+            "### Failed jobs" \
+            "${job_links}")"
+
+          existing_issue="$(gh issue list \
+            --repo "${GH_REPO}" \
+            --state open \
+            --search "in:title ${title}" \
+            --json number,title \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${existing_issue}" ]; then
+            gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+            echo "Commented on existing issue #${existing_issue}"
+          else
+            issue_url="$(gh issue create \
+              --repo "${GH_REPO}" \
+              --title "${title}" \
+              --body "${body}" \
+              --label "bug")"
+            echo "Opened issue: ${issue_url}"
+          fi

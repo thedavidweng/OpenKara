@@ -6,6 +6,7 @@ mod lifecycle;
 mod media;
 mod network;
 mod process;
+mod registry;
 mod runtime;
 mod snapshot;
 mod supervisor;
@@ -22,6 +23,7 @@ use runtime::{Runtimes, SourceInstance, SourceRuntime};
 use std::{
     collections::BTreeMap,
     fs,
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -38,11 +40,13 @@ struct Inner {
     changes: tokio::sync::broadcast::Sender<SourceSnapshot>,
     starts: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>,
     installs: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    registry_refresh: tokio::sync::Mutex<()>,
     initialization_error: Option<HostError>,
 }
 struct State {
     stored: StoredState,
     index: Option<SourceIndex>,
+    registries: Vec<registry::RegistryEntry>,
     sources: BTreeMap<String, Live>,
     sequence: u64,
 }
@@ -138,6 +142,7 @@ impl Inner {
             changes,
             starts: Mutex::new(BTreeMap::new()),
             installs: Mutex::new(BTreeMap::new()),
+            registry_refresh: tokio::sync::Mutex::new(()),
             initialization_error,
         })
     }
@@ -162,8 +167,15 @@ impl Inner {
     fn blocked(&self, source: &StoredSource, release: &Release) -> bool {
         source.revoked.contains(&release.manifest.version) || !self.compatible(release)
     }
+    fn verified_package(&self, release: &Release) -> HostResult<PathBuf> {
+        if release.registry.is_some() {
+            registry::verified_package(&self.config, release)
+        } else {
+            self.distribution.verified_package(&self.config, release)
+        }
+    }
     fn verify_installed(&self, release: &Release) -> HostResult<()> {
-        self.distribution.verified_package(&self.config, release)?;
+        self.verified_package(release)?;
         self.runtime.verify_installed(&self.config, release)
     }
 }
@@ -177,6 +189,7 @@ impl SourceHost {
                 State {
                     stored: StoredState::default(),
                     index: None,
+                    registries: Vec::new(),
                     sources: BTreeMap::new(),
                     sequence: 0,
                 },
@@ -203,6 +216,9 @@ impl SourceHost {
             for source in &index.sources {
                 let owner = binding(&source.publisher, &source.package_id);
                 let entry = stored.sources.entry(source.source_id.clone()).or_default();
+                if entry.package.is_some() {
+                    continue;
+                }
                 if !entry.owner_binding.is_empty() && entry.owner_binding != owner {
                     return Err(HostError::new("owner_mismatch", CACHED_OWNER_MISMATCH));
                 }
@@ -216,6 +232,7 @@ impl SourceHost {
             stored.generation = stored.generation.max(index.generation);
             save(&config, &stored)?;
         }
+        let registries = registry::restore(&config, &stored.registries)?;
         let (changes, _) = tokio::sync::broadcast::channel(128);
         let sources = stored
             .sources
@@ -237,6 +254,7 @@ impl SourceHost {
                 State {
                     stored,
                     index,
+                    registries,
                     sources,
                     sequence: 0,
                 },
@@ -253,6 +271,19 @@ impl SourceHost {
                 host.maintain().await;
             }
         });
+        let weak = Arc::downgrade(&host.inner);
+        let poll = host
+            .inner
+            .config
+            .registry_refresh_interval
+            .min(Duration::from_secs(60));
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(poll).await;
+                let Some(inner) = weak.upgrade() else { return };
+                SourceHost { inner }.refresh_due_registries().await;
+            }
+        });
         Ok(host)
     }
 }
@@ -260,6 +291,8 @@ impl SourceHost {
 mod engine_tests;
 #[cfg(test)]
 mod host_api_tests;
+#[cfg(test)]
+mod registry_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
