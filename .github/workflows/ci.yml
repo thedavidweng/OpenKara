@@ -839,27 +839,33 @@ jobs:
           $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
           cargo test -q --lib execution_provider
 
-      # Executes the runtime-archive extraction regression on Windows itself,
-      # not a cross-compile. The pinned executable is declared with `/`, while
-      # a Path renders with `\` here; comparing the rendered string dropped the
-      # executable and surfaced the generic invalid_package error on install.
-      - name: Verify source runtime archive extraction on Windows
+      # Runs the registry tar extractor on Windows itself, not a cross-compile:
+      # forward-slash entry names must resolve to nested paths through `Path`,
+      # and hostile members (traversal, absolute, drive-qualified, symlink,
+      # non-regular) must fail closed before anything lands on disk.
+      - name: Verify registry tar extraction on Windows
         working-directory: src-tauri
         shell: pwsh
         run: |
-          cargo test -q --lib source_host::tests::runtime_extract_matches_pinned_executable_by_component
+          cargo test -q --lib source_host::registry_tests::tar_windows_separator_and_malicious_members_are_rejected_without_extraction
 
       # The installed-app smoke proves the packaged app installs and separates
-      # audio; it never touches the streaming-source host. This step is the
-      # real consumer acceptance for #579: the production trust root, the
-      # published signed index, the pinned Node ZIP extracted on Windows, and
-      # a live worker `describe` over the source protocol.
-      - name: Accept published streaming source on Windows
+      # audio; it never touches the streaming-source host. The registry
+      # consumer acceptance below is the new-architecture gate: an explicitly
+      # added Source Registry, a real downloaded tarball with SHA-512
+      # integrity and package seal, registry manifest identity (source,
+      # version, protocol majors 2, openkara-js major 1), enablement, a live
+      # QuickJS `describe`, and a `signed_out`/null-account session check.
+      # It runs against a mock registry over loopback HTTP: no public
+      # compatible registry URL is known in this checkout, so this gate must
+      # not be presented as a production consumer pass. Live acceptance
+      # against a real public registry still needs a published URL.
+      - name: Accept registry streaming source on Windows
         working-directory: src-tauri
         shell: pwsh
         timeout-minutes: 15
         run: |
-          cargo test -q --test live_streaming_source_consumer -- --ignored --nocapture
+          cargo test -q --lib source_host::registry_tests::registry_consumer_acceptance_installs_starts_and_describes_with_verified_identity
 
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without

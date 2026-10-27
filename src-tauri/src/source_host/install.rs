@@ -49,35 +49,17 @@ pub(crate) fn choose_package_slot(config: &HostConfig, release: &mut Release) {
         ));
     }
 }
-/// Extracts a package archive into `output`. The 629-side registry format is
-/// gzip-compressed tar only; the `format` argument keeps the single shared
-/// entry point explicit and rejects anything else instead of guessing.
-/// The filter mirrors main's Node-side `selected()` semantics: `None` keeps
-/// every member (registry packages have no pinned runtime executable), while
-/// `Some` keeps only the pinned entry plus LICENSE/NOTICE companions.
-/// Archive entry names always use `/`, while `Path` renders with `\` on
-/// Windows. Compare components through `Path` so a pinned runtime entry
-/// matches on every platform instead of relying on the host separator.
-pub(crate) fn extract_filtered(
+/// Extracts a gzip-compressed tar archive of regular files and directories.
+/// The registry format is tar-only; the guards below (dup/path caps, 4 GiB
+/// expansion bound, create_new, Unix mode) are the 629-side protections,
+/// kept as they were on the source head.
+pub(crate) fn extract_tar_gz(
     archive: &Path,
     output: &Path,
-    format: &str,
     cancel: &Cancellation,
-    runtime_entry: Option<&str>,
 ) -> HostResult<()> {
-    if format != "tar.gz" {
-        return Err(invalid());
-    }
     let mut seen = BTreeSet::new();
     let mut expanded = 0u64;
-    let selected = |path: &Path| {
-        runtime_entry.is_none_or(|entry| {
-            path == Path::new(entry)
-                || path.file_name().is_some_and(|name| {
-                    matches!(name.to_str(), Some("LICENSE" | "NOTICE" | "LICENSE.txt"))
-                })
-        })
-    };
     let mut member =
         |name: &str, size: u64, is_dir: bool, reader: &mut dyn Read, mode: u32| -> HostResult<()> {
             cancel.check()?;
@@ -132,10 +114,6 @@ pub(crate) fn extract_filtered(
             .to_str()
             .ok_or_else(invalid)?
             .to_string();
-        let path = relative(&name)?;
-        if !selected(&path) {
-            continue;
-        }
         if !kind.is_file() && !kind.is_dir() {
             return Err(invalid());
         }

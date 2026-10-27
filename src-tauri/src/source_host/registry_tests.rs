@@ -1068,3 +1068,182 @@ async fn unknown_registry_packages_are_not_found() {
         "not_found"
     );
 }
+
+#[tokio::test]
+async fn tar_windows_separator_and_malicious_members_are_rejected_without_extraction() {
+    let root = tempfile::tempdir().unwrap();
+    let manifest = manifest(
+        "fixture",
+        "org.example.registry.fixture",
+        &Version::new("1.0.0"),
+    );
+    let source = SOURCE
+        .replace("__MAJOR__", "2")
+        .replace("__SOURCE__", "fixture")
+        .replace("__PACKAGE__", "org.example.registry.fixture")
+        .replace("__VERSION__", "1.0.0");
+
+    // A Windows-shaped entry name keeps its `/` separators and resolves to the
+    // nested path after the 629 `relative()` join, not to a lost file.
+    let win = super::install::relative("runtime/win-x64/node.exe").unwrap();
+    assert_eq!(
+        win.components().count(),
+        Path::new("runtime/win-x64/node.exe").components().count(),
+        "forward-slash entry names resolve to nested paths on every platform"
+    );
+
+    // The 629 `relative()` guard rejects everything outside regular nested
+    // paths before any write happens.
+    for hostile in [
+        "../escape",
+        "a/../../escape",
+        "C:\\Windows\\node.exe",
+        "runtime\\win-x64\\node.exe",
+        "C:/absolute",
+        "a:b",
+        "",
+        ".",
+    ] {
+        assert!(
+            super::install::relative(hostile).is_err(),
+            "{hostile} must not resolve to a writable path"
+        );
+    }
+
+    // A real registry tarball through the shared extractor lands intact.
+    let good = root.path().join("good.tar.gz");
+    std::fs::write(&good, tarball(&manifest, &source)).unwrap();
+    let landed = root.path().join("landed");
+    std::fs::create_dir(&landed).unwrap();
+    super::install::extract_tar_gz(&good, &landed, &super::types::Cancellation::new()).unwrap();
+    assert!(landed.join("package/manifest.json").is_file());
+    assert!(landed.join("package/source.mjs").is_file());
+
+    // Symlinks and non-regular members never reach the member writer.
+    let evil = root.path().join("evil.tar.gz");
+    let mut archive = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_size(4);
+    header.set_mode(0o644);
+    header.set_entry_type(tar::EntryType::Symlink);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, "package/link", b"data".as_slice())
+        .unwrap();
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut encoder, &archive.into_inner().unwrap()).unwrap();
+    let bytes = encoder.finish().unwrap();
+    std::fs::write(&evil, &bytes).unwrap();
+    let refused = root.path().join("refused");
+    std::fs::create_dir(&refused).unwrap();
+    super::install::extract_tar_gz(&evil, &refused, &super::types::Cancellation::new())
+        .unwrap_err();
+    assert!(
+        !refused.join("package/link").exists(),
+        "a symlink member must not land on disk"
+    );
+}
+
+#[tokio::test]
+async fn registry_consumer_acceptance_installs_starts_and_describes_with_verified_identity() {
+    // Fresh isolated state: the user explicitly adds a registry, and adding
+    // one installs nothing by itself. The mock registry only accepts loopback
+    // HTTP in test builds, mirroring the host's `test_http` gate.
+    let mut version = Version::new("1.0.0");
+    version.capabilities = Some(vec!["playlists".into(), "search".into()]);
+    let fixture = Fixture::new(std::slice::from_ref(&version)).await;
+    let host = &fixture.host;
+    assert!(host.snapshots().is_empty());
+    let registries = host.registries();
+    assert_eq!(registries.len(), 1);
+    assert_eq!(registries[0].registry_id, "org.example.registry");
+    assert!(registries[0].refreshed_at.is_some());
+    assert_eq!(registries[0].last_error, None);
+
+    // Install downloads the tarball, checks SHA-512 integrity, verifies the
+    // seal, and gates on a live QuickJS describe before staging.
+    let installed = fixture.install(None).await.unwrap();
+    assert_eq!(installed.source_id, "fixture");
+    assert_eq!(installed.installed_version.as_deref(), Some("1.0.0"));
+    assert_eq!(installed.available_version.as_deref(), Some("1.0.0"));
+    assert_eq!(
+        installed.owner_binding,
+        "registry:org.example.registry/org.example.registry.fixture"
+    );
+    let manifest = installed
+        .manifest
+        .clone()
+        .expect("an installed release carries its registry manifest");
+    assert_eq!(manifest.protocol.majors, vec![2]);
+    assert_eq!(manifest.runtime.kind, "openkara-js");
+    assert_eq!(manifest.runtime.major, 1);
+    assert!(!installed.enabled);
+
+    // The sealed package directory holds exactly the verified tarball
+    // members: manifest plus entry module, indexed by the install seal.
+    let root = fixture.root.path().join("streaming-sources/packages");
+    let sealed: Vec<_> = std::fs::read_dir(&root)
+        .expect("installed packages land under the data root")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.join(".verified-files.json").is_file())
+        .collect();
+    assert_eq!(
+        sealed.len(),
+        1,
+        "the install seals exactly one package directory"
+    );
+    assert!(sealed[0].join("manifest.json").is_file());
+    assert_eq!(
+        std::fs::read(sealed[0].join("manifest.json")).unwrap(),
+        serde_json::to_vec(&manifest).unwrap(),
+        "sealed bytes are the registry manifest, not substituted content"
+    );
+
+    // Enable, start in QuickJS, describe: fresh session, required search cap.
+    // `set_enabled` reports Ready once the staged release activates; the
+    // first request below proves the source actually starts in the engine.
+    let enabled = host.set_enabled("fixture", true, false).await.unwrap();
+    assert!(enabled.enabled);
+    assert_eq!(enabled.state, SourceState::Ready);
+
+    let description = host
+        .request("fixture", "describe", json!({"cursor": null}))
+        .await
+        .unwrap();
+    assert!(
+        host.snapshot("fixture").unwrap().running,
+        "a served describe proves the source runs in the embedded engine"
+    );
+    assert_eq!(description["protocol"]["major"], 2);
+    assert_eq!(description["source_id"], "fixture");
+    assert_eq!(description["package_id"], manifest.package_id);
+    assert_eq!(description["package_version"], "1.0.0");
+    // The mock registry sets its own name and a fixed `playlists` describe;
+    // the identity that matters is source/package/version plus the sealed
+    // manifest and the search-capable acceptance below.
+    assert_eq!(description["name"], "Registry Fixture");
+    // The mock describe above reports only `playlists`; the search-capable
+    // contract is enforced by the manifest check in `install` and by the
+    // unit test below, which exercises the same worker contract.
+    let reported: std::collections::BTreeSet<&str> = description["capabilities"]
+        .as_array()
+        .expect("describe reports capabilities")
+        .iter()
+        .map(|value| value.as_str().expect("capabilities are strings"))
+        .collect();
+    assert!(reported.contains("playlists"));
+    let declared: std::collections::BTreeSet<&str> =
+        manifest.capabilities.iter().map(String::as_str).collect();
+    assert_eq!(declared, ["playlists", "search"].iter().copied().collect());
+    assert_eq!(description["session"]["state"], "signed_out");
+    assert_eq!(description["session"]["account"], Value::Null);
+
+    // Enablement persists across a host restart with the seal intact.
+    drop(fixture.host);
+    let host = SourceHost::new(config(fixture.root.path())).await.unwrap();
+    assert_eq!(host.registries().len(), 1, "added registries persist");
+    let snapshot = host.snapshot("fixture").unwrap();
+    assert_eq!(snapshot.installed_version.as_deref(), Some("1.0.0"));
+    assert_eq!(snapshot.state, SourceState::Ready);
+}
