@@ -17,7 +17,7 @@ use super::{
     provider::{compute_remote_path_display, create_repository_storage, RepositoryStorage},
     registry::{mark_session_binding, ready_session_binding},
     sync::{
-        pull_remote_database_atomically, remote_database_revision,
+        pull_remote_database_atomically, refresh_working_copy_via_core, remote_database_revision,
         remote_database_revision_is_stale, should_allow_automatic_pull,
     },
     types::{current_unix_time_ms, load_app_config, persist_app_config, ProviderSessionData},
@@ -293,6 +293,11 @@ impl<'a> RemoteRepositoryLifecycle<'a> {
     ) -> CommandResult<()> {
         reconcile_working_copy_after_restart(control_db_conn, library)?;
 
+        if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+            return refresh_working_copy_via_core(control_db_conn, self.app_data_dir, library)
+                .map(|_| ());
+        }
+
         // Pull via manifest (or legacy root DB). Do not call initialize_or_sync —
         // it always downloads root openkara.db and can clobber a generation
         // working copy.
@@ -379,11 +384,21 @@ mod tests {
         cache,
         config::AppConfig,
         remote::{
-            control_db::{upsert_repository_state, LocalState, RepositoryStateRow},
+            control_db::{
+                get_repository_state, upsert_repository_state, LocalState, RepositoryStateRow,
+            },
+            manifest::{
+                database_path_for_generation, RepositoryManifest, CURRENT_SCHEMA_VERSION,
+                MANIFEST_PATH,
+            },
             provider_conformance::ScriptedProvider,
             types::{RemoteAuthSession, RemoteAuthState, WebDavSessionData},
         },
     };
+    use openkara_remote::{
+        testing::TestWebDavServer, ObjectMetadata, RepositoryStorage as CoreStorage,
+    };
+    use sha2::{Digest, Sha256};
     use std::{path::PathBuf, sync::Mutex};
     use tempfile::TempDir;
 
@@ -454,6 +469,10 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
+            Self::with_remote_root_locator(ORIGINAL_LOCATION)
+        }
+
+        fn with_remote_root_locator(remote_root_locator: &str) -> Self {
             let temp = TempDir::new().expect("temp directory");
             let app_data_dir = temp.path().join("app-data");
             std::fs::create_dir_all(&app_data_dir).expect("app data directory");
@@ -465,7 +484,7 @@ mod tests {
 
             let config = AppConfig {
                 libraries: vec![registered_repository(
-                    ORIGINAL_LOCATION,
+                    remote_root_locator,
                     &root.database_path(),
                 )],
                 active_library_id: Some(LIBRARY_ID.to_owned()),
@@ -512,13 +531,6 @@ mod tests {
                 .prepare("SELECT 1 FROM songs WHERE hash = ?1")
                 .expect("song lookup");
             statement.exists([hash]).expect("song lookup")
-        }
-
-        fn seed_remote_database(&self, revision: &str) {
-            self.access
-                .provider
-                .put_file("openkara.db", remote_database_bytes(self._temp.path()));
-            self.access.provider.set_revision(revision);
         }
 
         fn set_local_state(&self, local_state: LocalState) {
@@ -786,10 +798,32 @@ mod tests {
         assert!(fixture.access.opened_locations().is_empty());
     }
 
+    /// A fixture whose registered repository points at a real in-process
+    /// WebDAV server, exercising the core-reader refresh path end to end.
+    fn webdav_fixture() -> (Fixture, TestWebDavServer) {
+        let server = TestWebDavServer::start();
+        let fixture = Fixture::with_remote_root_locator(server.base_url());
+        crate::remote::webdav::store_webdav_secret(
+            &fixture.app_data_dir,
+            LIBRARY_ID,
+            "openkara".to_owned(),
+            "test-password".to_owned(),
+        )
+        .expect("store WebDAV credentials");
+        (fixture, server)
+    }
+
+    fn seed_webdav_database(server: &TestWebDavServer, temp: &Path) -> ObjectMetadata {
+        server
+            .storage()
+            .write_new("openkara.db", &remote_database_bytes(temp))
+            .expect("seed remote database")
+    }
+
     #[test]
     fn refresh_updates_the_local_working_copy_from_the_current_remote_state() {
-        let fixture = Fixture::new();
-        fixture.seed_remote_database("remote-revision-2");
+        let (fixture, server) = webdav_fixture();
+        let seeded = seed_webdav_database(&server, fixture._temp.path());
         assert!(!fixture.working_copy_has_song("song-remote"));
 
         fixture
@@ -803,15 +837,74 @@ mod tests {
         );
         assert_eq!(
             fixture.registered().remote_revision(),
-            Some("remote-revision-2")
+            seeded.revision.as_deref()
         );
-        assert_eq!(fixture.access.opened_locations(), vec![ORIGINAL_LOCATION]);
+    }
+
+    #[test]
+    fn refresh_installs_the_generation_the_manifest_publishes() {
+        let (fixture, server) = webdav_fixture();
+        let snapshot = remote_database_bytes(fixture._temp.path());
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 1,
+            database_path: database_path_for_generation(1),
+            database_size_bytes: snapshot.len() as u64,
+            database_sha256: sha256_bytes(&snapshot),
+            committed_at_ms: 1_700_000_000_000,
+            writer_id: "writer-1".to_owned(),
+            operation_id: "op-1".to_owned(),
+        };
+        server
+            .storage()
+            .write_new(&manifest.database_path, &snapshot)
+            .expect("seed snapshot");
+        server
+            .storage()
+            .write_new(
+                MANIFEST_PATH,
+                manifest.to_json().expect("manifest json").as_bytes(),
+            )
+            .expect("seed manifest");
+
+        fixture
+            .lifecycle()
+            .refresh()
+            .expect("refresh should succeed");
+
+        assert!(
+            fixture.working_copy_has_song("song-remote"),
+            "Refresh Repository installs the generation the manifest publishes"
+        );
+        let control_db = fixture.state.remote.control_db().expect("control db");
+        let control_db = control_db.lock().expect("control db lock");
+        let state = get_repository_state(&control_db, LIBRARY_ID)
+            .expect("repository state")
+            .expect("repository state row");
+        assert_eq!(state.committed_generation, 1);
+        assert_eq!(state.local_state, LocalState::Clean);
+        assert_eq!(
+            state.local_db_digest.as_deref(),
+            Some(manifest.database_sha256.as_str())
+        );
+        drop(control_db);
+        let manifest_revision = server
+            .storage()
+            .stat(MANIFEST_PATH)
+            .expect("manifest stat")
+            .and_then(|metadata| metadata.revision);
+        assert_eq!(
+            fixture.registered().remote_revision(),
+            manifest_revision.as_deref(),
+            "the stored baseline is the manifest revision after a manifest refresh"
+        );
     }
 
     #[test]
     fn refresh_is_a_no_op_when_the_working_copy_is_not_clean() {
-        let fixture = Fixture::new();
-        fixture.seed_remote_database("remote-revision-2");
+        let (fixture, server) = webdav_fixture();
+        seed_webdav_database(&server, fixture._temp.path());
         fixture.set_local_state(LocalState::Dirty);
 
         fixture
@@ -824,32 +917,41 @@ mod tests {
             "a dirty Local Working Copy must never be overwritten"
         );
         assert_eq!(fixture.registered().remote_revision(), None);
+        assert_eq!(
+            server.get_request_count("openkara.db"),
+            0,
+            "a dirty working copy must not even start a download"
+        );
     }
 
     #[test]
     fn refresh_skips_the_remote_provider_when_the_revision_is_unchanged() {
-        let fixture = Fixture::new();
-        fixture.seed_remote_database("remote-revision-2");
+        let (fixture, server) = webdav_fixture();
+        seed_webdav_database(&server, fixture._temp.path());
         fixture
             .lifecycle()
             .refresh()
             .expect("first refresh should succeed");
-
-        assert!(!fixture.working_copy_has_song("song-other"));
-        fixture
-            .access
-            .provider
-            .put_file("openkara.db", b"corrupt".to_vec());
+        let downloads = server.get_request_count("openkara.db");
+        assert!(downloads > 0, "the first refresh downloads the database");
 
         fixture
             .lifecycle()
             .refresh()
             .expect("second refresh should succeed");
 
-        assert!(
-            fixture.working_copy_has_song("song-remote"),
+        assert_eq!(
+            server.get_request_count("openkara.db"),
+            downloads,
             "an unchanged Remote Revision must not re-pull"
         );
+        assert!(fixture.working_copy_has_song("song-remote"));
+    }
+
+    fn sha256_bytes(data: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        crate::hash::hex_lower(hasher.finalize())
     }
 
     fn google_drive_repository() -> RegisteredLibrary {

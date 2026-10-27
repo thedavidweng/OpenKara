@@ -1,6 +1,6 @@
 # Catalog Contract
 
-The source process boundary is specified in [Streaming Source protocol 1.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
+The source boundary is specified in [Streaming Source protocol 2.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
 
 ## Identity and lifecycle
 
