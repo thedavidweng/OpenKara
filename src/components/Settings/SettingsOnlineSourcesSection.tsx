@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettings } from "./SettingsController.context";
+import { SourceMarket } from "./SourceMarket";
+import { SourceRegistries } from "./SourceRegistries";
 import { StreamingSources } from "./StreamingSources";
 
 export function SettingsOnlineSourcesSection() {
@@ -39,6 +41,12 @@ export function SettingsOnlineSourcesSection() {
         </div>
         <div className="border-t border-[var(--color-border)] pt-4">
           <StreamingSources />
+        </div>
+        <div className="border-t border-[var(--color-border)] pt-4">
+          <SourceRegistries />
+        </div>
+        <div className="border-t border-[var(--color-border)] pt-4">
+          <SourceMarket />
         </div>
       </div>
     </SettingsSectionCard>

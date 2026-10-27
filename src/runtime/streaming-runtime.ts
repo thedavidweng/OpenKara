@@ -26,7 +26,7 @@ export function startStreamingRuntime() {
       useCatalogStore.getState().applySource(source);
       if (
         source.enabled &&
-        source.runtime_ready &&
+        source.loaded &&
         source.state === "ready" &&
         useCatalogStore.getState().sourceStates[source.source_id]
           ?.sessionStatus !== "ready"
@@ -72,7 +72,7 @@ export function useStreamingRuntime(enabled: boolean) {
       .loadSources()
       .then(() => {
         for (const source of useCatalogStore.getState().sources)
-          if (source.enabled && source.runtime_ready)
+          if (source.enabled && source.loaded)
             void useCatalogStore.getState().loadSession(source.source_id);
       });
     void useCatalogStore.getState().recoverImportJob();
