@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.18.2](https://github.com/thedavidweng/OpenKara/compare/v0.18.1...v0.18.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **source-host:** match pinned runtime entry by path component ([#588](https://github.com/thedavidweng/OpenKara/issues/588)) ([819fae9](https://github.com/thedavidweng/OpenKara/commit/819fae92e794c42438370b6c1757e23e8d05ae0d)), closes [#579](https://github.com/thedavidweng/OpenKara/issues/579)
+
 ## [0.18.1](https://github.com/thedavidweng/OpenKara/compare/v0.18.0...v0.18.1) (2026-10-26)
 
 

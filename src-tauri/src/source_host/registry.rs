@@ -507,7 +507,7 @@ fn install_verified(
     fs::write(&archive, bytes)?;
     let files = staging.join("files");
     fs::create_dir(&files)?;
-    install::extract_tar_gz(&archive, &files, cancel)?;
+    install::extract_filtered(&archive, &files, "tar.gz", cancel, None)?;
     let mut members = fs::read_dir(&files)?.collect::<Result<Vec<_>, _>>()?;
     let root = match members.pop() {
         Some(member) if members.is_empty() && member.file_name() == "package" => member.path(),

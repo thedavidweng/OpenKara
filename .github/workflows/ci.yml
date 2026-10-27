@@ -839,6 +839,28 @@ jobs:
           $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
           cargo test -q --lib execution_provider
 
+      # Executes the runtime-archive extraction regression on Windows itself,
+      # not a cross-compile. The pinned executable is declared with `/`, while
+      # a Path renders with `\` here; comparing the rendered string dropped the
+      # executable and surfaced the generic invalid_package error on install.
+      - name: Verify source runtime archive extraction on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::tests::runtime_extract_matches_pinned_executable_by_component
+
+      # The installed-app smoke proves the packaged app installs and separates
+      # audio; it never touches the streaming-source host. This step is the
+      # real consumer acceptance for #579: the production trust root, the
+      # published signed index, the pinned Node ZIP extracted on Windows, and
+      # a live worker `describe` over the source protocol.
+      - name: Accept published streaming source on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          cargo test -q --test live_streaming_source_consumer -- --ignored --nocapture
+
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without
   # paying for the 3-platform matrix. Runs when frontend changed but rust
