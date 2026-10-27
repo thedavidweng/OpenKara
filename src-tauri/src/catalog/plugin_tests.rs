@@ -1,11 +1,18 @@
 use super::*;
-use crate::source_host::test_support::{fixture_manifest, FixtureDistribution, FixturePackage};
-use crate::source_host::SourceHost;
+use crate::source_host::test_support::{engine_fixture_manifest, RegistryFixture};
+use crate::source_host::{HostConfig, RuntimePolicy, SourceHost, SourceManifest};
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-fn workflow_package(id: &str, web: bool) -> FixturePackage {
-    let mut manifest = fixture_manifest(id, "1.0.0");
+const API_ORIGIN: &str = "https://api.streaming-fixture.test";
+const MEDIA_ROOT: &str = "https://raw.githubusercontent.com/thedavidweng/OpenKara/f439d2d94edff292b2f38b10bbe279a2e355e7dc/src-tauri/tests/fixtures/audio/fixture";
+
+/// One registry package built from the repo's single-file engine fixture: the
+/// web package gets the wider capability set, the plugin package the smaller.
+fn workflow_manifest(registry: &RegistryFixture, id: &str, web: bool) -> SourceManifest {
+    let mut manifest = engine_fixture_manifest(id, "1.0.0");
+    manifest.package_id = registry.package_id(id);
     manifest.name = if web {
         "Official fixture"
     } else {
@@ -24,6 +31,10 @@ fn workflow_package(id: &str, web: bool) -> FixturePackage {
         manifest
             .capabilities
             .extend(["search", "liked_tracks", "preview"].map(str::to_owned));
+    } else {
+        manifest
+            .capabilities
+            .retain(|capability| capability != "track_details");
     }
     manifest.requires_authentication = [
         "playlists",
@@ -38,37 +49,40 @@ fn workflow_package(id: &str, web: bool) -> FixturePackage {
             .requires_authentication
             .retain(|method| method != "media.resolve");
     }
-    if !web {
-        manifest
-            .capabilities
-            .retain(|capability| capability != "track_details");
-    }
+    manifest.resource_origins = vec![API_ORIGIN.into()];
     manifest.media_origins = vec!["https://raw.githubusercontent.com".into()];
-    manifest.resource_origins = vec!["https://raw.githubusercontent.com".into()];
-    FixturePackage {
-        manifest,
-        worker: include_str!("../../../fixtures/streaming-source/workflow-worker.mjs").into(),
-        revoked_versions: Vec::new(),
-    }
+    manifest
 }
-const MEDIA_ROOT: &str = "https://raw.githubusercontent.com/thedavidweng/OpenKara/f439d2d94edff292b2f38b10bbe279a2e355e7dc/src-tauri/tests/fixtures/audio/fixture";
+
+fn media_payload(url: &str) -> String {
+    json!({"media":{"url":url,"headers":{},"expires_at":null,"content_type":"audio/wav","file_extension":"wav","size_bytes":null,"duration_ms":1000,"bit_rate":null}}).to_string()
+}
 
 #[tokio::test]
-#[ignore = "requires explicitly prepared exact Node runtime in OPENKARA_SOURCE_TEST_NODE"]
 async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated() {
     let directory = tempfile::tempdir().expect("temporary data");
-    std::env::set_var(
-        "OPENKARA_TEST_CREDENTIAL_STORE_DIR",
-        directory.path().join("credentials"),
-    );
-    let mut distribution = FixtureDistribution::new().await;
-    distribution
-        .publish(vec![
-            workflow_package("official", true),
-            workflow_package("challenge", false),
+    let mut registry = RegistryFixture::new("test.registry").await;
+    registry
+        .publish(&[
+            workflow_manifest(&registry, "official", true),
+            workflow_manifest(&registry, "challenge", false),
         ])
         .await;
-    let mut config = distribution.config(directory.path().join("host"));
+    let mut api = mockito::Server::new_async().await;
+    for (id, suffix) in [("official", ""), ("challenge", "?source=challenge")] {
+        api.mock("GET", format!("/sources/{id}/media/1").as_str())
+            .with_header("content-type", "application/json")
+            .with_body(media_payload(&format!("{MEDIA_ROOT}.wav{suffix}")))
+            .create_async()
+            .await;
+    }
+    let mut config = HostConfig::fixture(
+        directory.path().join("host"),
+        "0.17.0".into(),
+        String::new(),
+        BTreeMap::new(),
+        RuntimePolicy::Downloaded,
+    );
     config.add_fixture_resource(
         format!("{MEDIA_ROOT}.wav"),
         vec!["93.184.216.34".parse().unwrap()],
@@ -96,12 +110,15 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         vec!["93.184.216.34".parse().unwrap()],
         second_audio.into_inner(),
     );
+    config.add_fixture_upstream(API_ORIGIN.into(), api.url());
     let host = SourceHost::new(config).await.expect("open real host");
-    assert_eq!(host.refresh().await.expect("verified discovery").len(), 2);
+    host.add_registry(&registry.url())
+        .await
+        .expect("add the fixture registry");
     for id in ["official", "challenge"] {
-        host.install(id, None)
+        host.install_package(registry.registry_id(), &registry.package_id(id), None)
             .await
-            .expect("actual signed install and handshake");
+            .expect("verified registry install and describe");
         host.set_enabled(id, true, false).await.expect("enable");
     }
     let cache = Arc::new(TrackMetadataCache::default());
@@ -132,17 +149,39 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         assert_eq!(challenge.request("auth.poll",json!({"challenge":start["challenge"]})).unwrap()["state"],"pending");
         let complete=challenge.request("auth.poll",json!({"challenge":start["challenge"]})).unwrap();
         assert_eq!(challenge.save_verified_session(&complete).unwrap().display_name.as_deref(),Some("Challenge fixture singer"));
+        let describe=tauri::async_runtime::block_on(worker_host.request("challenge","describe",json!({}))).unwrap();
+        assert_eq!(describe["storage_keys"],json!(["account_id"]),"the fixture keeps its sign-in in the host KV store");
+        let stale=tauri::async_runtime::block_on(worker_host.request("challenge","session.restore",json!({"credentials":{"opaque_session":"stale"}}))).unwrap_err();
+        assert_eq!(stale.code,"session_expired");
+        let describe=tauri::async_runtime::block_on(worker_host.request("challenge","describe",json!({}))).unwrap();
+        assert_eq!(describe["session"]["state"],"expired");
+        let start=challenge.request("auth.start",json!({"presentation":"text"})).unwrap();
+        assert_eq!(start["presentation"]["kind"],"text");
+        assert_eq!(challenge.request("auth.poll",json!({"challenge":start["challenge"]})).unwrap()["state"],"pending");
+        let complete=challenge.request("auth.poll",json!({"challenge":start["challenge"]})).unwrap();
+        assert_eq!(complete["state"],"complete");
+        assert!(challenge.save_verified_session(&complete).unwrap().signed_in);
+        tauri::async_runtime::block_on(worker_host.set_enabled("challenge",false,false)).unwrap();
+        tauri::async_runtime::block_on(worker_host.set_enabled("challenge",true,false)).unwrap();
+        let describe=tauri::async_runtime::block_on(worker_host.request("challenge","describe",json!({}))).unwrap();
+        assert_eq!(describe["session"]["state"],"signed_out","a fresh engine starts signed out");
+        assert_eq!(describe["storage_keys"],json!(["account_id"]),"the KV store survives an engine restart");
+        assert!(challenge.session().unwrap().signed_in,"the adapter restores the stored session");
         let first=official.playlist_tracks_page("42",None).unwrap();
         let other=challenge.playlist_tracks_page("42",None).unwrap();
         assert_eq!(first.tracks[0].remote_track_id,other.tracks[0].remote_track_id);
         assert_ne!(first.tracks[0].title,other.tracks[0].title);
         assert!(official.session().unwrap().signed_in);
         assert!(challenge.playlist_tracks_page("42",first.next_cursor.as_deref()).is_err());
-        assert_eq!(official.playlist_tracks_page("42",first.next_cursor.as_deref()).unwrap().tracks[0].remote_track_id,"3");
+        let second=official.playlist_tracks_page("42",first.next_cursor.as_deref()).unwrap();
+        assert_eq!(second.tracks[0].remote_track_id,"2");
+        assert_eq!(second.tracks[1].remote_track_id,"3");
+        assert_eq!(second.tracks[0].refusal.as_ref().unwrap().reason,ImportRefusalReason::TrialClip);
         assert!(challenge.search("public").is_err());
         assert!(official.tracks(&["missing".into()]).is_err());
         assert_eq!(metadata.get("official","1").unwrap().artist,"Official fixture artist");
         assert_eq!(metadata.get("challenge","1").unwrap().artist,"Challenge fixture artist");
+        match official.resolve("2",&NoResolveProgress).unwrap(){super::types::StreamingResolveOutcome::Refusal(refusal)=>assert_eq!(refusal.reason,ImportRefusalReason::TrialClip),_=>panic!("accepted refused media")};
         let preview=match official.preview("1").unwrap(){StreamingPreviewOutcome::Stream(resolved)=>resolved,_=>panic!("accepted preview")};
         let preview_lease=worker_host.acquire_work("official",crate::source_host::WorkKind::Preview).unwrap();
         tauri::async_runtime::block_on(async {
@@ -170,16 +209,18 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         assert!(worker_host.snapshot("official").unwrap().enabled);
         drop(lease);
         tauri::async_runtime::block_on(worker_host.set_enabled("official",false,false)).unwrap();
-        assert!(load_credentials(&root,"official",&worker_host.description("official").unwrap().owner_binding).unwrap().is_some());
+        let official_owner=worker_host.description("official").unwrap().owner_binding;
+        assert!(load_credentials(&root,"official",&official_owner).unwrap().is_some());
         tauri::async_runtime::block_on(worker_host.uninstall("official",false)).unwrap();
         assert_eq!(lookup_song_hash(&connection,&StreamingTrackIdentity{source:"official".into(),remote_track_id:"1".into()}).unwrap().as_deref(),Some(first.as_str()));
         assert_eq!(lookup_song_hash(&connection,&StreamingTrackIdentity{source:"challenge".into(),remote_track_id:"1".into()}).unwrap().as_deref(),Some(second.as_str()));
         assert!(load_credentials(&root,"official","other-owner/package").unwrap().is_none());
         challenge.sign_out().unwrap();
-        assert!(load_credentials(&root,"official",&worker_host.description("official").unwrap().owner_binding).unwrap().is_some());
+        assert!(load_credentials(&root,"official",&official_owner).unwrap().is_some());
         assert!(!challenge.session().unwrap().signed_in);
+        let describe=tauri::async_runtime::block_on(worker_host.request("challenge","describe",json!({}))).unwrap();
+        assert_eq!(describe["storage_keys"],json!([]),"sign-out clears the fixture KV entry");
     }).await.unwrap();
     assert!(host.snapshot("challenge").unwrap().enabled);
     assert!(cache.get("challenge", "1").is_some());
-    std::env::remove_var("OPENKARA_TEST_CREDENTIAL_STORE_DIR");
 }
