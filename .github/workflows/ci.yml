@@ -1040,7 +1040,7 @@ jobs:
     # 2026-10-22 that mirror slowed to ~50 kB/s and the install step alone
     # used up the whole job timeout (run 39801493440, both attempts).
     # The image tag must equal the playwright version in pnpm-lock.yaml
-    # (enforced by tests/ci/ci-workflow-contract.test.ts); bump both together.
+    # Bump both together.
     container:
       image: mcr.microsoft.com/playwright@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf # v1.64.1-noble
       # Chromium needs a larger /dev/shm than Docker's 64 MB default;

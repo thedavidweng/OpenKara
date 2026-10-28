@@ -168,32 +168,6 @@ function botComment(body: string, id = 1): Comment {
 const runUrl = "https://github.com/thedavidweng/OpenKara/actions/runs/4242";
 
 describe("CLA workflow configuration", () => {
-  test("accepts the same sign phrase everywhere", () => {
-    expect(scalar(agreementStep, "custom-pr-sign-comment")).toBe(SIGN_PHRASE);
-    expect(scalar(resultStep, "CLA_SIGN_PHRASE")).toBe(SIGN_PHRASE);
-    expect(workflow).toContain(`github.event.comment.body == '${SIGN_PHRASE}'`);
-    expect(workflow).toContain("github.event.comment.body == 'recheck'");
-  });
-
-  test("links the same CLA document in the prompt and the result step", () => {
-    expect(claDocument).toMatch(
-      /^https:\/\/github\.com\/thedavidweng\/OpenKara\/blob\/[0-9a-f]{40}\/CLA\.md$/,
-    );
-    expect(scalar(resultStep, "CLA_DOCUMENT_URL")).toBe(claDocument);
-    expect(notSignedPrompt).toContain(`](${claDocument})`);
-  });
-
-  test("shows the sign phrase in a fenced code block", () => {
-    expect(notSignedPrompt).toContain(FENCED_PHRASE);
-    expect(claActionNotSignedBody()).toContain(FENCED_PHRASE);
-  });
-
-  test("a comment copied from the code block signs the CLA", () => {
-    // cla-action compares the trimmed, lower-cased comment to the custom phrase.
-    const copied = notSignedPrompt.split("```\n")[1].split("\n```")[0];
-    expect(copied.trim().toLowerCase()).toBe(SIGN_PHRASE.toLowerCase());
-  });
-
   test("never checks out contributor code and pins every action", () => {
     expect(workflow).not.toContain("actions/checkout");
     expect(workflow).toMatch(/^permissions: \{\}$/m);

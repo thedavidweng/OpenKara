@@ -216,7 +216,6 @@ job in `.github/workflows/ci.yml` and `.github/workflows/packaging.yml`.
 - **Pure function:** no network or filesystem access beyond stdin — testable
   locally without GitHub API access
 - **Contract tests:** `tests/ci/classify-changes.test.ts`
-- **Drift tests:** `tests/ci/ci-workflow-contract.test.ts`
 - **Run:** `node scripts/ci/classify-changes.mjs --files <paths> --event pull_request`
 
 ## `generate-mock-songs.mjs`

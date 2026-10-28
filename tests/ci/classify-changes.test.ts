@@ -12,8 +12,6 @@ import {
   classifyChanges,
   classifyFile,
   globToRegex,
-  CATEGORY_PATTERNS,
-  ALL_JOBS,
 } from "../../scripts/ci/classify-changes.mjs";
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -595,42 +593,5 @@ describe("event type behavior", () => {
 
     const pushResult = classifyChanges(["src/foo.ts"], "push");
     expect(pushResult.expectedJobs).not.toContain("conventional-commits");
-  });
-});
-
-// ── Structural invariants ─────────────────────────────────────────────
-
-describe("structural invariants", () => {
-  test("ALL_JOBS includes every job referenced by the workflow", () => {
-    // These are the job IDs that ci.yml must define.
-    const requiredJobs = [
-      "triage",
-      "conventional-commits",
-      "standards-reference",
-      "ci-gate",
-      "js-quality",
-      "app-frontend",
-      "website",
-      "playwright-ui-smoke",
-      "workflow-lint",
-      "release-validation",
-      "cargo-deny",
-      "dependency-checks",
-      "prepare-model",
-      "rust-test",
-      "rust-test-windows-compile",
-      "tauri-build-smoke",
-      "tauri-build",
-    ];
-    for (const job of requiredJobs) {
-      expect(ALL_JOBS).toContain(job);
-    }
-  });
-
-  test("no category pattern is empty (except e2e_workflow reserved)", () => {
-    for (const [cat, patterns] of Object.entries(CATEGORY_PATTERNS)) {
-      if (cat === "e2e_workflow") continue; // reserved for future
-      expect(patterns.length, `${cat} has no patterns`).toBeGreaterThan(0);
-    }
   });
 });

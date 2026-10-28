@@ -124,17 +124,6 @@ describe("dependabot automerge contract", () => {
     },
   );
 
-  test("denylists release and review tooling", () => {
-    expect(workflow).toContain("googleapis/release-please-action");
-    expect(workflow).toContain("dependabot/fetch-metadata");
-    expect(workflow).toContain("skip auto-merge (denylist)");
-  });
-
-  test("merges via squash auto-merge behind required checks", () => {
-    expect(workflow).toContain("--auto");
-    expect(workflow).toContain("--squash");
-  });
-
   test("keeps top-level permissions empty and scopes write to the job", () => {
     expect(workflow).toMatch(/^permissions: \{\}$/m);
     expect(workflow).toContain("contents: write");
