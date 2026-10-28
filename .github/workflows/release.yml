@@ -108,7 +108,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false # Release workflow: disable cache to prevent poisoning.
 
       - name: Resolve or build candidate Nightly evidence
@@ -540,7 +540,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false # release workflow: disable cache to prevent poisoning
 
       - name: Setup pnpm
@@ -691,7 +691,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false
 
       - name: Download Windows smoke artifacts
@@ -867,7 +867,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false # release workflow: disable cache to prevent poisoning
 
       # Distinct output directories and artifact names, so the two renders

@@ -200,7 +200,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false
 
       # Model identity comes from the pinned catalog snapshot
@@ -287,7 +287,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
 
       - name: Verify standards route
         run: node --run check:standards
@@ -313,7 +313,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -369,7 +369,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -465,7 +465,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -548,7 +548,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -592,7 +592,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false
 
       - name: ort C API level vs catalog runtimes
@@ -638,7 +638,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           package-manager-cache: false
 
       - name: Setup Rust
@@ -819,7 +819,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -909,7 +909,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true
@@ -1062,7 +1062,7 @@ jobs:
       - name: Setup Vite+ and Node.js
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: 26.12.1
+          node-version: lts/*
           version: 1.4.0
           run-install: false
           cache: true

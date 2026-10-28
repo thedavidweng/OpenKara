@@ -5,7 +5,6 @@
 javascript:
   - changed-files:
       - any-glob-to-any-file:
-          - ".node-version"
           - "mise.toml"
           - "src/**"
           - "vite.config.ts"
