@@ -77,7 +77,6 @@
     "@vitest/coverage-v8": "catalog:",
     "jsdom": "30.1.3",
     "knip": "^6.43.0",
-    "lefthook": "^2.2.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "catalog:",

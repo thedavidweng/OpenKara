@@ -7,7 +7,7 @@ Thanks for your interest in contributing.
 ```bash
 git clone https://github.com/thedavidweng/OpenKara.git
 cd OpenKara
-mise install        # install tools pinned in mise.toml
+mise install        # install tools and hk Git hooks
 pnpm install
 ./scripts/setup.sh  # download the separation model and ONNX Runtime for local dev
 ```
@@ -21,9 +21,10 @@ pnpm tauri build    # release bundle
 
 ## Checks
 
-Git hooks run most of these for you. `pre-commit` formats the staged files
-and runs knip. `pre-push` runs the format check, the lint, knip, and patch
-coverage. Run the rest before you open a pull request.
+hk manages Git hooks via mise. `mise install` installs them. `pre-commit`
+formats staged files and runs knip. The mandatory `pre-push` gate runs format,
+Rust format, lint, knip, standards, and patch coverage checks. Never push with
+`--no-verify` or set `HK=0`. Run the rest before you open a pull request.
 
 ```bash
 node --run lint                                  # frontend lint

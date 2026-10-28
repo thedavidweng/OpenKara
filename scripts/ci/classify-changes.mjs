@@ -78,7 +78,7 @@ const CATEGORY_PATTERNS = {
     "tsconfig.app.json",
     "knip.json",
     "pnpm-workspace.yaml",
-    "lefthook.yml",
+    "hk.pkl",
     "codecov.yml",
     ".coderabbit.yaml",
     "scripts/check-i18n.mjs",

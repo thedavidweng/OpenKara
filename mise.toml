@@ -1,3 +1,8 @@
 [tools]
+hk = "2.9.0"
 node = "lts"
 pnpm = "12.15.0"
+rust = "1.99.1"
+
+[hooks]
+postinstall = "hk install --mise"

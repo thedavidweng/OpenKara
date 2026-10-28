@@ -8,11 +8,11 @@
 # teaches people to reach for --no-verify, which is the habit these gates
 # exist to prevent. A push that deletes AND updates refs still runs the gates.
 #
-# lefthook must pass `use_stdin: true` for the ref lines to arrive here. Empty
+# hk must pass `hook_stdin` for the ref lines to arrive here. Empty
 # stdin therefore runs the gates: if that wiring is ever lost, the failure
 # mode must be "gates run unnecessarily", never "gates silently skipped".
 #
-# Usage (from lefthook.yml): sh scripts/git-hooks/skip-delete-only-push.sh '<command>'
+# Usage (from hk.pkl): sh scripts/git-hooks/skip-delete-only-push.sh '<command>'
 
 ZERO_SHA=0000000000000000000000000000000000000000
 

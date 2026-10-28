@@ -9,14 +9,12 @@ overrides:
 
 onlyBuiltDependencies:
   - esbuild
-  - lefthook
 
 patchedDependencies:
   "@romanize/korean@0.1.3": patches/@romanize__korean@0.1.3.patch
 
 allowBuilds:
   esbuild: true
-  lefthook: true
 
 minimumReleaseAgeExclude:
   - lyric-romanizer@0.3.1
