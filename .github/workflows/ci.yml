@@ -813,11 +813,10 @@ jobs:
   # did not (pure frontend, deps_js, or frontend_tooling).
   tauri-build-smoke:
     name: Tauri build (Linux smoke)
-    needs: [triage, app-frontend]
+    needs: triage
     if: |
       !cancelled() &&
-      needs.triage.outputs.run_tauri-build-smoke == 'true' &&
-      needs.app-frontend.result != 'failure'
+      needs.triage.outputs.run_tauri-build-smoke == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
@@ -893,33 +892,12 @@ jobs:
         run: bash scripts/ci/build-backend-without-node.sh
 
   # Full 3-platform Tauri build for Rust/deps/workflows/unknown changes.
-  # Waits for cheap checks (dependency-checks, windows-compile) before
-  # starting the expensive matrix so failures surface faster.
   tauri-build:
     name: Tauri build (${{ matrix.name }})
-    needs:
-      [
-        triage,
-        app-frontend,
-        rust-test,
-        cargo-deny,
-        dependency-checks,
-        rust-test-windows-compile,
-      ]
-    # Use !cancelled() so the job can run even when some upstream jobs were
-    # skipped (e.g. a rust-only PR skips app-frontend, but tauri-build still
-    # needs to verify the Rust side compiles into a Tauri bundle).
-    # The result != 'failure' guards ensure we don't build on top of a
-    # failed dependency. Only runs for rust/deps/unknown —
-    # frontend-only PRs use tauri-build-smoke (Linux) instead.
+    needs: triage
     if: |
       !cancelled() &&
-      needs.triage.outputs.run_tauri-build == 'true' &&
-      needs.app-frontend.result != 'failure' &&
-      needs.rust-test.result != 'failure' &&
-      needs.cargo-deny.result != 'failure' &&
-      needs.dependency-checks.result != 'failure' &&
-      needs.rust-test-windows-compile.result != 'failure'
+      needs.triage.outputs.run_tauri-build == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
