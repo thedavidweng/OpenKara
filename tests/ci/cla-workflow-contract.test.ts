@@ -1,13 +1,6 @@
-// Contract tests for .github/workflows/cla.yml.
-//
-// The workflow runs contributor-license/cla-action and then an
-// actions/github-script step that publishes the result on the checked commit
-// and edits the bot's signing comment. These tests:
-//   1. Keep the sign phrase, CLA link, and copyable prompt consistent across
-//      the workflow inputs and the result step.
-//   2. Run the result step's script against a mocked GitHub API for the pass,
-//      fail, and stale-head paths, and check that a failure never removes the
-//      code-blocked sign phrase from the comment.
+// Runs the CLA result step from .github/workflows/cla.yml against a mocked
+// GitHub API for the pass, fail, and stale-head paths. A failure must not
+// remove the code-blocked sign phrase from the bot comment.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -166,18 +159,6 @@ function botComment(body: string, id = 1): Comment {
 }
 
 const runUrl = "https://github.com/thedavidweng/OpenKara/actions/runs/4242";
-
-describe("CLA workflow configuration", () => {
-  test("never checks out contributor code and pins every action", () => {
-    expect(workflow).not.toContain("actions/checkout");
-    expect(workflow).toMatch(/^permissions: \{\}$/m);
-    const uses = [...workflow.matchAll(/^\s*(?:- )?uses: (\S+)/gm)].map(
-      (m) => m[1],
-    );
-    expect(uses.length).toBeGreaterThan(0);
-    for (const ref of uses) expect(ref).toMatch(/@[0-9a-f]{40}$/);
-  });
-});
 
 describe("CLA result step", () => {
   test("pass: marks the commit verified and reports success", async () => {

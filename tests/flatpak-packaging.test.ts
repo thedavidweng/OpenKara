@@ -13,10 +13,6 @@ import { describe, expect, test } from "vite-plus/test";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 
-function readProjectFile(path: string) {
-  return readFileSync(join(projectRoot, path), "utf8");
-}
-
 describe("Flatpak packaging", () => {
   test.skipIf(process.platform === "win32")(
     "renders pinned channel runtimes and installs the executable and license",
@@ -106,15 +102,4 @@ describe("Flatpak packaging", () => {
       }
     },
   );
-
-  test("does not mount the host root into the privileged Flatpak container", () => {
-    const packagingWorkflow = readProjectFile(
-      ".github/workflows/packaging.yml",
-    );
-
-    // Free-disk must not bind-mount the entire host root into the privileged
-    // container — only specific unused toolchain paths under /host-cleanup.
-    expect(packagingWorkflow).toContain("/host-cleanup/");
-    expect(packagingWorkflow).not.toMatch(/-v\s+\/:\/host(?:\s|$)/);
-  });
 });

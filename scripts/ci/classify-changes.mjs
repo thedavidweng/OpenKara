@@ -131,7 +131,6 @@ const CATEGORY_PATTERNS = {
     "scripts/ci/**/*.mjs",
     "scripts/check-standards.mjs",
     "tests/ci/**",
-    "tests/workflow-security.test.ts",
     "scripts/check-patch-coverage.mjs",
   ],
 
