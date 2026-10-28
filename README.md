@@ -311,7 +311,7 @@ filter such as `OPENKARA_LOG=openkara_lib=trace,warn`).
 ### Setup
 
 ```bash
-nvm use          # or fnm use — reads .nvmrc / .node-version
+mise install     # Node (latest LTS) and pnpm from mise.toml
 pnpm install
 ./scripts/setup.sh          # download Demucs ONNX model to src-tauri/models/
 pnpm tauri dev               # start dev server with hot reload

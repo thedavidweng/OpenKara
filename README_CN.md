@@ -261,7 +261,7 @@ OpenKara 会写入滚动日志文件（默认 info 级别，错误必录），�
 ### 环境搭建
 
 ```bash
-nvm use          # 或 fnm use — 读取 .nvmrc / .node-version
+mise install     # 按 mise.toml 安装 Node（最新 LTS）和 pnpm
 pnpm install
 ./scripts/setup.sh          # 下载 Demucs ONNX 模型到 src-tauri/models/
 pnpm tauri dev               # 启动开发服务器（支持热更新）
