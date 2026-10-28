@@ -55,9 +55,14 @@ describe("Playwright flaky report", () => {
       }),
     );
     const summary = join(dir, "summary.md");
+    // node -p colorizes numbers when FORCE_COLOR is set, which this shell
+    // and the pre-push hook inherit. The report text is what the step writes.
+    const env = { ...process.env, GITHUB_STEP_SUMMARY: summary };
+    delete env.FORCE_COLOR;
+    delete env.NO_COLOR;
     const result = spawnSync("bash", ["-e", "-c", script], {
       cwd: dir,
-      env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+      env,
     });
     const output = result.stdout.toString() + result.stderr.toString();
     expect(result.status, output).toBe(0);
