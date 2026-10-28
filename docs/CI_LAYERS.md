@@ -34,9 +34,9 @@ WebKit, forced-colors, 400% zoom, and locale expansion stay on Nightly.
 
 ## Main push
 
-CI Gate accepts skipped verification jobs. Require branches to be up to date
-before merging so the PR checks cover the merge result. Manual
-`workflow_dispatch` still forces full CI.
+CI Gate accepts skipped verification jobs. PR checks run on the merge ref
+against the latest `main`, so a conflict between two merged PRs fails the next
+PR's CI. Manual `workflow_dispatch` still forces full CI.
 
 ## Nightly
 
