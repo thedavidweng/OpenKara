@@ -8,7 +8,7 @@ the full Nightly matrix on every PR or every main push.
 | Layer     | Goal                               | Wall-clock target |
 | --------- | ---------------------------------- | ----------------- |
 | PR        | Fast feedback on the change set    | 10–20 minutes     |
-| Main push | Path-aware integration after merge | 10–15 minutes     |
+| Main push | CI Gate only                       | Under 1 minute    |
 | Nightly   | Full release quality matrix        | 1–2 hours         |
 | Release   | Signed product + Windows #284 core | 30–45 minutes     |
 
@@ -34,8 +34,9 @@ WebKit, forced-colors, 400% zoom, and locale expansion stay on Nightly.
 
 ## Main push
 
-Same path-aware classifier as PR. A docs-only merge does not rebuild every
-platform. Manual `workflow_dispatch` still forces full CI.
+CI Gate accepts skipped verification jobs. Require branches to be up to date
+before merging so the PR checks cover the merge result. Manual
+`workflow_dispatch` still forces full CI.
 
 ## Nightly
 
@@ -83,7 +84,7 @@ These concentrate on the Windows installed-app and fault-recovery path.
 
 ## Related files
 
-- `scripts/ci/classify-changes.mjs` — PR / main path gates
+- `scripts/ci/classify-changes.mjs` — PR path gates
 - `.github/workflows/ci.yml` — PR and main
 - `.github/workflows/nightly-hardening.yml` — full matrix
 - `.github/workflows/nightly-installers.yml` — rolling nightly prerelease

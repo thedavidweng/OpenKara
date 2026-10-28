@@ -181,7 +181,8 @@ describe("CI workflow drift protection", () => {
 
   test("workflow lint runs without a path or triage dependency", () => {
     const lintJob = ciYaml.split("  workflow-lint:\n")[1].split("\n  #")[0];
-    expect(lintJob).not.toMatch(/^    (if|needs):/m);
+    expect(lintJob).not.toMatch(/^    needs:/m);
+    expect(lintJob).toContain("if: github.event_name != 'push'");
   });
 
   test("ci-gate rejects skipped workflow lint on a docs-only PR", () => {
@@ -190,6 +191,7 @@ describe("CI workflow drift protection", () => {
     for (const status of ["success", "failure", "cancelled", "skipped"]) {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
+        EVENT_NAME: "pull_request",
         EXPECTED_JOBS: JSON.stringify(classification.expectedJobs),
         UNKNOWN_FLAG: "false",
         WORKFLOW_LINT: status,
@@ -206,6 +208,20 @@ describe("CI workflow drift protection", () => {
         result.stdout.toString() + result.stderr.toString(),
       ).toBe(status === "success" ? 0 : 1);
     }
+  });
+
+  test("ci-gate accepts only skipped jobs on push", () => {
+    const gate = ciYaml.split("  ci-gate:")[1].split("        run: |\n")[1];
+    const env: NodeJS.ProcessEnv = { ...process.env, EVENT_NAME: "push" };
+    for (const job of ALL_JOBS) {
+      if (job !== "ci-gate")
+        env[job.replaceAll("-", "_").toUpperCase()] = "skipped";
+    }
+    env.EXPECTED_JOBS = "";
+    env.UNKNOWN_FLAG = "";
+    expect(spawnSync("bash", ["-c", gate], { env }).status).toBe(0);
+    env.RUST_TEST = "failure";
+    expect(spawnSync("bash", ["-c", gate], { env }).status).toBe(1);
   });
 
   test("prepare-model does not run for frontend-only or docs-only changes", () => {

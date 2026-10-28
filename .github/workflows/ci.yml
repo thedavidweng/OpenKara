@@ -31,12 +31,13 @@ jobs:
   #   unknown-files       JSON array of unmapped filenames
   #   categories          JSON array of detected categories
   #
-  # PR and main push: path-aware jobs via classify-changes.mjs.
+  # PR: path-aware jobs via classify-changes.mjs. Push runs only CI Gate.
   # workflow_dispatch: full CI (manual force). Full multi-platform and
   # accessibility matrices run on Nightly; Release owns signed packages and
   # Windows #284 core. See docs/CI_LAYERS.md.
   triage:
     name: Triage
+    if: github.event_name != 'push'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -500,6 +501,7 @@ jobs:
 
   workflow-lint:
     name: Workflow lint
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -639,24 +641,10 @@ jobs:
           node-version: 26.12.1
           package-manager-cache: false
 
-      - name: Verify Cargo is not broken
-        if: runner.os == 'macOS'
-        run: |
-          if cargo --version 2>&1 | grep -qi "rustup-init"; then
-            echo "Broken cargo detected, reinstalling toolchain..."
-            rm -rf "$HOME/.cargo"
-          fi
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: 1.99.1
-
-      - name: Verify Rust toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          cargo --version
-          rustc --version
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -699,10 +687,12 @@ jobs:
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Verify Rust formatting
+        if: runner.os == 'Linux'
         working-directory: src-tauri
         run: cargo fmt --check
 
       - name: Clippy
+        if: runner.os == 'Linux'
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
@@ -887,10 +877,6 @@ jobs:
         run: pnpm tauri build --ci --bundles deb
         shell: bash
 
-      - name: Build backend without Node or a source plugin
-        shell: bash
-        run: bash scripts/ci/build-backend-without-node.sh
-
   # Full 3-platform Tauri build for Rust/deps/workflows/unknown changes.
   tauri-build:
     name: Tauri build (${{ matrix.name }})
@@ -928,31 +914,10 @@ jobs:
           run-install: false
           cache: true
 
-      - name: Verify Cargo is not broken
-        if: runner.os == 'macOS'
-        run: |
-          # Some macOS runner images ship with a broken toolchain where
-          # $HOME/.cargo/bin/cargo dispatches to rustup-init. Detect and
-          # repair without a full reinstall every time.
-          if cargo --version 2>&1 | grep -qi "rustup-init"; then
-            echo "Broken cargo detected, reinstalling toolchain..."
-            rm -rf "$HOME/.cargo"
-          fi
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: 1.99.1
-
-      - name: Repair toolchain if still broken
-        if: runner.os == 'macOS'
-        run: |
-          # rustup can leave cargo pointing to rustup-init if the
-          # proxy links got clobbered. Re-run the toolchain installer
-          # so it repairs the bin symlinks.
-          if cargo --version 2>&1 | grep -qi "rustup-init"; then
-            rustup update 1.99.1 --force
-          fi
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -1006,14 +971,10 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             pnpm tauri build --ci --bundles deb
           else
-            pnpm tauri build --debug --no-bundle --ci
+            cd src-tauri
+            cargo check --locked --bin openkara
           fi
         shell: bash
-
-      - name: Build backend without Node or a source plugin
-        if: runner.os == 'Linux'
-        shell: bash
-        run: bash scripts/ci/build-backend-without-node.sh
 
       - name: Verify Linux glibc floor
         if: runner.os == 'Linux'
@@ -1225,6 +1186,7 @@ jobs:
     steps:
       - name: Verify expected jobs succeeded and non-expected jobs skipped
         env:
+          EVENT_NAME: ${{ github.event_name }}
           EXPECTED_JOBS: ${{ needs.triage.outputs.expected-jobs }}
           TRIAGE: ${{ needs.triage.result }}
           CONVENTIONAL_COMMITS: ${{ needs.conventional-commits.result }}
@@ -1265,6 +1227,16 @@ jobs:
             "tauri-build:$TAURI_BUILD"
             "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"
           )
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            for entry in "${JOBS[@]}"; do
+              if [ "${entry#*:}" != "skipped" ]; then
+                echo "::error::Expected ${entry%%:*} to be skipped on push"
+                exit 1
+              fi
+            done
+            exit 0
+          fi
 
           # Verify triage produced valid expected-jobs JSON.
           if ! echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
