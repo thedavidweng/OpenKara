@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.19.0](https://github.com/thedavidweng/OpenKara/compare/v0.18.2...v0.19.0) (2026-10-29)
+
+
+### Features
+
+* sandboxed streaming sources, remote repository core, faster build and CI (specs [#589](https://github.com/thedavidweng/OpenKara/issues/589)/[#590](https://github.com/thedavidweng/OpenKara/issues/590)/[#591](https://github.com/thedavidweng/OpenKara/issues/591)) ([#629](https://github.com/thedavidweng/OpenKara/issues/629)) ([59d9d9c](https://github.com/thedavidweng/OpenKara/commit/59d9d9c72e040c4b2bee4e3ed5494b57deb34b96))
+
+
+### Bug Fixes
+
+* **playback:** keep the lyric clock on the stem sample rate ([#631](https://github.com/thedavidweng/OpenKara/issues/631)) ([f405d0e](https://github.com/thedavidweng/OpenKara/commit/f405d0ef50af275010633f01d58d55d686287c9b))
+
 ## [0.18.2](https://github.com/thedavidweng/OpenKara/compare/v0.18.1...v0.18.2) (2026-10-26)
 
 
