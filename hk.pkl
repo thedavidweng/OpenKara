@@ -1,0 +1,54 @@
+amends "package://github.com/jdx/hk/releases/download/v2.9.0/hk@2.9.0#/Config.pkl"
+
+fail_fast = false
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    steps {
+      ["oxfmt"] {
+        glob = "*.{ts,tsx,js,jsx,mjs,cjs,json,css,md,html,yml,yaml}"
+        exclude = List("pnpm-lock.yaml", "src-tauri/**")
+        fix = "sh -c '[ $# -eq 0 ] || pnpm exec vp fmt \"$@\"' -- {{files}}"
+      }
+      ["cargo-fmt"] {
+        glob = "*.rs"
+        fix = "cd src-tauri && cargo fmt"
+        stage = "*.rs"
+      }
+      ["knip"] {
+        glob = "*.{ts,tsx,js,jsx,mjs,cjs,json}"
+        exclude = List("pnpm-lock.yaml", "src-tauri/**")
+        check = "pnpm knip --no-progress"
+      }
+    }
+  }
+  ["pre-push"] {
+    steps {
+      ["format-check"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run format'"
+      }
+      ["cargo-fmt-check"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'cd src-tauri && cargo fmt --check'"
+      }
+      ["lint"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run lint'"
+      }
+      ["knip"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm knip --no-progress'"
+      }
+      ["standards-route"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:standards'"
+      }
+      ["patch-coverage"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm test:coverage && pnpm check:patch-coverage'"
+      }
+    }
+  }
+}

@@ -5,12 +5,12 @@ the full Nightly matrix on every PR or every main push.
 
 ## Layer goals
 
-| Layer     | Goal                                          | Wall-clock target |
-| --------- | --------------------------------------------- | ----------------- |
-| PR        | Fast feedback on the change set               | < 10 minutes      |
-| Main push | Path-aware platform and packaging integration | 15–30 minutes     |
-| Nightly   | Full release quality matrix                   | 1–2 hours         |
-| Release   | Signed product + Windows #284 core            | 30–45 minutes     |
+| Layer     | Goal                               | Wall-clock target |
+| --------- | ---------------------------------- | ----------------- |
+| PR        | Fast feedback on the change set    | 10–20 minutes     |
+| Main push | CI Gate only                       | Under 1 minute    |
+| Nightly   | Full release quality matrix        | 1–2 hours         |
+| Release   | Signed product + Windows #284 core | 30–45 minutes     |
 
 ## PR
 
@@ -35,11 +35,10 @@ the path-matched heavy jobs before merge:
 
 ## Main push
 
-Uses `scripts/ci/classify-changes.mjs` with heavy jobs enabled. Main push runs
-the fast job set and the path-matched heavy jobs (Tauri builds, Playwright UI
-smoke, macOS Rust tests, Windows Rust compile, packaging, and the Windows
-installed-app gate). A docs-only merge still skips heavy jobs. Nightly
-`schedule` and manual `workflow_dispatch` force the full heavy job set.
+Main push runs CI Gate only: the gate accepts skipped verification jobs.
+PR checks run on the merge ref against the latest `main`, so a conflict
+between two merged PRs fails the next PR's CI. Manual `workflow_dispatch`
+still forces full CI.
 
 A red `main` push or `schedule` run opens or comments on the open
 `CI failure on main/nightly` tracking issue (`bug` label) with links to the
@@ -92,7 +91,7 @@ These concentrate on the Windows installed-app and fault-recovery path.
 
 ## Related files
 
-- `scripts/ci/classify-changes.mjs` — PR / main path gates
+- `scripts/ci/classify-changes.mjs` — PR path gates (main push runs CI Gate only)
 - `.github/workflows/ci.yml` — PR, main, schedule, and dispatch
 - `.github/workflows/packaging.yml` — WinGet and Flatpak packaging gate
 - `.github/workflows/windows-installed-app-smoke-test.yml` — branch Windows installed-app gate

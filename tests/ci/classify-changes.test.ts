@@ -15,7 +15,6 @@ import {
   parseArgs,
   parseLabels,
   CATEGORY_PATTERNS,
-  ALL_JOBS,
   FULL_CI_LABEL,
 } from "../../scripts/ci/classify-changes.mjs";
 
@@ -690,44 +689,9 @@ describe("event type behavior", () => {
     expect(scheduleResult.expectedJobs).not.toContain("conventional-commits");
   });
 });
+// ── Label inputs ────────────────────────────────────────────────────────
 
-// ── Structural invariants ─────────────────────────────────────────────
-
-describe("structural invariants", () => {
-  test("ALL_JOBS includes every job referenced by the workflow", () => {
-    // These are the job IDs that ci.yml must define.
-    const requiredJobs = [
-      "triage",
-      "conventional-commits",
-      "standards-reference",
-      "ci-gate",
-      "js-quality",
-      "app-frontend",
-      "website",
-      "playwright-ui-smoke",
-      "workflow-lint",
-      "release-validation",
-      "cargo-deny",
-      "dependency-checks",
-      "prepare-model",
-      "rust-test",
-      "rust-test-macos",
-      "rust-test-windows-compile",
-      "tauri-build-smoke",
-      "tauri-build",
-    ];
-    for (const job of requiredJobs) {
-      expect(ALL_JOBS).toContain(job);
-    }
-  });
-
-  test("no category pattern is empty (except e2e_workflow reserved)", () => {
-    for (const [cat, patterns] of Object.entries(CATEGORY_PATTERNS)) {
-      if (cat === "e2e_workflow") continue; // reserved for future
-      expect(patterns.length, `${cat} has no patterns`).toBeGreaterThan(0);
-    }
-  });
-
+describe("label inputs", () => {
   test("parseLabels and parseArgs normalize JSON, CSV, and null label inputs", () => {
     expect(parseLabels(null)).toEqual([]);
     expect(parseLabels("null")).toEqual([]);

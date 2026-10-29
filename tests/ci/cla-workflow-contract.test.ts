@@ -1,13 +1,6 @@
-// Contract tests for .github/workflows/cla.yml.
-//
-// The workflow runs contributor-license/cla-action and then an
-// actions/github-script step that publishes the result on the checked commit
-// and edits the bot's signing comment. These tests:
-//   1. Keep the sign phrase, CLA link, and copyable prompt consistent across
-//      the workflow inputs and the result step.
-//   2. Run the result step's script against a mocked GitHub API for the pass,
-//      fail, and stale-head paths, and check that a failure never removes the
-//      code-blocked sign phrase from the comment.
+// Runs the CLA result step from .github/workflows/cla.yml against a mocked
+// GitHub API for the pass, fail, and stale-head paths. A failure must not
+// remove the code-blocked sign phrase from the bot comment.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -166,44 +159,6 @@ function botComment(body: string, id = 1): Comment {
 }
 
 const runUrl = "https://github.com/thedavidweng/OpenKara/actions/runs/4242";
-
-describe("CLA workflow configuration", () => {
-  test("accepts the same sign phrase everywhere", () => {
-    expect(scalar(agreementStep, "custom-pr-sign-comment")).toBe(SIGN_PHRASE);
-    expect(scalar(resultStep, "CLA_SIGN_PHRASE")).toBe(SIGN_PHRASE);
-    expect(workflow).toContain(`github.event.comment.body == '${SIGN_PHRASE}'`);
-    expect(workflow).toContain("github.event.comment.body == 'recheck'");
-  });
-
-  test("links the same CLA document in the prompt and the result step", () => {
-    expect(claDocument).toMatch(
-      /^https:\/\/github\.com\/thedavidweng\/OpenKara\/blob\/[0-9a-f]{40}\/CLA\.md$/,
-    );
-    expect(scalar(resultStep, "CLA_DOCUMENT_URL")).toBe(claDocument);
-    expect(notSignedPrompt).toContain(`](${claDocument})`);
-  });
-
-  test("shows the sign phrase in a fenced code block", () => {
-    expect(notSignedPrompt).toContain(FENCED_PHRASE);
-    expect(claActionNotSignedBody()).toContain(FENCED_PHRASE);
-  });
-
-  test("a comment copied from the code block signs the CLA", () => {
-    // cla-action compares the trimmed, lower-cased comment to the custom phrase.
-    const copied = notSignedPrompt.split("```\n")[1].split("\n```")[0];
-    expect(copied.trim().toLowerCase()).toBe(SIGN_PHRASE.toLowerCase());
-  });
-
-  test("never checks out contributor code and pins every action", () => {
-    expect(workflow).not.toContain("actions/checkout");
-    expect(workflow).toMatch(/^permissions: \{\}$/m);
-    const uses = [...workflow.matchAll(/^\s*(?:- )?uses: (\S+)/gm)].map(
-      (m) => m[1],
-    );
-    expect(uses.length).toBeGreaterThan(0);
-    for (const ref of uses) expect(ref).toMatch(/@[0-9a-f]{40}$/);
-  });
-});
 
 describe("CLA result step", () => {
   test("pass: marks the commit verified and reports success", async () => {

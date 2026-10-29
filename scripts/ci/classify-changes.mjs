@@ -8,8 +8,7 @@
 // (`run_<job>`) in `if:` conditionals. CI Gate consumes `expected-jobs` to
 // verify that every expected job ran and every non-expected job was skipped.
 //
-// Contract tests live in tests/ci/classify-changes.test.ts. Drift-protection
-// tests that parse ci.yml live in tests/ci/ci-workflow-contract.test.ts.
+// Contract tests live in tests/ci/classify-changes.test.ts.
 //
 // CLI usage:
 //   node scripts/ci/classify-changes.mjs --files <newline-separated-paths> --event pull_request
@@ -79,7 +78,7 @@ const CATEGORY_PATTERNS = {
     "tsconfig.app.json",
     "knip.json",
     "pnpm-workspace.yaml",
-    "lefthook.yml",
+    "hk.pkl",
     "codecov.yml",
     ".coderabbit.yaml",
     "scripts/check-i18n.mjs",
@@ -137,7 +136,6 @@ const CATEGORY_PATTERNS = {
     "scripts/ci/**/*.mjs",
     "scripts/check-standards.mjs",
     "tests/ci/**",
-    "tests/workflow-security.test.ts",
     "scripts/check-patch-coverage.mjs",
   ],
 
@@ -195,7 +193,6 @@ const CATEGORY_PATTERNS = {
     "scripts/generate-flatpak-node-sources.mjs",
     "scripts/clean-macos-bundle.mjs",
     "tests/flatpak-packaging.test.ts",
-    "tests/onnx-runtime-packaging.test.ts",
     "tests/tauri-config.test.ts",
   ],
 
