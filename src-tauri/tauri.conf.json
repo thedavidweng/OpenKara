@@ -36,6 +36,8 @@
   "bundle": {
     "active": true,
     "publisher": "thedavidweng",
+    "license": "AGPL-3.0-only",
+    "licenseFile": "../LICENSE",
     "targets": [
       "app",
       "dmg",
