@@ -76,6 +76,46 @@ async fn the_first_launch_marks_node_installs_as_needing_replacement_and_deletes
 }
 
 #[tokio::test]
+async fn retirement_leaves_unregistered_and_unknown_manifest_directories_alone() {
+    let root = tempfile::tempdir().unwrap();
+    let data_root = root.path().join("streaming-sources");
+    let node = seed_node_install(&data_root);
+    let packages = data_root.join("packages");
+
+    // Unregistered: a directory with no manifest at all.
+    let unregistered = packages.join("unregistered-work");
+    fs::create_dir_all(&unregistered).unwrap();
+    fs::write(unregistered.join("precious.txt"), b"user data").unwrap();
+    // Unknown manifest: parses, but names no known runtime.
+    let unknown_manifest = packages.join("unknown-manifest-work");
+    fs::create_dir_all(&unknown_manifest).unwrap();
+    fs::write(
+        unknown_manifest.join("manifest.json"),
+        br#"{"runtime":{"kind":"quantum"},"entry":"worker.mjs"}"#,
+    )
+    .unwrap();
+    fs::write(unknown_manifest.join("precious.txt"), b"user data").unwrap();
+
+    let _host = SourceHost::new(config(root.path())).await.unwrap();
+
+    for package in &node.packages {
+        assert!(!package.exists(), "Node package trees are deleted");
+    }
+    assert!(
+        fs::read(unregistered.join("precious.txt")).is_ok(),
+        "an unregistered directory under the sources root must be left alone"
+    );
+    assert!(
+        fs::read(unknown_manifest.join("precious.txt")).is_ok(),
+        "an unknown-manifest directory under the sources root must be left alone"
+    );
+    assert!(
+        unknown_manifest.join("manifest.json").exists(),
+        "an unknown manifest must not be rewritten or removed"
+    );
+}
+
+#[tokio::test]
 async fn the_migration_runs_once_and_the_notice_shows_until_dismissed() {
     let root = tempfile::tempdir().unwrap();
     seed_node_install(&root.path().join("streaming-sources"));
