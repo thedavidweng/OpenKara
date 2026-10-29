@@ -33,3 +33,7 @@ grants. Third-party dependency license policy in `deny.toml` and
 - The Apache-2.0 grant for code up to revision `f461b2a` (LICENSING.md) stays in force. Do not
   delete LICENSES/Apache-2.0.txt or NOTICE.
 - The website Terms page has a later date after a license statement change.
+- `tauri.conf.json` sets `bundle.license` only, never `bundle.licenseFile`.
+  Tauri turns `licenseFile` into a DMG license agreement and an NSIS license
+  page. The AGPL is not an end-user agreement, and the DMG prompt blocks
+  `hdiutil attach` in the installed-app smoke test, so v0.19.1 never shipped.
