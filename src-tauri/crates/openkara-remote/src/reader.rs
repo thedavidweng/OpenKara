@@ -267,6 +267,14 @@ pub fn pull_database_snapshot(
         }
     };
     activate_candidate(&part_path, working_copy)?;
+    // The installed snapshot is the merge base for the next publish (ADR
+    // 0040): retain it before returning, so a later rebase verifies against
+    // these exact bytes. A retain failure fails the refresh closed — the
+    // caller falls back to the previous working copy and its base.
+    let working_copy_root = working_copy.path().parent().ok_or_else(|| {
+        crate::download::integrity_error("working copy database path has no parent directory")
+    })?;
+    crate::base::retain_base_snapshot(working_copy_root, working_copy.path())?;
     Ok(Some(RefreshedSnapshot {
         generation: source.generation,
         remote_path: source.remote_path.clone(),

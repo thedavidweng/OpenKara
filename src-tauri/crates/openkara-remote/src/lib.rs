@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod base;
 pub(crate) mod download;
 pub mod error;
 pub mod manifest;
@@ -14,6 +15,9 @@ pub mod writer;
 pub use asset::{
     asset_operation_id, content_digest_from_asset_path, fetch_asset, plan_asset_fetch, AssetSource,
     FetchedAsset, RangeReader, ASSET_DOWNLOAD_CHUNK_SIZE,
+};
+pub use base::{
+    base_snapshot_path, clear_base_snapshot, retain_base_snapshot, retain_base_snapshot_if_missing,
 };
 pub use error::{
     kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
