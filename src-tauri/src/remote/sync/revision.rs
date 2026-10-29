@@ -1,11 +1,17 @@
 use crate::{
     commands::error::{CommandError, CommandResult},
-    config::{AppConfig, RegisteredLibrary},
+    config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
     library::error::LibraryError,
-    remote::atomic_download::{atomic_database_pull, DatabasePullOptions},
-    remote::control_db::{get_repository_state, LocalState},
+    remote::atomic_download::{
+        atomic_database_pull, update_repository_state_after_pull, DatabasePullOptions,
+    },
+    remote::control_db::{
+        delete_transfer_parts, get_repository_state, upsert_transfer_part, LocalState,
+        TransferDirection, TransferPartRow,
+    },
     remote::manifest::{read_manifest, MANIFEST_PATH},
 };
+use openkara_remote::RepositoryStorage as CoreStorage;
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -56,6 +62,120 @@ pub(crate) fn load_registered_remote_library(
     Ok(library.clone())
 }
 
+/// Refresh the Local Working Copy of a WebDAV repository through the core
+/// reader: probe the revision, plan against the manifest (or the legacy
+/// `openkara.db`), then run the resumable snapshot download with the
+/// clean/dirty policy applied by the app.
+///
+/// The part file's durable progress is mirrored into `remote_transfer_parts`
+/// like the other providers' path, so a restart resumes the transfer. A
+/// failed pull leaves the current working copy in place and returns the
+/// library unchanged, so the caller can proceed offline.
+pub(in crate::remote) fn refresh_working_copy_via_core(
+    control_db_conn: &Connection,
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+) -> CommandResult<RegisteredLibrary> {
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+    let root = load_remote_root(app_data_dir, library)?;
+
+    let remote_revision =
+        openkara_remote::probe_remote_revision(&storage).map_err(CommandError::from)?;
+    if !openkara_remote::remote_revision_is_stale(
+        library.remote_revision(),
+        remote_revision.as_deref(),
+    ) {
+        return Ok(library.clone());
+    }
+    let plan = openkara_remote::plan_refresh(&storage).map_err(CommandError::from)?;
+
+    let operation_id = openkara_remote::snapshot_operation_id(plan.remote_revision.as_deref());
+    let working_copy = openkara_remote::WorkingCopyDatabase::new(root.database_path());
+    let policy = CleanWorkingCopyPolicy {
+        control_db_conn,
+        library,
+    };
+    let mut record_progress = |transferred: u64| {
+        let _ = upsert_transfer_part(
+            control_db_conn,
+            &TransferPartRow {
+                operation_id: operation_id.clone(),
+                relative_path: plan.database.remote_path.clone(),
+                direction: TransferDirection::Download,
+                expected_size: plan.database.expected_size.map(|size| size as i64),
+                expected_digest: plan.database.expected_digest.clone(),
+                provider_revision: None,
+                provider_session_id: None,
+                transferred_bytes: transferred as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: current_unix_time_ms(),
+            },
+        );
+    };
+
+    match openkara_remote::pull_database_snapshot(
+        &storage,
+        &plan,
+        &working_copy,
+        &operation_id,
+        &policy,
+        &mut record_progress,
+    ) {
+        Ok(None) => Ok(library.clone()),
+        Ok(Some(pulled)) => {
+            let _ = delete_transfer_parts(control_db_conn, &operation_id);
+            if let Err(error) = update_repository_state_after_pull(
+                control_db_conn,
+                library.id(),
+                &pulled.database_sha256,
+                pulled.generation,
+            ) {
+                tracing::info!(
+                    "failed to persist repository state after refreshing library {}: {:?}",
+                    library.id(),
+                    error
+                );
+                return Ok(library.clone());
+            }
+            let new_revision = if plan.manifest.is_some() {
+                storage
+                    .stat(MANIFEST_PATH)
+                    .map_err(CommandError::from)?
+                    .and_then(|metadata| metadata.revision)
+            } else {
+                plan.remote_revision.clone()
+            };
+            update_remote_revision_in_config(app_data_dir, library.id(), new_revision)?;
+            load_registered_remote_library(app_data_dir, library.id())
+        }
+        Err(error) => {
+            // Fall back to the last verified working copy; do not block the mutation.
+            tracing::info!(
+                "remote database pull failed for library {}; falling back to \
+                 the existing local database: {:?}",
+                library.id(),
+                error
+            );
+            Ok(library.clone())
+        }
+    }
+}
+
+/// Applies the app's clean/dirty policy to the core reader's policy hook.
+struct CleanWorkingCopyPolicy<'a> {
+    control_db_conn: &'a Connection,
+    library: &'a RegisteredLibrary,
+}
+
+impl openkara_remote::RefreshPolicy for CleanWorkingCopyPolicy<'_> {
+    fn may_replace_working_copy(&self) -> bool {
+        should_allow_automatic_pull(self.control_db_conn, self.library)
+    }
+}
+
 pub(in crate::remote) fn remote_database_revision(
     provider: &dyn RepositoryStorage,
 ) -> CommandResult<Option<String>> {
@@ -100,6 +220,10 @@ pub(crate) fn prepare_remote_database_for_mutation(
             library.id()
         );
         return Ok(library.clone());
+    }
+
+    if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+        return refresh_working_copy_via_core(control_db_conn, app_data_dir, library);
     }
 
     let provider = create_repository_storage(app_data_dir, library)?;
@@ -240,6 +364,9 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
     let Some(library) = active_remote_library(app_data_dir)? else {
         return Ok(());
     };
+    if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+        return ensure_remote_file_cached_via_core(app_data_dir, &library, relative_path);
+    }
     let root = load_remote_root(app_data_dir, &library)?;
     let destination = root.resolve(relative_path);
 
@@ -252,43 +379,15 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
         .clone()
         .or_else(|| library.remote_revision().map(str::to_owned));
 
-    let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
-    if let Ok(conn) = crate::remote::control_db::open_control_db(&control_db_path) {
-        if let (Some(size), Some(rev)) = (remote_size, revision.as_deref()) {
-            let identity = crate::remote::cache_catalog::CacheIdentity {
-                library_id: library.id().to_owned(),
-                relative_path: relative_path.to_owned(),
-                provider_revision: Some(rev.to_owned()),
-                expected_size: size,
-            };
-            let cache_key = identity.cache_key();
-            if let Ok(Some(row)) = crate::remote::control_db::get_cache_entry(&conn, &cache_key) {
-                if row.complete
-                    && row.expected_size == size as i64
-                    && std::path::Path::new(&row.data_path).is_absolute()
-                    && std::fs::metadata(&row.data_path).is_ok()
-                {
-                    return Ok(());
-                }
-                // Working-copy destination: reuse when size matches a complete catalog row.
-                if row.complete
-                    && row.expected_size == size as i64
-                    && destination.exists()
-                    && std::fs::metadata(&destination).map(|m| m.len()).ok() == Some(size)
-                {
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    // Size match at destination skips re-download (atomic_download does not catalog rows).
-    if let Some(size) = remote_size {
-        if destination.exists()
-            && std::fs::metadata(&destination).map(|m| m.len()).ok() == Some(size)
-        {
-            return Ok(());
-        }
+    if cached_asset_copy_is_current(
+        app_data_dir,
+        &library,
+        relative_path,
+        remote_size,
+        revision.as_deref(),
+        &destination,
+    ) {
+        return Ok(());
     }
 
     let expected_size = remote_size;
@@ -303,6 +402,98 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
             operation_id: &operation_id,
         },
     )
+}
+
+/// Fetch one asset of a WebDAV repository into the Local Working Copy
+/// through the core: reuse a copy the cache catalog or the size check
+/// already proves current, otherwise download with range resume and keep
+/// only a copy verified against the digest the content-addressed path
+/// names.
+pub(in crate::remote) fn ensure_remote_file_cached_via_core(
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+    relative_path: &str,
+) -> CommandResult<()> {
+    let root = load_remote_root(app_data_dir, library)?;
+    let destination = root.resolve(relative_path);
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+    let source =
+        openkara_remote::plan_asset_fetch(&storage, relative_path).map_err(CommandError::from)?;
+
+    let revision = source
+        .revision
+        .clone()
+        .or_else(|| library.remote_revision().map(str::to_owned));
+    if cached_asset_copy_is_current(
+        app_data_dir,
+        library,
+        relative_path,
+        source.expected_size,
+        revision.as_deref(),
+        &destination,
+    ) {
+        return Ok(());
+    }
+
+    let operation_id =
+        openkara_remote::asset_operation_id(relative_path, source.revision.as_deref());
+    openkara_remote::fetch_asset(&storage, &source, &destination, &operation_id, &mut |_| {})
+        .map_err(CommandError::from)?;
+    Ok(())
+}
+
+/// The asset at `destination` is current when a complete identity-keyed
+/// cache catalog row covers it or its size matches the remote size.
+fn cached_asset_copy_is_current(
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+    relative_path: &str,
+    remote_size: Option<u64>,
+    revision: Option<&str>,
+    destination: &Path,
+) -> bool {
+    let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
+    if let Ok(conn) = crate::remote::control_db::open_control_db(&control_db_path) {
+        if let (Some(size), Some(rev)) = (remote_size, revision) {
+            let identity = openkara_remote::media_cache::CacheIdentity {
+                library_id: library.id().to_owned(),
+                relative_path: relative_path.to_owned(),
+                provider_revision: Some(rev.to_owned()),
+                expected_size: size,
+            };
+            let cache_key = identity.cache_key();
+            if let Ok(Some(row)) = openkara_remote::media_cache::read_entry(&conn, &cache_key) {
+                if row.complete
+                    && row.expected_size == size as i64
+                    && std::path::Path::new(&row.data_path).is_absolute()
+                    && std::fs::metadata(&row.data_path).is_ok()
+                {
+                    return true;
+                }
+                // Working-copy destination: reuse when size matches a complete catalog row.
+                if row.complete
+                    && row.expected_size == size as i64
+                    && destination.exists()
+                    && std::fs::metadata(destination).map(|m| m.len()).ok() == Some(size)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Size match at destination skips re-download (atomic_download does not catalog rows).
+    if let Some(size) = remote_size {
+        if destination.exists()
+            && std::fs::metadata(destination).map(|m| m.len()).ok() == Some(size)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn resolve_active_remote(config: &AppConfig) -> Option<RegisteredLibrary> {

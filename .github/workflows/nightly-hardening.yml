@@ -192,6 +192,119 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  report-failure:
+    name: Report nightly failure
+    needs:
+      - windows-matrix
+      - separation-smoke
+      - windows-installed-app
+      - macos-installed-app
+      - linux-installed-app
+      - aggregate-reports
+    if: >-
+      always() &&
+      github.event_name == 'schedule' &&
+      (
+        needs.windows-matrix.result != 'success' ||
+        needs.separation-smoke.result != 'success' ||
+        needs.windows-installed-app.result != 'success' ||
+        needs.macos-installed-app.result != 'success' ||
+        needs.linux-installed-app.result != 'success' ||
+        needs.aggregate-reports.result != 'success'
+      )
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # list this run's job results for the failure summary
+      issues: write # open or update a tracking issue when nightly hardening fails
+    steps:
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          WINDOWS_MATRIX: ${{ needs.windows-matrix.result }}
+          SEPARATION_SMOKE: ${{ needs.separation-smoke.result }}
+          WINDOWS_INSTALLED_APP: ${{ needs.windows-installed-app.result }}
+          MACOS_INSTALLED_APP: ${{ needs.macos-installed-app.result }}
+          LINUX_INSTALLED_APP: ${{ needs.linux-installed-app.result }}
+          AGGREGATE_REPORTS: ${{ needs.aggregate-reports.result }}
+        run: |
+          set -euo pipefail
+
+          JOBS=(
+            "windows-matrix:${WINDOWS_MATRIX:-}"
+            "separation-smoke:${SEPARATION_SMOKE:-}"
+            "windows-installed-app:${WINDOWS_INSTALLED_APP:-}"
+            "macos-installed-app:${MACOS_INSTALLED_APP:-}"
+            "linux-installed-app:${LINUX_INSTALLED_APP:-}"
+            "aggregate-reports:${AGGREGATE_REPORTS:-}"
+          )
+
+          failed_jobs=()
+          for entry in "${JOBS[@]}"; do
+            job="${entry%%:*}"
+            result="${entry#*:}"
+            if [ "${result}" != "success" ]; then
+              failed_jobs+=("${job}:${result:-failure}")
+            fi
+          done
+
+          if [ "${#failed_jobs[@]}" -eq 0 ]; then
+            exit 0
+          fi
+
+          job_links=""
+          if [ -n "${RUN_ID:-}" ]; then
+            job_links="$(gh run view "${RUN_ID}" \
+              --repo "${GH_REPO}" \
+              --json jobs \
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (\u0060\(.conclusion)\u0060)"' 2>/dev/null || true)"
+          fi
+          if [ -z "${job_links}" ]; then
+            for entry in "${failed_jobs[@]}"; do
+              job="${entry%%:*}"
+              result="${entry#*:}"
+              job_links="${job_links:+${job_links}$'\n'}- [${job}](${RUN_URL:-}) (\`${result}\`)"
+            done
+          fi
+
+          title="CI failure on main/nightly"
+          body="$(printf '%s\n' \
+            "A **${WORKFLOW_NAME:-Nightly hardening}** workflow run failed on \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)." \
+            "" \
+            "- **Workflow:** ${WORKFLOW_NAME:-Nightly hardening}" \
+            "- **Trigger:** \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)" \
+            "- **Commit:** \`${HEAD_SHA:-unknown}\`" \
+            "- **Failed run:** [${RUN_URL:-}](${RUN_URL:-})" \
+            "" \
+            "### Failed jobs" \
+            "${job_links}")"
+
+          existing_issue="$(gh issue list \
+            --repo "${GH_REPO}" \
+            --state open \
+            --search "in:title ${title}" \
+            --json number,title \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${existing_issue}" ]; then
+            gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+            echo "Commented on existing issue #${existing_issue}"
+          else
+            issue_url="$(gh issue create \
+              --repo "${GH_REPO}" \
+              --title "${title}" \
+              --body "${body}" \
+              --label "bug")"
+            echo "Opened issue: ${issue_url}"
+          fi
   backend-without-node:
     name: Build backend without Node or a source plugin
     runs-on: ubuntu-22.04

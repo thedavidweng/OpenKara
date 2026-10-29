@@ -4,6 +4,9 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -56,6 +59,7 @@ jobs:
       run_dependency-checks: ${{ steps.classify.outputs.run_dependency-checks }}
       run_prepare-model: ${{ steps.classify.outputs.run_prepare-model }}
       run_rust-test: ${{ steps.classify.outputs.run_rust-test }}
+      run_rust-test-macos: ${{ steps.classify.outputs.run_rust-test-macos }}
       run_rust-test-windows-compile: ${{ steps.classify.outputs.run_rust-test-windows-compile }}
       run_tauri-build-smoke: ${{ steps.classify.outputs.run_tauri-build-smoke }}
       run_tauri-build: ${{ steps.classify.outputs.run_tauri-build }}
@@ -114,7 +118,7 @@ jobs:
               git diff --name-only "$BEFORE".."$AFTER" > changed-files.txt
             fi
           else
-            # workflow_dispatch — no changed files; classifier returns full CI.
+            # schedule or workflow_dispatch — no changed files; classifier returns full CI.
             : > changed-files.txt
           fi
           echo "count=$(wc -l < changed-files.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
@@ -123,11 +127,13 @@ jobs:
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
           node scripts/ci/classify-changes.mjs \
             --files "$(cat changed-files.txt)" \
             --event "$EVENT_NAME" \
+            --labels "$PR_LABELS" \
             > classification.json
 
           # Extract outputs for GITHUB_OUTPUT.
@@ -610,24 +616,14 @@ jobs:
         run: cargo shear --deny-warnings --locked
 
   rust-test:
-    name: Rust tests (${{ matrix.name }})
+    name: Rust tests (Linux)
     needs: [triage, prepare-model]
     if: |
       !cancelled() &&
       needs.triage.outputs.run_rust-test == 'true' &&
       needs.prepare-model.result == 'success'
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS
-            os: macos-14
-            ort_target: aarch64-apple-darwin
-          - name: Linux
-            os: ubuntu-22.04
-            ort_target: x86_64-unknown-linux-gnu
 
     steps:
       - name: Checkout
@@ -649,13 +645,12 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}-debug
+          shared-key: ${{ github.workflow }}-ubuntu-22.04-debug
           workspaces: ./src-tauri -> target
           cache-bin: false
-          key: ${{ matrix.os }}-debug
+          key: ubuntu-22.04-debug
 
       - name: Install Linux test dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -678,11 +673,11 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
-          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+          key: onnxruntime-x86_64-unknown-linux-gnu-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
 
       - name: Prepare ONNX Runtime
         env:
-          ORT_TARGET: ${{ matrix.ort_target }}
+          ORT_TARGET: x86_64-unknown-linux-gnu
         shell: bash
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
@@ -703,22 +698,95 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
-        env:
-          # Parallel rust-lld of many heavy Tauri integration-test binaries has
-          # hit SIGBUS (Bus error) on GitHub Linux runners. Cap build jobs so
-          # concurrent linkers do not collide under memory pressure.
-          CARGO_BUILD_JOBS: "2"
+        run: cargo nextest run --no-fail-fast
+        shell: bash
+
+  rust-test-macos:
+    name: Rust tests (macOS)
+    needs: [triage, prepare-model]
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_rust-test-macos == 'true' &&
+      needs.prepare-model.result == 'success'
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.1
+          package-manager-cache: false
+
+      - name: Verify Cargo is not broken
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            cargo nextest run --no-fail-fast
-          else
-            # phase5_perf asserts fixed latency thresholds for fixture audio. GitHub's
-            # macOS runners have noisy cold metadata probes; Linux remains the CI
-            # baseline, while macOS still runs the functional Rust suite.
-            # Filter by binary name — test(phase5_perf) does not match the binary
-            # and still runs backend_performance_report_stays_within_phase5_thresholds.
-            cargo nextest run --no-fail-fast -E '!binary(phase5_perf)'
+          if cargo --version 2>&1 | grep -qi "rustup-init"; then
+            echo "Broken cargo detected, reinstalling toolchain..."
+            rm -rf "$HOME/.cargo"
           fi
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+
+      - name: Verify Rust toolchain (macOS)
+        run: |
+          cargo --version
+          rustc --version
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: ${{ github.workflow }}-macos-14-debug
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: macos-14-debug
+
+      - name: Download separation model
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: separation-model
+          path: src-tauri/models
+
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-aarch64-apple-darwin-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+
+      - name: Prepare ONNX Runtime
+        env:
+          ORT_TARGET: aarch64-apple-darwin
+        shell: bash
+        run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
+
+      - name: Verify Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Install nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: nextest
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: |
+          # phase5_perf asserts fixed latency thresholds for fixture audio. GitHub's
+          # macOS runners have noisy cold metadata probes; Linux remains the CI
+          # baseline, while macOS still runs the functional Rust suite.
+          # All integration tests share one binary, so filter by module path.
+          cargo nextest run --no-fail-fast -E '!test(/^phase5_perf::/)'
         shell: bash
 
   rust-test-windows-compile:
@@ -775,27 +843,52 @@ jobs:
           $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
           cargo test -q --lib execution_provider
 
-      # Executes the runtime-archive extraction regression on Windows itself,
-      # not a cross-compile. The pinned executable is declared with `/`, while
-      # a Path renders with `\` here; comparing the rendered string dropped the
-      # executable and surfaced the generic invalid_package error on install.
-      - name: Verify source runtime archive extraction on Windows
+      # Runs the registry tar extractor on Windows itself, not a cross-compile:
+      # forward-slash entry names must resolve to nested paths through `Path`,
+      # and hostile members (traversal, absolute, drive-qualified, symlink,
+      # non-regular) must fail closed before anything lands on disk.
+      - name: Verify registry tar extraction on Windows
         working-directory: src-tauri
         shell: pwsh
         run: |
-          cargo test -q --lib source_host::tests::runtime_extract_matches_pinned_executable_by_component
+          cargo test -q --lib source_host::registry_tests::tar_windows_separator_and_malicious_members_are_rejected_without_extraction
 
       # The installed-app smoke proves the packaged app installs and separates
-      # audio; it never touches the streaming-source host. This step is the
-      # real consumer acceptance for #579: the production trust root, the
-      # published signed index, the pinned Node ZIP extracted on Windows, and
-      # a live worker `describe` over the source protocol.
-      - name: Accept published streaming source on Windows
+      # audio; it never touches the streaming-source host. The two registry
+      # gates below share one Windows job. The offline unit tests prove the
+      # tar extractor and the mock-registry consumer contract on Windows
+      # itself; the live test that follows is the real production gate and is
+      # expected to fail until a published registry URL is configured.
+      - name: Verify registry tar extraction on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::registry_tests::tar_windows_separator_and_malicious_members_are_rejected_without_extraction
+
+      - name: Verify mock registry consumer contract on Windows
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo test -q --lib source_host::registry_tests::registry_consumer_acceptance_installs_starts_and_describes_with_verified_identity
+
+      # Live production gate: an explicitly added real Source Registry over
+      # HTTPS (OPENKARA_LIVE_REGISTRY_URL), real tarball with SHA-512
+      # integrity and package seal, registry manifest identity (source,
+      # version, protocol majors 2, openkara-js major 1), enablement, a live
+      # QuickJS `describe`, and a `signed_out`/null-account session check.
+      # This is the user-gesture path with production HostConfig, so loopback
+      # HTTP fixtures can never satisfy it. The URL is a non-secret repo
+      # variable the source owner publishes after the real package and
+      # external publication freeze; until then this step fails by design and
+      # must not be skipped, weakened, or replaced by the mock gate above.
+      - name: Accept live registry streaming source on Windows
         working-directory: src-tauri
         shell: pwsh
         timeout-minutes: 15
+        env:
+          OPENKARA_LIVE_REGISTRY_URL: ${{ vars.OPENKARA_LIVE_REGISTRY_URL }}
         run: |
-          cargo test -q --test live_streaming_source_consumer -- --ignored --nocapture
+          cargo test -q --test integration registry_live_consumer -- --ignored --nocapture
 
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without
@@ -880,6 +973,9 @@ jobs:
   # Full 3-platform Tauri build for Rust/deps/workflows/unknown changes.
   tauri-build:
     name: Tauri build (${{ matrix.name }})
+    # Builds run alongside checks (#633): the triage classification alone
+    # gates the expensive matrix; result guards were removed to avoid
+    # redundant verification (#634).
     needs: triage
     if: |
       !cancelled() &&
@@ -1177,16 +1273,28 @@ jobs:
       - dependency-checks
       - prepare-model
       - rust-test
+      - rust-test-macos
       - rust-test-windows-compile
       - tauri-build-smoke
       - tauri-build
       - playwright-ui-smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # list this run's job results for the failure summary
+      issues: write # open or update a tracking issue when main or nightly CI fails
     steps:
       - name: Verify expected jobs succeeded and non-expected jobs skipped
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
           EXPECTED_JOBS: ${{ needs.triage.outputs.expected-jobs }}
           TRIAGE: ${{ needs.triage.result }}
           CONVENTIONAL_COMMITS: ${{ needs.conventional-commits.result }}
@@ -1200,6 +1308,7 @@ jobs:
           DEPENDENCY_CHECKS: ${{ needs.dependency-checks.result }}
           PREPARE_MODEL: ${{ needs.prepare-model.result }}
           RUST_TEST: ${{ needs.rust-test.result }}
+          RUST_TEST_MACOS: ${{ needs.rust-test-macos.result }}
           RUST_TEST_WINDOWS_COMPILE: ${{ needs.rust-test-windows-compile.result }}
           TAURI_BUILD_SMOKE: ${{ needs.tauri-build-smoke.result }}
           TAURI_BUILD: ${{ needs.tauri-build.result }}
@@ -1222,6 +1331,7 @@ jobs:
             "dependency-checks:$DEPENDENCY_CHECKS"
             "prepare-model:$PREPARE_MODEL"
             "rust-test:$RUST_TEST"
+            "rust-test-macos:$RUST_TEST_MACOS"
             "rust-test-windows-compile:$RUST_TEST_WINDOWS_COMPILE"
             "tauri-build-smoke:$TAURI_BUILD_SMOKE"
             "tauri-build:$TAURI_BUILD"
@@ -1237,46 +1347,100 @@ jobs:
             done
             exit 0
           fi
+          fail=0
+          failed_jobs=()
 
           # Verify triage produced valid expected-jobs JSON.
           if ! echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
             echo "::error::Triage did not produce valid expected-jobs JSON: ${EXPECTED_JOBS:-<empty>}"
-            exit 1
-          fi
-
-          fail=0
-
-          for entry in "${JOBS[@]}"; do
-            job="${entry%%:*}"
-            result="${entry#*:}"
-            is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
-
-            echo "$job: result=$result expected=$is_expected"
-
-            if [ "$is_expected" = "true" ]; then
-              if [ "$result" != "success" ]; then
-                echo "::error::Expected job '$job' did not succeed (result: $result)"
-                fail=1
-              fi
-            else
-              if [ "$result" != "skipped" ]; then
-                echo "::error::Unexpected job '$job' ran (result: $result) — gate regression"
-                fail=1
-              fi
-            fi
-          done
-
-          # Verify unknown files are printed and full CI is expected when
-          # unknown files exist.
-          UNKNOWN=$(echo "$EXPECTED_JOBS" | jq 'any(. == "tauri-build")')
-          if [ "$UNKNOWN_FLAG" = "true" ] && [ "$UNKNOWN" != "true" ]; then
-            echo "::error::Unknown files exist but full CI (tauri-build) was not expected"
             fail=1
+            failed_jobs+=("triage:${TRIAGE:-failure}")
+          else
+            for entry in "${JOBS[@]}"; do
+              job="${entry%%:*}"
+              result="${entry#*:}"
+              is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
+
+              echo "$job: result=$result expected=$is_expected"
+
+              if [ "$is_expected" = "true" ]; then
+                if [ "$result" != "success" ]; then
+                  echo "::error::Expected job '$job' did not succeed (result: $result)"
+                  fail=1
+                  failed_jobs+=("$job:$result")
+                fi
+              else
+                if [ "$result" != "skipped" ]; then
+                  echo "::error::Unexpected job '$job' ran (result: $result) — gate regression"
+                  fail=1
+                  failed_jobs+=("$job:$result")
+                fi
+              fi
+            done
+
+            # Verify unknown files trigger the safety fallback (both frontend
+            # and Rust test suites must be expected).
+            UNKNOWN=$(echo "$EXPECTED_JOBS" | jq 'any(. == "app-frontend") and any(. == "rust-test")')
+            if [ "$UNKNOWN_FLAG" = "true" ] && [ "$UNKNOWN" != "true" ]; then
+              echo "::error::Unknown files exist but full safety fallback (app-frontend + rust-test) was not expected"
+              fail=1
+              failed_jobs+=("triage:unknown-fallback")
+            fi
           fi
 
           if [ "$fail" -ne 0 ]; then
             echo ""
-            echo "Expected jobs: $(echo "$EXPECTED_JOBS" | jq -r '. | join(", ")')"
+            if echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              echo "Expected jobs: $(echo "$EXPECTED_JOBS" | jq -r '. | join(", ")')"
+            fi
+
+            if [ -n "${GH_REPO:-}" ] && { { [ "${EVENT_NAME:-}" = "push" ] && [ "${REF_NAME:-main}" = "main" ]; } || [ "${EVENT_NAME:-}" = "schedule" ]; }; then
+              job_links=""
+              if [ -n "${RUN_ID:-}" ]; then
+                job_links="$(gh run view "${RUN_ID}" \
+                  --repo "${GH_REPO}" \
+                  --json jobs \
+                  --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (\u0060\(.conclusion)\u0060)"' 2>/dev/null || true)"
+              fi
+              if [ -z "${job_links}" ]; then
+                for entry in "${failed_jobs[@]}"; do
+                  job="${entry%%:*}"
+                  result="${entry#*:}"
+                  job_links="${job_links:+${job_links}$'\n'}- [${job}](${RUN_URL:-}) (\`${result}\`)"
+                done
+              fi
+
+              title="CI failure on main/nightly"
+              body="$(printf '%s\n' \
+                "A **${WORKFLOW_NAME:-CI}** workflow run failed on \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)." \
+                "" \
+                "- **Workflow:** ${WORKFLOW_NAME:-CI}" \
+                "- **Trigger:** \`${EVENT_NAME}\` (\`${REF_NAME:-main}\`)" \
+                "- **Commit:** \`${HEAD_SHA:-unknown}\`" \
+                "- **Failed run:** [${RUN_URL:-}](${RUN_URL:-})" \
+                "" \
+                "### Failed jobs" \
+                "${job_links}")"
+
+              existing_issue="$(gh issue list \
+                --repo "${GH_REPO}" \
+                --state open \
+                --search "in:title ${title}" \
+                --json number,title \
+                --jq '.[0].number // empty')"
+
+              if [ -n "${existing_issue}" ]; then
+                gh issue comment "${existing_issue}" --repo "${GH_REPO}" --body "${body}"
+                echo "Commented on existing issue #${existing_issue}"
+              else
+                issue_url="$(gh issue create \
+                  --repo "${GH_REPO}" \
+                  --title "${title}" \
+                  --body "${body}" \
+                  --label "bug")"
+                echo "Opened issue: ${issue_url}"
+              fi
+            fi
           fi
 
           exit $fail

@@ -45,67 +45,6 @@ Run `pnpm exec vp test run tests/macos-release-signing.test.ts` for gate tests w
 controlled Apple tool responses. These tests do not prove Apple acceptance.
 Development and Nightly builds retain their existing signature policy.
 
-## Streaming Source runtime feasibility
-
-The `automation-smoke` application build accepts these commands:
-
-```bash
-"/path/to/installed/openkara" --automation-streaming-runtime install /path/to/fresh-app-data
-"/path/to/installed/openkara" --automation-streaming-runtime restart /path/to/fresh-app-data
-```
-
-On macOS, Windows, AppImage, and deb, this command downloads the pinned runtime
-from nodejs.org. It verifies the archive size and digest in
-`packaging/source-runtime.json`, extracts only the runtime executable, and starts
-it as an application child. Restart verifies the installed executable digest
-without another download. Flatpak uses only its bundled
-`/app/bin/openkara-source-node`; it must not download an executable runtime.
-The commands write `streaming-runtime-install.json` and
-`streaming-runtime-restart.json` in the supplied directory. These reports
-include the application and runtime hashes, target, version, and parent PID.
-They contain no account credentials. This is an opt-in feasibility command,
-not the Streaming Source installer or signed source-index implementation.
-
-The reusable installed-application workflows accept
-`streaming_runtime_smoke: true` to run these commands from a signed, notarized
-macOS candidate or a Windows installer and upload the runtime observations.
-The reusable Windows observation requires Defender and real-time protection
-before and after execution, and records exclusions. Windows candidates
-only build the installer. Hosted Windows runners disable protection
-and exclude whole drives; run the installed candidate commands on a protected
-native machine. An unsigned candidate does not establish a signed release's
-reputation. The macOS observation records Gatekeeper status and extended
-attributes without changing protection or quarantine.
-
-On macOS, the application calls `/usr/bin/xattr` in read-only mode after the
-production download, after extraction, after installation, and on restart.
-It fails if `com.apple.quarantine` is present or the observation fails. The
-reports include `macos_quarantine` with each observed path and attribute name.
-The application also writes `streaming-runtime-quarantine-install.json` and
-`streaming-runtime-quarantine-restart.json` after each observation. These files
-preserve the archive result before the application deletes the archive, and
-preserve a failed invariant before it removes the staging directory. The
-workflow uploads these files with the runtime reports. It does not add or
-remove attributes and does not simulate a browser download.
-
-Passing these commands does not establish quarantine enforcement, every
-Windows reputation state, Flatpak sandbox execution, or Flathub approval.
-The current workflow does not produce Flatpak acceptance evidence. The
-Flathub policy decision remains separate from sandbox execution.
-
-For the opt-in real-process test, run
-`cargo test --features automation-smoke --test streaming_runtime_smoke -- --ignored`
-on the target operating system with network access. Distributed candidates,
-not a development executable, are required for platform acceptance.
-
-For Flatpak, run the same installed-application commands inside the sandbox.
-The reports must show `runtime_delivery: "channel-bundled"` and
-`runtime_executable: "/app/bin/openkara-source-node"` for both phases. The
-application-data directory receives reports only, not an executable archive or
-runtime installation. The ignored Rust scenario
-`flatpak_reuses_its_bundled_runtime_without_installing_an_executable` exercises
-this rule when the test executable runs inside the installed sandbox.
-
 ## Backend build without Node
 
 Run `pnpm build` and prepare the platform ONNX Runtime before this scenario.
@@ -117,50 +56,10 @@ and bypasses compiler wrappers. Build output uses a temporary directory unless
 `CARGO_TARGET_DIR` names an absolute directory outside the checkout. This avoids
 checkout-local cache symlinks and leaves their targets unchanged. The script
 forces the application build script to run and executes
-`cargo build --locked --release --bin openkara`. It does not install a source
-plugin or fetch the neutral runtime pin. Linux CI runs this after frontend and
+`cargo build --locked --release --bin openkara`. It does not install a
+Streaming Source package. Linux CI runs this after frontend and
 ONNX Runtime preparation. Complete frontend builds and application packaging
 still require the JavaScript toolchain.
-
-`packaging/source-runtime.json` pins the runtime used by feasibility commands
-and the Flatpak channel. It does not override the signed source index used by
-the production managed-runtime installer. The Flatpak manifest renderer reads
-this file and emits architecture-specific archive sources. Flatpak bundles the
-runtime executable and its license, not a source package or npm dependency tree.
-
-## `ci/observe-linux-streaming-runtime.mjs`
-
-Run this command on the target Linux system. Use an artifact directory with
-exactly one distributed candidate of the selected format:
-
-```bash
-node scripts/ci/observe-linux-streaming-runtime.mjs --format appimage --artifact-dir /path/to/appimage --output /path/to/new-appimage-observations
-node scripts/ci/observe-linux-streaming-runtime.mjs --format deb --artifact-dir /path/to/deb --output /path/to/new-deb-observations
-```
-
-The reusable Linux workflow accepts `streaming_runtime_feasibility: true`.
-This opt-in builds both formats and runs each on a separate runner. It does
-not change the production release path. Use `ubuntu-22.04` with the
-`x86_64-unknown-linux-gnu` Rust and Tauri targets for the x64 candidate.
-
-The AppImage command probes a real FUSE mount, then starts the original
-artifact for each runtime phase. If the mount fails, it records the failure
-and starts `AppRun` from that artifact's extracted filesystem. The report
-labels this mode `extraction-fallback`; it is not mounted-AppImage evidence.
-The deb command installs the artifact with `sudo apt-get install` and starts
-the executable owned by that package. Neither command changes security
-policy, kernel settings, or FUSE device permissions.
-
-Each command writes `linux-streaming-runtime-observation.json`, phase logs,
-and the application's `app-data/streaming-runtime-{install,restart}.json`
-reports. The observation records the distribution, kernel, FUSE setup and
-mode, package installation, artifact and executable hashes, pinned Node
-version and direct app parent, and restart runtime identity. An invalid
-invariant fails the command. The workflow uploads reports and logs as
-`<artifact_prefix>-streaming-runtime-{appimage,deb}-observations`, including
-on failure. It does not upload downloaded runtime executables. These reports
-describe the observed runner and artifact; they do not establish Flatpak or
-distribution policy acceptance.
 
 ## `ci/nightly-evidence.mjs`
 
@@ -206,12 +105,14 @@ derives the expected job set from the category union. Consumed by the triage
 job in `.github/workflows/ci.yml` and `.github/workflows/packaging.yml`.
 
 - **Input:** newline-delimited filenames (`--files`) or JSON array (`--json`),
-  plus event type (`--event pull_request|push|workflow_dispatch`)
-- **Events:** `pull_request` and `push` are path-aware; `workflow_dispatch`
-  forces full CI. Full multi-platform matrices live on Nightly — see
-  `docs/CI_LAYERS.md`.
+  event type (`--event pull_request|push|schedule|workflow_dispatch`), and
+  optional PR labels (`--labels <json-or-csv>`)
+- **Events:** default `pull_request` runs only the fast job set; `push` (to
+  `main`) and `pull_request` with the `ci:full` label run path-aware fast and
+  heavy jobs; `schedule` and `workflow_dispatch` force full CI. Full
+  multi-platform matrices live on Nightly — see `docs/CI_LAYERS.md`.
 - **Output:** JSON to stdout; `GITHUB_OUTPUT` entries (`expected-jobs`,
-  `run_<job>` booleans, `unknown-files`, `categories`) and
+  `run_<job>` booleans, `heavy-enabled`, `unknown-files`, `categories`) and
   `GITHUB_STEP_SUMMARY` markdown table when those env vars are set
 - **Pure function:** no network or filesystem access beyond stdin — testable
   locally without GitHub API access

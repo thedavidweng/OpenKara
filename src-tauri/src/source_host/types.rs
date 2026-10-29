@@ -79,105 +79,49 @@ impl Cancellation {
     }
 }
 
-/// The Node version that the Flatpak bundles from `packaging/source-runtime.json`.
-pub(crate) const BUNDLED_RUNTIME_VERSION: &str = "24.22.1";
-
-#[derive(Clone)]
-pub enum RuntimePolicy {
-    Downloaded,
-    ChannelBundled {
-        executable: PathBuf,
-        version: String,
-        target: String,
-    },
-}
 #[derive(Clone)]
 pub struct HostConfig {
     pub data_root: PathBuf,
     pub resource_root: PathBuf,
     pub host_version: String,
-    pub runtime_policy: RuntimePolicy,
-    pub(crate) index_url: String,
-    pub(crate) trusted_keys: BTreeMap<String, [u8; 32]>,
-    pub(crate) target: String,
-    pub(crate) current_protocol: u32,
     pub(crate) idle_timeout: Duration,
+    pub(crate) describe_timeout: Duration,
     pub(crate) operation_timeout: Duration,
-    pub(crate) backoff_unit: Duration,
+    pub(crate) engine_memory_limit: usize,
+    pub(crate) registry_refresh_interval: Duration,
     #[cfg(test)]
     pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)]
     pub(crate) fixture_resources: BTreeMap<String, (Vec<std::net::IpAddr>, Vec<u8>)>,
     #[cfg(test)]
     pub(crate) fixture_statuses: BTreeMap<String, u16>,
+    #[cfg(test)]
+    pub(crate) fixture_upstreams: BTreeMap<String, String>,
 }
 impl HostConfig {
     pub fn production(data_root: PathBuf, resource_root: PathBuf, host_version: String) -> Self {
-        use base64::Engine;
-        let target = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
-        let runtime_policy = if std::env::var_os("FLATPAK_ID").is_some() {
-            RuntimePolicy::ChannelBundled {
-                executable: PathBuf::from("/app/bin/openkara-source-node"),
-                version: BUNDLED_RUNTIME_VERSION.into(),
-                target: target.clone(),
-            }
-        } else {
-            RuntimePolicy::Downloaded
-        };
-        let trusted_keys = [
-            (
-                "0374d430d3cf1aa6",
-                "SGkXN6xbau63VKXOSU8kGVJtMN0DhxFDmxlFvelqUXU=",
-            ),
-            (
-                "71a135edb0fedcf0",
-                "VfvOxNOgYgIbKkzMDr8cLgqKIUbH2H9QcsSlc8qc28w=",
-            ),
-        ]
-        .into_iter()
-        .map(|(id, key)| {
-            (
-                id.into(),
-                base64::engine::general_purpose::STANDARD
-                    .decode(key)
-                    .expect("embedded source public key")
-                    .try_into()
-                    .expect("32-byte source public key"),
-            )
-        })
-        .collect();
         Self {
             data_root: data_root.join("streaming-sources"),
             resource_root,
             host_version,
-            runtime_policy,
-            index_url: "https://github.com/thedavidweng/openkara-sources/releases/latest/download/source-index.json".into(),
-            trusted_keys,
-            target,
-            current_protocol: 1,
             idle_timeout: Duration::from_secs(60),
+            describe_timeout: Duration::from_secs(10),
             operation_timeout: Duration::from_secs(30),
-            backoff_unit: Duration::from_secs(1),
+            engine_memory_limit: 64 * 1024 * 1024,
+            registry_refresh_interval: Duration::from_secs(6 * 60 * 60),
             #[cfg(test)]
             allow_test_distribution_http: false,
             #[cfg(test)]
             fixture_resources: BTreeMap::new(),
             #[cfg(test)]
             fixture_statuses: BTreeMap::new(),
+            #[cfg(test)]
+            fixture_upstreams: BTreeMap::new(),
         }
     }
     #[cfg(test)]
-    pub(crate) fn fixture(
-        data_root: PathBuf,
-        host_version: String,
-        index_url: String,
-        trusted_keys: BTreeMap<String, [u8; 32]>,
-        runtime_policy: RuntimePolicy,
-    ) -> Self {
+    pub(crate) fn fixture(data_root: PathBuf, host_version: String) -> Self {
         let mut config = Self::production(data_root.clone(), data_root, host_version);
-        config.index_url = index_url;
-        config.trusted_keys = trusted_keys;
-        config.runtime_policy = runtime_policy;
         config.allow_test_distribution_http = true;
         config
     }
@@ -193,6 +137,11 @@ impl HostConfig {
     #[cfg(test)]
     pub(crate) fn set_fixture_status(&mut self, url: String, status: u16) {
         self.fixture_statuses.insert(url, status);
+    }
+    /// Serves source requests for a declared HTTPS origin from a local plain-HTTP server.
+    #[cfg(test)]
+    pub(crate) fn add_fixture_upstream(&mut self, origin: String, server: String) {
+        self.fixture_upstreams.insert(origin, server);
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -266,6 +215,10 @@ pub struct ActiveWork {
 pub struct SourceSnapshot {
     pub source_id: String,
     pub owner_binding: String,
+    /// The Source Registry and package that own this source, when the source
+    /// came from a registry.
+    pub registry_id: Option<String>,
+    pub package_id: Option<String>,
     pub name: String,
     pub description: String,
     pub license: String,
@@ -274,7 +227,8 @@ pub struct SourceSnapshot {
     pub staged_version: Option<String>,
     pub pinned_version: Option<String>,
     pub enabled: bool,
-    pub runtime_ready: bool,
+    /// The source has a verified active release that this host can run.
+    pub loaded: bool,
     pub running: bool,
     pub state: SourceState,
     pub progress: Option<InstallProgress>,
@@ -297,43 +251,17 @@ pub(crate) struct Artifact {
     pub size: u64,
     pub sha256: String,
     pub format: String,
-    #[serde(default)]
-    pub executable: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RuntimeRelease {
-    pub version: String,
-    pub targets: BTreeMap<String, Artifact>,
-}
+/// An installed package version. Registry packages carry their identity;
+/// a release without one predates Source Registries and can no longer run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Release {
     pub manifest: SourceManifest,
     pub archive: Artifact,
-    pub runtime: RuntimeRelease,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_package: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub installed_runtime: Option<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct IndexSource {
-    pub source_id: String,
-    pub publisher: String,
-    pub package_id: String,
-    pub releases: Vec<Release>,
-    pub revoked_versions: Vec<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SourceIndex {
-    pub schema_version: u32,
-    pub generation: u64,
-    pub sources: Vec<IndexSource>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SignedIndex {
-    pub key_id: String,
-    pub payload: String,
-    pub signature: String,
+    pub registry: Option<PackageIdentity>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct StoredSource {
@@ -342,21 +270,103 @@ pub(crate) struct StoredSource {
     pub pinned_version: Option<String>,
     pub active: Option<Release>,
     pub staged: Option<Release>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackageIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired: Option<RetiredInstall>,
+}
+/// A Node-era installation that the embedded engine cannot run. Its files are
+/// deleted; the source id waits for a replacement from a Source Registry.
+/// When a replacement installs before the old owner's cleanup succeeds, the
+/// record is carried over (with the notice dismissed) so the pending cleanup
+/// survives: `previous_owner_binding` then names the account to clear.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct RetiredInstall {
+    pub name: String,
+    pub version: String,
     #[serde(default)]
-    pub revoked: Vec<String>,
+    pub credentials_removed: bool,
+    #[serde(default)]
+    pub notice_dismissed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_owner_binding: Option<String>,
+}
+/// A source that the one-time replacement notice names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetiredSource {
+    pub source_id: String,
+    pub name: String,
+    pub version: String,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct StoredState {
-    pub generation: u64,
     pub sources: BTreeMap<String, StoredSource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registries: Vec<StoredRegistry>,
+}
+/// An installed package's identity: the Source Registry that lists it and its package id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PackageIdentity {
+    pub registry_id: String,
+    pub package_id: String,
+}
+impl PackageIdentity {
+    /// The prefix keeps registry identities apart from the `publisher/package`
+    /// bindings that Node-era installs left in stored state and credentials.
+    pub(crate) fn owner_binding(&self) -> String {
+        format!("registry:{}/{}", self.registry_id, self.package_id)
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct StoredRegistry {
+    pub url: String,
+    pub registry_id: String,
+}
+/// One package version as the market lists it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketVersion {
+    pub version: String,
+    pub size: u64,
+    pub resource_origins: Vec<String>,
+    pub media_origins: Vec<String>,
+    pub capabilities: Vec<String>,
+}
+/// The install state of a market package on this device.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketInstall {
+    pub version: String,
+    pub pinned_version: Option<String>,
+}
+/// An update the market offers for an installed package, with the origins and
+/// capabilities it adds. `requires_consent` is true when it adds any.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketUpdate {
+    pub version: String,
+    pub added_origins: Vec<String>,
+    pub added_capabilities: Vec<String>,
+    pub requires_consent: bool,
+}
+/// One package that an added Source Registry lists on the market.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketPackage {
+    pub registry_id: String,
+    pub package_id: String,
+    pub source_id: String,
+    pub name: String,
+    pub description: String,
+    pub license: String,
+    pub versions: Vec<MarketVersion>,
+    pub installed: Option<MarketInstall>,
+    pub update: Option<MarketUpdate>,
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_bundled_runtime_version_matches_the_packaged_pin() {
-        let pin: serde_json::Value =
-            serde_json::from_str(include_str!("../../../packaging/source-runtime.json")).unwrap();
-        assert_eq!(pin["version"], super::BUNDLED_RUNTIME_VERSION);
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryStatus {
+    pub url: String,
+    pub registry_id: String,
+    pub display_name: String,
+    pub homepage: String,
+    /// Unix time in milliseconds of the last successful fetch.
+    pub refreshed_at: Option<u64>,
+    pub last_error: Option<HostError>,
 }

@@ -16,27 +16,34 @@ the full Nightly matrix on every PR or every main push.
 
 Path-aware via `scripts/ci/classify-changes.mjs`.
 
-Always:
+Default PRs run only the fast job set:
 
-- format, lint, typecheck (when frontend/tooling changes)
-- unit tests for affected areas
-- workflow contract tests when workflows change
+- commit title and workflow lint (`conventional-commits`, `workflow-lint`)
+- format, lint, i18n, knip, and schema drift (`js-quality`)
+- frontend build, typecheck, and unit tests (`app-frontend`, `website`)
+- cached Linux Rust format, Clippy, and integration tests (`rust-test`, `cargo-deny`, `dependency-checks`)
+- standards and release contract checks (`standards-reference`, `release-validation`)
 
-Conditional:
+Heavy jobs do not run on default PRs. Add the `ci:full` label to a PR to run
+the path-matched heavy jobs before merge:
 
-- model / runtime / catalog change → Windows #284 fast path (branch or reusable smoke)
-- UI / accessibility change → keyboard UIA + axe core
-- installer / release workflow change → package build smoke
-- separation pipeline change → Linux x64 real separation
-
-Web accessibility on PR: Chromium, dark/light, core axe. Full page matrix,
-WebKit, forced-colors, 400% zoom, and locale expansion stay on Nightly.
+- Tauri build matrix (`tauri-build`) and Linux smoke build (`tauri-build-smoke`)
+- Playwright UI smoke (`playwright-ui-smoke`)
+- macOS Rust tests (`rust-test-macos`) and Windows Rust compile (`rust-test-windows-compile`)
+- Flatpak and WinGet packaging (`packaging.yml`)
+- Windows installed-app gate (`windows-installed-app-smoke-test.yml`)
 
 ## Main push
 
-CI Gate accepts skipped verification jobs. PR checks run on the merge ref
-against the latest `main`, so a conflict between two merged PRs fails the next
-PR's CI. Manual `workflow_dispatch` still forces full CI.
+Main push runs CI Gate only: the gate accepts skipped verification jobs.
+PR checks run on the merge ref against the latest `main`, so a conflict
+between two merged PRs fails the next PR's CI. Manual `workflow_dispatch`
+still forces full CI.
+
+A red `main` push or `schedule` run opens or comments on the open
+`CI failure on main/nightly` tracking issue (`bug` label) with links to the
+failed workflow run and failed jobs. PR failures and green runs never open or
+update tracking issues.
 
 ## Nightly
 
@@ -84,8 +91,10 @@ These concentrate on the Windows installed-app and fault-recovery path.
 
 ## Related files
 
-- `scripts/ci/classify-changes.mjs` — PR path gates
-- `.github/workflows/ci.yml` — PR and main
+- `scripts/ci/classify-changes.mjs` — PR path gates (main push runs CI Gate only)
+- `.github/workflows/ci.yml` — PR, main, schedule, and dispatch
+- `.github/workflows/packaging.yml` — WinGet and Flatpak packaging gate
+- `.github/workflows/windows-installed-app-smoke-test.yml` — branch Windows installed-app gate
 - `.github/workflows/nightly-hardening.yml` — full matrix
 - `.github/workflows/nightly-installers.yml` — rolling nightly prerelease
 - `.github/workflows/release.yml` — product + Windows #284 core

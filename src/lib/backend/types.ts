@@ -31,6 +31,10 @@ import type {
   StreamingPlaylistDetail,
   StreamingPlaylistListing,
   SourceSnapshot,
+  RegistryStatus,
+  RetiredSource,
+  SourceRegistryLink,
+  MarketPackage,
   AuthChallenge,
   AuthPollResult,
   StreamingTrackListing,
@@ -339,7 +343,22 @@ export interface CatalogBackend {
   installStreamingSource(
     sourceId: OnlineSourceId,
     version?: string | null,
+    consent?: boolean,
   ): Promise<SourceSnapshot>;
+  addSourceRegistry(url: string): Promise<RegistryStatus>;
+  removeSourceRegistry(registryId: string): Promise<void>;
+  listSourceRegistries(): Promise<RegistryStatus[]>;
+  takeSourceRegistryLinks(): Promise<SourceRegistryLink[]>;
+  listSourceMarket(): Promise<MarketPackage[]>;
+  installMarketPackage(
+    registryId: string,
+    packageId: string,
+    version?: string | null,
+    consent?: boolean,
+    replace?: boolean,
+  ): Promise<SourceSnapshot>;
+  getSourceReplacementNotice(): Promise<RetiredSource[]>;
+  dismissSourceReplacementNotice(): Promise<void>;
   cancelStreamingSourceInstall(sourceId: OnlineSourceId): Promise<void>;
   setStreamingSourceEnabled(
     sourceId: OnlineSourceId,

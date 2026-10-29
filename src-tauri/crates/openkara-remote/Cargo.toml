@@ -1,0 +1,33 @@
+[package]
+name = "openkara-remote"
+version = "0.1.0"
+description = "Platform-neutral Remote Repository core for OpenKara"
+authors = ["OpenKara contributors"]
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[lib]
+name = "openkara_remote"
+path = "src/lib.rs"
+doctest = false
+
+[features]
+testing = ["dep:tiny_http"]
+
+[dependencies]
+httpdate = "1.0.3"
+quick-xml = "0.42"
+rand = "0.10.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "form", "json", "query", "rustls"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tiny_http = { version = "0.12.0", optional = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tiny_http = "0.12.0"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"

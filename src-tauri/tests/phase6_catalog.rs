@@ -4,7 +4,7 @@
 
 use std::{fs, path::Path, path::PathBuf};
 
-mod support;
+use crate::support;
 
 use openkara_lib::{
     config::{ModelVariant, StemMode},

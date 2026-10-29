@@ -5,41 +5,14 @@
 
 use crate::commands::error::{internal_error, CommandResult};
 use crate::remote::provider::RepositoryStorage;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
-pub(crate) const MANIFEST_PATH: &str = ".openkara-repository.json";
-
-pub(crate) const CURRENT_SCHEMA_VERSION: u32 = 1;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct RepositoryManifest {
-    pub schema_version: u32,
-    pub repository_id: String,
-    pub generation: i64,
-    pub database_path: String,
-    pub database_size_bytes: u64,
-    pub database_sha256: String,
-    pub committed_at_ms: i64,
-    pub writer_id: String,
-    #[serde(default)]
-    pub operation_id: String,
-}
-
-impl RepositoryManifest {
-    pub(crate) fn to_json(&self) -> CommandResult<String> {
-        serde_json::to_string(self)
-            .map_err(|e| internal_error(format!("failed to serialize manifest: {e}")))
-    }
-
-    pub(crate) fn from_json(json: &str) -> CommandResult<Self> {
-        let manifest: RepositoryManifest = serde_json::from_str(json)
-            .map_err(|e| internal_error(format!("failed to parse repository manifest: {e}")))?;
-        validate_manifest(&manifest)?;
-        Ok(manifest)
-    }
-}
+pub(crate) use openkara_remote::manifest::{
+    database_directory_for_generation, database_path_for_generation, database_path_for_operation,
+    RepositoryManifest, CURRENT_SCHEMA_VERSION, MANIFEST_PATH,
+};
+#[cfg(test)]
+pub(crate) use openkara_remote::manifest::{staging_dir_for_operation, validate_manifest};
 
 pub(crate) fn read_manifest(
     provider: &dyn RepositoryStorage,
@@ -83,112 +56,6 @@ fn current_unix_time_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-
-pub(crate) fn validate_manifest(manifest: &RepositoryManifest) -> CommandResult<()> {
-    if manifest.schema_version != CURRENT_SCHEMA_VERSION {
-        return Err(internal_error(format!(
-            "unsupported repository manifest schema version {}: expected {}",
-            manifest.schema_version, CURRENT_SCHEMA_VERSION
-        )));
-    }
-    if manifest.generation < 1 {
-        return Err(internal_error(format!(
-            "repository manifest generation must be >= 1, got {}",
-            manifest.generation
-        )));
-    }
-    if manifest.repository_id.trim().is_empty() {
-        return Err(internal_error(
-            "repository manifest repository_id must not be empty",
-        ));
-    }
-    if manifest.database_path.trim().is_empty() {
-        return Err(internal_error(
-            "repository manifest database_path must not be empty",
-        ));
-    }
-    validate_database_path(&manifest.database_path, manifest.generation)?;
-    if manifest.database_sha256.trim().is_empty() {
-        return Err(internal_error(
-            "repository manifest database_sha256 must not be empty",
-        ));
-    }
-    if manifest.writer_id.trim().is_empty() {
-        return Err(internal_error(
-            "repository manifest writer_id must not be empty",
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn database_path_for_generation(generation: i64) -> String {
-    format!(".openkara/databases/{generation}.sqlite")
-}
-
-pub(crate) fn database_directory_for_generation(generation: i64) -> String {
-    format!(".openkara/databases/{generation}")
-}
-
-/// Two concurrent writers must never upload to the same object before
-/// manifest CAS.
-pub(crate) fn database_path_for_operation(generation: i64, operation_id: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(operation_id.as_bytes());
-    let operation_hash = crate::hash::hex_lower(hasher.finalize());
-    format!(
-        "{}/{operation_hash}.sqlite",
-        database_directory_for_generation(generation)
-    )
-}
-
-fn validate_database_path(path: &str, generation: i64) -> CommandResult<()> {
-    let prefix = ".openkara/databases/";
-    let Some(rest) = path.strip_prefix(prefix) else {
-        return Err(internal_error(
-            "repository manifest database_path must stay under .openkara/databases/",
-        ));
-    };
-
-    // Legacy schema-v1 path.
-    if rest == format!("{generation}.sqlite") {
-        return Ok(());
-    }
-
-    // Hardened schema-v1 path: `<generation>/<64-lower-hex>.sqlite`.
-    let Some((generation_part, filename)) = rest.split_once('/') else {
-        return Err(internal_error(
-            "repository manifest database_path has an invalid layout",
-        ));
-    };
-    if generation_part != generation.to_string()
-        || filename.contains('/')
-        || filename.contains('\\')
-    {
-        return Err(internal_error(
-            "repository manifest database_path generation does not match the manifest",
-        ));
-    }
-    let Some(digest) = filename.strip_suffix(".sqlite") else {
-        return Err(internal_error(
-            "repository manifest database_path must end in .sqlite",
-        ));
-    };
-    let valid_digest = digest.len() == 64
-        && digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'));
-    if !valid_digest {
-        return Err(internal_error(
-            "repository manifest database_path operation hash is invalid",
-        ));
-    }
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub(crate) fn staging_dir_for_operation(operation_id: &str) -> String {
-    format!(".openkara/staging/{operation_id}")
 }
 
 #[cfg(test)]

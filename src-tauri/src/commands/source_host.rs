@@ -1,7 +1,10 @@
 use crate::catalog;
 use crate::commands::catalog::{app_data_dir, cancel_authentication, host_error, source};
 use crate::commands::error::{internal_error, state_lock_error, CommandResult};
-use crate::source_host::{SourceHost, SourceSnapshot};
+use crate::source_host::{
+    MarketPackage, RegistryStatus, RetiredSource, SourceHost, SourceSnapshot,
+};
+use crate::source_registry_link::{PendingRegistryLinks, SourceRegistryLink};
 use crate::AppState;
 use tauri::{AppHandle, Manager, State};
 
@@ -24,11 +27,94 @@ pub async fn install_streaming_source(
     app_handle: AppHandle,
     source_id: String,
     version: Option<String>,
+    consent: Option<bool>,
 ) -> CommandResult<SourceSnapshot> {
     app_handle
         .state::<SourceHost>()
-        .install(&source_id, version.as_deref())
+        .install(&source_id, version.as_deref(), consent.unwrap_or(false))
         .await
+        .map_err(host_error)
+}
+#[tauri::command]
+pub async fn add_source_registry(
+    app_handle: AppHandle,
+    url: String,
+) -> CommandResult<RegistryStatus> {
+    app_handle
+        .state::<SourceHost>()
+        .add_registry(&url)
+        .await
+        .map_err(host_error)
+}
+#[tauri::command]
+pub fn remove_source_registry(app_handle: AppHandle, registry_id: String) -> CommandResult<()> {
+    app_handle
+        .state::<SourceHost>()
+        .remove_registry(&registry_id)
+        .map_err(host_error)
+}
+#[tauri::command]
+pub fn list_source_registries(app_handle: AppHandle) -> Vec<RegistryStatus> {
+    app_handle.state::<SourceHost>().registries()
+}
+#[tauri::command]
+pub fn take_source_registry_links(
+    links: State<'_, PendingRegistryLinks>,
+) -> Vec<SourceRegistryLink> {
+    links.take()
+}
+#[tauri::command]
+pub fn list_source_market(app_handle: AppHandle) -> Vec<MarketPackage> {
+    app_handle.state::<SourceHost>().market()
+}
+#[tauri::command]
+pub async fn install_market_package(
+    app_handle: AppHandle,
+    registry_id: String,
+    package_id: String,
+    version: Option<String>,
+    consent: Option<bool>,
+    replace: Option<bool>,
+) -> CommandResult<SourceSnapshot> {
+    let host = app_handle.state::<SourceHost>().inner().clone();
+    let prior = if replace.unwrap_or(false) {
+        host.market()
+            .into_iter()
+            .find(|package| package.registry_id == registry_id && package.package_id == package_id)
+            .and_then(|package| host.snapshot(&package.source_id).ok())
+    } else {
+        None
+    };
+    let snapshot = host
+        .install_package(
+            &registry_id,
+            &package_id,
+            version.as_deref(),
+            consent.unwrap_or(false),
+            replace.unwrap_or(false),
+        )
+        .await
+        .map_err(host_error)?;
+    if let Some(prior) = prior.filter(|prior| prior.owner_binding != snapshot.owner_binding) {
+        // A confirmed replacement never inherits the previous package's session.
+        catalog::clear_session(
+            &app_data_dir(&app_handle)?,
+            &prior.source_id,
+            Some(&prior.owner_binding),
+        )
+        .map_err(|_| internal_error("could not remove the replaced source's credentials"))?;
+    }
+    Ok(snapshot)
+}
+#[tauri::command]
+pub fn get_source_replacement_notice(app_handle: AppHandle) -> Vec<RetiredSource> {
+    app_handle.state::<SourceHost>().replacement_notice()
+}
+#[tauri::command]
+pub fn dismiss_source_replacement_notice(app_handle: AppHandle) -> CommandResult<()> {
+    app_handle
+        .state::<SourceHost>()
+        .dismiss_replacement_notice()
         .map_err(host_error)
 }
 #[tauri::command]
@@ -86,8 +172,12 @@ pub async fn uninstall_streaming_source(
         .await
         .map_err(host_error)?;
     if remove_credentials {
-        catalog::clear_session(&app_data_dir(&app_handle)?, &source_id)
-            .map_err(|_| internal_error("could not remove saved source credentials"))?;
+        catalog::clear_session(
+            &app_data_dir(&app_handle)?,
+            &source_id,
+            Some(&snapshot.owner_binding),
+        )
+        .map_err(|_| internal_error("could not remove saved source credentials"))?;
     }
     Ok(snapshot)
 }

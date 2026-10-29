@@ -17,6 +17,12 @@ import { SettingsOnlineSourcesSection } from "./SettingsOnlineSourcesSection";
 vi.mock("./StreamingSources", () => ({
   StreamingSources: () => <div>Source management</div>,
 }));
+vi.mock("./SourceRegistries", () => ({
+  SourceRegistries: () => <div>Registry management</div>,
+}));
+vi.mock("./SourceMarket", () => ({
+  SourceMarket: () => <div>Source market</div>,
+}));
 
 describe("SettingsOnlineSourcesSection", () => {
   let container: HTMLDivElement;

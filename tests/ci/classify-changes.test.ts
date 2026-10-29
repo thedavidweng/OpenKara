@@ -12,21 +12,45 @@ import {
   classifyChanges,
   classifyFile,
   globToRegex,
+  parseArgs,
+  parseLabels,
+  CATEGORY_PATTERNS,
+  FULL_CI_LABEL,
 } from "../../scripts/ci/classify-changes.mjs";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-/** Classify files as a pull_request and return the result. */
+/** Classify files as an unlabelled pull_request and return the result. */
 function pr(...files: string[]) {
   return classifyChanges(files, "pull_request");
 }
 
-/** Job sets that constitute "full CI" (all heavy + quality jobs). */
-const FULL_CI_HEAVY = [
+/** Classify files as a pull_request with the `ci:full` label. */
+function prFull(...files: string[]) {
+  return classifyChanges(files, "pull_request", { labels: [FULL_CI_LABEL] });
+}
+
+/** Rust jobs that run in the fast PR set. */
+const RUST_PR_FAST = [
   "cargo-deny",
   "dependency-checks",
   "prepare-model",
   "rust-test",
+];
+
+/** Heavy jobs deferred to main push, nightly schedule, manual dispatch, or `ci:full` PRs. */
+const DEFERRED_PR_HEAVY = [
+  "playwright-ui-smoke",
+  "rust-test-macos",
+  "rust-test-windows-compile",
+  "tauri-build-smoke",
+  "tauri-build",
+];
+
+/** Job sets that constitute "full CI" (all Rust + heavy platform jobs). */
+const FULL_CI_HEAVY = [
+  ...RUST_PR_FAST,
+  "rust-test-macos",
   "rust-test-windows-compile",
   "tauri-build",
 ];
@@ -84,6 +108,15 @@ describe("classifyFile", () => {
 
   test("Rust source is rust", () => {
     expect(classifyFile("src-tauri/src/audio/mixer.rs")).toEqual(["rust"]);
+  });
+
+  test("Rust workspace crate source is rust", () => {
+    expect(classifyFile("src-tauri/crates/openkara-remote/src/lib.rs")).toEqual(
+      ["rust"],
+    );
+    expect(classifyFile("src-tauri/crates/openkara-remote/Cargo.toml")).toEqual(
+      ["rust", "deps_rust"],
+    );
   });
 
   test("Rust example is rust", () => {
@@ -144,19 +177,21 @@ describe("classifyFile", () => {
   });
 
   test("policy workflows run their contract tests", () => {
-    // #568 changed dependabot-automerge.yml without updating
-    // tests/ci/dependabot-automerge-contract.test.ts, and the PR ran only
-    // workflow lint, so main stayed red. Any workflow with a contract test
-    // must run the unit suite.
-    expect(classifyFile(".github/workflows/dependabot-automerge.yml")).toEqual([
-      "workflow_contracts",
+    expect(CATEGORY_PATTERNS.workflow_contracts).toEqual([
+      ".github/dependabot.yml",
+      ".github/workflows/cla.yml",
+      ".github/workflows/dependabot-sync.yml",
     ]);
 
-    const result = pr(".github/workflows/dependabot-automerge.yml");
-    expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("workflow-lint");
-    for (const job of FULL_CI_HEAVY) {
-      expect(result.expectedJobs).not.toContain(job);
+    for (const file of CATEGORY_PATTERNS.workflow_contracts) {
+      expect(classifyFile(file), file).toEqual(["workflow_contracts"]);
+
+      const result = pr(file);
+      expect(result.expectedJobs, file).toContain("app-frontend");
+      expect(result.expectedJobs, file).toContain("workflow-lint");
+      for (const job of FULL_CI_HEAVY) {
+        expect(result.expectedJobs, `${file}: ${job}`).not.toContain(job);
+      }
     }
   });
 
@@ -201,7 +236,8 @@ describe("classifyFile", () => {
     expect(result.expectedJobs).toContain("app-frontend");
     expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("website");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).not.toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
     expect(result.expectedJobs).not.toContain("rust-test");
   });
 
@@ -281,11 +317,9 @@ describe("PR fixtures", () => {
     expect(result.categories).toEqual(["frontend_app"]);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
     expect(result.expectedJobs).toContain("js-quality");
-    // No Rust/model/platform matrix
-    for (const job of FULL_CI_HEAVY) {
+    // No deferred heavy jobs or Rust jobs on default PRs
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -298,8 +332,7 @@ describe("PR fixtures", () => {
     expect(result.expectedJobs).toContain("js-quality");
     // No app frontend, Playwright, Rust, model, or platform
     expect(result.expectedJobs).not.toContain("app-frontend");
-    expect(result.expectedJobs).not.toContain("playwright-ui-smoke");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -314,9 +347,9 @@ describe("PR fixtures", () => {
     expect(result.categories).toContain("docs");
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
-    for (const job of FULL_CI_HEAVY) {
+    expect(result.expectedJobs).toContain("js-quality");
+    expect(result.expectedJobs).toContain("standards-reference");
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -330,9 +363,8 @@ describe("PR fixtures", () => {
     expect(result.categories).toEqual(["frontend_app"]);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
-    for (const job of FULL_CI_HEAVY) {
+    expect(result.expectedJobs).toContain("js-quality");
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -346,28 +378,28 @@ describe("PR fixtures", () => {
     expect(result.categories).toContain("rust");
     expect(result.categories).toContain("docs");
     expect(result.unknownFiles).toEqual([]);
-    expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("rust-test-windows-compile");
-    expect(result.expectedJobs).toContain("cargo-deny");
-    expect(result.expectedJobs).toContain("dependency-checks");
-    expect(result.expectedJobs).toContain("prepare-model");
-    expect(result.expectedJobs).toContain("tauri-build");
-    // No frontend-only smoke
-    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
+    for (const job of RUST_PR_FAST) {
+      expect(result.expectedJobs).toContain(job);
+    }
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
-  test("PR #152 — mixed frontend + Rust + docs = full CI", () => {
+  test("PR #152 — mixed frontend + Rust + docs = fast PR set", () => {
     const result = pr("src/foo.ts", "src-tauri/src/foo.rs", "docs/guide.md");
     expect(result.categories).toContain("frontend_app");
     expect(result.categories).toContain("rust");
     expect(result.categories).toContain("docs");
     expect(result.unknownFiles).toEqual([]);
-    // Full CI: both frontend and Rust jobs
     expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("tauri-build");
-    // tauri-build-smoke is suppressed when heavy (Rust) is present
-    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
+    expect(result.expectedJobs).toContain("js-quality");
+    for (const job of RUST_PR_FAST) {
+      expect(result.expectedJobs).toContain(job);
+    }
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
   test.each([
@@ -379,7 +411,7 @@ describe("PR fixtures", () => {
     const result = pr(path);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("workflow-lint");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -392,9 +424,8 @@ describe("PR fixtures", () => {
     expect(result.expectedJobs).toContain("release-validation");
     // No heavy jobs
     expect(result.expectedJobs).not.toContain("app-frontend");
-    expect(result.expectedJobs).not.toContain("playwright-ui-smoke");
     expect(result.expectedJobs).not.toContain("website");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -403,14 +434,17 @@ describe("PR fixtures", () => {
 // ── Synthetic fixtures from issue #155 table ──────────────────────────
 
 describe("synthetic fixtures", () => {
-  test("CI workflow (.github/workflows/ci.yml) = full CI", () => {
+  test("CI workflow (.github/workflows/ci.yml) = fast PR CI", () => {
     const result = pr(".github/workflows/ci.yml");
     expect(result.categories).toEqual(["ci_workflow"]);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("workflow-lint");
     expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("tauri-build");
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
   test("Packaging workflow (.github/workflows/packaging.yml)", () => {
@@ -423,22 +457,28 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).not.toContain("rust-test");
   });
 
-  test("E2E (tests/e2e/player.spec.ts) = Playwright", () => {
+  test("E2E (tests/e2e/player.spec.ts) runs js-quality on PR, Playwright on full CI", () => {
     const result = pr("tests/e2e/player.spec.ts");
     expect(result.categories).toEqual(["e2e"]);
     expect(result.unknownFiles).toEqual([]);
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
     expect(result.expectedJobs).toContain("js-quality");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
+
+    const fullResult = prFull("tests/e2e/player.spec.ts");
+    expect(fullResult.expectedJobs).toContain("playwright-ui-smoke");
   });
 
   test("Playwright config (playwright.config.ts) = e2e", () => {
     const result = pr("playwright.config.ts");
     expect(result.categories).toContain("e2e");
     expect(result.unknownFiles).toEqual([]);
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).toContain("js-quality");
+    expect(result.expectedJobs).not.toContain("playwright-ui-smoke");
+
+    const fullResult = prFull("playwright.config.ts");
+    expect(fullResult.expectedJobs).toContain("playwright-ui-smoke");
   });
 
   test("JS deps (package.json + pnpm-lock.yaml)", () => {
@@ -446,18 +486,23 @@ describe("synthetic fixtures", () => {
     expect(result.categories).toContain("deps_js");
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("website");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
   test("Rust deps (Cargo.toml + Cargo.lock)", () => {
     const result = pr("src-tauri/Cargo.toml", "src-tauri/Cargo.lock");
     expect(result.categories).toContain("deps_rust");
     expect(result.unknownFiles).toEqual([]);
-    expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("tauri-build");
-    expect(result.expectedJobs).toContain("cargo-deny");
+    for (const job of RUST_PR_FAST) {
+      expect(result.expectedJobs).toContain(job);
+    }
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
   test("docs only (docs/guide.md) = no heavy jobs", () => {
@@ -486,18 +531,26 @@ describe("synthetic fixtures", () => {
     ]);
   });
 
-  test("unknown file = full CI", () => {
+  test("unknown file = full fast set on PR, full heavy set on push/label", () => {
     const result = pr("new-unmapped-root-config.xyz");
     expect(result.categories).toEqual(["unknown"]);
     expect(result.unknownFiles).toEqual(["new-unmapped-root-config.xyz"]);
-    // Full CI: all heavy jobs
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of RUST_PR_FAST) {
       expect(result.expectedJobs).toContain(job);
     }
     expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("website");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
     expect(result.expectedJobs).toContain("workflow-lint");
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
+
+    const fullResult = prFull("new-unmapped-root-config.xyz");
+    for (const job of FULL_CI_HEAVY) {
+      expect(fullResult.expectedJobs).toContain(job);
+    }
+    expect(fullResult.expectedJobs).toContain("playwright-ui-smoke");
   });
 
   test("mixed release/frontend = union of release + frontend", () => {
@@ -508,8 +561,10 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).toContain("workflow-lint");
     expect(result.expectedJobs).toContain("release-validation");
     expect(result.expectedJobs).toContain("app-frontend");
-    expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
+    expect(result.expectedJobs).toContain("js-quality");
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 
   test("mixed website/Rust = union of website + Rust", () => {
@@ -519,16 +574,16 @@ describe("synthetic fixtures", () => {
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("website");
     expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("tauri-build");
-    // tauri-build-smoke suppressed because Rust (heavy) is present
-    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
+    for (const job of DEFERRED_PR_HEAVY) {
+      expect(result.expectedJobs).not.toContain(job);
+    }
   });
 });
 
 // ── Event type behavior ───────────────────────────────────────────────
 
 describe("event type behavior", () => {
-  test.each(["pull_request", "push", "workflow_dispatch"])(
+  test.each(["pull_request", "push", "schedule", "workflow_dispatch"])(
     "%s always requires workflow lint for every path category",
     (event) => {
       for (const files of [
@@ -551,7 +606,7 @@ describe("event type behavior", () => {
     expect(result.expectedJobs).toContain("triage");
     expect(result.expectedJobs).toContain("ci-gate");
     expect(result.expectedJobs).toContain("standards-reference");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
       expect(result.expectedJobs).not.toContain(job);
     }
   });
@@ -573,10 +628,44 @@ describe("event type behavior", () => {
     expect(result.expectedJobs).not.toContain("tauri-build");
   });
 
+  test("push with frontend sources runs Playwright and Linux Tauri smoke", () => {
+    const result = classifyChanges(["src/App.tsx"], "push");
+    expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("js-quality");
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).toContain("tauri-build-smoke");
+    expect(result.expectedJobs).not.toContain("tauri-build");
+  });
+
   test("push with Rust sources runs the rust heavy set", () => {
     const result = classifyChanges(["src-tauri/src/lib.rs"], "push");
-    expect(result.expectedJobs).toContain("rust-test");
-    expect(result.expectedJobs).toContain("tauri-build");
+    for (const job of FULL_CI_HEAVY) {
+      expect(result.expectedJobs).toContain(job);
+    }
+    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
+    expect(result.expectedJobs).not.toContain("conventional-commits");
+  });
+
+  test("PR with ci:full label enables heavy jobs for changed paths", () => {
+    const frontendFull = prFull("src/App.tsx");
+    expect(frontendFull.expectedJobs).toContain("playwright-ui-smoke");
+    expect(frontendFull.expectedJobs).toContain("tauri-build-smoke");
+    expect(frontendFull.expectedJobs).not.toContain("tauri-build");
+
+    const rustFull = prFull("src-tauri/src/lib.rs");
+    for (const job of FULL_CI_HEAVY) {
+      expect(rustFull.expectedJobs).toContain(job);
+    }
+    expect(rustFull.expectedJobs).not.toContain("tauri-build-smoke");
+    expect(rustFull.expectedJobs).toContain("conventional-commits");
+  });
+
+  test("schedule always runs full CI", () => {
+    const result = classifyChanges([], "schedule");
+    for (const job of FULL_CI_HEAVY) {
+      expect(result.expectedJobs).toContain(job);
+    }
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
     expect(result.expectedJobs).not.toContain("conventional-commits");
   });
 
@@ -585,6 +674,8 @@ describe("event type behavior", () => {
     for (const job of FULL_CI_HEAVY) {
       expect(result.expectedJobs).toContain(job);
     }
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).not.toContain("conventional-commits");
   });
 
   test("conventional-commits only expected on pull_request", () => {
@@ -593,5 +684,37 @@ describe("event type behavior", () => {
 
     const pushResult = classifyChanges(["src/foo.ts"], "push");
     expect(pushResult.expectedJobs).not.toContain("conventional-commits");
+
+    const scheduleResult = classifyChanges([], "schedule");
+    expect(scheduleResult.expectedJobs).not.toContain("conventional-commits");
+  });
+});
+// ── Label inputs ────────────────────────────────────────────────────────
+
+describe("label inputs", () => {
+  test("parseLabels and parseArgs normalize JSON, CSV, and null label inputs", () => {
+    expect(parseLabels(null)).toEqual([]);
+    expect(parseLabels("null")).toEqual([]);
+    expect(parseLabels("")).toEqual([]);
+    expect(parseLabels('["ci:full","area:rust"]')).toEqual([
+      "ci:full",
+      "area:rust",
+    ]);
+    expect(parseLabels("ci:full, area:rust")).toEqual(["ci:full", "area:rust"]);
+    expect(
+      parseArgs([
+        "--files",
+        "src/App.tsx",
+        "--event",
+        "pull_request",
+        "--labels",
+        '["ci:full"]',
+      ]),
+    ).toEqual({
+      files: "src/App.tsx",
+      json: null,
+      event: "pull_request",
+      labels: '["ci:full"]',
+    });
   });
 });

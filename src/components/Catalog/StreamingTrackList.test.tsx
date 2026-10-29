@@ -75,6 +75,8 @@ beforeEach(() => {
     sources: [
       {
         source_id: "alpha",
+        registry_id: null,
+        package_id: null,
         owner_binding: "test/alpha",
         name: "Alpha",
         description: "Fixture source",
@@ -84,7 +86,7 @@ beforeEach(() => {
         staged_version: null,
         pinned_version: null,
         enabled: true,
-        runtime_ready: true,
+        loaded: true,
         running: false,
         state: "ready",
         progress: null,

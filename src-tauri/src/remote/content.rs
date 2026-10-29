@@ -3,17 +3,18 @@ use crate::{
         decode,
         error::PlaybackError,
         playback::{LoadedStems, StemSet},
-        remote_source::{self, FetchEvent, RemoteMediaSource},
+        remote_source::{self, FetchError, FetchEvent, HttpFetcher, RemoteMediaSource},
         streaming::{self, StreamMetadata, StreamingTrack},
     },
     cache,
+    config::RemoteLibraryProvider,
     library::Song,
     library_root::LibraryRoot,
     remote,
-    remote::cache_catalog::{CacheCatalog, CacheIdentity, CachePinGuard},
-    remote::provider::{create_remote_media_source, create_repository_storage, RepositoryStorage},
+    remote::provider::{create_remote_media_source, create_repository_storage},
 };
 use anyhow::{Context, Result};
+use openkara_remote::media_cache::{CacheIdentity, CacheLease, MediaCache};
 use rusqlite::Connection;
 use std::{
     fs,
@@ -31,7 +32,7 @@ pub(crate) struct StreamingPlaybackSource {
     pub(crate) metadata: StreamMetadata,
     pub(crate) decode_handle: std::thread::JoinHandle<Result<(), decode::DecodeError>>,
     pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
-    pub(crate) cache_pin_guard: Option<CachePinGuard>,
+    pub(crate) cache_lease: Option<CacheLease>,
 }
 
 pub(crate) struct RemoteContent<'a> {
@@ -78,14 +79,49 @@ impl<'a> RemoteContent<'a> {
         else {
             return Ok(());
         };
+        let to_remote_error = |message: String| {
+            remote::errors::RemoteError::new(
+                remote::errors::RemoteErrorKind::NetworkUnavailable,
+                message,
+            )
+        };
+        // WebDAV stem downloads go through the core asset fetch (range
+        // resume, digest verification from the content-addressed path);
+        // Dropbox and Google Drive keep the existing provider path.
+        if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+            let secret = remote::webdav::load_webdav_secret(app_data_dir, &library)
+                .map_err(|error| to_remote_error(error.message.clone()))?;
+            let storage = openkara_remote::WebDavStorage::new(
+                &secret.root_url,
+                secret.username,
+                secret.password,
+            )
+            .map_err(|error| to_remote_error(error.message()))?;
+            let download = |relative_path: &str, destination: &Path| -> Result<()> {
+                fetch_asset_via_core(&storage, relative_path, destination)
+            };
+            return ensure_stem_set_cached(
+                &download,
+                library_root,
+                connection,
+                song,
+                request_id,
+                is_current,
+            );
+        }
         let provider = create_repository_storage(app_data_dir, &library).map_err(|error| {
             remote::errors::RemoteError::new(
                 remote::errors::RemoteErrorKind::NetworkUnavailable,
                 error.message.clone(),
             )
         })?;
+        let download = |relative_path: &str, destination: &Path| -> Result<()> {
+            provider
+                .download_file(relative_path, destination)
+                .map_err(|error| anyhow::anyhow!(error.message))
+        };
         ensure_stem_set_cached(
-            provider.as_ref(),
+            &download,
             library_root,
             connection,
             song,
@@ -141,7 +177,7 @@ impl<'a> RemoteContent<'a> {
 
     pub(crate) fn load_streaming_source(
         &self,
-        remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
+        media_cache: &Arc<Mutex<MediaCache>>,
         song: &Song,
     ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
         let Some(app_data_dir) = self.app_data_dir else {
@@ -157,28 +193,63 @@ impl<'a> RemoteContent<'a> {
         else {
             return Ok(None);
         };
-        let media_source = create_remote_media_source(app_data_dir, &library)
-            .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
-        if !media_source.capabilities().range_download {
-            return Ok(None);
-        }
-        let repository = create_repository_storage(app_data_dir, &library)
-            .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
-        let fetcher = match media_source.create_range_fetcher(song_path) {
-            Ok(Some(fetcher)) => fetcher,
-            Ok(None) | Err(_) => return Ok(None),
-        };
-        let Some(file_size) = media_source
-            .get_file_size(song_path)
-            .map_err(|error| PlaybackError::Internal(error.message.clone()))?
-        else {
-            return Ok(None);
-        };
-        if file_size == 0 {
-            return Ok(None);
-        }
+        // WebDAV playback streams through the core range reader: playback
+        // starts from a range stream before the whole asset is downloaded.
+        // Dropbox and Google Drive keep the existing provider fetcher.
+        let (fetcher, file_size, provider_revision): (Box<dyn HttpFetcher>, u64, Option<String>) =
+            if matches!(library.provider(), Some(RemoteLibraryProvider::WebDav)) {
+                let secret = remote::webdav::load_webdav_secret(app_data_dir, &library)
+                    .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
+                let storage = openkara_remote::WebDavStorage::new(
+                    &secret.root_url,
+                    secret.username,
+                    secret.password,
+                )
+                .map_err(|error| PlaybackError::Internal(error.message()))?;
+                let reader = match openkara_remote::RangeReader::open(storage, song_path) {
+                    Ok(reader) => reader,
+                    Err(error)
+                        if matches!(
+                            error.kind,
+                            remote::errors::RemoteErrorKind::ProviderCapabilityUnavailable
+                                | remote::errors::RemoteErrorKind::ObjectNotFound
+                        ) =>
+                    {
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(PlaybackError::Internal(error.message())),
+                };
+                let file_size = reader.size_bytes();
+                if file_size == 0 {
+                    return Ok(None);
+                }
+                let revision = reader.revision().map(str::to_owned);
+                (Box::new(CoreRangeFetcher { reader }), file_size, revision)
+            } else {
+                let media_source = create_remote_media_source(app_data_dir, &library)
+                    .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
+                if !media_source.capabilities().range_download {
+                    return Ok(None);
+                }
+                let repository = create_repository_storage(app_data_dir, &library)
+                    .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
+                let fetcher = match media_source.create_range_fetcher(song_path) {
+                    Ok(Some(fetcher)) => fetcher,
+                    Ok(None) | Err(_) => return Ok(None),
+                };
+                let Some(file_size) = media_source
+                    .get_file_size(song_path)
+                    .map_err(|error| PlaybackError::Internal(error.message.clone()))?
+                else {
+                    return Ok(None);
+                };
+                if file_size == 0 {
+                    return Ok(None);
+                }
 
-        let provider_revision = repository.get_revision(song_path).ok().flatten();
+                let provider_revision = repository.get_revision(song_path).ok().flatten();
+                (fetcher, file_size, provider_revision)
+            };
         let revision = provider_revision.or_else(|| library.remote_revision().map(str::to_owned));
         let identity = CacheIdentity {
             library_id: library.id().to_owned(),
@@ -188,19 +259,17 @@ impl<'a> RemoteContent<'a> {
         };
         let cache_key = identity.cache_key();
         let cache = {
-            let mut manager = remote_chunk_cache.lock().map_err(|_| {
-                PlaybackError::Internal("remote chunk cache manager lock was poisoned".to_owned())
-            })?;
+            let mut manager = media_cache
+                .lock()
+                .map_err(|_| PlaybackError::Internal("media cache lock was poisoned".to_owned()))?;
             manager.get_or_create(&identity).map_err(map_cache_error)?
         };
-        let cache_pin_guard = Some(
-            CacheCatalog::pin_cache_entry(remote_chunk_cache, &cache_key)
-                .map_err(map_cache_error)?,
-        );
-        let persist_catalog = Arc::clone(remote_chunk_cache);
+        let cache_lease =
+            Some(MediaCache::lease(media_cache, &cache_key).map_err(map_cache_error)?);
+        let persist_catalog = Arc::clone(media_cache);
         let persist_key = cache_key.clone();
         let on_range_written: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            if let Ok(manager) = persist_catalog.lock() {
+            if let Ok(mut manager) = persist_catalog.lock() {
                 let _ = manager.persist_ranges(&persist_key);
             }
         });
@@ -235,8 +304,35 @@ impl<'a> RemoteContent<'a> {
             metadata: probe_metadata,
             decode_handle,
             fetch_event_rx: Some(fetch_event_rx),
-            cache_pin_guard,
+            cache_lease,
         }))
+    }
+}
+
+/// Adapts the core range reader to the audio pipeline's fetcher trait, so
+/// WebDAV playback streaming goes through the core crate.
+struct CoreRangeFetcher {
+    reader: openkara_remote::RangeReader<openkara_remote::WebDavStorage>,
+}
+
+impl HttpFetcher for CoreRangeFetcher {
+    fn fetch_range(
+        &self,
+        _url: &str,
+        offset: u64,
+        length: u64,
+    ) -> std::result::Result<Vec<u8>, FetchError> {
+        self.reader
+            .read_range(offset, length)
+            .map_err(|error| match error.kind {
+                remote::errors::RemoteErrorKind::RateLimited => {
+                    FetchError::RateLimited(error.retry_after)
+                }
+                remote::errors::RemoteErrorKind::ProviderCapabilityUnavailable => {
+                    FetchError::RangeNotSupported
+                }
+                _ => FetchError::Io(std::io::Error::other(error.message())),
+            })
     }
 }
 
@@ -299,8 +395,24 @@ fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
     })
 }
 
+/// Download one asset through the core crate: range resume into a part
+/// file, then size and digest verification before the destination is kept.
+pub(crate) fn fetch_asset_via_core(
+    storage: &openkara_remote::WebDavStorage,
+    relative_path: &str,
+    destination: &Path,
+) -> Result<()> {
+    let source = openkara_remote::plan_asset_fetch(storage, relative_path)
+        .map_err(|error| anyhow::anyhow!(error.message()))?;
+    let operation_id =
+        openkara_remote::asset_operation_id(relative_path, source.revision.as_deref());
+    openkara_remote::fetch_asset(storage, &source, destination, &operation_id, &mut |_| {})
+        .map_err(|error| anyhow::anyhow!(error.message()))?;
+    Ok(())
+}
+
 pub(crate) fn ensure_stem_set_cached(
-    provider: &dyn RepositoryStorage,
+    download: &dyn Fn(&str, &Path) -> Result<()>,
     library_root: &LibraryRoot,
     connection: &Connection,
     song: &Song,
@@ -308,7 +420,7 @@ pub(crate) fn ensure_stem_set_cached(
     is_current: impl Fn() -> bool,
 ) -> std::result::Result<(), remote::errors::RemoteError> {
     ensure_stem_set_cached_inner(
-        provider,
+        download,
         library_root,
         connection,
         song,
@@ -339,7 +451,7 @@ impl From<anyhow::Error> for StemMaterializationError {
 }
 
 fn ensure_stem_set_cached_inner(
-    provider: &dyn RepositoryStorage,
+    download: &dyn Fn(&str, &Path) -> Result<()>,
     library_root: &LibraryRoot,
     connection: &Connection,
     song: &Song,
@@ -387,13 +499,12 @@ fn ensure_stem_set_cached_inner(
             }
         }
         let _ = fs::remove_file(&temp_path);
-        if let Err(error) = provider.download_file(&stem.relative_path, &temp_path) {
+        if let Err(error) = download(&stem.relative_path, &temp_path) {
             let _ = fs::remove_file(&temp_path);
             clean_up_temps(&verified);
             return Err(StemMaterializationError::Failed(anyhow::anyhow!(
-                "failed to download stem {}: {}",
+                "failed to download stem {}: {error:#}",
                 stem.label,
-                error.message
             )));
         }
         if fs::metadata(&temp_path)
@@ -702,6 +813,6 @@ pub(crate) fn probe_remote_source(
     })
 }
 
-fn map_cache_error(error: crate::commands::error::CommandError) -> PlaybackError {
-    PlaybackError::Internal(error.message)
+fn map_cache_error(error: openkara_remote::RemoteError) -> PlaybackError {
+    PlaybackError::Internal(error.message())
 }

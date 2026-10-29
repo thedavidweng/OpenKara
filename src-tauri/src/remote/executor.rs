@@ -31,7 +31,8 @@
 //! The winning remote manifest + database are pulled to a conflict candidate
 //! (not the active working DB) for the conflict-resolution actions.
 
-use crate::commands::error::{database_error, internal_error, CommandResult};
+use crate::commands::error::{database_error, internal_error, CommandError, CommandResult};
+use crate::config::RegisteredLibrary;
 use crate::remote::atomic_download::{sha256_file, verify_sqlite_integrity_pub};
 use crate::remote::control_db::{
     get_operation, get_repository_state, list_operations_for_library, upsert_operation,
@@ -103,7 +104,119 @@ pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> C
         }
         Err(remote_err) => {
             record_failure(ctx, &op, &remote_err)?;
-            Err(remote_err.to_command_error())
+            Err(remote_err.into())
+        }
+    }
+}
+
+/// Execute the publication protocol through the core writer (WebDAV
+/// repositories only; the other providers keep [`execute_publish`]).
+///
+/// The control-plane bookkeeping is identical to the old path: the same
+/// operation row drives the state transitions, [`record_completed`] and
+/// [`record_failure`] persist the outcome, and a `RemoteConflict` from the
+/// core lands the repository in the same `Conflicted` state. The network
+/// protocol itself — asset uploads, snapshot upload, manifest CAS — runs in
+/// `openkara_remote::writer` against the core WebDAV adapter. It keeps no
+/// journal of its own: recovery is running the same operation again, and a
+/// commit that landed before a crash is recognized from the manifest's
+/// operation id and snapshot digest.
+pub(crate) fn execute_publish_via_core(
+    ctx: &PublishContext<'_>,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(ctx.control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
+    if matches!(
+        op.state,
+        OperationState::Completed
+            | OperationState::Failed
+            | OperationState::Conflicted
+            | OperationState::Cancelled
+    ) {
+        return Ok(());
+    }
+
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+
+    let now = current_unix_time_ms();
+    transition_state(
+        ctx,
+        &op,
+        OperationState::Running,
+        now,
+        5,
+        "Reading remote manifest",
+    )?;
+
+    let payload = OperationPayload::from_json(&op.payload_json)?;
+    let request = openkara_remote::PublishRequest {
+        repository_id: ctx.repository_id.to_owned(),
+        writer_id: ctx.writer_id.to_owned(),
+        operation_id: op.operation_id.clone(),
+        expected_generation: op.expected_generation.unwrap_or(0),
+        song_ids: payload.song_ids.clone(),
+        whole_repository: payload.whole_repository,
+        // The true merge base (ADR 0040): the base snapshot the working copy
+        // retained at `expected_generation`, verified against the outbox
+        // `source_db_digest` before any rebase merges.
+        base_snapshot_path: Some(openkara_remote::base_snapshot_path(ctx.working_copy_root)),
+        expected_base_digest: op.source_db_digest.clone(),
+    };
+    let working_database = ctx.working_copy_root.join("openkara.db");
+    let mut report_step = |step: openkara_remote::PublishStep| {
+        let (percent, detail) = match step {
+            openkara_remote::PublishStep::ReadManifest => (5, "Reading remote manifest"),
+            openkara_remote::PublishStep::UploadAssets => (15, "Verifying remote assets"),
+            openkara_remote::PublishStep::PrepareSnapshot => (50, "Preparing candidate database"),
+            openkara_remote::PublishStep::UploadSnapshot => (70, "Uploading database snapshot"),
+            openkara_remote::PublishStep::CommitManifest => (85, "Committing repository manifest"),
+            openkara_remote::PublishStep::VerifyManifest => (90, "Verifying manifest"),
+        };
+        let _ = transition_state(ctx, &op, OperationState::Running, now, percent, detail);
+    };
+
+    let result = openkara_remote::publish_changes(
+        &storage,
+        ctx.working_copy_root,
+        &working_database,
+        &request,
+        &mut report_step,
+    );
+    match result {
+        Ok(outcome) => {
+            let snapshot = outcome.snapshot();
+            let completed = PublishOutcome {
+                operation_id: op.operation_id.clone(),
+                target_generation: snapshot.generation,
+                committed_manifest_revision: snapshot.manifest_revision.clone(),
+                candidate_db_digest: snapshot.database_sha256.clone(),
+            };
+            record_completed(ctx, &op, &completed)?;
+            // Keep the stored Remote Revision on the committed manifest so the
+            // next refresh recognizes this publication instead of pulling the
+            // snapshot we just wrote.
+            if let Err(error) = crate::remote::sync::update_remote_revision_in_config(
+                app_data_dir,
+                ctx.library_id,
+                snapshot.manifest_revision.clone(),
+            ) {
+                tracing::info!(
+                    "failed to persist remote revision after publishing library {}: {:?}",
+                    ctx.library_id,
+                    error
+                );
+            }
+            Ok(())
+        }
+        Err(error) => {
+            record_failure(ctx, &op, &error)?;
+            Err(error.into())
         }
     }
 }
@@ -442,7 +555,7 @@ fn run_publish_protocol(
     };
     let manifest_json = manifest
         .to_json()
-        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
 
     let committed_meta = ctx.provider.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
@@ -1244,8 +1357,10 @@ fn record_failure(
         }
         RemoteErrorKind::ProviderCapabilityUnavailable
         | RemoteErrorKind::PermissionDenied
+        | RemoteErrorKind::ObjectNotFound
         | RemoteErrorKind::RemoteIntegrityFailed
-        | RemoteErrorKind::DiskFull => (OperationState::Failed, LocalState::Dirty),
+        | RemoteErrorKind::DiskFull
+        | RemoteErrorKind::LocalStorageFailed => (OperationState::Failed, LocalState::Dirty),
         RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
             (OperationState::RetryWait, LocalState::Publishing)
         }
@@ -3085,5 +3200,169 @@ mod tests {
                 .is_some(),
             "generation 2 (committed) should be retained"
         );
+    }
+
+    fn webdav_remote_library(base_url: &str, database_path: &Path) -> RegisteredLibrary {
+        RegisteredLibrary::remote(
+            "lib-1".to_owned(),
+            "Repository".to_owned(),
+            crate::config::RemoteLibraryProvider::WebDav,
+            "account-1".to_owned(),
+            base_url.to_owned(),
+            base_url.to_owned(),
+            Some(crate::config::RemoteLibraryConnectionConfig::WebDav {
+                server_url: base_url.to_owned(),
+            }),
+            Some(database_path.display().to_string()),
+            None,
+        )
+    }
+
+    fn webdav_app_data(app_data: &TempDir, library: &RegisteredLibrary) {
+        crate::remote::types::persist_app_config(
+            app_data.path(),
+            &crate::config::AppConfig {
+                libraries: vec![library.clone()],
+                active_library_id: Some(library.id().to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("seed app config");
+        crate::remote::webdav::store_webdav_secret(
+            app_data.path(),
+            library.id(),
+            "openkara".to_owned(),
+            "test-password".to_owned(),
+        )
+        .expect("store WebDAV credentials");
+    }
+
+    #[test]
+    fn executor_via_core_publishes_over_webdav_and_persists_remote_revision() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+
+        execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("core publish should succeed");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(1));
+
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read committed manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert_eq!(manifest.generation, 1);
+        assert_eq!(manifest.repository_id, "repo-1");
+        assert_eq!(manifest.writer_id, "w-1");
+        assert_eq!(manifest.operation_id, op_id);
+        assert!(
+            server
+                .storage()
+                .stat(&manifest.database_path)
+                .expect("stat snapshot")
+                .is_some(),
+            "the committed snapshot object is on the server"
+        );
+
+        let config = crate::remote::types::load_app_config(app_data.path()).expect("load config");
+        let stored = config
+            .libraries
+            .iter()
+            .find(|entry| entry.id() == "lib-1")
+            .expect("registered library");
+        let manifest_revision = server
+            .storage()
+            .stat(MANIFEST_PATH)
+            .expect("stat manifest")
+            .and_then(|metadata| metadata.revision);
+        assert_eq!(
+            stored.remote_revision(),
+            manifest_revision.as_deref(),
+            "the stored Remote Revision tracks the committed manifest"
+        );
+
+        // Re-running a terminal operation is a no-op.
+        execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("completed operation is skipped");
+        let manifest = {
+            let mut bytes = Vec::new();
+            server
+                .storage()
+                .read(MANIFEST_PATH, &mut bytes)
+                .expect("read manifest");
+            RepositoryManifest::from_json(std::str::from_utf8(&bytes).unwrap()).unwrap()
+        };
+        assert_eq!(manifest.generation, 1, "no second commit happened");
+    }
+
+    #[test]
+    fn executor_via_core_conflicts_when_the_remote_repository_moved_on() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+
+        let other_manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 2,
+            database_path: ".openkara/databases/2.sqlite".to_owned(),
+            database_size_bytes: 16,
+            database_sha256: "ab".repeat(32),
+            committed_at_ms: 1_700_000_000_000,
+            writer_id: "other-writer".to_owned(),
+            operation_id: "other-operation".to_owned(),
+        };
+        server
+            .storage()
+            .write_new(MANIFEST_PATH, other_manifest.to_json().unwrap().as_bytes())
+            .expect("seed remote manifest");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+
+        let result = execute_publish_via_core(&ctx, app_data.path(), &library, &op_id);
+        assert!(result.is_err(), "stale generation must conflict");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Conflicted);
+        assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
+
+        // The losing publish must not have moved the manifest.
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert_eq!(manifest.generation, 2);
+        assert_eq!(manifest.operation_id, "other-operation");
     }
 }

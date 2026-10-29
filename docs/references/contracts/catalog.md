@@ -1,28 +1,66 @@
 # Catalog Contract
 
-The source process boundary is specified in [Streaming Source protocol 1.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
+The source boundary is specified in [Streaming Source protocol 2.0](streaming-source-protocol.md). Production source discovery uses the host registry. Developer mocks are UI-only fixtures and never replace production discovery or process execution.
 
 ## Identity and lifecycle
 
 `OnlineSourceId` is an open string. Source ids use safe lowercase ASCII. The native `list_online_sources()` registry contains only YouTube. `set_online_source_enabled(source_id, enabled)` changes its `AppSettings.youtube_source_enabled` flag. Streaming Sources use independent lifecycle commands, not AppSettings flags.
 
-`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `runtime_ready`, `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
+`SourceSnapshot` contains `source_id`, host-derived `owner_binding`, nullable `registry_id` and `package_id` (the registry identity of a registry package), `name`, `description`, `license`, nullable `installed_version`, `available_version`, `staged_version`, `pinned_version`, `enabled`, `loaded`, `running`, `state`, nullable `progress`, nullable `last_error`, `active_work`, and nullable `manifest`.
 
 `state` is `not_installed`, `installing`, `ready`, `disabled`, `update_required`, `unavailable`, `waiting_for_idle`, or `cancelling`. Installation, enablement, runtime readiness and sign-in are separate states. `progress` contains `phase`, `completed`, and nullable `total`. `last_error` is `{code,message,retryable}`. Active work contains numeric `id`, `kind` (`authentication`, `preview`, or `import`), and `cancelling`.
 
 `SourceManifest` contains `manifest_version`, `source_id`, `package_id`, `publisher`, `version`, `minimum_host_version`, `protocol: {majors:number[],minor:number}`, `runtime: {kind:string,major:number}`, `entry`, `name`, `description`, `license`, string arrays `capabilities`, `requires_authentication`, `resource_origins`, `media_origins`, and the protocol-defined `authentication` value.
 
-| Command                                                                      | Result             |
-| ---------------------------------------------------------------------------- | ------------------ |
-| `list_streaming_sources()`                                                   | `SourceSnapshot[]` |
-| `refresh_streaming_sources()`                                                | `SourceSnapshot[]` |
-| `install_streaming_source(source_id, version=null)`                          | `SourceSnapshot`   |
-| `cancel_streaming_source_install(source_id)`                                 | void               |
-| `set_streaming_source_enabled(source_id, enabled, stop_work=false)`          | `SourceSnapshot`   |
-| `uninstall_streaming_source(source_id, stop_work=false, remove_credentials)` | `SourceSnapshot`   |
-| `pin_streaming_source(source_id, version=null)`                              | `SourceSnapshot`   |
+| Command                                                                                       | Result                 |
+| --------------------------------------------------------------------------------------------- | ---------------------- |
+| `list_streaming_sources()`                                                                    | `SourceSnapshot[]`     |
+| `refresh_streaming_sources()`                                                                 | `SourceSnapshot[]`     |
+| `install_streaming_source(source_id, version=null, consent=false)`                            | `SourceSnapshot`       |
+| `cancel_streaming_source_install(source_id)`                                                  | void                   |
+| `set_streaming_source_enabled(source_id, enabled, stop_work=false)`                           | `SourceSnapshot`       |
+| `uninstall_streaming_source(source_id, stop_work=false, remove_credentials)`                  | `SourceSnapshot`       |
+| `pin_streaming_source(source_id, version=null)`                                               | `SourceSnapshot`       |
+| `add_source_registry(url)`                                                                    | `RegistryStatus`       |
+| `remove_source_registry(registry_id)`                                                         | void                   |
+| `list_source_registries()`                                                                    | `RegistryStatus[]`     |
+| `take_source_registry_links()`                                                                | `SourceRegistryLink[]` |
+| `list_source_market()`                                                                        | `MarketPackage[]`      |
+| `install_market_package(registry_id, package_id, version=null, consent=false, replace=false)` | `SourceSnapshot`       |
+| `get_source_replacement_notice()`                                                             | `RetiredSource[]`      |
+| `dismiss_source_replacement_notice()`                                                         | void                   |
+
+`RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), and nullable `last_error`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), and nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package and its saved session never carries over.
+
+On launch the host retires installs that ran on the removed Node runtime. A retired source keeps its snapshot with state `update_required`, null `installed_version` and `available_version`, and `last_error.code` `replacement_required`; install and retry return that code. The application deletes its saved session and the Node runtime and package files, and keeps library songs, Streaming Track Identities and Playlist Origin Stamps. Installing a registry package with the same source id replaces it; nothing carries over and the user signs in again. `get_source_replacement_notice()` returns each retired source as `RetiredSource` (`source_id`, `name`, `version`) until `dismiss_source_replacement_notice()` hides the notice for good.
 
 Disable and uninstall refuse active work unless `stop_work` is explicit. A stop cancels source-bound work and waits for it to stop before removing resources. Uninstall requires an explicit credential-retention choice. A failed refresh remains visible and does not erase prior snapshots. `streaming-source-status` carries the changed `SourceSnapshot`.
+
+## Source Registry links
+
+The `openkara` URL scheme is registered through the Tauri deep-link plugin:
+the macOS bundle declares it in `CFBundleURLTypes`, the Windows installer and
+Linux packages register `x-scheme-handler/openkara`, the Flatpak desktop file
+lists the same MIME type, and an AppImage registers itself at launch. A second
+launch carrying a link hands it to the running instance.
+
+A registry website links to
+`openkara://add-registry?url=<percent-encoded registry URL>`. The link
+accepts exactly one `url` query parameter, no other parameters, path,
+fragment, port, or user information, and at most 4096 characters. The
+registry URL must be an absolute HTTPS URL with a host and without user
+information. The host never adds a registry from a link.
+
+The host queues each received `openkara://` link (the newest eight) and emits
+`source-registry-link` with a null payload to the main window.
+`take_source_registry_links()` drains the queue and returns
+`SourceRegistryLink[]`, oldest first: `{kind:'add_registry',url}` with the
+normalized registry URL, or `{kind:'invalid',link}` with the first 256
+characters of the refused link. The frontend drains the queue when its runtime
+starts, which covers a link that launched the app, and on every event. It
+acts on the newest entry: Settings opens, and an add request opens the same
+add confirmation as a pasted URL; an invalid link shows an alert in Source
+Registries and opens no confirmation.
 
 ## Authentication
 
@@ -72,6 +110,30 @@ authentication separate. The built-in YouTube preference controls only the
 native Video Source. A failed source refresh keeps existing snapshots usable.
 The local-library view is separate from the active source id. A valid source
 id such as `library` does not alias local-library navigation.
+
+Settings lists the added Source Registries with their last fetch error and
+offers add and remove. Adding a registry, whether by a pasted URL or by an
+`openkara://add-registry` link, first shows a confirmation that names the URL
+and states that the registry is maintained outside OpenKara. The
+refusal of a registry id conflict (`invalid_registry`) stays visible. Removing
+a registry explains that installed sources keep working but cannot update.
+The market lists each package with its registry, package id, source id,
+license, versions, capabilities, and declared origins. Install confirms the
+declared origins and capabilities first. An update whose entry carries
+`requires_consent` opens a review that names `added_origins` and
+`added_capabilities` before the update runs with consent. Installing a package
+whose source id another installed package holds opens a replacement
+confirmation before it retries with `replace`; the confirmation states that
+the previous package's saved credentials are removed and the new package
+installs disabled. A pinned install shows its pin and no update offer. An
+installed source whose registry is no longer added states that it keeps
+working without updates. Install errors show the backend message, which names
+each failed download URL.
+
+While `get_source_replacement_notice()` returns retired sources, the main view
+shows a one-time notice that names them and tells the user to add a Source
+Registry, install the replacement, and sign in again. It offers a Settings
+shortcut and a dismiss action that calls `dismiss_source_replacement_notice()`.
 
 The browser shows liked tracks for `liked_tracks`, search for `search`, and
 playlists only when both `playlists` and `playlist_tracks` are declared. Import

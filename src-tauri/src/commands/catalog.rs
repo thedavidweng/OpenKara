@@ -530,7 +530,7 @@ pub async fn sign_out_streaming_source(
         Ok(snapshot) => snapshot,
         Err(_) => {
             cancel_authentication(&app_handle, &source_id).await?;
-            catalog::clear_session(&app_data_dir(&app_handle)?, &source_id)
+            catalog::clear_session(&app_data_dir(&app_handle)?, &source_id, None)
                 .map_err(|_| internal_error("could not remove source session"))?;
             return Ok(catalog::StreamingSessionSnapshot {
                 source_id,
@@ -551,8 +551,12 @@ pub async fn sign_out_streaming_source(
             .map_err(host_error)?;
     }
     cancel_authentication(&app_handle, &source_id).await?;
-    catalog::clear_session(&app_data_dir(&app_handle)?, &source_id)
-        .map_err(|_| internal_error("could not remove source session"))?;
+    catalog::clear_session(
+        &app_data_dir(&app_handle)?,
+        &source_id,
+        Some(&snapshot.owner_binding),
+    )
+    .map_err(|_| internal_error("could not remove source session"))?;
     if enabled {
         host.set_enabled(&source_id, true, false)
             .await

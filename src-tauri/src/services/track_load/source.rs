@@ -173,7 +173,7 @@ pub(crate) fn load_cached_stems_for_song_streaming(
 
 pub(crate) fn load_playback_source_streaming(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Arc<Mutex<crate::remote::cache_catalog::CacheCatalog>>,
+    media_cache: &Arc<Mutex<openkara_remote::media_cache::MediaCache>>,
     library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
@@ -181,7 +181,7 @@ pub(crate) fn load_playback_source_streaming(
         return Ok(None);
     }
     if song.is_remote() {
-        return RemoteContent::new(app_data_dir).load_streaming_source(remote_chunk_cache, song);
+        return RemoteContent::new(app_data_dir).load_streaming_source(media_cache, song);
     }
 
     let song_path =
@@ -194,17 +194,17 @@ pub(crate) fn load_playback_source_streaming(
         metadata,
         decode_handle,
         fetch_event_rx: None,
-        cache_pin_guard: None,
+        cache_lease: None,
     }))
 }
 
 pub(crate) fn load_remote_streaming_source(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Arc<Mutex<crate::remote::cache_catalog::CacheCatalog>>,
+    media_cache: &Arc<Mutex<openkara_remote::media_cache::MediaCache>>,
     _library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
-    RemoteContent::new(app_data_dir).load_streaming_source(remote_chunk_cache, song)
+    RemoteContent::new(app_data_dir).load_streaming_source(media_cache, song)
 }
 
 pub(crate) fn resolve_song_file_path(song: &Song) -> Result<&str> {
@@ -219,57 +219,15 @@ mod tests {
     use crate::commands::error::{CommandError, CommandResult};
     use crate::library::Song;
     use crate::library_root::LibraryRoot;
-    use crate::remote::cache_catalog::{CacheCatalog, CacheIdentity, DEFAULT_CACHE_BYTES_LIMIT};
     use crate::remote::control_db::open_control_db;
     use crate::remote::provider::{
         RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
     };
+    use openkara_remote::{MediaCache, DEFAULT_CACHE_BYTES_LIMIT};
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
-
-    #[test]
-    fn remote_cache_manager_evicts_lru_when_over_budget() {
-        let db_dir = tempdir().expect("db temp dir");
-        let cache_dir = tempdir().expect("cache temp dir");
-        let conn = open_control_db(&db_dir.path().join("remote-state.db")).expect("open db");
-        let control_db = Arc::new(Mutex::new(conn));
-        let mut manager = CacheCatalog::open(cache_dir.path().to_path_buf(), control_db, 200)
-            .expect("open catalog");
-
-        let id_a = CacheIdentity {
-            library_id: "lib-1".to_owned(),
-            relative_path: "media/a.mp3".to_owned(),
-            provider_revision: Some("rev-1".to_owned()),
-            expected_size: 150,
-        };
-        let id_b = CacheIdentity {
-            library_id: "lib-1".to_owned(),
-            relative_path: "media/b.mp3".to_owned(),
-            provider_revision: Some("rev-1".to_owned()),
-            expected_size: 150,
-        };
-
-        let c1 = manager.get_or_create(&id_a).expect("cache a");
-        c1.write_at(0, &[0u8; 150]).expect("write a");
-        manager
-            .persist_ranges(&id_a.cache_key())
-            .expect("persist a");
-
-        let c2 = manager.get_or_create(&id_b).expect("cache b");
-        c2.write_at(0, &[0u8; 150]).expect("write b");
-        manager
-            .persist_ranges(&id_b.cache_key())
-            .expect("persist b");
-
-        // A (oldest) should be evicted; B remains.
-        assert!(
-            manager.get_entry(&id_a.cache_key()).unwrap().is_none(),
-            "oldest entry must be evicted"
-        );
-        assert!(manager.get_entry(&id_b.cache_key()).unwrap().is_some());
-    }
 
     // ---- Test infrastructure for remote stem set caching ----
 
@@ -349,6 +307,16 @@ mod tests {
                 .unwrap()
                 .get(relative_path)
                 .map(|d| d.len() as u64))
+        }
+    }
+    /// Adapt a fake provider to the download closure `ensure_stem_set_cached` takes.
+    fn download_via(
+        provider: &dyn RepositoryStorage,
+    ) -> impl Fn(&str, &Path) -> anyhow::Result<()> + '_ {
+        move |relative_path, destination| {
+            provider
+                .download_file(relative_path, destination)
+                .map_err(|error| anyhow::anyhow!(error.message))
         }
     }
 
@@ -472,7 +440,7 @@ mod tests {
         let song = remote_stems_song("song-a");
         let conn = open_control_db(&db_dir.path().join("remote-state.db")).expect("open db");
         let control_db = Arc::new(Mutex::new(conn));
-        let catalog = CacheCatalog::open(
+        let catalog = MediaCache::open(
             db_dir.path().join("cache"),
             control_db,
             DEFAULT_CACHE_BYTES_LIMIT,
@@ -509,7 +477,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -557,7 +525,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -591,7 +559,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -625,7 +593,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -658,7 +626,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -688,7 +656,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -732,7 +700,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -780,7 +748,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song_a,
@@ -907,7 +875,7 @@ mod tests {
 
         // Guard is always stale — aborts before any download/rename.
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -960,7 +928,7 @@ mod tests {
         // stem 1 (vocals) is downloaded before the abort.
         let guard = move || download_count.load(std::sync::atomic::Ordering::SeqCst) < 1;
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,
@@ -1005,7 +973,7 @@ mod tests {
         let provider = FakeRemoteProvider::with_files(files);
 
         let result = crate::remote::content::ensure_stem_set_cached(
-            &provider,
+            &download_via(&provider),
             &lib,
             &connection,
             &song,

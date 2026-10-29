@@ -1,13 +1,16 @@
 use super::types::*;
 use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue, LOCATION},
-    Url,
+    cookie::{CookieStore, Jar},
+    header::{
+        HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE, COOKIE, LOCATION,
+        SET_COOKIE,
+    },
+    Method, Url,
 };
 use std::{
     collections::BTreeMap,
-    io::Write,
     net::{IpAddr, SocketAddr},
-    path::Path,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -23,7 +26,7 @@ pub(crate) fn origin(value: &str) -> HostResult<String> {
     }
     Ok(url.origin().ascii_serialization())
 }
-fn invalid() -> HostError {
+pub(crate) fn invalid() -> HostError {
     HostError::new(
         "invalid_resource",
         "Source resource must use an approved public HTTPS origin and permitted headers.",
@@ -108,7 +111,6 @@ pub(crate) async fn response_range(
     cancellation: &Cancellation,
     range: Option<(u64, Option<u64>)>,
 ) -> HostResult<reqwest::Response> {
-    let mut url = Url::parse(url).map_err(|_| invalid())?;
     let mut values = headers(values)?;
     if let Some((start, end)) = range {
         if end.is_some_and(|end| end < start) {
@@ -123,6 +125,60 @@ pub(crate) async fn response_range(
             HeaderValue::from_str(&range).map_err(|_| invalid())?,
         );
     }
+    let outgoing = Outgoing {
+        method: Method::GET,
+        headers: values,
+        body: None,
+        cookies: None,
+        timeout: Duration::from_secs(120),
+        #[cfg(test)]
+        upstreams: None,
+    };
+    send(
+        url,
+        outgoing,
+        origins,
+        test_distribution,
+        cancellation,
+        None,
+    )
+    .await
+    .map(|(response, _)| response)
+}
+
+struct Outgoing<'a> {
+    method: Method,
+    headers: HeaderMap,
+    body: Option<Vec<u8>>,
+    cookies: Option<&'a Jar>,
+    timeout: Duration,
+    #[cfg(test)]
+    upstreams: Option<&'a BTreeMap<String, String>>,
+}
+
+/// The secret half of one `Set-Cookie` value (`name=secret; Path=/` gives
+/// `secret`), for the log redactor. `None` when the value carries no secret.
+pub(crate) fn cookie_secret(set_cookie: &str) -> Option<String> {
+    set_cookie
+        .split_once('=')
+        .map(|(_, rest)| rest.split(';').next().unwrap_or_default().to_owned())
+}
+
+/// Sends one request and follows redirects by hand, so every hop passes the
+/// HTTPS, origin and public-address checks before it connects.
+///
+/// `observed` collects every redirect hop's cookie secrets the moment the hop
+/// responds, before the redirect is followed — so the log redactor learns
+/// them even when following the redirect later fails or is cancelled.
+async fn send(
+    url: &str,
+    mut outgoing: Outgoing<'_>,
+    origins: Option<&[String]>,
+    test_distribution: bool,
+    cancellation: &Cancellation,
+    observed: Option<&Mutex<Vec<String>>>,
+) -> HostResult<(reqwest::Response, Url)> {
+    let mut url = Url::parse(url).map_err(|_| invalid())?;
     for hop in 0..=5 {
         cancellation.check()?;
         let hostname = url.host_str().ok_or_else(invalid)?.to_string();
@@ -141,38 +197,87 @@ pub(crate) async fn response_range(
                 return Err(invalid());
             }
         }
-        if let Ok(ip) = hostname.trim_matches(['[', ']']).parse::<IpAddr>() {
-            if !test_loopback && !public(ip) {
-                return Err(invalid());
-            }
-        }
-        let addresses: Vec<SocketAddr> = tokio::select! {
-            _=cancellation.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")),
-            resolved=tokio::time::timeout(Duration::from_secs(15),tokio::net::lookup_host((hostname.trim_matches(['[',']']),url.port_or_known_default().ok_or_else(invalid)?)))=>resolved.map_err(|_|HostError::new("network","Source DNS lookup timed out. Check the network, then retry."))?.map_err(|_|HostError::new("network","Cannot resolve source download. Check the network, then retry."))?.collect(),
-        };
-        if addresses.is_empty()
-            || (!test_loopback && addresses.iter().any(|address| !public(address.ip())))
-        {
-            return Err(invalid());
-        }
-        let client = reqwest::Client::builder()
+        #[cfg(test)]
+        let upstream = outgoing
+            .upstreams
+            .and_then(|upstreams| upstreams.get(&url.origin().ascii_serialization()));
+        #[cfg(not(test))]
+        let upstream: Option<&String> = None;
+        let builder = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(120))
-            .resolve_to_addrs(&hostname, &addresses)
+            .timeout(outgoing.timeout);
+        let (builder, target) = if let Some(upstream) = upstream {
+            let query = url
+                .query()
+                .map(|query| format!("?{query}"))
+                .unwrap_or_default();
+            let target =
+                Url::parse(&format!("{upstream}{}{query}", url.path())).map_err(|_| invalid())?;
+            (builder, target)
+        } else {
+            if let Ok(ip) = hostname.trim_matches(['[', ']']).parse::<IpAddr>() {
+                if !test_loopback && !public(ip) {
+                    return Err(invalid());
+                }
+            }
+            let addresses: Vec<SocketAddr> = tokio::select! {
+                _=cancellation.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")),
+                resolved=tokio::time::timeout(Duration::from_secs(15),tokio::net::lookup_host((hostname.trim_matches(['[',']']),url.port_or_known_default().ok_or_else(invalid)?)))=>resolved.map_err(|_|HostError::new("network","Source DNS lookup timed out. Check the network, then retry."))?.map_err(|_|HostError::new("network","Cannot resolve source download. Check the network, then retry."))?.collect(),
+            };
+            if addresses.is_empty()
+                || (!test_loopback && addresses.iter().any(|address| !public(address.ip())))
+            {
+                return Err(invalid());
+            }
+            (builder.resolve_to_addrs(&hostname, &addresses), url.clone())
+        };
+        let client = builder
             .build()
             .map_err(|_| HostError::new("network", "Cannot prepare source download."))?;
+        let mut values = outgoing.headers.clone();
+        if let Some(stored) = outgoing.cookies.and_then(|jar| jar.cookies(&url)) {
+            let merged = match values.get(COOKIE).and_then(|value| value.to_str().ok()) {
+                Some(explicit) => HeaderValue::from_str(&format!(
+                    "{explicit}; {}",
+                    stored.to_str().map_err(|_| invalid())?
+                ))
+                .map_err(|_| invalid())?,
+                None => stored,
+            };
+            values.insert(COOKIE, merged);
+        }
+        let mut request = client
+            .request(outgoing.method.clone(), target)
+            .headers(values);
+        if let Some(body) = &outgoing.body {
+            request = request.body(body.clone());
+        }
         let response = tokio::select! {
             _=cancellation.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")),
-            response=client.get(url.clone()).headers(values.clone()).send()=>response.map_err(|_|HostError::new("network","Source download failed. Check the network, then retry."))?,
+            response=request.send()=>response.map_err(|_|HostError::new("network","Source download failed. Check the network, then retry."))?,
         };
+        if let Some(jar) = outgoing.cookies {
+            jar.set_cookies(&mut response.headers().get_all(SET_COOKIE).iter(), &url);
+        }
         if response.status().is_redirection() {
             if hop == 5 {
                 return Err(HostError::new(
                     "network",
                     "Source download exceeded the redirect limit.",
                 ));
+            }
+            // Register this hop's cookies before following the redirect: a
+            // later hop may fail or be cancelled, but the secret is already
+            // out and the redactor must know it.
+            if let Some(sink) = observed {
+                let mut sink = sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                for value in response.headers().get_all(SET_COOKIE) {
+                    if let Some(secret) = value.to_str().ok().and_then(cookie_secret) {
+                        sink.push(secret);
+                    }
+                }
             }
             let next = url
                 .join(
@@ -185,14 +290,170 @@ pub(crate) async fn response_range(
                 )
                 .map_err(|_| invalid())?;
             if next.origin() != url.origin() {
-                values.remove(reqwest::header::COOKIE);
+                outgoing.headers.remove(COOKIE);
+                outgoing.headers.remove(AUTHORIZATION);
+            }
+            let status = response.status().as_u16();
+            if (status == 303 && outgoing.method != Method::HEAD)
+                || (matches!(status, 301 | 302) && outgoing.method == Method::POST)
+            {
+                outgoing.method = Method::GET;
+                outgoing.body = None;
+                outgoing.headers.remove(CONTENT_TYPE);
             }
             url = next;
             continue;
         }
-        return Ok(response);
+        return Ok((response, url));
     }
     Err(invalid())
+}
+
+pub(crate) const MAX_SOURCE_REQUEST_BODY: usize = 1024 * 1024;
+pub(crate) const MAX_SOURCE_RESPONSE: u64 = 8 * 1024 * 1024;
+
+/// What one source may reach: its declared origins and its own cookie jar.
+pub(crate) struct SourceNetwork {
+    pub(crate) origins: Vec<String>,
+    pub(crate) cookies: Jar,
+    pub(crate) timeout: Duration,
+    /// Plain-HTTP servers that stand in for declared HTTPS origins in tests.
+    #[cfg(test)]
+    pub(crate) upstreams: BTreeMap<String, String>,
+}
+impl SourceNetwork {
+    pub(crate) fn without_cookies(&self) -> Self {
+        Self {
+            origins: self.origins.clone(),
+            cookies: Jar::default(),
+            timeout: self.timeout,
+            #[cfg(test)]
+            upstreams: self.upstreams.clone(),
+        }
+    }
+}
+pub(crate) struct SourceRequest {
+    pub(crate) url: String,
+    pub(crate) method: String,
+    pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) body: Option<Vec<u8>>,
+}
+pub(crate) struct SourceResponse {
+    pub(crate) status: u16,
+    pub(crate) url: String,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Vec<u8>,
+}
+
+/// Headers a source may not set: the host owns framing, the connection, the
+/// target host and proxy credentials.
+fn forbidden_request_header(name: &str) -> bool {
+    matches!(
+        name,
+        "host"
+            | "content-length"
+            | "transfer-encoding"
+            | "connection"
+            | "keep-alive"
+            | "upgrade"
+            | "te"
+            | "trailer"
+            | "expect"
+    ) || name.starts_with("proxy-")
+        || name.starts_with("sec-")
+}
+fn request_headers(values: &BTreeMap<String, String>) -> HostResult<HeaderMap> {
+    let mut result = HeaderMap::new();
+    for (name, value) in values {
+        let lower = name.to_ascii_lowercase();
+        if forbidden_request_header(&lower) || value.contains(['\r', '\n', '\0']) {
+            return Err(invalid());
+        }
+        if matches!(lower.as_str(), "referer" | "origin") {
+            origin(value)?;
+        }
+        let key = HeaderName::from_bytes(name.as_bytes()).map_err(|_| invalid())?;
+        if result.contains_key(&key) {
+            return Err(invalid());
+        }
+        result.insert(key, HeaderValue::from_str(value).map_err(|_| invalid())?);
+    }
+    Ok(result)
+}
+
+pub(crate) async fn source_request(
+    network: &SourceNetwork,
+    request: SourceRequest,
+    cancellation: &Cancellation,
+    observed: Option<Arc<Mutex<Vec<String>>>>,
+) -> HostResult<SourceResponse> {
+    let method = match request.method.to_ascii_uppercase().as_str() {
+        "GET" => Method::GET,
+        "HEAD" => Method::HEAD,
+        "POST" => Method::POST,
+        "PUT" => Method::PUT,
+        "PATCH" => Method::PATCH,
+        "DELETE" => Method::DELETE,
+        _ => return Err(invalid()),
+    };
+    if request
+        .body
+        .as_ref()
+        .is_some_and(|body| body.len() > MAX_SOURCE_REQUEST_BODY)
+    {
+        return Err(HostError::new(
+            "invalid_resource",
+            "Source request body exceeds the permitted size.",
+        ));
+    }
+    let outgoing = Outgoing {
+        method,
+        headers: request_headers(&request.headers)?,
+        body: request.body,
+        cookies: Some(&network.cookies),
+        timeout: network.timeout,
+        #[cfg(test)]
+        upstreams: Some(&network.upstreams),
+    };
+    let (response, url) = send(
+        &request.url,
+        outgoing,
+        Some(&network.origins),
+        false,
+        cancellation,
+        observed.as_deref(),
+    )
+    .await?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SOURCE_RESPONSE)
+    {
+        return Err(oversized());
+    }
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.as_str().to_owned(), value.to_owned()))
+        })
+        .collect();
+    let body = read_bounded(response, MAX_SOURCE_RESPONSE, cancellation).await?;
+    Ok(SourceResponse {
+        status,
+        url: url.to_string(),
+        headers,
+        body,
+    })
+}
+fn oversized() -> HostError {
+    HostError::new(
+        "invalid_resource",
+        "Source response exceeds the permitted size.",
+    )
 }
 
 pub struct MediaResponse {
@@ -309,39 +570,9 @@ pub(crate) async fn read_bounded(
         let chunk = tokio::select! { _=cancel.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")), chunk=response.chunk()=>chunk.map_err(|_|HostError::new("network","Source download was interrupted. Retry the download."))? };
         let Some(chunk) = chunk else { break };
         if bytes.len() as u64 + chunk.len() as u64 > max {
-            return Err(HostError::new(
-                "invalid_resource",
-                "Source response exceeds the permitted size.",
-            ));
+            return Err(oversized());
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
-}
-pub(crate) async fn download(
-    mut response: reqwest::Response,
-    path: &Path,
-    max: u64,
-    cancel: &Cancellation,
-    mut progress: impl FnMut(u64),
-) -> HostResult<(u64, String)> {
-    use sha2::{Digest, Sha256};
-    let mut file = std::fs::File::create(path)?;
-    let mut hash = Sha256::new();
-    let mut size = 0;
-    let result=async {
-        loop {
-            let chunk=tokio::select! { _=cancel.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled. Retry when ready.")), chunk=response.chunk()=>chunk.map_err(|_|HostError::new("network","Source download was interrupted. Retry the download."))? };
-            let Some(chunk)=chunk else { break };
-            size+=chunk.len() as u64;
-            if size>max { return Err(HostError::new("invalid_resource","Downloaded bytes exceed the declared size.")); }
-            file.write_all(&chunk)?; hash.update(&chunk); progress(size);
-        }
-        cancel.check()?; file.sync_all()?;
-        Ok((size,super::digest_hex(hash.finalize())))
-    }.await;
-    if result.is_err() {
-        let _ = std::fs::remove_file(path);
-    }
-    result
 }

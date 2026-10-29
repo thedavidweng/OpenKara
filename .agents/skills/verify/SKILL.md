@@ -9,12 +9,15 @@ description: Run the right verification commands based on what changed. Use when
 
 Identify the **highest-risk area** touched, then run the matching row. If multiple areas changed, use the stricter set.
 
-| Change type                      | Required commands                                                                               |
-| -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Docs/config only                 | (formatting handled by hook — skip)                                                             |
-| Frontend/UI (`src/`)             | `pnpm lint` → `pnpm build` → `pnpm test`                                                        |
-| Rust/backend (`src-tauri/`)      | `cd src-tauri && cargo test -q`                                                                 |
-| Release-sensitive or cross-stack | `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` → `pnpm tauri build` |
+| Change type                      | Required commands                                                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Docs/config only                 | (formatting handled by hook — skip)                                                                                                                 |
+| Frontend/UI (`src/`)             | `pnpm lint` → `pnpm build` → `pnpm test`                                                                                                            |
+| Rust/backend (`src-tauri/`)      | `cd src-tauri && cargo test -q`                                                                                                                     |
+| Release-sensitive or cross-stack | `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` → `cargo build --manifest-path src-tauri/Cargo.toml --profile optimized` |
+
+Packaging (installers, bundles) is verified in CI, not locally. The optimized
+build above is the local check for release-sensitive and cross-stack changes.
 
 ## Always escalate to full verification for:
 

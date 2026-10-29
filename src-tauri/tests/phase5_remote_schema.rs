@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use openkara_lib::{cache, library::Song, library_root::LibraryRoot};
 use rusqlite::Connection;

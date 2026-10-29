@@ -165,12 +165,11 @@ impl PluginStreamingSource {
                 .and_then(Value::as_str)
             {
                 Some("signed_out") => {
-                    if let Some(credentials) = credentials::load_credentials(
-                        &self.data_root,
-                        &self.source_id,
-                        &declaration.owner_binding,
-                    )
-                    .map_err(|_| CatalogError::Internal("could not load source session".into()))?
+                    if let Some(credentials) =
+                        credentials::load_credentials(&self.data_root, &declaration.owner_binding)
+                            .map_err(|_| {
+                            CatalogError::Internal("could not load source session".into())
+                        })?
                     {
                         self.request_raw("session.restore", json!({"credentials":credentials}))?;
                     }
@@ -266,7 +265,7 @@ impl PluginStreamingSource {
             .description(&self.source_id)
             .map_err(host_error)?
             .owner_binding;
-        credentials::store_session(&self.data_root, &self.source_id, &owner, credentials)
+        credentials::store_session(&self.data_root, &owner, credentials)
             .map_err(|_| CatalogError::Internal("could not save source session".into()))?;
         Ok(session)
     }
@@ -488,7 +487,7 @@ impl StreamingSource for PluginStreamingSource {
         if snapshot.signed_in || snapshot.expired {
             return Ok(snapshot);
         }
-        match credentials::load_credentials(&self.data_root, &self.source_id, &owner)
+        match credentials::load_credentials(&self.data_root, &owner)
             .map_err(|_| CatalogError::Internal("could not load source session".into()))?
         {
             Some(credentials) => {
@@ -500,7 +499,12 @@ impl StreamingSource for PluginStreamingSource {
         }
     }
     fn sign_out(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
-        credentials::clear_session(&self.data_root, &self.source_id)
+        let owner = self
+            .host
+            .description(&self.source_id)
+            .map_err(host_error)?
+            .owner_binding;
+        credentials::clear_session(&self.data_root, &self.source_id, Some(&owner))
             .map_err(|_| CatalogError::Internal("could not remove source session".into()))?;
         let _ = self.request("auth.sign_out", json!({}));
         Ok(StreamingSessionSnapshot {

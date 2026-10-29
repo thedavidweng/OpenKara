@@ -1,4 +1,4 @@
-use super::chunked_cache::ChunkedCache;
+use openkara_remote::ChunkedCache;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::ControlFlow;
 use std::sync::{

@@ -3,6 +3,10 @@ name: Dependabot auto-sync
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "pnpm-lock.yaml"
+      - "Cargo.lock"
+      - "src-tauri/Cargo.lock"
 
 permissions:
   contents: read
@@ -15,7 +19,9 @@ concurrency:
 jobs:
   sync:
     name: Sync lockfile and Flatpak sources
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -72,8 +78,8 @@ jobs:
       # synchronize event, but GitHub marks EVERY resulting workflow run
       # action_required (GITHUB_TOKEN-triggered events do not auto-run
       # workflows). Any unapproved run — Packaging, this workflow's own
-      # rerun, CI — keeps the PR "unstable" and blocks auto-merge forever,
-      # so approve all of them, then confirm a clean sweep before exiting.
+      # rerun, CI — keeps required status checks pending, so approve all
+      # of them, then confirm a clean sweep before exiting.
       - name: Approve triggered workflow runs
         if: steps.commit.outputs.pushed == 'true'
         env:

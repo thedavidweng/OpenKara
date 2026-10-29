@@ -1,5 +1,9 @@
 import type { InvokeCommand } from "@/lib/tauri/invoke";
 import type {
+  MarketPackage,
+  RegistryStatus,
+  RetiredSource,
+  SourceRegistryLink,
   SourceSnapshot,
   StreamingImportJobSnapshot,
   StreamingImportProgress,
@@ -58,6 +62,7 @@ export interface MockData {
   playStartPositionBySongId?: Record<string, number>;
   coverArtUrls?: Record<string, string>;
   stemsCompleted?: boolean;
+  retiredSources?: RetiredSource[];
 }
 
 export interface MockSong {
@@ -106,6 +111,7 @@ export interface TauriMockHelpers {
   ) => Record<string, unknown>;
   setSeparationCompleted: (songHash: string) => void;
   getPlaybackSnapshot: () => Record<string, unknown>;
+  openSourceRegistryLink: (link: SourceRegistryLink) => void;
 }
 
 export interface TauriMockResult {
@@ -172,7 +178,9 @@ export function createTauriMock(data: any): TauriMockResult {
   const sourceSnapshots = ["demo-web", "demo-plugin"].map<SourceSnapshot>(
     (source_id, index) => ({
       source_id,
-      owner_binding: `demo/${source_id}`,
+      registry_id: "demo",
+      package_id: source_id,
+      owner_binding: `registry:demo/${source_id}`,
       name: index ? "Plugin Library" : "Web Library",
       description: "Deterministic UI-only source",
       license: "MIT",
@@ -181,7 +189,7 @@ export function createTauriMock(data: any): TauriMockResult {
       staged_version: null,
       pinned_version: null,
       enabled: true,
-      runtime_ready: true,
+      loaded: true,
       running: false,
       state: "ready",
       progress: null,
@@ -194,9 +202,9 @@ export function createTauriMock(data: any): TauriMockResult {
         publisher: "demo",
         version: "1.0.0",
         minimum_host_version: "1.0.0",
-        protocol: { majors: [1], minor: 0 },
-        runtime: { kind: "node", major: 22 },
-        entry: "index.js",
+        protocol: { majors: [2], minor: 0 },
+        runtime: { kind: "openkara-js", major: 1 },
+        entry: "source.mjs",
         name: index ? "Plugin Library" : "Web Library",
         description: "UI-only fixture",
         license: "MIT",
@@ -217,6 +225,281 @@ export function createTauriMock(data: any): TauriMockResult {
       },
     }),
   );
+  const retiredSources: RetiredSource[] = [...(data.retiredSources ?? [])];
+  const pendingRegistryLinks: SourceRegistryLink[] = [];
+  const sourceRegistries: RegistryStatus[] = [
+    {
+      url: "https://sources.demo.test/registry.json",
+      registry_id: "demo",
+      display_name: "Demo Registry",
+      homepage: "https://sources.demo.test",
+      refreshed_at: 1700000000000,
+      last_error: null,
+    },
+  ];
+  interface MockRegistryVersion {
+    version: string;
+    size: number;
+    resource_origins: string[];
+    media_origins: string[];
+    capabilities: string[];
+  }
+  interface MockRegistryPackage {
+    package_id: string;
+    source_id: string;
+    registry_id: string;
+    name: string;
+    description: string;
+    license: string;
+    versions: MockRegistryVersion[];
+  }
+  const registryPackages: MockRegistryPackage[] = [
+    {
+      package_id: "demo-web",
+      source_id: "demo-web",
+      registry_id: "demo",
+      name: "Web Library",
+      description: "Deterministic UI-only source",
+      license: "MIT",
+      versions: [
+        {
+          version: "1.1.0",
+          size: 2048,
+          resource_origins: ["https://api.demo.test"],
+          media_origins: [],
+          capabilities: [
+            "liked_tracks",
+            "playlists",
+            "playlist_tracks",
+            "search",
+            "preview",
+            "import",
+          ],
+        },
+        {
+          version: "1.0.0",
+          size: 1024,
+          resource_origins: [],
+          media_origins: [],
+          capabilities: [
+            "liked_tracks",
+            "playlists",
+            "playlist_tracks",
+            "search",
+            "preview",
+            "import",
+          ],
+        },
+      ],
+    },
+    {
+      package_id: "demo-plugin",
+      source_id: "demo-plugin",
+      registry_id: "demo",
+      name: "Plugin Library",
+      description: "Deterministic UI-only source",
+      license: "MIT",
+      versions: [
+        {
+          version: "1.1.0",
+          size: 2048,
+          resource_origins: [],
+          media_origins: [],
+          capabilities: ["search", "playlists", "playlist_tracks", "import"],
+        },
+        {
+          version: "1.0.0",
+          size: 1024,
+          resource_origins: [],
+          media_origins: [],
+          capabilities: ["search", "playlists", "playlist_tracks", "import"],
+        },
+      ],
+    },
+    {
+      package_id: "demo-fresh",
+      source_id: "demo-fresh",
+      registry_id: "demo",
+      name: "Fresh Library",
+      description: "Deterministic UI-only package",
+      license: "MIT",
+      versions: [
+        {
+          version: "1.0.0",
+          size: 1536,
+          resource_origins: ["https://fresh.demo.test"],
+          media_origins: [],
+          capabilities: ["search"],
+        },
+      ],
+    },
+    {
+      package_id: "web-clone",
+      source_id: "demo-web",
+      registry_id: "demo",
+      name: "Web Clone",
+      description: "Claims the demo-web source id",
+      license: "MIT",
+      versions: [
+        {
+          version: "1.0.0",
+          size: 1280,
+          resource_origins: ["https://clone.demo.test"],
+          media_origins: [],
+          capabilities: ["search"],
+        },
+      ],
+    },
+  ];
+  function marketPackage(pkg: MockRegistryPackage): MarketPackage {
+    const holder = sourceSnapshots.find(
+      (snapshot) => snapshot.source_id === pkg.source_id,
+    );
+    const installed =
+      holder &&
+      holder.installed_version &&
+      holder.registry_id === pkg.registry_id &&
+      holder.package_id === pkg.package_id
+        ? holder
+        : null;
+    const candidate = pkg.versions[0];
+    let update: MarketPackage["update"] = null;
+    if (installed && !installed.pinned_version && installed.manifest) {
+      const newer = candidate.version !== installed.installed_version;
+      if (newer) {
+        const heldOrigins = new Set([
+          ...installed.manifest.resource_origins,
+          ...installed.manifest.media_origins,
+        ]);
+        const heldCapabilities = new Set(installed.manifest.capabilities);
+        const addedOrigins = [
+          ...new Set(
+            [...candidate.resource_origins, ...candidate.media_origins].filter(
+              (origin) => !heldOrigins.has(origin),
+            ),
+          ),
+        ];
+        const addedCapabilities = candidate.capabilities.filter(
+          (capability) => !heldCapabilities.has(capability),
+        );
+        update = {
+          version: candidate.version,
+          added_origins: addedOrigins,
+          added_capabilities: addedCapabilities,
+          requires_consent:
+            addedOrigins.length > 0 || addedCapabilities.length > 0,
+        };
+      }
+    }
+    return {
+      registry_id: pkg.registry_id,
+      package_id: pkg.package_id,
+      source_id: pkg.source_id,
+      name: pkg.name,
+      description: pkg.description,
+      license: pkg.license,
+      versions: pkg.versions.map((version) => ({ ...version })),
+      installed: installed
+        ? {
+            version: installed.installed_version as string,
+            pinned_version: installed.pinned_version,
+          }
+        : null,
+      update,
+    };
+  }
+  function marketPackageOf(registryId: string, packageId: string) {
+    const pkg = registryPackages.find(
+      (entry) =>
+        entry.registry_id === registryId && entry.package_id === packageId,
+    );
+    if (
+      !pkg ||
+      !sourceRegistries.some((entry) => entry.registry_id === registryId)
+    )
+      throw {
+        code: "not_found",
+        message:
+          "not_found: No added Source Registry lists this package. Add or refresh the registry.",
+        retryable: false,
+      };
+    return pkg;
+  }
+  function consentRefusal(
+    snapshot: SourceSnapshot,
+    version: MockRegistryVersion,
+  ) {
+    if (!snapshot.manifest) return null;
+    const heldOrigins = new Set([
+      ...snapshot.manifest.resource_origins,
+      ...snapshot.manifest.media_origins,
+    ]);
+    const heldCapabilities = new Set(snapshot.manifest.capabilities);
+    const addedOrigins = [
+      ...new Set(
+        [...version.resource_origins, ...version.media_origins].filter(
+          (origin) => !heldOrigins.has(origin),
+        ),
+      ),
+    ];
+    const addedCapabilities = version.capabilities.filter(
+      (capability) => !heldCapabilities.has(capability),
+    );
+    if (!addedOrigins.length && !addedCapabilities.length) return null;
+    const added: string[] = [];
+    if (addedOrigins.length) added.push(`origins ${addedOrigins.join(", ")}`);
+    if (addedCapabilities.length)
+      added.push(`capabilities ${addedCapabilities.join(", ")}`);
+    return {
+      code: "consent_required",
+      message: `consent_required: This update adds ${added.join(" and ")}. Review the new access and confirm the update.`,
+      retryable: false,
+    };
+  }
+  function marketSnapshot(
+    pkg: MockRegistryPackage,
+    version: MockRegistryVersion,
+  ): SourceSnapshot {
+    return {
+      source_id: pkg.source_id,
+      registry_id: pkg.registry_id,
+      package_id: pkg.package_id,
+      owner_binding: `registry:${pkg.registry_id}/${pkg.package_id}`,
+      name: pkg.name,
+      description: pkg.description,
+      license: pkg.license,
+      installed_version: version.version,
+      available_version: pkg.versions[0].version,
+      staged_version: null,
+      pinned_version: null,
+      enabled: false,
+      loaded: true,
+      running: false,
+      state: "disabled",
+      progress: null,
+      last_error: null,
+      active_work: [],
+      manifest: {
+        manifest_version: 1,
+        source_id: pkg.source_id,
+        package_id: pkg.package_id,
+        publisher: "demo",
+        version: version.version,
+        minimum_host_version: "1.0.0",
+        protocol: { majors: [2], minor: 0 },
+        runtime: { kind: "openkara-js", major: 1 },
+        entry: "source.mjs",
+        name: pkg.name,
+        description: pkg.description,
+        license: pkg.license,
+        capabilities: [...version.capabilities],
+        authentication: { flow: "none" },
+        requires_authentication: [],
+        resource_origins: [...version.resource_origins],
+        media_origins: [...version.media_origins],
+      },
+    };
+  }
   const sessions = new Map<string, boolean>();
   const challenges = new Map<
     string,
@@ -979,8 +1262,26 @@ export function createTauriMock(data: any): TauriMockResult {
     install_streaming_source: async (args: {
       sourceId: string;
       version?: string;
+      consent?: boolean;
     }) => {
       const s = source(args.sourceId);
+      const registryPackage = registryPackages.find(
+        (entry) =>
+          entry.registry_id === s.registry_id &&
+          entry.package_id === s.package_id,
+      );
+      if (s.installed_version && registryPackage && !args.consent) {
+        const requested = args.version ?? s.pinned_version ?? undefined;
+        const listed = requested
+          ? registryPackage.versions.find(
+              (entry) => entry.version === requested,
+            )
+          : registryPackage.versions[0];
+        if (listed && listed.version !== s.installed_version) {
+          const refusal = consentRefusal(s, listed);
+          if (refusal) throw refusal;
+        }
+      }
       if (installations.has(args.sourceId))
         throw {
           code: "install_in_progress",
@@ -1003,7 +1304,7 @@ export function createTauriMock(data: any): TauriMockResult {
       s.installed_version =
         args.version ?? s.pinned_version ?? s.available_version;
       s.state = s.enabled ? "ready" : "disabled";
-      s.runtime_ready = true;
+      s.loaded = true;
       s.progress = null;
       return changed(args.sourceId);
     },
@@ -1061,6 +1362,111 @@ export function createTauriMock(data: any): TauriMockResult {
     }) => {
       source(args.sourceId).pinned_version = args.version;
       return changed(args.sourceId);
+    },
+    list_source_registries: () => clone(sourceRegistries),
+    take_source_registry_links: () => pendingRegistryLinks.splice(0),
+    add_source_registry: (args: { url: string }) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(args.url);
+      } catch {
+        throw {
+          code: "invalid_registry",
+          message: `invalid_registry: ${args.url} is not a URL.`,
+          retryable: false,
+        };
+      }
+      if (parsed.protocol !== "https:")
+        throw {
+          code: "invalid_registry",
+          message: "invalid_registry: A Source Registry URL must use HTTPS.",
+          retryable: false,
+        };
+      const registryId = parsed.host;
+      const conflicting = sourceRegistries.find(
+        (entry) => entry.registry_id === registryId && entry.url !== args.url,
+      );
+      if (conflicting)
+        throw {
+          code: "invalid_registry",
+          message: `invalid_registry: ${conflicting.url} already serves the registry id ${registryId}. Remove it before adding a different URL.`,
+          retryable: false,
+        };
+      const existing = sourceRegistries.find((entry) => entry.url === args.url);
+      if (existing) return clone(existing);
+      const entry: RegistryStatus = {
+        url: args.url,
+        registry_id: registryId,
+        display_name: parsed.host,
+        homepage: `https://${parsed.host}`,
+        refreshed_at: Date.now(),
+        last_error: null,
+      };
+      sourceRegistries.push(entry);
+      return clone(entry);
+    },
+    remove_source_registry: (args: { registryId: string }) => {
+      const index = sourceRegistries.findIndex(
+        (entry) => entry.registry_id === args.registryId,
+      );
+      if (index >= 0) sourceRegistries.splice(index, 1);
+    },
+    list_source_market: () =>
+      registryPackages
+        .filter((pkg) =>
+          sourceRegistries.some(
+            (entry) => entry.registry_id === pkg.registry_id,
+          ),
+        )
+        .map(marketPackage),
+    install_market_package: (args: {
+      registryId: string;
+      packageId: string;
+      version?: string;
+      consent?: boolean;
+      replace?: boolean;
+    }) => {
+      const pkg = marketPackageOf(args.registryId, args.packageId);
+      const versionDef =
+        pkg.versions.find((entry) => entry.version === args.version) ??
+        pkg.versions[0];
+      const holder = sourceSnapshots.find(
+        (snapshot) => snapshot.source_id === pkg.source_id,
+      );
+      const sameIdentity =
+        !!holder &&
+        holder.registry_id === pkg.registry_id &&
+        holder.package_id === pkg.package_id;
+      if (holder?.installed_version && !sameIdentity) {
+        if (!args.replace)
+          throw {
+            code: "source_id_taken",
+            message: `source_id_taken: ${holder.name} already provides the source id ${pkg.source_id}. Confirm the replacement to install ${pkg.name}.`,
+            retryable: false,
+          };
+        sessions.delete(pkg.source_id);
+        Object.assign(holder, marketSnapshot(pkg, versionDef));
+        return changed(pkg.source_id);
+      }
+      if (holder && sameIdentity && holder.installed_version) {
+        if (!args.consent && holder.installed_version !== versionDef.version) {
+          const refusal = consentRefusal(holder, versionDef);
+          if (refusal) throw refusal;
+        }
+        holder.installed_version = versionDef.version;
+        holder.available_version = pkg.versions[0].version;
+        return changed(pkg.source_id);
+      }
+      if (holder) {
+        Object.assign(holder, marketSnapshot(pkg, versionDef));
+        return changed(pkg.source_id);
+      }
+      sourceSnapshots.push(marketSnapshot(pkg, versionDef));
+      return changed(pkg.source_id);
+    },
+    get_source_replacement_notice: () => clone(retiredSources),
+    dismiss_source_replacement_notice: () => {
+      retiredSources.length = 0;
     },
     get_streaming_session: (args: { sourceId: string }) =>
       session(args.sourceId),
@@ -1516,6 +1922,10 @@ export function createTauriMock(data: any): TauriMockResult {
     helpers: {
       emitEvent: (eventName: string, payload: any) =>
         emitMockEvent(eventName, payload),
+      openSourceRegistryLink: (link: SourceRegistryLink) => {
+        pendingRegistryLinks.push(link);
+        emitMockEvent("source-registry-link", null);
+      },
       setCommandDelayMs: (cmd: string, delayMs: number) => {
         commandDelayMs.set(cmd, Math.max(0, delayMs));
       },

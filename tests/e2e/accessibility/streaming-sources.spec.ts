@@ -1,4 +1,109 @@
+import { E2E_MOCK_DATA } from "@/mock/tauri-mock-data";
+import { createTauriMockScript } from "../fixtures/tauri-mock";
 import { expect, test } from "./fixtures/accessibility-test";
+
+test("source registries and the market work from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+
+  const registries = dialog.getByRole("region", { name: "Source Registries" });
+  await expect(
+    registries.getByRole("heading", { name: "Demo Registry" }),
+  ).toBeVisible();
+
+  const url = registries.getByRole("textbox", { name: "Registry URL" });
+  await url.fill("https://extra.demo.test/registry.json");
+  await registries.getByRole("button", { name: "Add registry" }).click();
+  const addConfirm = page.getByRole("dialog", { name: "Add Source Registry" });
+  await expect(addConfirm).toBeVisible();
+  await expect(addConfirm).toContainText(
+    "https://extra.demo.test/registry.json",
+  );
+  await expect(addConfirm).toContainText("maintained outside OpenKara");
+  await addConfirm.getByRole("button", { name: "Add registry" }).press("Enter");
+  await expect(
+    registries.getByRole("heading", { name: "extra.demo.test" }),
+  ).toBeVisible();
+
+  const market = dialog.getByRole("region", { name: "Source Market" });
+  const fresh = market.getByRole("article", { name: "Fresh Library" });
+  await expect(fresh).toBeVisible();
+  await expect(fresh).toContainText("https://fresh.demo.test");
+  await a11y.axeCheck();
+
+  await fresh.getByRole("button", { name: "Install", exact: true }).click();
+  const install = page.getByRole("dialog", { name: "Install Fresh Library" });
+  await expect(install).toBeVisible();
+  await expect(install).toContainText("https://fresh.demo.test");
+  await install.getByRole("button", { name: "Install package" }).press("Enter");
+  await expect(fresh).toContainText("Installed");
+  await expect(fresh).toContainText("Disabled");
+
+  const web = market.getByRole("article", { name: "Web Library" });
+  await web.getByRole("button", { name: "Update to 1.1.0" }).click();
+  const consent = page.getByRole("dialog", { name: "Review new access" });
+  await expect(consent).toBeVisible();
+  await expect(consent).toContainText("https://api.demo.test");
+  await consent
+    .getByRole("button", { name: "Allow and update" })
+    .press("Enter");
+  await expect(
+    web.getByRole("button", { name: "Update to 1.1.0" }),
+  ).toHaveCount(0);
+  await expect(web.getByText("1.1.0 · Ready")).toBeVisible();
+  await a11y.axeCheck();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
+test("a registry link opens the add confirmation from anywhere in the app", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() =>
+    window.__OPENKARA_E2E__.openSourceRegistryLink({
+      kind: "add_registry",
+      url: "https://linked.demo.test/registry.json",
+    }),
+  );
+  const addConfirm = page.getByRole("dialog", { name: "Add Source Registry" });
+  await expect(addConfirm).toBeVisible();
+  await expect(addConfirm).toContainText(
+    "https://linked.demo.test/registry.json",
+  );
+  await expect(addConfirm).toContainText("maintained outside OpenKara");
+  await expect(
+    addConfirm.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await a11y.axeCheck();
+  await addConfirm.getByRole("button", { name: "Add registry" }).press("Enter");
+  const registries = page
+    .getByRole("dialog", { name: "Preferences" })
+    .getByRole("region", { name: "Source Registries" });
+  await expect(
+    registries.getByRole("heading", { name: "linked.demo.test" }),
+  ).toBeVisible();
+
+  await page.evaluate(() =>
+    window.__OPENKARA_E2E__.openSourceRegistryLink({
+      kind: "invalid",
+      link: "openkara://add-registry?url=http%3A%2F%2Flinked.demo.test",
+    }),
+  );
+  await expect(registries.getByRole("alert")).toContainText(
+    "A registry link must name one HTTPS registry URL",
+  );
+  await expect(
+    page.getByRole("dialog", { name: "Add Source Registry" }),
+  ).toHaveCount(0);
+});
 
 test("source authentication and capability tabs work from the keyboard", async ({
   page,
@@ -114,4 +219,35 @@ test("source switching keeps colliding remote tracks and cursor pages distinct",
   await expect(
     browser.getByTestId("streaming-track-row").first(),
   ).toContainText("Web Library: Shared Track");
+});
+
+test("the Node-era replacement notice names the source and works from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.addInitScript(
+    createTauriMockScript({
+      ...E2E_MOCK_DATA,
+      retiredSources: [
+        { source_id: "legacy", name: "Legacy Library", version: "1.4.0" },
+      ],
+    }),
+  );
+  await page.goto("/");
+  const notice = page.getByRole("region", {
+    name: "Streaming Sources need replacement",
+  });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("Legacy Library");
+  await expect(notice).toContainText("add a Source Registry");
+  await a11y.axeCheck();
+
+  await notice.getByRole("button", { name: "Open Settings" }).press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await notice.getByRole("button", { name: "Dismiss" }).press("Enter");
+  await expect(notice).toBeHidden();
 });

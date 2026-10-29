@@ -19,7 +19,7 @@ use std::{
     time::Instant,
 };
 
-mod support;
+use crate::support;
 
 use openkara_lib::audio::decode::DecodedAudio;
 use openkara_lib::audio::encode::StreamingOggWriter;
@@ -31,15 +31,6 @@ use openkara_lib::{
         workspace::SeparationWorkspace,
     },
 };
-
-fn initialize_test_runtime() {
-    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("generated")
-        .join("onnxruntime")
-        .join(model::ORT_RUNTIME_FILENAME);
-    model::ensure_runtime_loaded_from_path(&runtime_path)
-        .expect("dev runtime should initialize for the spectral bench");
-}
 
 /// Peak resident set size in kilobytes, when the platform exposes it.
 fn peak_rss_kb() -> Option<u64> {
@@ -214,7 +205,7 @@ fn spectral_candidate_bench() {
         return;
     };
     let model_path = PathBuf::from(model_path);
-    initialize_test_runtime();
+    let _runtime = support::acquire_test_runtime();
 
     let artifact_bytes = fs::metadata(&model_path).expect("model metadata").len();
 
