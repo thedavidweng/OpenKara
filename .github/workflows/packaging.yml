@@ -413,7 +413,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
+      actions: read # list this run's job results for the failure summary
       issues: write # open or update a tracking issue when main or nightly packaging fails
     steps:
       - name: Verify packaging status
