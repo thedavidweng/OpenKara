@@ -7,7 +7,7 @@ description: Terms of Service for the OpenKara website and desktop application.
 
 These terms describe the basic rules for using the OpenKara website and desktop application.
 
-**Last updated:** April 21, 2026
+**Last updated:** October 29, 2026
 
 ## Acceptance
 
@@ -57,7 +57,7 @@ To the extent permitted by law, the OpenKara project and contributors are not li
 
 ## Open Source License
 
-The OpenKara source code is distributed under the Apache 2.0 License. These Terms of Service govern use of the public website and project service surface; the software license remains the governing license for source code redistribution and modification.
+The OpenKara source code is distributed under [AGPL-3.0-only](https://github.com/thedavidweng/OpenKara/blob/main/LICENSE). These Terms of Service govern use of the public website and project service surface; the software license remains the governing license for source code redistribution and modification.
 
 ## Privacy
 
