@@ -90,7 +90,10 @@ impl Shared {
             pending.settled.cancel();
         }
     }
-    fn reject(&self, id: u64, error: HostError) {
+    /// Answers one outstanding call with `error`. Returns whether the call
+    /// was still outstanding: a drop-cancel racing an already-settled call
+    /// is a ghost and answers nothing.
+    fn reject(&self, id: u64, error: HostError) -> bool {
         if let Some(reply) = self
             .pending
             .lock()
@@ -99,6 +102,9 @@ impl Shared {
             .and_then(|pending| pending.reply.take())
         {
             let _ = reply.send(Err(error));
+            true
+        } else {
+            false
         }
     }
     pub(super) fn terminate(&self) {
@@ -297,8 +303,13 @@ fn host_setup(config: &HostConfig, release: &Release) -> HostResult<host_api::Ho
     })
 }
 
-/// Answers a cancelled request at once and stops the source when a request
-/// outlives its deadline. Cancelled work keeps its deadline until it settles.
+/// Answers a cancelled request at once and disposes the source instance, so
+/// the cancelled handler actually stops: terminating trips the sandbox
+/// interrupt handler, which aborts the running script with an uncatchable
+/// error before it can commit anything, and the next call starts fresh state.
+/// Other sources run on their own threads and runtimes and are unaffected.
+/// A request that outlives its deadline is disposed the same way. Settled
+/// work leaves the loop at once.
 async fn watch(
     shared: Weak<Shared>,
     id: u64,
@@ -306,21 +317,22 @@ async fn watch(
     settled: Cancellation,
     cancel: Cancellation,
 ) {
-    let mut answered = false;
-    loop {
-        tokio::select! {
-            _ = settled.cancelled() => return,
-            _ = cancel.cancelled(), if !answered => {
-                answered = true;
-                if let Some(shared) = shared.upgrade() {
-                    shared.reject(id, HostError::new("cancelled", "Source request cancelled."));
-                }
-            }
-            _ = tokio::time::sleep_until(deadline.into()) => {
-                if let Some(shared) = shared.upgrade() {
+    tokio::select! {
+        _ = settled.cancelled() => {}
+        _ = cancel.cancelled() => {
+            if let Some(shared) = shared.upgrade() {
+                // Only a live call disposes the instance: a ghost firing
+                // for an already-settled call answers nothing and leaves
+                // the instance alone. A miss means the call already settled,
+                // so its deadline died with it and the watch is over.
+                if shared.reject(id, HostError::new("cancelled", "Source request cancelled.")) {
                     shared.terminate();
                 }
-                return;
+            }
+        }
+        _ = tokio::time::sleep_until(deadline.into()) => {
+            if let Some(shared) = shared.upgrade() {
+                shared.terminate();
             }
         }
     }

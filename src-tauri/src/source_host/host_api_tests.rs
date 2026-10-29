@@ -44,7 +44,8 @@ export default {
       session: session(),
     };
   },
-  "session.restore"({ credentials }) {
+  async "session.restore"({ credentials, slow_ms }) {
+    if (slow_ms) await new Promise((resolve) => setTimeout(resolve, slow_ms));
     restored = credentials;
     return session();
   },
@@ -613,6 +614,63 @@ async fn source_logs_are_structured_and_redacted() {
     for secret in ["super-secret-token", "signed-value", "session=abc"] {
         assert!(!output.contains(secret), "{secret} leaked: {output}");
     }
+}
+
+#[tokio::test]
+async fn a_cancelled_restore_never_commits_session_state() {
+    let fixture = Fixture::new(
+        vec![
+            package("engine", &[API], &[]),
+            package("other", &[API], &[]),
+        ],
+        &[],
+    )
+    .await;
+
+    // Cancel mid-flight: the caller sees ERR_CANCELLED while the handler is
+    // still suspended before committing.
+    let handle = fixture
+        .host
+        .start_request(
+            "engine",
+            "session.restore",
+            json!({"credentials":{"token":"cancel-me"},"slow_ms":1000}),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    handle.cancel();
+    let cancelled = handle.result().await.unwrap_err();
+    assert_eq!(cancelled.code, "cancelled");
+
+    // After the commit deadline passed, the cancelled restore must not have
+    // committed: describe still sees a signed-out session.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let description = fixture
+        .host
+        .request("engine", "describe", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(description["session"]["state"], "signed_out");
+
+    // Fresh state serves normally afterwards, and the other source never
+    // noticed the cancellation.
+    let restored = fixture
+        .host
+        .request(
+            "engine",
+            "session.restore",
+            json!({"credentials":{"token":"fresh"}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(restored["state"], "signed_in");
+    let other = fixture
+        .host
+        .request("other", "describe", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(other["session"]["state"], "signed_out");
 }
 
 #[tokio::test]
