@@ -7,7 +7,7 @@ description: Terms of Service for the OpenKara website and desktop application.
 
 These terms describe the basic rules for using the OpenKara website and desktop application.
 
-**Last updated:** October 24, 2026
+**Last updated:** October 29, 2026
 
 ## Acceptance
 

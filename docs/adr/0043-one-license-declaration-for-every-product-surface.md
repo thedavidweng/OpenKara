@@ -1,6 +1,6 @@
 # ADR 0043 — One license declaration for every product surface
 
-Date: 2026-10-24
+Date: 2026-10-29
 Status: accepted
 
 ## Context
@@ -30,6 +30,6 @@ grants. Third-party dependency license policy in `deny.toml` and
 
 - A release note or a page that names the project license must use the SPDX
   identifier, not a display name such as "Apache 2.0".
-- The Apache-2.0 grant for revisions before `f461b2a` stays in force. Do not
+- The Apache-2.0 grant for code up to revision `f461b2a` (LICENSING.md) stays in force. Do not
   delete LICENSES/Apache-2.0.txt or NOTICE.
 - The website Terms page has a later date after a license statement change.
