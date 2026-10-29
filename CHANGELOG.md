@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.19.2](https://github.com/thedavidweng/OpenKara/compare/v0.19.1...v0.19.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **bundle:** drop licenseFile so the DMG mounts without a license prompt ([#646](https://github.com/thedavidweng/OpenKara/issues/646)) ([e4d50e2](https://github.com/thedavidweng/OpenKara/commit/e4d50e2f6682954fb8e010ae5ff79a8d18826a56))
+
 ## [0.19.1](https://github.com/thedavidweng/OpenKara/compare/v0.19.0...v0.19.1) (2026-10-29)
 
 
