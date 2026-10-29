@@ -20,7 +20,9 @@
 //! Until the real registry URL exists, CI stays red on this step by design:
 //! no env-empty skip, no retry/timeout weakening, no mock substitution.
 
-use openkara_lib::source_host::{HostConfig, SourceHost, SourceManifest, SourceState};
+use openkara_lib::source_host::{
+    HostConfig, ProtocolDeclaration, RuntimeRequirement, SourceHost, SourceManifest, SourceState,
+};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
