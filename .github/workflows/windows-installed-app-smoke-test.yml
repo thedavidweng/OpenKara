@@ -99,7 +99,7 @@ jobs:
             job_links="$(gh run view "${RUN_ID}" \
               --repo "${GH_REPO}" \
               --json jobs \
-              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (`\(.conclusion)`)"' 2>/dev/null || true)"
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | "- [\(.name)](\(.url)) (\u0060\(.conclusion)\u0060)"' 2>/dev/null || true)"
           fi
           if [ -z "${job_links}" ]; then
             job_links="- [windows-installed-app](${RUN_URL:-}) (\`${WINDOWS_INSTALLED_APP:-failure}\`)"
