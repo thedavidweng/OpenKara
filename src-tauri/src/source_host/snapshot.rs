@@ -42,7 +42,10 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
                 .collect()
         })
         .unwrap_or_default();
-    let status = if invalid || retired.is_some() {
+    // A carried-over retired record on an installed replacement is only a
+    // pending old-owner credential cleanup; the source still runs.
+    let needs_replacement = retired.is_some() && stored.package.is_none();
+    let status = if invalid || needs_replacement {
         SourceState::UpdateRequired
     } else if live.is_some_and(|live| live.stopping) {
         SourceState::Cancelling
@@ -101,8 +104,8 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
         state: status,
         progress: live.and_then(|live| live.progress.clone()),
         last_error: match retired {
-            Some(_) => Some(replacement_required()),
-            None => live.and_then(|live| live.error.clone()),
+            Some(_) if needs_replacement => Some(replacement_required()),
+            _ => live.and_then(|live| live.error.clone()),
         },
         active_work,
         manifest,

@@ -129,9 +129,27 @@ impl SourceHost {
     fn claim_free(&self, id: &str, identity: &PackageIdentity) -> HostResult<()> {
         let mut state = self.inner.state.lock().unwrap();
         let mut stored = state.stored.clone();
+        // A pending old-owner credential cleanup survives the claim: the
+        // retired record carries over with the notice dismissed (the
+        // replacement is installed, so nothing is announced) and the old
+        // owner preserved for the next cleanup attempt.
+        let carried = stored.sources.get(id).and_then(|source| {
+            source
+                .retired
+                .clone()
+                .filter(|retired| !retired.credentials_removed)
+                .map(|mut retired| {
+                    retired.notice_dismissed = true;
+                    if retired.previous_owner_binding.is_none() {
+                        retired.previous_owner_binding = Some(source.owner_binding.clone());
+                    }
+                    retired
+                })
+        });
         *stored.sources.entry(id.into()).or_default() = StoredSource {
             owner_binding: identity.owner_binding(),
             package: Some(identity.clone()),
+            retired: carried,
             ..StoredSource::default()
         };
         save(&self.inner.config, &stored)?;
@@ -151,7 +169,9 @@ impl SourceHost {
     ) -> HostResult<(registry::Candidate, Cancellation)> {
         let mut state = self.inner.state.lock().unwrap();
         let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
-        if stored.retired.is_some() {
+        // A carried-over retired record on an installed replacement is only
+        // a pending old-owner credential cleanup, not a missing package.
+        if stored.retired.is_some() && stored.package.is_none() {
             return Err(replacement_required());
         }
         let identity = stored.package.as_ref().ok_or_else(not_listed)?;

@@ -35,6 +35,7 @@ pub(super) fn retire_node_installs(stored: &mut StoredState) -> bool {
             version: release.manifest.version.clone(),
             credentials_removed: false,
             notice_dismissed: false,
+            previous_owner_binding: None,
         });
         source.active = None;
         source.staged = None;
@@ -107,8 +108,9 @@ impl SourceHost {
         })
     }
     /// Calls `remove(source_id, owner_binding)` for each retired source whose
-    /// Streaming Credentials are not removed yet. A failed removal stays
-    /// pending for the next call.
+    /// Streaming Credentials are not removed yet. A replacement that
+    /// installed under a new owner clears the previous owner binding, never
+    /// its own account. A failed removal stays pending for the next call.
     pub fn remove_retired_credentials<E>(
         &self,
         mut remove: impl FnMut(&str, &str) -> Result<(), E>,
@@ -125,7 +127,14 @@ impl SourceHost {
                         .as_ref()
                         .is_some_and(|retired| !retired.credentials_removed)
                 })
-                .map(|(id, source)| (id.clone(), source.owner_binding.clone()))
+                .map(|(id, source)| {
+                    let owner = source
+                        .retired
+                        .as_ref()
+                        .and_then(|retired| retired.previous_owner_binding.clone())
+                        .unwrap_or_else(|| source.owner_binding.clone());
+                    (id.clone(), owner)
+                })
                 .collect()
         };
         let removed: BTreeSet<String> = pending

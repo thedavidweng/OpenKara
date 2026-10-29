@@ -277,6 +277,9 @@ pub(crate) struct StoredSource {
 }
 /// A Node-era installation that the embedded engine cannot run. Its files are
 /// deleted; the source id waits for a replacement from a Source Registry.
+/// When a replacement installs before the old owner's cleanup succeeds, the
+/// record is carried over (with the notice dismissed) so the pending cleanup
+/// survives: `previous_owner_binding` then names the account to clear.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct RetiredInstall {
     pub name: String,
@@ -285,6 +288,8 @@ pub(crate) struct RetiredInstall {
     pub credentials_removed: bool,
     #[serde(default)]
     pub notice_dismissed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_owner_binding: Option<String>,
 }
 /// A source that the one-time replacement notice names.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

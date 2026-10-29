@@ -244,6 +244,57 @@ async fn a_retired_source_is_replaced_from_a_registry_under_the_same_source_id()
 }
 
 #[tokio::test]
+async fn a_failed_cleanup_survives_a_same_id_replacement_until_it_succeeds() {
+    let root = tempfile::tempdir().unwrap();
+    seed_node_install(&root.path().join("streaming-sources"));
+    let mut registry = RegistryFixture::new("org.example.registry").await;
+    registry.publish(&[engine_manifest(&registry)]).await;
+    let host = SourceHost::new(config(root.path())).await.unwrap();
+    host.add_registry(&registry.url()).await.unwrap();
+
+    // The old owner's cleanup fails (keychain locked): it stays pending.
+    host.remove_retired_credentials(|_, _| Err(std::io::Error::other("keychain locked")))
+        .unwrap();
+
+    // A replacement with the same source id installs under a new owner.
+    host.install_package(
+        registry.registry_id(),
+        &registry.package_id("fixture"),
+        None,
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+
+    // The pending cleanup for the OLD owner must survive the replacement.
+    let mut removed = Vec::new();
+    host.remove_retired_credentials(|id, owner| {
+        removed.push((id.to_owned(), owner.to_owned()));
+        Ok::<_, std::io::Error>(())
+    })
+    .unwrap();
+    assert_eq!(
+        removed,
+        vec![("fixture".to_owned(), NODE_ERA_OWNER.to_owned())],
+        "the old owner's cleanup must survive a same-id replacement"
+    );
+
+    // Success is durable and idempotent: a second call and a relaunch
+    // remove nothing more.
+    host.remove_retired_credentials(|id, _| -> Result<(), std::io::Error> {
+        panic!("credentials of {id} were removed twice")
+    })
+    .unwrap();
+    drop(host);
+    let host = SourceHost::new(config(root.path())).await.unwrap();
+    host.remove_retired_credentials(|id, _| -> Result<(), std::io::Error> {
+        panic!("credentials of {id} were removed after relaunch")
+    })
+    .unwrap();
+}
+
+#[tokio::test]
 async fn without_a_registry_replacement_the_source_stays_marked() {
     let root = tempfile::tempdir().unwrap();
     seed_node_install(&root.path().join("streaming-sources"));
