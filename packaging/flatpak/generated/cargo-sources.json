@@ -8738,14 +8738,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/zip/zip-9.1.1.crate",
-    "sha256": "518b847fd864440c379748ad684c449f293af68978a485a4ff16f7c901c1f7c4",
-    "dest": "cargo/vendor/zip-9.1.1"
+    "url": "https://static.crates.io/crates/zip/zip-9.1.2.crate",
+    "sha256": "ec2e3161de27091f18a831d9494e9c53378a34833af5c1dda35ad85849da18d6",
+    "dest": "cargo/vendor/zip-9.1.2"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"518b847fd864440c379748ad684c449f293af68978a485a4ff16f7c901c1f7c4\",\"files\":{}}",
-    "dest": "cargo/vendor/zip-9.1.1",
+    "contents": "{\"package\":\"ec2e3161de27091f18a831d9494e9c53378a34833af5c1dda35ad85849da18d6\",\"files\":{}}",
+    "dest": "cargo/vendor/zip-9.1.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
