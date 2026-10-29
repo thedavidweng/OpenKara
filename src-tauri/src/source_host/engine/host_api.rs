@@ -17,7 +17,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -48,21 +48,29 @@ pub(super) struct Host {
     shutdown: Cancellation,
     storage: RefCell<Storage>,
     log: RefCell<SourceLog>,
+    /// This source's redirect-cookie sink, shared with the log redactor.
+    observed_cookies: Arc<Mutex<Vec<String>>>,
     timers: RefCell<Timers>,
     in_flight: Cell<usize>,
 }
 impl Host {
     pub(super) fn new(setup: HostSetup, shutdown: Cancellation) -> Rc<Self> {
+        let observed_cookies = Arc::new(Mutex::new(Vec::new()));
         Rc::new(Self {
             storage: RefCell::new(Storage::open(
                 &setup.storage_root,
                 &setup.source_id,
                 &setup.owner_binding,
             )),
-            log: RefCell::new(SourceLog::new(setup.source_id, setup.dispatch)),
+            log: RefCell::new(SourceLog::new(
+                setup.source_id,
+                setup.dispatch,
+                observed_cookies.clone(),
+            )),
             network: RefCell::new(Arc::new(setup.network)),
             runtime: setup.runtime,
             shutdown,
+            observed_cookies,
             timers: RefCell::default(),
             in_flight: Cell::new(0),
         })
@@ -123,9 +131,10 @@ impl Host {
         };
         let network = self.network.borrow().clone();
         let cancellation = self.shutdown.clone();
-        let task = self
-            .runtime
-            .spawn(async move { network::source_request(&network, request, &cancellation).await });
+        let observed = self.observed_cookies.clone();
+        let task = self.runtime.spawn(async move {
+            network::source_request(&network, request, &cancellation, Some(observed)).await
+        });
         let _abort = AbortOnDrop(task.abort_handle());
         self.in_flight.set(self.in_flight.get() + 1);
         let _slot = Slot(&self.in_flight);
@@ -141,10 +150,8 @@ impl Host {
         let mut set_cookies = Vec::new();
         for (name, value) in response.headers {
             if name == "set-cookie" {
-                if let Some((_, rest)) = value.split_once('=') {
-                    self.log
-                        .borrow_mut()
-                        .remember(rest.split(';').next().unwrap_or_default());
+                if let Some(secret) = network::cookie_secret(&value) {
+                    self.log.borrow_mut().remember(&secret);
                 }
                 set_cookies.push(value);
                 continue;

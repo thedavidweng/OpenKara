@@ -1,6 +1,7 @@
 use serde_json::Value;
 use std::{
     collections::BTreeSet,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -36,19 +37,31 @@ pub(super) enum Level {
 /// host log: credential values and cookies the source has seen, values under
 /// sensitive field names, and URL queries and fragments, which often carry
 /// signed tokens.
+///
+/// `observed` is this source's cookie sink: the network layer pushes every
+/// redirect hop's cookie secrets into it the moment the hop responds. Each
+/// record drains the sink first, so a body that echoes a redirect cookie is
+/// already redacted — even when following the redirect later fails or is
+/// cancelled.
 pub(super) struct SourceLog {
     source_id: String,
     dispatch: tracing::Dispatch,
     secrets: BTreeSet<String>,
+    observed: Arc<Mutex<Vec<String>>>,
     window_start: Instant,
     records: u32,
 }
 impl SourceLog {
-    pub(super) fn new(source_id: String, dispatch: tracing::Dispatch) -> Self {
+    pub(super) fn new(
+        source_id: String,
+        dispatch: tracing::Dispatch,
+        observed: Arc<Mutex<Vec<String>>>,
+    ) -> Self {
         Self {
             source_id,
             dispatch,
             secrets: BTreeSet::new(),
+            observed,
             window_start: Instant::now(),
             records: 0,
         }
@@ -66,6 +79,19 @@ impl SourceLog {
         }
     }
     pub(super) fn record(&mut self, level: Level, message: &str, fields: Option<Value>) {
+        // Drain cookies the network layer observed since the last record
+        // (redirect hops register before the request finishes, fails, or is
+        // cancelled). The drain happens before any redaction below, so no
+        // record can carry a freshly observed secret in the clear.
+        let pending: Vec<String> = self
+            .observed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain(..)
+            .collect();
+        for secret in pending {
+            self.remember(&secret);
+        }
         if self.window_start.elapsed() >= WINDOW {
             self.window_start = Instant::now();
             self.records = 0;
@@ -183,7 +209,11 @@ mod tests {
     use serde_json::json;
 
     fn log() -> SourceLog {
-        SourceLog::new("fixture".into(), tracing::Dispatch::none())
+        SourceLog::new(
+            "fixture".into(),
+            tracing::Dispatch::none(),
+            Arc::new(Mutex::new(Vec::new())),
+        )
     }
 
     #[test]

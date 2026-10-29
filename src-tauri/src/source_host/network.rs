@@ -10,6 +10,7 @@ use reqwest::{
 use std::{
     collections::BTreeMap,
     net::{IpAddr, SocketAddr},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -133,9 +134,16 @@ pub(crate) async fn response_range(
         #[cfg(test)]
         upstreams: None,
     };
-    send(url, outgoing, origins, test_distribution, cancellation)
-        .await
-        .map(|(response, _)| response)
+    send(
+        url,
+        outgoing,
+        origins,
+        test_distribution,
+        cancellation,
+        None,
+    )
+    .await
+    .map(|(response, _)| response)
 }
 
 struct Outgoing<'a> {
@@ -148,14 +156,27 @@ struct Outgoing<'a> {
     upstreams: Option<&'a BTreeMap<String, String>>,
 }
 
+/// The secret half of one `Set-Cookie` value (`name=secret; Path=/` gives
+/// `secret`), for the log redactor. `None` when the value carries no secret.
+pub(crate) fn cookie_secret(set_cookie: &str) -> Option<String> {
+    set_cookie
+        .split_once('=')
+        .map(|(_, rest)| rest.split(';').next().unwrap_or_default().to_owned())
+}
+
 /// Sends one request and follows redirects by hand, so every hop passes the
 /// HTTPS, origin and public-address checks before it connects.
+///
+/// `observed` collects every redirect hop's cookie secrets the moment the hop
+/// responds, before the redirect is followed — so the log redactor learns
+/// them even when following the redirect later fails or is cancelled.
 async fn send(
     url: &str,
     mut outgoing: Outgoing<'_>,
     origins: Option<&[String]>,
     test_distribution: bool,
     cancellation: &Cancellation,
+    observed: Option<&Mutex<Vec<String>>>,
 ) -> HostResult<(reqwest::Response, Url)> {
     let mut url = Url::parse(url).map_err(|_| invalid())?;
     for hop in 0..=5 {
@@ -246,6 +267,17 @@ async fn send(
                     "network",
                     "Source download exceeded the redirect limit.",
                 ));
+            }
+            // Register this hop's cookies before following the redirect: a
+            // later hop may fail or be cancelled, but the secret is already
+            // out and the redactor must know it.
+            if let Some(sink) = observed {
+                let mut sink = sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                for value in response.headers().get_all(SET_COOKIE) {
+                    if let Some(secret) = value.to_str().ok().and_then(cookie_secret) {
+                        sink.push(secret);
+                    }
+                }
             }
             let next = url
                 .join(
@@ -353,6 +385,7 @@ pub(crate) async fn source_request(
     network: &SourceNetwork,
     request: SourceRequest,
     cancellation: &Cancellation,
+    observed: Option<Arc<Mutex<Vec<String>>>>,
 ) -> HostResult<SourceResponse> {
     let method = match request.method.to_ascii_uppercase().as_str() {
         "GET" => Method::GET,
@@ -388,6 +421,7 @@ pub(crate) async fn source_request(
         Some(&network.origins),
         false,
         cancellation,
+        observed.as_deref(),
     )
     .await?;
     if response

@@ -135,6 +135,15 @@ export default {
           ),
           request: await attempt(() => openkara.request({ url: params.url })),
         });
+      case "redirect_cookie": {
+        const first = await attempt(() => openkara.request({ url: params.url }));
+        if (first.ok) {
+          log.info(`redirect body: ${first.ok.body}`);
+        } else {
+          log.info(`redirect failed ${first.code}: ${params.echo}`);
+        }
+        return page({ result: first });
+      }
     }
     return page();
   },
@@ -400,6 +409,68 @@ async fn redirects_are_checked_at_every_hop() {
     assert_eq!(landed["ok"]["url"], format!("{MEDIA}/landing"));
     reached.assert_async().await;
     landing.assert_async().await;
+}
+
+#[tokio::test]
+async fn redirect_set_cookies_are_redacted_before_the_body_is_logged() {
+    let cookie = "redirect-secret-xyz";
+    let doomed = "doomed-secret-abc";
+    let mut api = Server::new_async().await;
+    let cookie_header = format!("session={cookie}; Path=/");
+    api.mock("GET", "/with-cookie-redirect")
+        .with_status(302)
+        .with_header("set-cookie", cookie_header.as_str())
+        .with_header("location", "/echo-cookie")
+        .create_async()
+        .await;
+    let echo_body = format!("welcome {cookie}");
+    api.mock("GET", "/echo-cookie")
+        .with_body(echo_body.as_str())
+        .create_async()
+        .await;
+    let doomed_header = format!("session={doomed}; Path=/");
+    api.mock("GET", "/doomed-redirect")
+        .with_status(302)
+        .with_header("set-cookie", doomed_header.as_str())
+        .with_header("location", "https://undeclared.fixture.test/steal")
+        .create_async()
+        .await;
+
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let fixture = Fixture::new(vec![package("engine", &[API], &[])], &[(API, &api)]).await;
+
+    // The 302 cookie must be registered before the redirect is followed, so
+    // a body that echoes it never reaches the log in the clear.
+    let ok = fixture
+        .call(
+            "engine",
+            json!({"cursor":"redirect_cookie","url":format!("{API}/with-cookie-redirect")}),
+        )
+        .await;
+    assert_eq!(ok["result"]["ok"]["body"], format!("welcome {cookie}"));
+
+    // Registration must also survive a later failure: the redirect cookie
+    // is registered even though following the redirect is refused.
+    let failed = fixture
+        .call(
+            "engine",
+            json!({"cursor":"redirect_cookie","url":format!("{API}/doomed-redirect"),"echo":doomed}),
+        )
+        .await;
+    assert_eq!(failed["result"]["code"], "invalid_resource", "{failed}");
+
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(output.contains("[redacted]"), "{output}");
+    for secret in [cookie, doomed] {
+        assert!(!output.contains(secret), "{secret} leaked: {output}");
+    }
 }
 
 #[tokio::test]
