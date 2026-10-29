@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.19.1](https://github.com/thedavidweng/OpenKara/compare/v0.19.0...v0.19.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **license:** declare AGPL-3.0-only on every product surface ([#643](https://github.com/thedavidweng/OpenKara/issues/643)) ([803f2e0](https://github.com/thedavidweng/OpenKara/commit/803f2e0921cc2fb87bd4c8f87a15ab75188aafe9))
+
 ## [0.19.0](https://github.com/thedavidweng/OpenKara/compare/v0.18.2...v0.19.0) (2026-10-29)
 
 
