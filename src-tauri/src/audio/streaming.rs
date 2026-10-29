@@ -315,6 +315,13 @@ impl StreamingTrack {
         }
     }
 
+    pub fn sample_rate_hz(&self) -> u32 {
+        self.consumers()
+            .first()
+            .map(|consumer| consumer.sample_rate_hz)
+            .unwrap_or(0)
+    }
+
     pub fn all_eof_and_drained(&self) -> bool {
         self.consumers()
             .iter()
@@ -780,9 +787,13 @@ fn decode_mss_into_producer(
     loop {
         let target = seek_target.load(Ordering::Relaxed);
         if target != SeekTarget::NONE {
-            let seconds = (target as u64) / expected_sample_rate as u64;
-            let frac = ((target as u64) % expected_sample_rate as u64) as f64
-                / expected_sample_rate as f64;
+            let seek_rate = if proxy.enabled && proxy.target_sample_rate_hz > 0 {
+                proxy.target_sample_rate_hz
+            } else {
+                expected_sample_rate
+            };
+            let seconds = (target as u64) / seek_rate as u64;
+            let frac = ((target as u64) % seek_rate as u64) as f64 / seek_rate as f64;
             let total_secs = seconds as f64 + frac;
             let time =
                 symphonia::core::units::Time::try_from_secs_f64(total_secs).unwrap_or_default();
@@ -1412,6 +1423,59 @@ mod tests {
 
         assert_eq!(consumer.available_samples(), 22_050);
         assert_eq!(consumer.available_ms(), 1000);
+    }
+
+    #[test]
+    fn proxy_decode_seek_converts_target_using_proxy_sample_rate() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        let proxy = ProxyConfig::low_bitrate();
+        let metadata = probe_stream_metadata(&path).expect("probe should succeed");
+        assert_eq!(metadata.sample_rate_hz, 44_100);
+
+        let (mut prod, mut cons) =
+            create_stream_pair(proxy.target_sample_rate_hz, proxy.target_channels);
+
+        let target_frames = ms_to_frames(500, cons.sample_rate_hz);
+        assert_eq!(target_frames, 11_025);
+        cons.seek_target()
+            .store(target_frames as i64, Ordering::Relaxed);
+
+        let path_buf = path.clone();
+        let sr = metadata.sample_rate_hz;
+        let ch = metadata.channels;
+        let proxy_clone = proxy.clone();
+        let handle = std::thread::spawn(move || {
+            decode_into_producer(&path_buf, &mut prod, sr, ch, &proxy_clone)
+        });
+
+        while !handle.is_finished() {
+            if cons.needs_flush() {
+                cons.acknowledge_flush();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        if cons.needs_flush() {
+            cons.acknowledge_flush();
+        }
+
+        handle
+            .join()
+            .expect("decode thread should not panic")
+            .expect("decode should succeed");
+
+        let available_ms = cons.available_ms();
+        assert!(
+            (450..=550).contains(&available_ms),
+            "expected ~500ms after seeking halfway into 1000ms fixture, got {available_ms}ms (samples: {})",
+            cons.available_samples()
+        );
     }
 
     #[test]

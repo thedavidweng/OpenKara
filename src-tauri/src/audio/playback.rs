@@ -125,6 +125,13 @@ fn validate_stem_pair(
     Ok(())
 }
 
+fn frames_at_rate(frame: u64, from_rate: u32, to_rate: u32) -> u64 {
+    if from_rate == 0 || to_rate == 0 || from_rate == to_rate {
+        return frame;
+    }
+    (frame as u128 * u128::from(to_rate) / u128::from(from_rate)) as u64
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
@@ -401,7 +408,7 @@ impl PlaybackController {
         } else {
             target_ms.min(track.duration_ms())
         };
-        let sample_rate = track.original_audio.sample_rate_hz as f64;
+        let sample_rate = f64::from(track.transport_sample_rate_hz());
         let target_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
         track.render_frame = target_frame;
 
@@ -518,17 +525,27 @@ impl PlaybackController {
         validate_loaded_stems(&stems)?;
 
         self.cancel_crossfade_and_prepared();
-        self.current_track
+        let track = self
+            .current_track
             .as_mut()
-            .expect("current_track present after ownership check")
-            .stems = Some(stems);
+            .expect("current_track present after ownership check");
+        // Decoded stems replace the mix only when nothing is streaming. The
+        // playhead has to move into the stem's sample-rate domain or the
+        // first callback reads the wrong moment in the stem.
+        let old_rate = track.transport_sample_rate_hz();
+        let stems_take_over = track.streaming.is_none();
+        track.stems = Some(stems);
+        if stems_take_over {
+            let new_rate = track.transport_sample_rate_hz();
+            track.render_frame = frames_at_rate(track.render_frame, old_rate, new_rate);
+        }
         Ok(())
     }
 
     pub fn attach_streaming_stems(
         &mut self,
         song_id: &str,
-        stem_track: super::streaming::StreamingTrack,
+        mut stem_track: super::streaming::StreamingTrack,
     ) -> Result<(), PlaybackError> {
         let track = self
             .current_track
@@ -539,6 +556,17 @@ impl PlaybackController {
                 "cannot attach streaming stems for song {} while {} is loaded",
                 song_id, track.song_id
             )));
+        }
+        let old_rate = track.transport_sample_rate_hz();
+        let new_rate = stem_track.sample_rate_hz();
+        track.render_frame = frames_at_rate(track.render_frame, old_rate, new_rate);
+        let frame = track.render_frame;
+        if frame > 0 {
+            for consumer in stem_track.consumers_mut() {
+                consumer
+                    .seek_target()
+                    .store(frame as i64, std::sync::atomic::Ordering::Relaxed);
+            }
         }
         track.streaming = Some(stem_track);
         Ok(())
@@ -554,7 +582,9 @@ impl PlaybackController {
         if track.song_id != song_id {
             return None;
         }
-        let sample_rate = track.original_audio.sample_rate_hz as f64;
+        // The replacement stream may not share the source file's rate
+        // (Demucs stems are 44.1 kHz). Seek in the stream that will play.
+        let sample_rate = f64::from(new_streaming.sample_rate_hz());
         let target_frame = if sample_rate > 0.0 {
             (position_ms as f64 * sample_rate / 1000.0) as u64
         } else {
@@ -863,6 +893,17 @@ impl PlaybackController {
         if let Some(streaming) = &track.streaming {
             return streaming.all_eof_and_drained();
         }
+        if let Some(stems) = &track.stems {
+            let stem = match stems {
+                LoadedStems::TwoStem { vocals, .. } => vocals,
+                LoadedStems::FourStem(set) => &set.vocals,
+            };
+            if stem.channels == 0 {
+                return true;
+            }
+            let total_frames = stem.samples.len() / stem.channels;
+            return track.render_frame >= total_frames as u64;
+        }
         // Guard against a zero-channel track, which would panic on the
         // division below. A track with no channels can't produce audio, so
         // treat it as already at EOF.
@@ -1006,8 +1047,31 @@ impl LoadedTrack {
         self.original_audio.duration_ms
     }
 
+    /// Rate of the frames `render_frame` counts. Streaming wins over decoded
+    /// stems, matching the mix bus. Demucs stems are 44.1 kHz even when the
+    /// source file is 48 kHz; using the source rate makes this clock run slow
+    /// and the lyric highlight falls further behind the singing.
+    fn transport_sample_rate_hz(&self) -> u32 {
+        if let Some(streaming) = &self.streaming {
+            let rate = streaming.sample_rate_hz();
+            if rate > 0 {
+                return rate;
+            }
+        }
+        if let Some(stems) = &self.stems {
+            let rate = match stems {
+                LoadedStems::TwoStem { vocals, .. } => vocals.sample_rate_hz,
+                LoadedStems::FourStem(set) => set.vocals.sample_rate_hz,
+            };
+            if rate > 0 {
+                return rate;
+            }
+        }
+        self.original_audio.sample_rate_hz
+    }
+
     fn position_ms(&self) -> u64 {
-        let sample_rate = self.original_audio.sample_rate_hz as u64;
+        let sample_rate = u64::from(self.transport_sample_rate_hz());
         if sample_rate == 0 {
             return 0;
         }
@@ -1249,6 +1313,130 @@ mod tests {
         assert_eq!(
             snapshot.position_ms, 1_000,
             "position_ms must derive from render_frame, not wall clock"
+        );
+    }
+
+    #[test]
+    fn split_stems_keep_the_lyric_clock_on_a_48k_source() {
+        // Love Potion No. 9 is a 48 kHz rip. Demucs writes 44.1 kHz stems of
+        // the same duration, and playback counts those stem frames. Dividing
+        // by the source rate runs the lyric clock at 44.1/48, so the highlight
+        // is a couple of seconds late early on and about 10 s late by the end.
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let mut controller = super::PlaybackController::default();
+        let (_original_prod, original) = streaming::create_stream_pair(48_000, 2);
+        controller.start_track_streaming(
+            "love-potion".to_owned(),
+            48_000,
+            2,
+            126_370,
+            StreamingTrack::Single { consumer: original },
+            0,
+        );
+
+        let (_vocals_prod, vocals) = streaming::create_stream_pair(44_100, 2);
+        let (_accomp_prod, accompaniment) = streaming::create_stream_pair(44_100, 2);
+        controller
+            .attach_streaming_stems(
+                "love-potion",
+                StreamingTrack::TwoStem {
+                    vocals,
+                    accompaniment,
+                },
+            )
+            .expect("stems attach to the loaded song");
+
+        controller.advance_render_frame(44_100 * 120);
+        assert_eq!(
+            controller.snapshot().position_ms,
+            120_000,
+            "two minutes of 44.1 kHz stem frames must be two minutes on the lyric clock"
+        );
+
+        controller.seek(60_000, 0).unwrap();
+        assert_eq!(
+            controller.current_render_frame(),
+            60 * 44_100,
+            "seek must land on the stem timeline, not the 48 kHz source timeline"
+        );
+    }
+
+    #[test]
+    fn decoded_stems_eof_uses_stem_frame_count() {
+        use super::{DecodedAudio, LoadedStems};
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate_hz: 48_000,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 48_000 * 2],
+        };
+        controller.start_track("song-48k".to_owned(), decoded, 0);
+
+        let stems = LoadedStems::TwoStem {
+            vocals: DecodedAudio {
+                sample_rate_hz: 44_100,
+                channels: 2,
+                duration_ms: 1_000,
+                samples: vec![0.0; 44_100 * 2],
+            },
+            accompaniment: DecodedAudio {
+                sample_rate_hz: 44_100,
+                channels: 2,
+                duration_ms: 1_000,
+                samples: vec![0.0; 44_100 * 2],
+            },
+        };
+        controller.attach_stems("song-48k", stems).unwrap();
+
+        controller.advance_render_frame(44_100);
+        assert!(
+            controller.current_track_reached_eof(),
+            "44.1 kHz decoded stems should reach EOF at 44,100 frames even with 48 kHz source"
+        );
+    }
+
+    #[test]
+    fn decoded_stems_eof_does_not_trigger_prematurely_when_stem_rate_higher() {
+        use super::{DecodedAudio, LoadedStems};
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate_hz: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 44_100 * 2],
+        };
+        controller.start_track("song-44k".to_owned(), decoded, 0);
+
+        let stems = LoadedStems::TwoStem {
+            vocals: DecodedAudio {
+                sample_rate_hz: 48_000,
+                channels: 2,
+                duration_ms: 1_000,
+                samples: vec![0.0; 48_000 * 2],
+            },
+            accompaniment: DecodedAudio {
+                sample_rate_hz: 48_000,
+                channels: 2,
+                duration_ms: 1_000,
+                samples: vec![0.0; 48_000 * 2],
+            },
+        };
+        controller.attach_stems("song-44k", stems).unwrap();
+
+        controller.advance_render_frame(44_100);
+        assert!(
+            !controller.current_track_reached_eof(),
+            "48 kHz stems should not reach EOF prematurely at 44,100 frames"
+        );
+
+        controller.advance_render_frame(3_900);
+        assert!(
+            controller.current_track_reached_eof(),
+            "48 kHz stems should reach EOF at 48,000 frames"
         );
     }
 
