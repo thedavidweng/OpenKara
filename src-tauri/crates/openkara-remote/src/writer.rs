@@ -1190,7 +1190,10 @@ fn apply_local_song_rows(
         let local_row = song_row_digest(&local, hash)?;
         let remote_row = song_row_digest(&remote, hash)?;
         if remote_row != base_row && local_row != remote_row {
-            return Err(song_conflict(&[hash.clone()], request.whole_repository));
+            return Err(song_conflict(
+                std::slice::from_ref(hash),
+                request.whole_repository,
+            ));
         }
         if local_row != base_row {
             changed.insert(hash.clone());

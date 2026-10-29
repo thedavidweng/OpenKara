@@ -69,7 +69,7 @@ libc = "0.2.191"
 lofty = "0.25.4"
 md-5 = "0.11.0"
 num-bigint = "0.5.1"
-openkara-remote = { path = "crates/openkara-remote" }
+openkara-remote = { version = "0.1.0", path = "crates/openkara-remote" }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "coreml", "directml", "xnnpack"] }
 rand = "0.10.3"
 rayon = "1.12.0"
@@ -103,7 +103,6 @@ regex-lite = "0.1"
 unicode-normalization = "0.1"
 flate2 = "1.1.10"
 tar = "0.4"
-httpdate = "1.0.3"
 time = { version = "0.3.55", features = ["parsing"] }
 tokio = { version = "1.54.1", features = ["sync", "rt", "macros", "process", "io-util", "time", "net"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
@@ -112,7 +111,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-appender = "0.2.5"
 tauri-plugin-notification = "2.7.0"
 tauri-plugin-window-state = "2.5.0"
-tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-deep-link = "2.6.3"
 
 # Every `unsafe` block carries a SAFETY comment. The lint is what keeps that
 # true: the FFI bridges are the only unsafe surface in the app, and an
@@ -125,7 +124,7 @@ undocumented_unsafe_blocks = "warn"
 filetime = "0.2.29"
 hound = "3.5.1"
 mockito = "1.7.2"
-openkara-remote = { path = "crates/openkara-remote", features = ["testing"] }
+openkara-remote = { version = "0.1.0", path = "crates/openkara-remote", features = ["testing"] }
 tauri = { version = "2.12.5", features = ["test", "unstable"] }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["sync", "rt", "macros"] }
@@ -143,15 +142,6 @@ lto = false
 opt-level = 2
 codegen-units = 16
 incremental = true
-
-# tauri-plugin-deep-link 2.6.2 builds rust-ini's ParseOption as a struct
-# literal; rust-ini 0.21.3 added fields to it and 0.21.2 is yanked. Hold the
-# Linux build on 0.21.1 until the plugin ships a fix.
-[target.'cfg(target_os = "linux")'.dependencies]
-rust-ini = "=0.21.1"
-
-[package.metadata.cargo-shear]
-ignored = ["rust-ini"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
