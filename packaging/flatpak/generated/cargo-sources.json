@@ -5319,14 +5319,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/rust-ini/rust-ini-0.21.1.crate",
-    "sha256": "4e310ef0e1b6eeb79169a1171daf9abcb87a2e17c03bee2c4bb100b55c75409f",
-    "dest": "cargo/vendor/rust-ini-0.21.1"
+    "url": "https://static.crates.io/crates/rust-ini/rust-ini-0.21.3.crate",
+    "sha256": "796e8d2b6696392a43bea58116b667fb4c29727dc5abd27d6acf338bb4f688c7",
+    "dest": "cargo/vendor/rust-ini-0.21.3"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"4e310ef0e1b6eeb79169a1171daf9abcb87a2e17c03bee2c4bb100b55c75409f\",\"files\":{}}",
-    "dest": "cargo/vendor/rust-ini-0.21.1",
+    "contents": "{\"package\":\"796e8d2b6696392a43bea58116b667fb4c29727dc5abd27d6acf338bb4f688c7\",\"files\":{}}",
+    "dest": "cargo/vendor/rust-ini-0.21.3",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -6593,14 +6593,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/tauri-plugin-deep-link/tauri-plugin-deep-link-2.6.2.crate",
-    "sha256": "1b3c64e24ebcbc63aaa2d88a9c51e2507084b46620baf39ecb0baa0738a08bb4",
-    "dest": "cargo/vendor/tauri-plugin-deep-link-2.6.2"
+    "url": "https://static.crates.io/crates/tauri-plugin-deep-link/tauri-plugin-deep-link-2.6.3.crate",
+    "sha256": "ab551d9bec27bb79d1c7fe5ed38c5cfd1cebb86efa745acc65f5853f345f6e56",
+    "dest": "cargo/vendor/tauri-plugin-deep-link-2.6.3"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"1b3c64e24ebcbc63aaa2d88a9c51e2507084b46620baf39ecb0baa0738a08bb4\",\"files\":{}}",
-    "dest": "cargo/vendor/tauri-plugin-deep-link-2.6.2",
+    "contents": "{\"package\":\"ab551d9bec27bb79d1c7fe5ed38c5cfd1cebb86efa745acc65f5853f345f6e56\",\"files\":{}}",
+    "dest": "cargo/vendor/tauri-plugin-deep-link-2.6.3",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -7277,19 +7277,6 @@
     "type": "inline",
     "contents": "{\"package\":\"b2b9c52859a94554803ccd4a24b98f74148ebc73b90676d783f3490b1bff9d72\",\"files\":{}}",
     "dest": "cargo/vendor/tray-icon-0.25.1",
-    "dest-filename": ".cargo-checksum.json"
-  },
-  {
-    "type": "archive",
-    "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/trim-in-place/trim-in-place-0.1.8.crate",
-    "sha256": "daa60874b45b168f67f3f9ba1ee821ad77144d6fa19cef1cd1874a7450a948da",
-    "dest": "cargo/vendor/trim-in-place-0.1.8"
-  },
-  {
-    "type": "inline",
-    "contents": "{\"package\":\"daa60874b45b168f67f3f9ba1ee821ad77144d6fa19cef1cd1874a7450a948da\",\"files\":{}}",
-    "dest": "cargo/vendor/trim-in-place-0.1.8",
     "dest-filename": ".cargo-checksum.json"
   },
   {
