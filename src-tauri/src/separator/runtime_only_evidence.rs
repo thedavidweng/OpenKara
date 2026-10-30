@@ -37,7 +37,7 @@ use crate::{
     audio::{decode, encode::StreamingOggWriter},
     config::{ExecutionProviderPreference, StemMode},
     separator::{
-        artifacts, catalog, inference,
+        artifacts, catalog,
         inference::{self, StemWriters},
         model, preprocess,
         workspace::SeparationWorkspace,
