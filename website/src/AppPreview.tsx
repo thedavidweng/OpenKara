@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import App from "@/App";
 import { TooltipProvider } from "@/components/Overlay/Tooltip";
 import i18next from "@/lib/i18n";
@@ -46,6 +46,10 @@ export function AppPreview({
   language: "en" | "zh-CN";
   theme: "dark" | "light";
 }) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    previewRef.current?.focus();
+  }, []);
   // Inject the mock IPC once before first render.  The real app initialization
   // (useAppStartupRuntime) will call invoke() to load settings, library,
   // playback state, etc. — the same code path as the real Tauri app.
@@ -117,7 +121,13 @@ export function AppPreview({
   }, [language]);
 
   return (
-    <div className="product-preview" aria-label="Interactive OpenKara preview">
+    <div
+      ref={previewRef}
+      className="product-preview"
+      role="region"
+      tabIndex={-1}
+      aria-label="Interactive OpenKara preview"
+    >
       <TooltipProvider>{app}</TooltipProvider>
     </div>
   );
