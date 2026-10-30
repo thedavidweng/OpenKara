@@ -417,6 +417,54 @@ a {
   corner-shape: squircle;
 }
 
+.preview-start {
+  display: block;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+.preview-start img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.preview-start span {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 999px;
+  color: #111;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.preview-start:focus-visible {
+  outline: 3px solid var(--landing-text);
+  outline-offset: -4px;
+}
+
+@media (max-width: 700px) {
+  .preview-start > img {
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    transform: none;
+    margin: 0;
+  }
+  .preview-start > span {
+    left: 25%;
+    min-width: 0;
+    width: auto;
+    height: auto;
+    transform: translateX(-50%);
+    margin: 0;
+  }
+}
+
 /* Desktop: let the embedded app fill the wide preview frame. Only enforce a
    minimum so narrow frames don't collapse the layout below the design width.
    Fixed 920px width + scale belongs to the mobile bleed rules below — applying
