@@ -20,9 +20,14 @@
 //!    finite.
 //!
 //! Nothing here fabricates a measurement. A model the application cannot load
-//! (for example a waveform-interface artifact retained in the catalog for
-//! provenance) is reported as an uncovered edge, the report status is
-//! `failed`, and the caller must not treat it as qualification evidence.
+//! is never measured nor reported as loadable. This build's contract is
+//! spectral-core only (`catalog::resolve_model`, `model::
+//! ensure_spectral_core_metadata`), so a supported manifest edge whose model is
+//! deprecated or declares the legacy `waveform` interface is catalog-compatible
+//! but not app-applicable. Those edges are declared in `skipped_edges` and do
+//! not fail the report. An app-applicable edge that fails to measure keeps the
+//! report `failed`; a skipped edge outside the catalog-declared non-loadable
+//! set is never silently accepted by the gate.
 //!
 //! The producer never writes to the model catalog repository. It reads the
 //! candidate pointer/manifest and the local artifact archives named by the
@@ -39,7 +44,6 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::AtomicBool,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -83,7 +87,12 @@ pub struct EvidenceOutcome {
     pub report_path: PathBuf,
     pub status: String,
     pub measured_edges: usize,
-    pub skipped_edges: Vec<String>,
+    /// Supported manifest edges this OpenKara build cannot load. These are
+    /// catalog-compatible but not app-applicable (deprecated and/or
+    /// waveform-interface models).
+    pub not_applicable_edges: Vec<String>,
+    /// App-applicable edges that were attempted but failed measurement.
+    pub failed_edges: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +107,23 @@ struct AppReport {
     target_triple: String,
     status: String,
     edges: Vec<AppEdge>,
+    /// Supported manifest edges in this group that are not app-loadable.
+    /// The gate recomputes the expected set from the manifest; these rows are
+    /// an explicit declaration, not a trusted justification.
+    skipped_edges: Vec<SkippedEdge>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkippedEdge {
+    model_artifact_id: String,
+    runtime_artifact_id: String,
+    target_triple: String,
+    execution_provider: String,
+    /// Catalog-declared interface. The gate recomputes non-loadability from
+    /// the manifest; this is the producer's declaration.
+    tensor_interface: String,
+    /// True when the model artifact is deprecated in the manifest.
+    deprecated: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -170,7 +196,7 @@ struct NodeCounts {
 ///
 /// Returns `Ok` after writing the report even when some supported edges could
 /// not be measured; inspect [`EvidenceOutcome::status`] and
-/// [`EvidenceOutcome::skipped_edges`]. A report with no measurable edge is not
+/// [`EvidenceOutcome::failed_edges`]. A report with no measurable edge is not
 /// written because the schema requires at least one edge.
 pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
     let current_target = catalog::current_target_triple();
@@ -268,24 +294,21 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
         );
     }
 
-    let work_dir = resolve_work_dir(config.work_dir.as_deref())?;
-    fs::create_dir_all(&work_dir)
-        .with_context(|| format!("failed to create work dir {}", work_dir.display()))?;
+    let work_dir = create_private_work_dir(config.work_dir.as_deref())?;
     let _work_guard = WorkDirGuard {
         path: work_dir.clone(),
-        remove: config.work_dir.is_none() && !config.report_path.starts_with(&work_dir),
+        remove: !config.report_path.starts_with(&work_dir),
     };
     let profile_dir = work_dir.join("profiles");
     let stems_dir = work_dir.join("stems");
     let models_dir = work_dir.join("models");
-    fs::create_dir_all(&profile_dir)
-        .with_context(|| format!("failed to create profile dir {}", profile_dir.display()))?;
-    fs::create_dir_all(&stems_dir)
-        .with_context(|| format!("failed to create stems dir {}", stems_dir.display()))?;
-    fs::create_dir_all(&models_dir)
-        .with_context(|| format!("failed to create models dir {}", models_dir.display()))?;
+    let runtime_dir = work_dir.join("runtime");
+    for directory in [&profile_dir, &stems_dir, &models_dir, &runtime_dir] {
+        create_fresh_directory(directory)?;
+    }
 
-    let prepared_runtime = prepare_runtime(&artifacts_dir, runtime, &work_dir.join("runtime"))?;
+    let prepared_runtime = prepare_runtime(&artifacts_dir, runtime, &runtime_dir)?;
+    verify_private_directory(&runtime_dir)?;
     if let Some(loaded) = model::loaded_runtime_path() {
         if loaded != prepared_runtime.library_path.as_path() {
             bail!(
@@ -318,20 +341,26 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
 
     let mut measured = Vec::new();
     let mut skipped = Vec::new();
+    let mut failed = Vec::new();
     for (edge, model_meta) in &edges {
-        if model_meta.model.tensor_interface != "spectral-core" {
-            skipped.push(format!(
-                "{}: tensor interface {:?} is not loadable by OpenKara",
-                model_meta.artifact_id, model_meta.model.tensor_interface
-            ));
+        if !is_app_loadable(model_meta) {
+            skipped.push(SkippedEdge {
+                model_artifact_id: model_meta.artifact_id.clone(),
+                runtime_artifact_id: edge.runtime_artifact_id.clone(),
+                target_triple: edge.target_triple.clone(),
+                execution_provider: edge.execution_provider.clone(),
+                tensor_interface: model_meta.model.tensor_interface.clone(),
+                deprecated: model_meta.deprecation.deprecated,
+            });
             continue;
         }
 
         let model_dir = models_dir.join(sanitize_filename(&model_meta.artifact_id));
+        create_fresh_directory(&model_dir)?;
         let model_path = match prepare_model(&artifacts_dir, model_meta, &model_dir) {
             Ok(path) => path,
             Err(error) => {
-                skipped.push(format!("{}: {error:#}", model_meta.artifact_id));
+                failed.push(format!("{}: {error:#}", model_meta.artifact_id));
                 continue;
             }
         };
@@ -348,18 +377,21 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
             &stems_dir,
         ) {
             Ok(edge_report) => measured.push(edge_report),
-            Err(error) => skipped.push(format!("{}: {error:#}", model_meta.artifact_id)),
+            Err(error) => failed.push(format!("{}: {error:#}", model_meta.artifact_id)),
         }
     }
 
     if measured.is_empty() {
         bail!(
-            "no supported edge could be measured; skipped edges: {}",
-            skipped.join("; ")
+            "no app-applicable edge could be measured; failed edges: {}",
+            failed.join("; ")
         );
     }
 
-    let status = if skipped.is_empty() {
+    // Non-loadable supported edges are declared, not measured. The report is
+    // complete when every app-applicable edge in this group was measured;
+    // any failed app-applicable edge keeps the status failed.
+    let status = if failed.is_empty() {
         "passed"
     } else {
         "failed"
@@ -390,6 +422,7 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
         target_triple: config.target_triple.clone(),
         status: status.to_owned(),
         edges: measured,
+        skipped_edges: skipped.clone(),
     };
 
     if let Some(parent) = config.report_path.parent() {
@@ -408,8 +441,27 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
         report_path: config.report_path,
         status: status.to_owned(),
         measured_edges: report.edges.len(),
-        skipped_edges: skipped,
+        not_applicable_edges: skipped
+            .iter()
+            .map(|edge| {
+                format!(
+                    "{} (tensor_interface={}, deprecated={})",
+                    edge.model_artifact_id, edge.tensor_interface, edge.deprecated
+                )
+            })
+            .collect(),
+        failed_edges: failed,
     })
+}
+
+/// The application's loadable interface. OpenKara deleted the waveform graph
+/// path in issue #172 PR 5; `catalog::resolve_model` also filters deprecated
+/// artifacts. A supported manifest edge for a deprecated or waveform artifact
+/// is catalog-compatible but not app-applicable.
+const APP_LOADABLE_TENSOR_INTERFACE: &str = "spectral-core";
+
+fn is_app_loadable(model: &catalog::CatalogModel) -> bool {
+    !model.deprecation.deprecated && model.model.tensor_interface == APP_LOADABLE_TENSOR_INTERFACE
 }
 
 fn supported_edges(
@@ -593,8 +645,7 @@ fn measure_edge(
     let stem_dir = stems_dir
         .join(sanitize_filename(&model_meta.artifact_id))
         .join(provider.as_str());
-    fs::create_dir_all(&stem_dir)
-        .with_context(|| format!("failed to create stem dir {}", stem_dir.display()))?;
+    create_fresh_directory(&stem_dir)?;
 
     let mut writers = StemWriters {
         mode: StemMode::FourStem,
@@ -711,7 +762,7 @@ fn measure_edge(
         );
     }
 
-    check_stems(&stem_dir)?;
+    let stems = check_stems(&stem_dir)?;
 
     Ok(AppEdge {
         identity: AppIdentity {
@@ -741,7 +792,7 @@ fn measure_edge(
         audio_pipeline: AudioPipeline {
             frames_processed: frames,
             sample_rate: DEMUCS_SAMPLE_RATE,
-            stems: 4,
+            stems,
             finite: true,
         },
         checks: Vec::new(),
@@ -765,8 +816,9 @@ fn window_audio(normalized: &decode::DecodedAudio, frames: usize) -> Result<deco
     })
 }
 
-fn check_stems(stem_dir: &Path) -> Result<()> {
-    for name in ["vocals", "drums", "bass", "other"] {
+fn check_stems(stem_dir: &Path) -> Result<usize> {
+    let names = ["vocals", "drums", "bass", "other"];
+    for name in names {
         let path = stem_dir.join(format!("{name}.ogg"));
         let decoded = decode::decode_file(&path)
             .with_context(|| format!("failed to decode produced stem {}", path.display()))?;
@@ -780,7 +832,7 @@ fn check_stems(stem_dir: &Path) -> Result<()> {
             );
         }
     }
-    Ok(())
+    Ok(names.len())
 }
 
 fn parse_profile(profile_path: &Path, provider: ExecutionProviderPreference) -> Result<NodeCounts> {
@@ -891,17 +943,19 @@ fn read_source(source: &str, max_bytes: u64) -> Result<Vec<u8>> {
 }
 
 fn openkara_commit() -> Result<String> {
-    if let Ok(sha) = std::env::var("OPENKARA_COMMIT_SHA") {
-        return normalize_commit(&sha);
+    // `GIT_BUILD_COMMIT` / `GIT_BUILD_DIRTY` are embedded by build.rs from the
+    // source tree that produced this executable. A runtime `git rev-parse` is
+    // deliberately not used: it would describe whatever checkout is nearby,
+    // not the binary. This is build provenance, not cryptographic attestation.
+    let dirty = env!("GIT_BUILD_DIRTY");
+    if dirty != "false" {
+        bail!(
+            "producer binary was built from a dirty or unknown source tree \
+             (GIT_BUILD_DIRTY={dirty}); the report commit would not be bound \
+             to the executable. Rebuild from a clean commit."
+        );
     }
-    let output = Command::new("git")
-        .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
-        .output()
-        .context("failed to run git rev-parse for the OpenKara commit")?;
-    if !output.status.success() {
-        bail!("git rev-parse failed; set OPENKARA_COMMIT_SHA to the full 40-hex commit");
-    }
-    normalize_commit(String::from_utf8_lossy(&output.stdout).trim())
+    normalize_commit(env!("GIT_BUILD_COMMIT"))
 }
 
 fn normalize_commit(raw: &str) -> Result<String> {
@@ -912,18 +966,95 @@ fn normalize_commit(raw: &str) -> Result<String> {
     Ok(value)
 }
 
-fn resolve_work_dir(requested: Option<&Path>) -> Result<PathBuf> {
-    match requested {
-        Some(path) if path.is_absolute() => Ok(path.to_path_buf()),
-        Some(path) => Ok(std::env::current_dir()
+/// Resolve the private work directory and create it exclusively.
+///
+/// Without `--work-dir` a fresh directory is created under the system temp
+/// directory with `create_dir`, so two producers (or tractor an attacker's
+/// pre-created symlink) can never share it. No intermediate parents are ever
+/// created: every nested directory is created once and then verified to be a
+/// real directory, not a symlink, owned by this user.
+fn create_private_work_dir(requested: Option<&Path>) -> Result<PathBuf> {
+    let work_dir = match requested {
+        Some(path) if path.is_absolute() => path.to_path_buf(),
+        Some(path) => std::env::current_dir()
             .context("failed to resolve current directory")?
-            .join(path)),
-        None => Ok(std::env::temp_dir().join(format!(
-            "openkara-runtime-evidence-{}-{}",
-            std::process::id(),
-            unix_now()
-        ))),
+            .join(path),
+        None => free_tempdir()?,
+    };
+
+    if requested.is_some() {
+        fs::create_dir(&work_dir).with_context(|| {
+            format!(
+                "failed to create work dir {}; it must not already exist",
+                work_dir.display()
+            )
+        })?;
     }
+    verify_private_directory(&work_dir)?;
+    Ok(work_dir)
+}
+
+fn free_tempdir() -> Result<PathBuf> {
+    let base = std::env::temp_dir();
+    for attempt in 0..16 {
+        let candidate = base.join(format!(
+            "openkara-runtime-evidence-{}-{}-{}",
+            std::process::id(),
+            unix_now(),
+            attempt
+        ));
+        match fs::create_dir(&candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to create work dir {}", candidate.display()))
+            }
+        }
+    }
+    bail!("failed to create a fresh work dir under {}", base.display())
+}
+
+/// Create one directory exactly once. An existing path — including any
+/// symlink, file, or directory planted by another process — is an error; the
+/// producer never reuses an existing tree. Intermediate parents must already
+/// exist as real directories created by this producer.
+fn create_fresh_directory(path: &Path) -> Result<()> {
+    fs::create_dir(path).with_context(|| {
+        format!(
+            "failed to create fresh directory {}; it must not already exist",
+            path.display()
+        )
+    })?;
+    verify_private_directory(path)
+}
+
+/// Verify that `path` is a real directory created by this process, not a
+/// symlink, and that this user owns it.
+fn verify_private_directory(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("failed to inspect work directory {}", path.display()))?;
+    if !metadata.is_dir() {
+        bail!("work directory {} is not a real directory", path.display());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if metadata.uid() != unsafe { libc::geteuid() } {
+            bail!(
+                "work directory {} is owned by uid {}, not the current user",
+                path.display(),
+                metadata.uid()
+            );
+        }
+        if metadata.mode() & 0o077 != 0 {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(path, permissions)
+                .with_context(|| format!("failed to restrict work directory {}", path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 fn basename(path: &str) -> &str {

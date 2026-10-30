@@ -391,5 +391,9 @@ run. Four OGG stems are finalized and decoded to prove finite audio output.
 
 One process can load one ONNX Runtime, so run the producer once per runtime
 artifact. A report whose `status` is `failed` is not qualification evidence:
-the usual cause is a catalog edge for a waveform-interface artifact, which
-current OpenKara builds refuse by design.
+an app-applicable edge was attempted and failed to load or measure. Supported
+manifest edges whose model is deprecated or declares the legacy `waveform`
+interface are catalog-compatible but not app-applicable in this OpenKara
+contract; the producer declares them in `skipped_edges` and they do not by
+themselves fail the report. The gate must recompute that set from the manifest
+rather than trust the declaration.

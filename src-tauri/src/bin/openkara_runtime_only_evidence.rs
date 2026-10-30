@@ -78,20 +78,27 @@ fn run() -> Result<()> {
     })?;
 
     println!(
-        "wrote {} (status {}, {} measured edge(s))",
+        "wrote {} (status {}, {} measured edge(s), {} not app-applicable)",
         outcome.report_path.display(),
         outcome.status,
-        outcome.measured_edges
+        outcome.measured_edges,
+        outcome.not_applicable_edges.len()
     );
-    if !outcome.skipped_edges.is_empty() {
-        for skipped in &outcome.skipped_edges {
-            eprintln!("uncovered edge: {skipped}");
+    for edge in &outcome.not_applicable_edges {
+        println!("not app-applicable: {edge}");
+    }
+    if !outcome.failed_edges.is_empty() {
+        for edge in &outcome.failed_edges {
+            eprintln!("failed edge: {edge}");
         }
         bail!(
-            "app evidence report status is {}; {} supported edge(s) were not measured",
+            "app evidence report status is {}; {} app-applicable edge(s) failed",
             outcome.status,
-            outcome.skipped_edges.len()
+            outcome.failed_edges.len()
         );
+    }
+    if outcome.status != "passed" {
+        bail!("app evidence report status is {}", outcome.status);
     }
     Ok(())
 }

@@ -11,6 +11,32 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_owned());
     println!("cargo:rustc-env=GIT_BUILD_HASH={git_hash}");
 
+    // Full commit + dirty state for evidence producers. These are build-time
+    // facts about the source tree that produced this executable, not a
+    // runtime `git rev-parse` of whatever checkout happens to be nearby.
+    // Evidence code refuses a dirty or unknown build rather than claiming an
+    // unbound commit.
+    //
+    // In a linked worktree (`git worktree add`), `--absolute-git-dir` is the
+    // per-worktree administrative directory and HEAD-adjacent refs are taken
+    // from `--git-common-dir` via `git rev-parse --git-path`. These are all
+    // git-reported paths: the build script never constructs one by hand.
+    let git_commit = git_output(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_owned());
+    // `status --porcelain` already excludes ignored files (project .gitignore
+    // plus .git/info/exclude), so a warm build tree with generated/staged
+    // artifacts does not mark the build dirty.
+    let git_dirty = match git_output(&["status", "--porcelain"]) {
+        Some(status) => (!status.is_empty()).to_string(),
+        None => "true".to_owned(),
+    };
+    println!("cargo:rustc-env=GIT_BUILD_COMMIT={git_commit}");
+    println!("cargo:rustc-env=GIT_BUILD_DIRTY={git_dirty}");
+    for reference in ["HEAD", "ORIG_HEAD", "index"] {
+        if let Some(path) = git_output(&["rev-parse", "--git-path", reference]) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         // The AirPlay bridge is compiled by the build script, so Cargo must rerun it
@@ -62,4 +88,14 @@ fn main() {
         println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
         println!("cargo:rerun-if-changed={}", manifest_path.display());
     }
+}
+
+fn git_output(args: &[&str]) -> Option<String> {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_owned())
 }
