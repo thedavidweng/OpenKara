@@ -360,3 +360,36 @@ Payload is the same `BatchSeparationProgress` shape as `batch-separation-progres
 - Architecture: one normalized full-song input buffer plus fixed-size streaming OLA rings and atomic streaming OGG writers
 - No full-song vocals/drums/bass/other/accompaniment output buffers are retained
 - Output: 2-stem produces vocals.ogg + accompaniment.ogg; 4-stem produces vocals/drums/bass/other.ogg
+
+## Runtime-only promotion app evidence
+
+`openkara-models` runtime-only promotion requires an OpenKara app-integration
+report per `(runtime artifact, target, provider)` group. The producer lives in
+this repository and is not part of the product binary:
+
+```sh
+cargo run --manifest-path src-tauri/Cargo.toml \
+  --features runtime-only-evidence \
+  --bin openkara_runtime_only_evidence -- \
+  --pointer <candidate-channel.json|https-url> \
+  [--manifest <local-release-manifest.json>] \
+  --artifacts-dir <dir-with-candidate-archives> \
+  --audio <real-audio-file> \
+  --runtime <candidate-runtime-artifact-id> \
+  --provider <cpu|coreml|xnnpack|directml> \
+  --report <app-report.json>
+```
+
+It verifies the candidate pointer and manifest bytes, the runtime archive and
+its declared shared library, and every model archive before measuring. Each
+edge is decoded through `audio::decode`, normalized through
+`separator::preprocess`, and run through the production
+`separator::inference` streaming path for exactly one full spectral-core
+window. Output shapes and finiteness come from the session outputs of that
+same window; provider node counts come from the ONNX Runtime profile of that
+run. Four OGG stems are finalized and decoded to prove finite audio output.
+
+One process can load one ONNX Runtime, so run the producer once per runtime
+artifact. A report whose `status` is `failed` is not qualification evidence:
+the usual cause is a catalog edge for a waveform-interface artifact, which
+current OpenKara builds refuse by design.

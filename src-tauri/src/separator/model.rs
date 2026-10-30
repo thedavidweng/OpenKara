@@ -83,6 +83,10 @@ pub struct LoadedModel {
     /// contract spectral tensors; verification happens at load time so a
     /// non-conforming graph fails before any separation starts.
     pub spectral: crate::separator::spectral_session::SpectralInterface,
+    /// True when the session was created with ORT profiling enabled. Only the
+    /// runtime-only evidence producer sets this; production loads leave it
+    /// false so no profile file is written.
+    pub profiling_enabled: bool,
     // Mutex: ort::Session::run needs exclusive access despite Session being Send.
     pub(crate) session: std::sync::Mutex<ort::session::Session>,
 }
@@ -97,6 +101,27 @@ impl std::fmt::Debug for LoadedModel {
             .field("input_shape", &self.input_shape)
             .field("input_tensor_type", &self.input_tensor_type)
             .finish_non_exhaustive()
+    }
+}
+
+impl LoadedModel {
+    /// Finalize the ORT profile for a session created with profiling enabled.
+    ///
+    /// Returns `None` for production sessions, which never enable profiling.
+    /// The returned path is the profile file ORT wrote; callers must read it
+    /// before the session is dropped.
+    pub fn end_profiling(&self) -> Result<Option<String>> {
+        if !self.profiling_enabled {
+            return Ok(None);
+        }
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+        let path = session
+            .end_profiling()
+            .context("failed to finalize ONNX Runtime profile")?;
+        Ok(Some(path))
     }
 }
 
@@ -166,7 +191,7 @@ pub fn load_from_path(
     let mut last_error = None;
 
     for (index, provider) in provider_chain.iter().copied().enumerate() {
-        match load_with_ep(path, provider, options) {
+        match load_with_ep(path, provider, options, None) {
             Ok(model) => {
                 if index > 0 {
                     tracing::warn!(
@@ -191,6 +216,21 @@ pub fn load_from_path(
     }
 
     Err(last_error.expect("provider chain should contain at least one provider"))
+}
+
+/// Load a model with ORT profiling enabled.
+///
+/// This is the evidence-only counterpart to [`load_from_path`]. The profile
+/// prefix is a path ORT extends into a unique profile filename; the caller
+/// finalizes it with [`LoadedModel::end_profiling`]. Profiling is not enabled
+/// on any production path.
+pub fn load_from_path_with_profiling(
+    path: &Path,
+    ep_preference: ExecutionProviderPreference,
+    options: SessionOptions,
+    profiling_prefix: &Path,
+) -> Result<LoadedModel> {
+    load_with_ep(path, ep_preference, options, Some(profiling_prefix))
 }
 
 pub fn provider_diagnostic_summary(preference: ExecutionProviderPreference) -> String {
@@ -291,6 +331,7 @@ fn load_with_ep(
     path: &Path,
     ep_preference: ExecutionProviderPreference,
     options: SessionOptions,
+    profiling_prefix: Option<&Path>,
 ) -> Result<LoadedModel> {
     let environment = activation::ensure_activated()?;
     let runtime_metadata = read_model_runtime_metadata(path)?;
@@ -311,6 +352,12 @@ fn load_with_ep(
 
     let mut builder = ort::session::Session::builder(environment)
         .context("failed to create ONNX session builder")?;
+
+    if let Some(prefix) = profiling_prefix {
+        builder = builder
+            .with_profiling(prefix)
+            .map_err(|e| anyhow::anyhow!("failed to enable ONNX Runtime profiling: {e}"))?;
+    }
 
     builder = builder
         .with_intra_threads(num_threads)
@@ -430,6 +477,7 @@ fn load_with_ep(
         input_shape,
         input_tensor_type,
         spectral,
+        profiling_enabled: profiling_prefix.is_some(),
         session: std::sync::Mutex::new(session),
     })
 }

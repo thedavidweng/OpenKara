@@ -199,6 +199,63 @@ pub fn separate_streaming(
     writers: &mut StemWriters,
     workspace: &mut SeparationWorkspace,
     cancel: &AtomicBool,
+    on_chunk_complete: impl FnMut(usize, usize),
+) -> Result<SeparationOutcome> {
+    separate_streaming_inner(
+        model,
+        normalized_audio,
+        stem_mode,
+        writers,
+        workspace,
+        cancel,
+        false,
+        |_| {},
+        on_chunk_complete,
+    )
+}
+
+/// Run streaming separation and return every observed inference window.
+///
+/// This is the evidence-only counterpart to [`separate_streaming`]: the same
+/// production audio path runs, but each chunk reports the session output
+/// shapes and whether both session outputs were finite. Production callers
+/// use [`separate_streaming`], which passes `observe = false` and pays no
+/// output-scanning cost.
+#[allow(clippy::too_many_arguments)]
+pub fn separate_streaming_with_observation(
+    model: &LoadedModel,
+    normalized_audio: &DecodedAudio,
+    stem_mode: StemMode,
+    writers: &mut StemWriters,
+    workspace: &mut SeparationWorkspace,
+    cancel: &AtomicBool,
+    mut on_chunk_complete: impl FnMut(usize, usize),
+) -> Result<(SeparationOutcome, Vec<spectral_session::ChunkObservation>)> {
+    let mut observations = Vec::new();
+    let outcome = separate_streaming_inner(
+        model,
+        normalized_audio,
+        stem_mode,
+        writers,
+        workspace,
+        cancel,
+        true,
+        |observation| observations.push(observation),
+        &mut on_chunk_complete,
+    )?;
+    Ok((outcome, observations))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn separate_streaming_inner(
+    model: &LoadedModel,
+    normalized_audio: &DecodedAudio,
+    stem_mode: StemMode,
+    writers: &mut StemWriters,
+    workspace: &mut SeparationWorkspace,
+    cancel: &AtomicBool,
+    observe: bool,
+    mut on_observation: impl FnMut(spectral_session::ChunkObservation),
     mut on_chunk_complete: impl FnMut(usize, usize),
 ) -> Result<SeparationOutcome> {
     let channels = normalized_audio.channels;
@@ -233,7 +290,7 @@ pub fn separate_streaming(
             chunk_frame_count,
         );
 
-        spectral_session::process_spectral_chunk(
+        let observation = spectral_session::process_spectral_chunk(
             model,
             iface,
             &mut spectral_state,
@@ -243,7 +300,11 @@ pub fn separate_streaming(
             chunk_frame_count,
             &window,
             chunk_start_frame,
+            observe,
         )?;
+        if let Some(observation) = observation {
+            on_observation(observation);
+        }
 
         // Frames before this chunk start are finalized (next hop starts here).
         let safe_through = chunk_start_frame;
