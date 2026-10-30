@@ -75,6 +75,7 @@ const COPY = {
     footerTerms: "Terms of Service",
     themeDark: "Switch to dark theme",
     themeLight: "Switch to light theme",
+    previewStart: "Open interactive preview",
   },
   "zh-CN": {
     nav: ["功能", "流程"],
@@ -119,6 +120,7 @@ const COPY = {
     footerTerms: "服务条款",
     themeDark: "切换到深色主题",
     themeLight: "切换到浅色主题",
+    previewStart: "打开交互预览",
   },
 } as const;
 
@@ -178,6 +180,7 @@ const BUILT_WITH_TOOLS = [
 const currentYear = new Date().getFullYear();
 
 export function LandingPage() {
+  const [previewReady, setPreviewReady] = useState(false);
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("openkara-site-language");
     if (saved === "en" || saved === "zh-CN") {
@@ -288,11 +291,29 @@ export function LandingPage() {
 
         <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
-            <Suspense
-              fallback={<div className="product-preview" aria-hidden="true" />}
-            >
-              <AppPreview language={appLanguage} theme={theme} />
-            </Suspense>
+            {previewReady ? (
+              <Suspense
+                fallback={
+                  <div className="product-preview" aria-hidden="true" />
+                }
+              >
+                <AppPreview language={appLanguage} theme={theme} />
+              </Suspense>
+            ) : (
+              <button
+                className="product-preview preview-start"
+                type="button"
+                onClick={() => setPreviewReady(true)}
+              >
+                <img
+                  src={withBase(`/img/preview/${language}-${theme}.webp`)}
+                  alt=""
+                  width="1426"
+                  height="803"
+                />
+                <span>{copy.previewStart}</span>
+              </button>
+            )}
           </div>
         </section>
         <section className="built-with-section" aria-label={copy.builtWith}>
