@@ -36,7 +36,12 @@
 use crate::{
     audio::{decode, encode::StreamingOggWriter},
     config::{ExecutionProviderPreference, StemMode},
-    separator::{artifacts, catalog, inference, model, preprocess, workspace::SeparationWorkspace},
+    separator::{
+        artifacts, catalog, inference,
+        inference::{self, StemWriters},
+        model, preprocess,
+        workspace::SeparationWorkspace,
+    },
 };
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -113,7 +118,7 @@ struct AppReport {
     skipped_edges: Vec<SkippedEdge>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct SkippedEdge {
     model_artifact_id: String,
     runtime_artifact_id: String,
@@ -913,7 +918,7 @@ fn read_source(source: &str, max_bytes: u64) -> Result<Vec<u8>> {
             .user_agent("openkara-runtime-only-evidence")
             .build()
             .context("failed to build evidence HTTP client")?;
-        let mut response = client
+        let response = client
             .get(source)
             .send()
             .and_then(|response| response.error_for_status())
