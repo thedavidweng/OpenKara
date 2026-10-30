@@ -288,7 +288,9 @@ export function LandingPage() {
 
         <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
-            <Suspense fallback={null}>
+            <Suspense
+              fallback={<div className="product-preview" aria-hidden="true" />}
+            >
               <AppPreview language={appLanguage} theme={theme} />
             </Suspense>
           </div>

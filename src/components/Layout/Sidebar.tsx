@@ -283,7 +283,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </span>
           <button
             onClick={() => setShowCreatePlaylist(true)}
-            className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+            className={`${previewMode ? "min-h-11" : "min-h-6"} text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors`}
             title={t("playlist.create")}
           >
             + {t("playlist.create")}
