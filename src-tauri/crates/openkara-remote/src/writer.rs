@@ -2666,6 +2666,60 @@ mod tests {
     }
 
     #[test]
+    fn a_commit_interrupted_after_the_cas_rebases_when_another_device_committed_before_the_retry() {
+        for point in [
+            CommitPoint::ManifestReplaced,
+            CommitPoint::ManifestVerified,
+            CommitPoint::BaseRetained,
+        ] {
+            let storage = MemoryStorage::new();
+            let dir = create_working_copy(
+                &[SongRow {
+                    hash: "song-1",
+                    ..Default::default()
+                }],
+                &[],
+            );
+            let first = committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+            execute(
+                &dir,
+                "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+            );
+            let request = PublishRequest {
+                expected_base_sha256: Some(first.database_sha256.clone()),
+                ..songs_request(1, "op-2", &["song-2"])
+            };
+            crash_at(point);
+            publish_exactly(&storage, &dir, &request).expect_err("the crash stops it");
+            assert_eq!(remote_manifest(&storage).generation, 2, "{point:?}");
+            let other = other_device(&storage);
+            execute(
+                &other,
+                "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+            );
+            committed(
+                publish(&storage, &other, &songs_request(2, "op-other", &["song-b"]))
+                    .expect("generation 3"),
+            );
+
+            let snapshot = committed(publish_exactly(&storage, &dir, &request).expect("retry"));
+
+            assert_eq!(snapshot.generation, 4, "{point:?}");
+            let (_pulled_dir, pulled_db) = refresh_into(&storage);
+            assert_eq!(
+                song_hashes(&pulled_db),
+                ["song-1", "song-2", "song-b"],
+                "{point:?}: the retry rebased from the retained base and lost no rows"
+            );
+            assert_eq!(
+                song_hashes(&working_database(&dir)),
+                ["song-1", "song-2", "song-b"],
+                "{point:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_base_without_proof_of_its_identity_is_never_rebased_from() {
         type Tamper = fn(&RebasingPublication) -> PublishRequest;
         let cases: [(&str, Tamper); 5] = [
