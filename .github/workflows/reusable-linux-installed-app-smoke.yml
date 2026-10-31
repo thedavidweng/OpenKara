@@ -452,8 +452,13 @@ jobs:
             "${artifact_args[@]}" \
             --output "$SMOKE_ROOT/release-evidence-fragment.json"
 
+      # The first attempt tolerates transient blob-storage DNS failures
+      # (ENOTFOUND) so a passed smoke is not failed by the network; the retry
+      # below is the real gate and fails the job if the artifact is missing.
       - name: Upload smoke reports
+        id: upload-smoke-reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact_prefix }}-smoke-reports
@@ -465,6 +470,25 @@ jobs:
             ${{ runner.temp }}/openkara-installed-app-smoke/**/local-audio-smoke-report.*
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
+
+      - name: Wait before smoke reports upload retry
+        if: ${{ always() && steps.upload-smoke-reports.outcome == 'failure' }}
+        run: sleep 30
+
+      - name: Retry smoke reports upload
+        if: ${{ always() && steps.upload-smoke-reports.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-smoke-reports
+          path: |
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-validation.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/automation-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/release-evidence-fragment.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+          overwrite: true
 
   generate-report:
     name: Generate validation report

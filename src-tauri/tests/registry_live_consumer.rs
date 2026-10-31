@@ -17,8 +17,10 @@
 //! cargo test -q --test integration registry_live_consumer -- --ignored --nocapture
 //! ```
 //!
-//! Until the real registry URL exists, CI stays red on this step by design:
-//! no env-empty skip, no retry/timeout weakening, no mock substitution.
+//! Windows CI arms the gate only when the repo variable is set; the test
+//! itself never skips. A missing or empty URL fails before any network or
+//! account action: no env-empty skip, no retry/timeout weakening, no mock
+//! substitution.
 
 use openkara_lib::source_host::{
     HostConfig, ProtocolDeclaration, RuntimeRequirement, SourceHost, SourceManifest, SourceState,

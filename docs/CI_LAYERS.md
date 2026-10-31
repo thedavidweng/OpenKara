@@ -33,6 +33,12 @@ the path-matched heavy jobs before merge:
 - Flatpak and WinGet packaging (`packaging.yml`)
 - Windows installed-app gate (`windows-installed-app-smoke-test.yml`)
 
+`rust-test-windows-compile` also carries the live Source Registry consumer
+gate. The owner arms the gate with the `OPENKARA_LIVE_REGISTRY_URL` repo
+variable after the real registry package is published. While the variable is
+unset the gate step does not run. The test itself never skips: when the step
+runs, a missing or empty URL fails the job.
+
 ## Main push
 
 Main push runs CI Gate only: the gate accepts skipped verification jobs.
