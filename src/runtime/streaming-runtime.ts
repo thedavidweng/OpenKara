@@ -76,16 +76,27 @@ export function startStreamingRuntime() {
 export function useStreamingRuntime(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
-    const stop = startStreamingRuntime();
+    let active = true;
+    let stop: (() => void) | null = null;
     void useCatalogStore
       .getState()
-      .loadSources()
-      .then(() => {
-        for (const source of useCatalogStore.getState().sources)
-          if (source.enabled && source.loaded)
-            void useCatalogStore.getState().loadSession(source.source_id);
+      .loadSourcesSupport()
+      .then((supported) => {
+        if (!supported || !active) return;
+        stop = startStreamingRuntime();
+        void useCatalogStore
+          .getState()
+          .loadSources()
+          .then(() => {
+            for (const source of useCatalogStore.getState().sources)
+              if (source.enabled && source.loaded)
+                void useCatalogStore.getState().loadSession(source.source_id);
+          });
+        void useCatalogStore.getState().recoverImportJob();
       });
-    void useCatalogStore.getState().recoverImportJob();
-    return stop;
+    return () => {
+      active = false;
+      stop?.();
+    };
   }, [enabled]);
 }

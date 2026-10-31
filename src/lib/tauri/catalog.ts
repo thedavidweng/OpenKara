@@ -3,6 +3,7 @@ import type { InvokeCommand } from "./invoke";
 
 export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
   return {
+    streamingSourcesSupported: () => invoke("streaming_sources_supported"),
     listStreamingSources: () => invoke("list_streaming_sources"),
     refreshStreamingSources: () => invoke("refresh_streaming_sources"),
     installStreamingSource: (sourceId, version = null, consent = false) =>

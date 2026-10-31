@@ -1,7 +1,7 @@
 # ADR 0039 — Install Streaming Sources as independent trusted packages
 
 Date: 2026-10-20
-Status: partially superseded by 0041
+Status: superseded by 0041
 
 ## Context
 

@@ -14,6 +14,7 @@ The source boundary is specified in [Streaming Source protocol 2.0](streaming-so
 
 | Command                                                                                       | Result                 |
 | --------------------------------------------------------------------------------------------- | ---------------------- |
+| `streaming_sources_supported()`                                                               | `bool`                 |
 | `list_streaming_sources()`                                                                    | `SourceSnapshot[]`     |
 | `refresh_streaming_sources()`                                                                 | `SourceSnapshot[]`     |
 | `install_streaming_source(source_id, version=null, consent=false)`                            | `SourceSnapshot`       |
@@ -29,6 +30,8 @@ The source boundary is specified in [Streaming Source protocol 2.0](streaming-so
 | `install_market_package(registry_id, package_id, version=null, consent=false, replace=false)` | `SourceSnapshot`       |
 | `get_source_replacement_notice()`                                                             | `RetiredSource[]`      |
 | `dismiss_source_replacement_notice()`                                                         | void                   |
+
+`streaming_sources_supported()` returns `false` in a build without the `streaming-sources` feature (see the [build feature](source-host.md#build-feature)). That build registers no other Streaming Source command and emits no Streaming Source event.
 
 `RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), and nullable `last_error`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), and nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package and its saved session never carries over.
 
@@ -129,6 +132,14 @@ installs disabled. A pinned install shows its pin and no update offer. An
 installed source whose registry is no longer added states that it keeps
 working without updates. Install errors show the backend message, which names
 each failed download URL.
+
+The frontend calls `streaming_sources_supported()` once when its runtime
+starts. Only after it returns `true` does the frontend subscribe to Streaming
+Source events, call other Streaming Source commands, and drain registry links.
+When it returns `false`, Settings keeps the YouTube preference and states
+that the build does not include Streaming Sources in place of source
+management, registries, and the market. The main view then shows no
+replacement notice, and navigation lists no Streaming Source.
 
 While `get_source_replacement_notice()` returns retired sources, the main view
 shows a one-time notice that names them and tells the user to add a Source

@@ -338,6 +338,7 @@ export interface PlaylistBackend {
 }
 
 export interface CatalogBackend {
+  streamingSourcesSupported(): Promise<boolean>;
   listStreamingSources(): Promise<SourceSnapshot[]>;
   refreshStreamingSources(): Promise<SourceSnapshot[]>;
   installStreamingSource(

@@ -39,6 +39,7 @@ export function MainContentView({
   const queueOpen = useQueueStore((s) => s.isOpen);
   const catalogView = useCatalogStore((s) => s.activeView);
   const sources = useCatalogStore((s) => s.sources);
+  const sourcesSupported = useCatalogStore((s) => s.sourcesSupported);
   const activeSourceId = useCatalogStore((s) => s.activeSourceId);
   const streaming =
     catalogView === "streaming" &&
@@ -78,7 +79,7 @@ export function MainContentView({
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ModelBootstrapBanner />
           <RuntimeUpdateBanner />
-          <SourceReplacementNotice />
+          {sourcesSupported ? <SourceReplacementNotice /> : null}
           {/* App self-update (#255). Preview builds run in a browser with no
               Tauri IPC, so the launch check would only ever reject — skip it. */}
           {!previewMode && <UpdateBanner />}
