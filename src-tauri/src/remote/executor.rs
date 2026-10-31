@@ -99,7 +99,7 @@ pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> C
     let result = run_publish_protocol(ctx, &op);
     match result {
         Ok(outcome) => {
-            record_completed(ctx, &op, &outcome)?;
+            record_completed(ctx, &op, &outcome, GcSchedule::AfterSafetyDelay)?;
             Ok(())
         }
         Err(remote_err) => {
@@ -255,7 +255,7 @@ fn publish_via_core(
                 committed_manifest_revision: snapshot.manifest_revision.clone(),
                 candidate_db_digest: snapshot.database_sha256.clone(),
             };
-            record_completed(ctx, &op, &completed)?;
+            record_completed(ctx, &op, &completed, GcSchedule::OncePerGracePeriod)?;
             // Keep the stored Remote Revision on the committed manifest so the
             // next refresh recognizes this publication instead of pulling the
             // snapshot we just wrote.
@@ -1299,6 +1299,7 @@ fn record_completed(
     ctx: &PublishContext<'_>,
     op: &OperationRow,
     outcome: &PublishOutcome,
+    gc: GcSchedule,
 ) -> CommandResult<()> {
     let now = current_unix_time_ms();
     let working_db_path = ctx.working_copy_root.join("openkara.db");
@@ -1401,7 +1402,18 @@ fn record_completed(
     };
     upsert_repository_state(&tx, &repo_row)?;
 
-    schedule_gc_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?;
+    match gc {
+        GcSchedule::AfterSafetyDelay => schedule_gc_on_conn(
+            &tx,
+            ctx.library_id,
+            outcome.target_generation,
+            now,
+            GC_SAFETY_DELAY_MS,
+        )?,
+        GcSchedule::OncePerGracePeriod => {
+            schedule_core_cleanup_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?
+        }
+    }
 
     tx.commit()
         .map_err(|e| database_error(format!("failed to commit completion transaction: {e}")))?;
@@ -1490,13 +1502,50 @@ fn record_failure(
 /// needs wall-clock time to finish. 5 minutes is the minimum safety window.
 const GC_SAFETY_DELAY_MS: i64 = 300_000;
 
-fn schedule_gc_on_conn(
+/// How a completed publication schedules its deferred `Gc` operation.
+#[derive(Clone, Copy)]
+enum GcSchedule {
+    /// The legacy executor's generation GC: one row per publication, due
+    /// after [`GC_SAFETY_DELAY_MS`].
+    AfterSafetyDelay,
+    /// The core's cleanup of unreferenced uploads: at most one pending row
+    /// per library, due after the cleanup grace period, when everything the
+    /// publication superseded has become collectable.
+    OncePerGracePeriod,
+}
+
+/// Schedule a core cleanup unless one is already pending for the library.
+/// Cleanup inspects the repository as it is when it runs, so one pending
+/// row covers every publication before it.
+fn schedule_core_cleanup_on_conn(
     connection: &Connection,
     library_id: &str,
     committed_generation: i64,
     now: i64,
 ) -> CommandResult<()> {
-    let gc_op_id = format!("gc-{library_id}-{now}");
+    let already_pending = list_operations_for_library(connection, library_id)?
+        .iter()
+        .any(|row| row.operation_kind == OperationKind::Gc && !row.state.is_terminal());
+    if already_pending {
+        return Ok(());
+    }
+    schedule_gc_on_conn(
+        connection,
+        library_id,
+        committed_generation,
+        now,
+        openkara_remote::DEFAULT_CLEANUP_GRACE_PERIOD_MS,
+    )
+}
+
+fn schedule_gc_on_conn(
+    connection: &Connection,
+    library_id: &str,
+    committed_generation: i64,
+    now: i64,
+    delay_ms: i64,
+) -> CommandResult<()> {
+    let gc_op_id = format!("gc-{library_id}-{now}-{}", Uuid::new_v4().simple());
     let payload = OperationPayload {
         song_ids: Vec::new(),
         percent: 0,
@@ -1509,7 +1558,7 @@ fn schedule_gc_on_conn(
         operation_id: gc_op_id,
         library_id: library_id.to_owned(),
         operation_kind: OperationKind::Gc,
-        // Future next_attempt_at_ms: executor skips until the GC safety delay elapses.
+        // A future next_attempt_at_ms makes the executor skip the row until the delay elapses.
         state: OperationState::RetryWait,
         expected_generation: Some(committed_generation),
         target_generation: None,
@@ -1517,7 +1566,7 @@ fn schedule_gc_on_conn(
         candidate_db_digest: None,
         payload_json: payload.to_json()?,
         attempt_count: 0,
-        next_attempt_at_ms: Some(now + GC_SAFETY_DELAY_MS),
+        next_attempt_at_ms: Some(now + delay_ms),
         error_code: None,
         error_detail: None,
         created_at_ms: now,
@@ -1657,6 +1706,98 @@ pub(crate) fn execute_gc(
     updated.updated_at_ms = now;
     upsert_operation(control_db, &updated)?;
 
+    Ok(())
+}
+
+/// Run a deferred `Gc` operation of a WebDAV repository as the core's
+/// cleanup of unreferenced uploads (the other providers keep [`execute_gc`]).
+///
+/// `scratch_dir` holds temporary snapshot copies while cleanup reads their
+/// references. Completing the row also completes the library's other pending
+/// `Gc` rows, which the cleanup made redundant; when uploads were still too
+/// recent to delete, another cleanup is scheduled one grace period later.
+pub(crate) fn execute_cleanup_via_core(
+    control_db: &Connection,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    scratch_dir: &Path,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("GC operation {operation_id} not found")))?;
+    if op.operation_kind != OperationKind::Gc {
+        return Err(internal_error(format!(
+            "operation {operation_id} is not a GC operation"
+        )));
+    }
+    if op.state.is_terminal() {
+        return Ok(());
+    }
+
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+    let now = current_unix_time_ms();
+    let result = openkara_remote::clean_up_unreferenced_uploads(
+        &storage,
+        scratch_dir,
+        &openkara_remote::CleanupPolicy::default(),
+        now,
+    );
+
+    let mut updated = op.clone();
+    updated.attempt_count += 1;
+    updated.updated_at_ms = now;
+    let report = match result {
+        Ok(report) => report,
+        Err(error) => {
+            let (error_code, error_detail) = error.to_db_columns();
+            updated.error_code = error_code;
+            updated.error_detail = error_detail;
+            if error.retryable {
+                updated.state = OperationState::RetryWait;
+                updated.next_attempt_at_ms = Some(now + GC_RETRY_BACKOFF_MS);
+            } else {
+                updated.state = OperationState::Failed;
+                updated.next_attempt_at_ms = None;
+            }
+            upsert_operation(control_db, &updated)?;
+            return Ok(());
+        }
+    };
+
+    let tx = control_db
+        .unchecked_transaction()
+        .map_err(|e| database_error(format!("failed to begin cleanup transaction: {e}")))?;
+    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    payload.percent = 100;
+    payload.detail = Some(format!(
+        "deleted {} unreferenced object(s); {} too recent to delete; {} without a modification time",
+        report.deleted.len(),
+        report.deferred.len(),
+        report.undated.len()
+    ));
+    updated.payload_json = payload.to_json()?;
+    updated.state = OperationState::Completed;
+    updated.next_attempt_at_ms = None;
+    updated.error_code = None;
+    updated.error_detail = None;
+    upsert_operation(&tx, &updated)?;
+    for mut redundant in list_operations_for_library(&tx, &op.library_id)? {
+        if redundant.operation_kind == OperationKind::Gc && !redundant.state.is_terminal() {
+            redundant.state = OperationState::Completed;
+            redundant.next_attempt_at_ms = None;
+            redundant.updated_at_ms = now;
+            upsert_operation(&tx, &redundant)?;
+        }
+    }
+    if !report.deferred.is_empty() {
+        let generation = report.kept_generations.last().copied().unwrap_or(0);
+        schedule_core_cleanup_on_conn(&tx, &op.library_id, generation, now)?;
+    }
+    tx.commit()
+        .map_err(|e| database_error(format!("failed to commit cleanup transaction: {e}")))?;
     Ok(())
 }
 
@@ -3570,5 +3711,102 @@ mod tests {
             ["song-3"],
             "the local deletion won where both changed song-1"
         );
+    }
+
+    fn pending_gc_rows(conn: &Connection) -> Vec<OperationRow> {
+        list_operations_for_library(conn, "lib-1")
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.operation_kind == OperationKind::Gc && !row.state.is_terminal())
+            .collect()
+    }
+
+    #[test]
+    fn core_publications_schedule_one_cleanup_a_grace_period_later() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+
+        let before = current_unix_time_ms();
+        for expected_generation in 0..2 {
+            let op_id = make_pending_op(&conn, "lib-1", expected_generation);
+            execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+                .expect("core publish should succeed");
+        }
+
+        let pending = pending_gc_rows(&conn);
+        assert_eq!(pending.len(), 1, "one pending cleanup covers both");
+        assert!(pending[0]
+            .next_attempt_at_ms
+            .is_some_and(|due| due >= before + openkara_remote::DEFAULT_CLEANUP_GRACE_PERIOD_MS));
+    }
+
+    #[test]
+    fn cleanup_via_core_deletes_old_unreferenced_uploads_and_reschedules_for_recent_ones() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let scratch = working_root.join(".openkara/cleanup");
+
+        server.set_clock_ms(1_000_000_000_000);
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("core publish should succeed");
+        let abandoned = format!("media/content/{}.flac", "a".repeat(64));
+        server
+            .storage()
+            .write_new(&abandoned, b"abandoned upload")
+            .expect("abandoned upload");
+
+        let cleanup_id = pending_gc_rows(&conn).remove(0).operation_id;
+        execute_cleanup_via_core(&conn, app_data.path(), &library, &scratch, &cleanup_id)
+            .expect("cleanup runs");
+        let cleanup = get_operation(&conn, &cleanup_id).unwrap().unwrap();
+        assert_eq!(cleanup.state, OperationState::Completed);
+        assert!(server.file(&abandoned).is_none(), "old upload deleted");
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert!(server.file(&manifest.database_path).is_some());
+        assert!(pending_gc_rows(&conn).is_empty());
+        assert!(
+            !scratch.read_dir().unwrap().any(|_| true),
+            "scratch emptied"
+        );
+
+        server.set_clock_ms(current_unix_time_ms());
+        let recent = format!("media/content/{}.flac", "b".repeat(64));
+        server
+            .storage()
+            .write_new(&recent, b"upload in progress")
+            .expect("recent upload");
+        schedule_core_cleanup_on_conn(&conn, "lib-1", 1, current_unix_time_ms()).unwrap();
+        let cleanup_id = pending_gc_rows(&conn).remove(0).operation_id;
+        execute_cleanup_via_core(&conn, app_data.path(), &library, &scratch, &cleanup_id)
+            .expect("cleanup runs");
+        assert!(server.file(&recent).is_some(), "recent upload kept");
+        let follow_up = pending_gc_rows(&conn);
+        assert_eq!(follow_up.len(), 1, "a later cleanup is scheduled");
+        assert_ne!(follow_up[0].operation_id, cleanup_id);
     }
 }

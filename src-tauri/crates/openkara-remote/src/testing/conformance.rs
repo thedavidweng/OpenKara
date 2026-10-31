@@ -13,6 +13,9 @@ use crate::storage::{ListedObject, ObjectMetadata, RepositoryStorage};
 pub trait ConformanceFixture {
     fn storage(&self) -> &dyn RepositoryStorage;
     fn script(&self, fault: Fault);
+    /// Sets the time the repository records as the modification time of the
+    /// objects written from now on.
+    fn set_clock_ms(&self, now_ms: i64);
 }
 
 /// Expands to one `#[test]` per conformance case. `$fixture` is evaluated
@@ -37,6 +40,7 @@ macro_rules! storage_conformance_suite {
             list_returns_every_object_under_a_directory_recursively,
             list_of_the_repository_root_returns_every_object,
             list_of_an_absent_directory_is_empty,
+            list_reports_when_each_object_was_last_written,
             delete_removes_the_object_from_stat_read_and_list,
             delete_of_an_absent_object_succeeds,
             paths_outside_the_repository_root_are_rejected,
@@ -353,6 +357,32 @@ pub fn list_of_an_absent_directory_is_empty(fixture: &dyn ConformanceFixture) {
     let storage = fixture.storage();
     seed(storage, ASSET, b"asset");
     assert!(storage.list("artwork").expect("list artwork").is_empty());
+}
+
+/// Cleanup of unreferenced uploads only deletes objects written before its
+/// grace period, so listings must date every object.
+pub fn list_reports_when_each_object_was_last_written(fixture: &dyn ConformanceFixture) {
+    let storage = fixture.storage();
+    fixture.set_clock_ms(1_700_000_000_000);
+    seed(storage, ASSET, b"first upload");
+    seed(storage, "media/later.flac", b"placeholder");
+    fixture.set_clock_ms(1_700_000_060_000);
+    storage.delete("media/later.flac").expect("delete");
+    seed(storage, "media/later.flac", b"second upload");
+
+    let modified: Vec<(String, Option<i64>)> = storage
+        .list("media")
+        .expect("list")
+        .into_iter()
+        .map(|object| (object.path, object.modified_at_ms))
+        .collect();
+    assert_eq!(
+        modified,
+        [
+            (ASSET.to_owned(), Some(1_700_000_000_000)),
+            ("media/later.flac".to_owned(), Some(1_700_000_060_000)),
+        ]
+    );
 }
 
 pub fn delete_removes_the_object_from_stat_read_and_list(fixture: &dyn ConformanceFixture) {
