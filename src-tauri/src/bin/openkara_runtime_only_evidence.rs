@@ -113,8 +113,8 @@ const USAGE: &str = "\
 OpenKara runtime-only app-integration evidence producer
 
 Consumes a published candidate channel pointer, loads the candidate runtime's
-exact shared library, and runs every supported (model, runtime, target,
-provider) edge through the application's own audio and separation path.
+exact shared library, and runs every app-applicable supported edge through the
+application's own audio and separation path.
 
 usage:
   openkara_runtime_only_evidence \\
@@ -133,6 +133,6 @@ notes:
   - one report covers one target/provider group
   - the audio file is decoded and normalized through the app path, then the
     producer runs exactly one full model window (343980 frames at 44100 Hz)
-  - the report status is failed when any supported edge is not measurable by
-    this OpenKara build (for example a waveform-interface catalog artifact)
+  - non-applicable supported edges are declared in skipped_edges; failure to
+    measure any app-applicable edge fails the report
 ";
