@@ -126,7 +126,7 @@ usage:
     --provider <cpu|coreml|xnnpack|directml> \\
     [--target <target-triple>] \\
     --report <app-report.json> \\
-    [--work-dir <dir>]
+    [--work-dir <existing-parent-dir>]
 
 notes:
   - one process loads one ONNX Runtime; produce one report per runtime artifact
@@ -135,4 +135,6 @@ notes:
     producer runs exactly one full model window (343980 frames at 44100 Hz)
   - non-applicable supported edges are declared in skipped_edges; failure to
     measure any app-applicable edge fails the report
+  - --work-dir is an existing parent; a fresh private run directory is created
+    inside it and removed afterward, leaving the parent untouched
 ";

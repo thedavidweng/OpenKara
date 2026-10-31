@@ -380,6 +380,10 @@ cargo run --manifest-path src-tauri/Cargo.toml \
   --report <app-report.json>
 ```
 
+`--work-dir` is optional and must be an existing real directory: the producer
+creates a fresh private run directory inside it and removes that run directory
+afterward, leaving the caller's parent untouched.
+
 It verifies the candidate pointer and manifest bytes, the runtime archive and
 its declared shared library, and every model archive before measuring. Each
 edge is decoded through `audio::decode`, normalized through

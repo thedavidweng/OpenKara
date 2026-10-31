@@ -83,7 +83,9 @@ pub struct EvidenceConfig {
     pub target_triple: String,
     /// Destination report JSON.
     pub report_path: PathBuf,
-    /// Optional working directory for extracted artifacts and stem outputs.
+    /// Optional existing real directory under which a fresh private run
+    /// directory is created for extracted artifacts and stem outputs. The
+    /// parent is not modified or deleted.
     pub work_dir: Option<PathBuf>,
 }
 
@@ -986,45 +988,35 @@ fn normalize_commit(raw: &str) -> Result<String> {
     Ok(value)
 }
 
-/// Resolve the private work directory and create it exclusively.
+/// Resolve and create a fresh private run directory.
 ///
-/// Without `--work-dir` a fresh directory is created under the system temp
-/// directory with `create_dir`, so two producers (or tractor an attacker's
-/// pre-created symlink) can never share it. No intermediate parents are ever
-/// created: every nested directory is created once and then verified to be a
-/// real directory, not a symlink, owned by this user.
+/// `requested` is an existing real directory used as the parent; when absent
+/// the system temp directory is the parent. Either way a new directory is
+/// created inside with `create_dir` (never `create_dir_all`), so a pre-created
+/// symlink or a racing path can never be adopted. The parent is caller-owned:
+/// it is neither modified nor deleted.
 fn create_private_work_dir(requested: Option<&Path>) -> Result<PathBuf> {
-    let work_dir = match requested {
+    let parent = match requested {
         Some(path) if path.is_absolute() => path.to_path_buf(),
         Some(path) => std::env::current_dir()
             .context("failed to resolve current directory")?
             .join(path),
-        None => free_tempdir()?,
+        None => std::env::temp_dir(),
     };
+    ensure_real_directory(&parent)?;
 
-    if requested.is_some() {
-        fs::create_dir(&work_dir).with_context(|| {
-            format!(
-                "failed to create work dir {}; it must not already exist",
-                work_dir.display()
-            )
-        })?;
-    }
-    verify_private_directory(&work_dir)?;
-    Ok(work_dir)
-}
-
-fn free_tempdir() -> Result<PathBuf> {
-    let base = std::env::temp_dir();
     for attempt in 0..16 {
-        let candidate = base.join(format!(
+        let candidate = parent.join(format!(
             "openkara-runtime-evidence-{}-{}-{}",
             std::process::id(),
             unix_now(),
             attempt
         ));
         match fs::create_dir(&candidate) {
-            Ok(()) => return Ok(candidate),
+            Ok(()) => {
+                verify_private_directory(&candidate)?;
+                return Ok(candidate);
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(error)
@@ -1032,7 +1024,25 @@ fn free_tempdir() -> Result<PathBuf> {
             }
         }
     }
-    bail!("failed to create a fresh work dir under {}", base.display())
+    bail!(
+        "failed to create a fresh work dir under {}",
+        parent.display()
+    )
+}
+
+/// Verify that `path` already exists as a real directory and is not a symlink.
+/// Used for the caller-selected parent; it deliberately does not change the
+/// ownership or mode of a directory the caller owns.
+fn ensure_real_directory(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("failed to inspect directory {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        bail!(
+            "{} must be an existing real directory, not a symlink or file",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 /// Create one directory exactly once. An existing path — including any
@@ -1103,8 +1113,9 @@ fn unix_now() -> u64 {
         .unwrap_or_default()
 }
 
-/// Remove the producer's private temporary directory on drop. A caller-owned
-/// `--work-dir` is never deleted.
+/// Remove the producer's private run directory on drop. A caller-supplied
+/// `--work-dir` parent is never deleted; only the run directory created
+/// inside it is, unless the report was written into that run directory.
 struct WorkDirGuard {
     path: PathBuf,
     remove: bool,
