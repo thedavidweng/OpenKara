@@ -1214,15 +1214,6 @@ impl RepositoryStorage for DropboxProvider<'_> {
         self
     }
 
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        RemoteProviderCapabilities {
-            conditional_replace: true,
-            resumable_upload: true,
-            revision_metadata: true,
-            server_side_move: false,
-        }
-    }
-
     fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
         let mut secret = self.secret.borrow_mut();
         let root_path = self.library.remote_root_locator().ok_or_else(|| {
@@ -1241,34 +1232,86 @@ impl RepositoryStorage for DropboxProvider<'_> {
         )
     }
 
-    fn conditional_replace(
-        &self,
-        relative_path: &str,
-        source: ConditionalSource,
-        expected_revision: Option<&str>,
-    ) -> RemoteResult<RemoteObjectMetadata> {
+    fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
         let mut secret = self.secret.borrow_mut();
         let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            RemoteError::new(
-                RemoteErrorKind::ProviderCapabilityUnavailable,
-                "remote repository is missing a remote locator",
-            )
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
         })?;
         let remote_path = dropbox_join_path(root_path, relative_path);
-        let bytes = source
-            .read_bytes()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        let metadata = dropbox_conditional_upload(
+        Ok(
+            dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?
+                .as_ref()
+                .and_then(dropbox_metadata_revision),
+        )
+    }
+
+    fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        if dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?.is_none() {
+            return Err(CommandError::from(LibraryError::Internal(format!(
+                "remote file {relative_path} was not found"
+            ))));
+        }
+        dropbox_download_file(self.app_data_dir, &mut secret, &remote_path, destination)
+    }
+
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        dropbox_delete_path(
             self.app_data_dir,
             &mut secret,
-            &remote_path,
-            bytes,
-            expected_revision,
-        )?;
-        Ok(RemoteObjectMetadata {
-            size_bytes: metadata.size_bytes,
-            revision: dropbox_metadata_revision(&metadata),
-        })
+            &dropbox_join_path(root_path, relative_path),
+        )
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        refresh_existing_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+}
+
+impl LegacyPublishStorage for DropboxProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        RemoteProviderCapabilities {
+            conditional_replace: true,
+            resumable_upload: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
+
+    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
+        let secret = self.secret.borrow();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        dropbox_upload_relative_file_to_remote(
+            self.app_data_dir,
+            self.library,
+            &secret,
+            relative_path,
+            root_path,
+        )
     }
 
     fn resumable_upload_bytes(
@@ -1354,74 +1397,34 @@ impl RepositoryStorage for DropboxProvider<'_> {
         Ok(())
     }
 
-    fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
+    fn conditional_replace(
+        &self,
+        relative_path: &str,
+        source: ConditionalSource,
+        expected_revision: Option<&str>,
+    ) -> RemoteResult<RemoteObjectMetadata> {
         let mut secret = self.secret.borrow_mut();
         let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
+            RemoteError::new(
+                RemoteErrorKind::ProviderCapabilityUnavailable,
+                "remote repository is missing a remote locator",
+            )
         })?;
         let remote_path = dropbox_join_path(root_path, relative_path);
-        Ok(
-            dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?
-                .as_ref()
-                .and_then(dropbox_metadata_revision),
-        )
-    }
-
-    fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
-        let mut secret = self.secret.borrow_mut();
-        let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        let remote_path = dropbox_join_path(root_path, relative_path);
-        if dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?.is_none() {
-            return Err(CommandError::from(LibraryError::Internal(format!(
-                "remote file {relative_path} was not found"
-            ))));
-        }
-        dropbox_download_file(self.app_data_dir, &mut secret, &remote_path, destination)
-    }
-
-    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
-        let secret = self.secret.borrow();
-        let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        dropbox_upload_relative_file_to_remote(
-            self.app_data_dir,
-            self.library,
-            &secret,
-            relative_path,
-            root_path,
-        )
-    }
-
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
-        let mut secret = self.secret.borrow_mut();
-        let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        dropbox_delete_path(
+        let bytes = source
+            .read_bytes()
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let metadata = dropbox_conditional_upload(
             self.app_data_dir,
             &mut secret,
-            &dropbox_join_path(root_path, relative_path),
-        )
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
-    }
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        refresh_existing_dropbox_library(self.app_data_dir, self.library, &secret)
+            &remote_path,
+            bytes,
+            expected_revision,
+        )?;
+        Ok(RemoteObjectMetadata {
+            size_bytes: metadata.size_bytes,
+            revision: dropbox_metadata_revision(&metadata),
+        })
     }
 }
 
@@ -1602,7 +1605,9 @@ impl RemoteMediaSource for DropboxProvider<'_> {
     }
 }
 
-use super::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage};
+use super::provider::{
+    LegacyPublishStorage, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+};
 
 #[cfg(test)]
 mod tests {

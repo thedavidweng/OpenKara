@@ -1070,6 +1070,31 @@ mod tests {
     }
 
     #[test]
+    fn replacing_a_transfer_part_with_a_new_digest_resets_its_session() {
+        let (_dir, conn) = fresh_db();
+        let part = |digest: &str, session: Option<&str>, transferred_bytes: i64| TransferPartRow {
+            operation_id: "op-x".to_owned(),
+            relative_path: ".openkara/databases/1.sqlite".to_owned(),
+            direction: TransferDirection::Upload,
+            expected_size: Some(100),
+            expected_digest: Some(digest.to_owned()),
+            provider_revision: None,
+            provider_session_id: session.map(str::to_owned),
+            transferred_bytes,
+            state: "pending".to_owned(),
+            updated_at_ms: now_ms(),
+        };
+        upsert_transfer_part(&conn, &part("digest-old", Some("session-old"), 16)).expect("upsert");
+        upsert_transfer_part(&conn, &part("digest-new", None, 0)).expect("replace");
+
+        let parts = list_transfer_parts(&conn, "op-x").expect("list");
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].expected_digest.as_deref(), Some("digest-new"));
+        assert!(parts[0].provider_session_id.is_none());
+        assert_eq!(parts[0].transferred_bytes, 0);
+    }
+
+    #[test]
     fn sha256_file_matches_known_value() {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("test.bin");

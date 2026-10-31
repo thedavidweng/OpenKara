@@ -1254,9 +1254,6 @@ mod tests {
             }
         }
 
-        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
         fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }
@@ -1905,15 +1902,6 @@ mod tests {
     }
 
     impl crate::remote::provider::RepositoryStorage for ResumableFakeProvider {
-        fn capabilities(&self) -> crate::remote::errors::RemoteProviderCapabilities {
-            crate::remote::errors::RemoteProviderCapabilities {
-                conditional_replace: false,
-                resumable_upload: false,
-                revision_metadata: true,
-                server_side_move: false,
-            }
-        }
-
         fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
             self
         }
@@ -1941,9 +1929,6 @@ mod tests {
             })
         }
 
-        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
         fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }

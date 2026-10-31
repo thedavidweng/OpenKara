@@ -218,7 +218,7 @@ fn force_dirty_for_active_publish_ops(connection: &Connection, clock: &Clock) ->
 pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_in_states, OperationKind};
     use crate::remote::executor::{execute_gc, generate_repository_id, generate_writer_id};
-    use crate::remote::provider::create_repository_storage;
+    use crate::remote::provider::{create_legacy_publish_storage, create_repository_storage};
     use crate::remote::sync::{
         load_registered_remote_library, may_have_crossed_cas_boundary,
         merge_pending_ops_for_publish, reconcile_cas_boundary_ops, run_publication_driver,
@@ -321,9 +321,24 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 Ok(lib) => lib,
                 Err(_) => continue,
             };
-        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
-            Ok(p) => p,
-            Err(_) => continue,
+        // A repository whose credentials cannot be loaded is skipped before
+        // any recovery step touches its operations.
+        let legacy_storage = match remote_library.provider() {
+            Some(crate::config::RemoteLibraryProvider::WebDav) => {
+                if crate::remote::webdav::load_webdav_secret(
+                    &state.shell.app_data_dir,
+                    &remote_library,
+                )
+                .is_err()
+                {
+                    continue;
+                }
+                None
+            }
+            _ => match create_legacy_publish_storage(&state.shell.app_data_dir, &remote_library) {
+                Ok(storage) => Some(storage),
+                Err(_) => continue,
+            },
         };
         let remote_root = match crate::remote::types::load_remote_root(
             &state.shell.app_data_dir,
@@ -514,34 +529,31 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             Err(_) => continue,
         };
 
-        let _ = if matches!(
-            remote_library.provider(),
-            Some(crate::config::RemoteLibraryProvider::WebDav)
-        ) {
-            let ctx = crate::remote::executor::PublishContext {
-                control_db: &exec_conn,
-                provider: provider.as_ref(),
-                working_copy_root: remote_root.root(),
-                library_id: &library_id,
-                writer_id: &writer_id,
-                repository_id: &repository_id,
-            };
-            crate::remote::executor::execute_publish_via_core(
-                &ctx,
-                &state.shell.app_data_dir,
-                &remote_library,
-                &operation_id,
-            )
-        } else {
-            run_publication_driver(
+        let _ = match legacy_storage {
+            Some(storage) => run_publication_driver(
                 &exec_conn,
-                provider.as_ref(),
+                storage.as_ref(),
                 remote_root.root(),
                 &library_id,
                 &writer_id,
                 &repository_id,
                 &operation_id,
-            )
+            ),
+            None => {
+                let ctx = crate::remote::executor::PublishContext {
+                    control_db: &exec_conn,
+                    working_copy_root: remote_root.root(),
+                    library_id: &library_id,
+                    writer_id: &writer_id,
+                    repository_id: &repository_id,
+                };
+                crate::remote::executor::execute_publish_via_core(
+                    &ctx,
+                    &state.shell.app_data_dir,
+                    &remote_library,
+                    &operation_id,
+                )
+            }
         };
     }
 

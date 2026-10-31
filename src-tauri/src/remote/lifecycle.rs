@@ -418,9 +418,9 @@ mod tests {
     }
 
     impl ScriptedAccess {
-        fn new(root: PathBuf) -> Self {
+        fn new() -> Self {
             Self {
-                provider: ScriptedProvider::new(root),
+                provider: ScriptedProvider::new(),
                 opened_locations: Mutex::new(Vec::new()),
             }
         }
@@ -501,7 +501,7 @@ mod tests {
                 .expect("remote auth session lock")
                 .insert(SESSION_ID.to_owned(), ready_session());
 
-            let access = ScriptedAccess::new(temp.path().to_owned());
+            let access = ScriptedAccess::new();
             Self {
                 _temp: temp,
                 app_data_dir,
