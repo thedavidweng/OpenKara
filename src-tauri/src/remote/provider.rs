@@ -30,10 +30,6 @@ impl ConditionalSource {
 pub(crate) trait RepositoryStorage {
     fn media_source(&self) -> &dyn RemoteMediaSource;
 
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        RemoteProviderCapabilities::default()
-    }
-
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>>;
 
     fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
@@ -53,6 +49,21 @@ pub(crate) trait RepositoryStorage {
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>>;
+}
+
+/// The writes of the legacy publication protocol
+/// ([`crate::remote::executor::execute_publish`]). Only the Dropbox and
+/// Google Drive adapters implement it: WebDAV repositories publish through
+/// the Remote Repository core, so the app-side WebDAV adapter never writes
+/// a publication.
+pub(crate) trait LegacyPublishStorage: RepositoryStorage {
+    fn capabilities(&self) -> RemoteProviderCapabilities;
+
     fn upload_file(&self, relative_path: &str) -> CommandResult<()>;
 
     fn resumable_upload_bytes(
@@ -67,8 +78,6 @@ pub(crate) trait RepositoryStorage {
         ))
     }
 
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
-
     fn conditional_replace(
         &self,
         _path: &str,
@@ -79,10 +88,6 @@ pub(crate) trait RepositoryStorage {
             RemoteErrorKind::ProviderCapabilityUnavailable,
         ))
     }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +156,42 @@ pub(crate) fn create_repository_storage<'a>(
                 library,
             )))
         }
+        None => Err(CommandError::from(LibraryError::Internal(
+            "the target library is not a remote library".to_owned(),
+        ))),
+    }
+}
+
+/// The storage that runs the legacy publication protocol for a Dropbox or
+/// Google Drive repository. WebDAV repositories have none: they publish
+/// through the Remote Repository core.
+pub(crate) fn create_legacy_publish_storage<'a>(
+    app_data_dir: &'a Path,
+    library: &'a RegisteredLibrary,
+) -> CommandResult<Box<dyn LegacyPublishStorage + 'a>> {
+    use super::dropbox;
+    use super::google_drive;
+
+    match library.provider() {
+        Some(RemoteLibraryProvider::GoogleDrive) => {
+            let secret = google_drive::load_google_drive_secret(app_data_dir, library)?;
+            Ok(Box::new(google_drive::GoogleDriveProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
+        }
+        Some(RemoteLibraryProvider::Dropbox) => {
+            let secret = dropbox::load_dropbox_secret(app_data_dir, library)?;
+            Ok(Box::new(dropbox::DropboxProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
+        }
+        Some(RemoteLibraryProvider::WebDav) => Err(CommandError::from(LibraryError::Internal(
+            "WebDAV repositories publish through the Remote Repository core".to_owned(),
+        ))),
         None => Err(CommandError::from(LibraryError::Internal(
             "the target library is not a remote library".to_owned(),
         ))),

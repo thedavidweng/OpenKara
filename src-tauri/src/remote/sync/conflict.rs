@@ -8,7 +8,9 @@ use crate::remote::executor::{
     conflict_keep_local_as_new_generation, conflict_use_remote, pull_conflict_candidate,
     resolve_conflict_keep_local_via_core, PublishContext,
 };
-use crate::remote::provider::create_repository_storage;
+use crate::remote::provider::{
+    create_legacy_publish_storage, create_repository_storage, RepositoryStorage,
+};
 use crate::remote::types::load_app_config;
 use crate::AppState;
 
@@ -74,10 +76,8 @@ pub fn resolve_active_remote_conflict(
         repo_state.writer_id.clone().unwrap_or_default(),
     );
 
-    let provider = create_repository_storage(&state.shell.app_data_dir, active_library)?;
     let ctx = PublishContext {
         control_db: &control_db,
-        provider: provider.as_ref(),
         working_copy_root: &working_copy_root,
         library_id: &library_id,
         writer_id: &writer_id,
@@ -97,32 +97,58 @@ pub fn resolve_active_remote_conflict(
         );
     }
 
-    // Both legacy strategies compare against the winning remote database, so
-    // it is pulled to a candidate path rather than over the working copy —
+    // The remaining strategies compare against the winning remote database,
+    // so it is pulled to a candidate path rather than over the working copy —
     // the local side is still the user's only copy of their pending changes
     // until they choose to discard it.
     let candidate = candidate_path(&working_copy_root, &operation_id);
-    let result =
-        pull_conflict_candidate(provider.as_ref(), &candidate).and_then(
+    let result = if uses_core_writer {
+        let storage = create_repository_storage(&state.shell.app_data_dir, active_library)?;
+        pull_conflict_candidate(storage.as_ref(), &candidate).and_then(|manifest| {
+            use_remote(
+                &ctx,
+                storage.as_ref(),
+                &operation_id,
+                &candidate,
+                manifest.generation,
+            )
+        })
+    } else {
+        let storage = create_legacy_publish_storage(&state.shell.app_data_dir, active_library)?;
+        pull_conflict_candidate(storage.as_ref(), &candidate).and_then(
             |manifest| match resolution {
-                ConflictResolution::KeepLocal => {
-                    conflict_keep_local_as_new_generation(&ctx, &operation_id, &candidate)
-                }
-                ConflictResolution::UseRemote => {
-                    conflict_use_remote(&ctx, &operation_id, &candidate)?;
-                    openkara_remote::retain_base_snapshot(
-                        &working_copy_root,
-                        manifest.generation,
-                        &candidate,
-                    )
-                    .map_err(CommandError::from)?;
-                    openkara_remote::discard_rebase_state(&working_copy_root, &operation_id);
-                    Ok(())
-                }
+                ConflictResolution::KeepLocal => conflict_keep_local_as_new_generation(
+                    &ctx,
+                    storage.as_ref(),
+                    &operation_id,
+                    &candidate,
+                ),
+                ConflictResolution::UseRemote => use_remote(
+                    &ctx,
+                    storage.as_ref(),
+                    &operation_id,
+                    &candidate,
+                    manifest.generation,
+                ),
             },
-        );
+        )
+    };
     let _ = std::fs::remove_file(&candidate);
     result
+}
+
+fn use_remote(
+    ctx: &PublishContext<'_>,
+    storage: &dyn RepositoryStorage,
+    operation_id: &str,
+    candidate: &std::path::Path,
+    remote_generation: i64,
+) -> CommandResult<()> {
+    conflict_use_remote(ctx, storage, operation_id, candidate)?;
+    openkara_remote::retain_base_snapshot(ctx.working_copy_root, remote_generation, candidate)
+        .map_err(CommandError::from)?;
+    openkara_remote::discard_rebase_state(ctx.working_copy_root, operation_id);
+    Ok(())
 }
 fn candidate_path(working_copy_root: &std::path::Path, operation_id: &str) -> PathBuf {
     working_copy_root.join(format!(

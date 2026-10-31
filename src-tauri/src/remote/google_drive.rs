@@ -1368,16 +1368,6 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
         self
     }
 
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        // Drive v3 has no server-enforced CAS (If-Match ignored); block publish.
-        RemoteProviderCapabilities {
-            conditional_replace: false,
-            resumable_upload: true,
-            revision_metadata: true,
-            server_side_move: false,
-        }
-    }
-
     fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
         let mut secret = self.secret.borrow_mut();
         let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
@@ -1434,22 +1424,6 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
         google_drive_download_file(self.app_data_dir, &mut secret, &entry.id, destination)
     }
 
-    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
-        let secret = self.secret.borrow();
-        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        google_drive_upload_relative_file_to_remote(
-            self.app_data_dir,
-            self.library,
-            &secret,
-            relative_path,
-            root_folder_id,
-        )
-    }
-
     fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
         let mut secret = self.secret.borrow_mut();
         let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
@@ -1480,6 +1454,34 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         refresh_existing_google_drive_library(self.app_data_dir, self.library, &secret)
+    }
+}
+
+impl LegacyPublishStorage for GoogleDriveProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        // Drive v3 has no server-enforced CAS (If-Match ignored); block publish.
+        RemoteProviderCapabilities {
+            conditional_replace: false,
+            resumable_upload: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
+
+    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
+        let secret = self.secret.borrow();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        google_drive_upload_relative_file_to_remote(
+            self.app_data_dir,
+            self.library,
+            &secret,
+            relative_path,
+            root_folder_id,
+        )
     }
 
     fn resumable_upload_bytes(
@@ -1781,7 +1783,9 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
     }
 }
 
-use super::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage};
+use super::provider::{
+    LegacyPublishStorage, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+};
 
 #[cfg(test)]
 mod tests {
