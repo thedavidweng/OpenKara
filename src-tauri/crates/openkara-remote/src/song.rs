@@ -88,6 +88,7 @@ mod tests {
     use crate::download::hex_lower;
     use crate::manifest::{RepositoryManifest, MANIFEST_PATH};
     use crate::reader::{refresh_repository, RefreshOutcome, RefreshPolicy, WorkingCopyDatabase};
+    use crate::rebase::{ChangeSet, ConflictPolicy};
     use crate::storage::{ListedObject, ObjectMetadata, StorageCapabilities};
     use crate::testing::{Fault, MemoryStorage, TestWebDavServer};
     use crate::writer::{publish_changes, PublishOutcome, PublishRequest};
@@ -477,6 +478,11 @@ mod tests {
             writer_id: "writer-1".to_owned(),
             operation_id: "op-1".to_owned(),
             expected_generation: 0,
+            changes: ChangeSet {
+                song_ids: vec!["song-1".to_owned()],
+                whole_repository: false,
+            },
+            conflict_policy: ConflictPolicy::Stop,
         };
         let outcome = publish_changes(
             &storage,

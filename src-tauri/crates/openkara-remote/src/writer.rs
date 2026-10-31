@@ -18,16 +18,21 @@
 //! The manifest is the only commit point: a crash at any earlier step leaves
 //! unreferenced objects next to the previous, still-consistent manifest, and
 //! running the same publication again finishes the job. No journal state is
-//! kept — the operation identity and expected generation arrive with every
-//! call and idempotence does the rest. A manifest that already carries this
-//! operation's id at the expected generation + 1 is recognized as an accepted
-//! commit (the crash window between CAS and local completion) and reported as
-//! [`PublishOutcome::AlreadyCommitted`].
+//! kept — the operation identity, expected generation and change set arrive
+//! with every call and idempotence does the rest. A manifest that already
+//! carries this operation's id past the expected generation is recognized as
+//! an accepted commit (the crash window between CAS and local completion) and
+//! reported as [`PublishOutcome::AlreadyCommitted`].
 //!
-//! A stale expected generation or a failed manifest CAS surfaces as
-//! `RemoteConflict` — the Pre-Publish Conflict the application turns into its
-//! conflicted state. Song-scoped rebase is a later ticket; until then every
-//! revision move conflicts.
+//! When the remote moved past the expected generation, before the probe or
+//! between the probe and the CAS, the writer rebases (ADR 0040): it downloads
+//! the newer snapshot next to the retained base snapshot, applies the local
+//! song rows the other device left unchanged, and commits the merged snapshot
+//! on the newly observed revision. Rows both devices changed, and
+//! whole-repository changes, end in [`PublishOutcome::Conflicted`]; the remote
+//! manifest never moves and the local changes stay in the working copy. A
+//! committed rebase replaces the working database with the merged snapshot so
+//! the other device's changes are not reverted by the next publication.
 //!
 //! The writer never decides *whether* publishing is allowed; the application
 //! owns that policy along with its operation bookkeeping.
@@ -41,30 +46,42 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
 use crate::asset::content_digest_from_asset_path;
-use crate::download::{hex_lower, integrity_error, io_error, sha256_file};
+use crate::download::{self, hex_lower, integrity_error, io_error, sha256_file};
 use crate::error::{RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{
     database_path_for_operation, RepositoryManifest, CURRENT_SCHEMA_VERSION, MANIFEST_PATH,
 };
-use crate::reader::{open_readonly, verify_sqlite_candidate};
+use crate::reader::{open_readonly, verify_sqlite_candidate, SNAPSHOT_DOWNLOAD_CHUNK_SIZE};
+use crate::rebase::{
+    self, base_snapshot_path, rebased_candidate_path, remote_snapshot_path, retain_base_snapshot,
+    ChangeSet, ConflictPolicy, MergeResult, PrePublishConflict,
+};
 use crate::storage::{validate_object_path, RepositoryStorage};
 
 /// Managed top-level directories a database row may reference. Paths outside
 /// them are rejected before they reach the storage.
 const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
 
+/// How many times one publication rebases onto a remote that keeps moving
+/// before it gives up with a conflict.
+const MAX_REBASE_ATTEMPTS: usize = 3;
+
 /// Everything the writer needs from the application for one publication.
 ///
 /// `operation_id` scopes the snapshot object so two writers never upload to
 /// the same path, and recognizes the publisher's own accepted commit after a
 /// crash. `expected_generation` is the generation the working copy was based
-/// on; the publication commits `expected_generation + 1` or conflicts.
+/// on; its base snapshot must be retained for a rebase. `changes` is the
+/// outbox change set and `conflict_policy` decides what happens to rows both
+/// devices changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishRequest {
     pub repository_id: String,
     pub writer_id: String,
     pub operation_id: String,
     pub expected_generation: i64,
+    pub changes: ChangeSet,
+    pub conflict_policy: ConflictPolicy,
 }
 
 /// The manifest-visible identity of a committed generation.
@@ -87,12 +104,17 @@ pub enum PublishOutcome {
     /// The manifest already carried this operation's commit (a previous call
     /// crashed after the CAS but before the caller learned about it).
     AlreadyCommitted(CommittedSnapshot),
+    /// A Pre-Publish Conflict: the remote moved and both devices changed the
+    /// same rows. Nothing was committed; the newer remote snapshot stays next
+    /// to the base snapshot until the conflict is resolved.
+    Conflicted(PrePublishConflict),
 }
 
 impl PublishOutcome {
-    pub fn snapshot(&self) -> &CommittedSnapshot {
+    pub fn snapshot(&self) -> Option<&CommittedSnapshot> {
         match self {
-            Self::Committed(snapshot) | Self::AlreadyCommitted(snapshot) => snapshot,
+            Self::Committed(snapshot) | Self::AlreadyCommitted(snapshot) => Some(snapshot),
+            Self::Conflicted(_) => None,
         }
     }
 }
@@ -113,6 +135,7 @@ pub enum PublishStep {
     ReadManifest,
     UploadAssets,
     PrepareSnapshot,
+    Rebase,
     UploadSnapshot,
     CommitManifest,
     VerifyManifest,
@@ -126,9 +149,10 @@ pub enum PublishStep {
 /// publication never mixes pre- and post-mutation state.
 ///
 /// Errors are split the way the recovery contract needs: retryable transfer
-/// failures propagate unchanged, a stale generation or lost CAS race is
-/// `RemoteConflict`, and corrupt local or remote bytes are
-/// `RemoteIntegrityFailed`.
+/// failures propagate unchanged, corrupt local or remote bytes are
+/// `RemoteIntegrityFailed`, and a remote that cannot be rebased onto (it went
+/// back in time, or kept moving) is `RemoteConflict`. Rows both devices
+/// changed are not an error but [`PublishOutcome::Conflicted`].
 pub fn publish_changes(
     storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
@@ -145,14 +169,10 @@ pub fn publish_changes(
 
     on_step(PublishStep::ReadManifest);
     let prior = read_current_manifest(storage)?;
-    let target_generation = request.expected_generation + 1;
-
-    if let Some((manifest, revision)) = &prior {
-        if manifest.generation == target_generation
-            && !manifest.operation_id.is_empty()
-            && manifest.operation_id == request.operation_id
-        {
+    match &prior {
+        Some((manifest, revision)) if is_own_commit(manifest, request) => {
             return resolve_accepted_commit(
+                storage,
                 working_copy_root,
                 working_database,
                 request,
@@ -161,32 +181,38 @@ pub fn publish_changes(
                 on_step,
             );
         }
-        if manifest.generation != request.expected_generation {
+        Some((manifest, _)) if manifest.generation < request.expected_generation => {
             return Err(pre_publish_conflict(
                 request.expected_generation,
                 manifest.generation,
             ));
         }
-    } else if request.expected_generation != 0 {
-        return Err(pre_publish_conflict(request.expected_generation, 0));
+        None if request.expected_generation != 0 => {
+            return Err(pre_publish_conflict(request.expected_generation, 0));
+        }
+        _ => {}
     }
 
     on_step(PublishStep::UploadAssets);
     ensure_referenced_assets(storage, working_copy_root, working_database)?;
 
     on_step(PublishStep::PrepareSnapshot);
-    let candidate = prepare_candidate(working_copy_root, working_database, &request.operation_id)?;
+    let local = prepare_candidate(working_copy_root, working_database, &request.operation_id)?;
 
-    let result = commit_candidate(
+    let result = publish_with_rebase(
         storage,
+        working_copy_root,
+        working_database,
         request,
-        prior.as_ref(),
-        target_generation,
-        &candidate,
+        prior,
+        &local,
         on_step,
     );
-    if result.is_ok() {
-        let _ = fs::remove_file(&candidate.path);
+    if matches!(
+        result,
+        Ok(PublishOutcome::Committed(_) | PublishOutcome::AlreadyCommitted(_))
+    ) {
+        let _ = fs::remove_file(&local.path);
     }
     result
 }
@@ -211,8 +237,268 @@ pub fn ensure_referenced_assets(
     Ok(())
 }
 
-/// The manifest plus the revision token a conditional replace needs, or
-/// `None` for a repository that has no manifest yet (legacy or brand new).
+fn is_own_commit(manifest: &RepositoryManifest, request: &PublishRequest) -> bool {
+    !manifest.operation_id.is_empty()
+        && manifest.operation_id == request.operation_id
+        && manifest.generation > request.expected_generation
+}
+
+/// Commit the local candidate, rebasing it whenever the observed remote
+/// snapshot is no longer the one the working copy was based on.
+fn publish_with_rebase(
+    storage: &dyn RepositoryStorage,
+    working_copy_root: &Path,
+    working_database: &Path,
+    request: &PublishRequest,
+    prior: Option<(RepositoryManifest, Option<String>)>,
+    local: &Candidate,
+    on_step: &mut dyn FnMut(PublishStep),
+) -> RemoteResult<PublishOutcome> {
+    // The digest of the remote snapshot at the expected generation, when the
+    // probe saw it: a later manifest with the same snapshot needs no rebase.
+    let base_remote_digest = prior
+        .as_ref()
+        .filter(|(manifest, _)| manifest.generation == request.expected_generation)
+        .map(|(manifest, _)| manifest.database_sha256.clone());
+    let mut observed = prior;
+
+    for _ in 0..=MAX_REBASE_ATTEMPTS {
+        let rebase_target = observed.as_ref().and_then(|(manifest, _)| {
+            let moved = manifest.generation != request.expected_generation
+                || base_remote_digest.as_deref() != Some(manifest.database_sha256.as_str());
+            moved.then_some(manifest)
+        });
+        let rebased = match rebase_target {
+            None => None,
+            Some(remote_manifest) => {
+                on_step(PublishStep::Rebase);
+                match rebase_candidate(storage, working_copy_root, request, remote_manifest, local)?
+                {
+                    RebaseStep::Conflicted(conflict) => {
+                        return Ok(PublishOutcome::Conflicted(conflict));
+                    }
+                    RebaseStep::Publish(candidate) => Some(candidate),
+                }
+            }
+        };
+        let candidate = rebased.as_ref().unwrap_or(local);
+        let target_generation = observed
+            .as_ref()
+            .map_or(0, |(manifest, _)| manifest.generation)
+            + 1;
+
+        match commit_candidate(
+            storage,
+            request,
+            observed.as_ref(),
+            target_generation,
+            candidate,
+            on_step,
+        ) {
+            Ok(snapshot) => {
+                finish_commit(
+                    working_copy_root,
+                    working_database,
+                    request,
+                    snapshot.generation,
+                    candidate,
+                    rebased.is_some(),
+                )?;
+                return Ok(PublishOutcome::Committed(snapshot));
+            }
+            Err(error) if error.kind == RemoteErrorKind::RemoteConflict => {
+                observed = read_current_manifest(storage)?;
+                match &observed {
+                    Some((manifest, revision)) if is_own_commit(manifest, request) => {
+                        return resolve_accepted_commit(
+                            storage,
+                            working_copy_root,
+                            working_database,
+                            request,
+                            manifest,
+                            revision.clone(),
+                            on_step,
+                        );
+                    }
+                    Some((manifest, _)) if manifest.generation < request.expected_generation => {
+                        return Err(pre_publish_conflict(
+                            request.expected_generation,
+                            manifest.generation,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(RemoteError::new(
+        RemoteErrorKind::RemoteConflict,
+        "the remote repository kept moving while this publication rebased; publish again",
+    ))
+}
+
+enum RebaseStep {
+    Publish(Candidate),
+    Conflicted(PrePublishConflict),
+}
+
+/// Build the candidate to publish on top of `remote_manifest`.
+///
+/// Without a base snapshot, or when the snapshots cannot be compared row by
+/// row, the local changes cannot be rebased: that is a whole-repository
+/// conflict, which [`ConflictPolicy::KeepLocal`] resolves by publishing the
+/// local candidate as it is.
+fn rebase_candidate(
+    storage: &dyn RepositoryStorage,
+    working_copy_root: &Path,
+    request: &PublishRequest,
+    remote_manifest: &RepositoryManifest,
+    local: &Candidate,
+) -> RemoteResult<RebaseStep> {
+    let base = base_snapshot_path(working_copy_root, request.expected_generation);
+    let unmergeable = |remote: Option<&Path>| -> RemoteResult<RebaseStep> {
+        if request.conflict_policy == ConflictPolicy::KeepLocal {
+            return Ok(RebaseStep::Publish(local.clone()));
+        }
+        let song_ids: Vec<String> = if request.changes.whole_repository {
+            Vec::new()
+        } else {
+            request
+                .changes
+                .song_ids
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        };
+        let mut sources = vec![local.path.as_path()];
+        sources.extend(remote);
+        Ok(RebaseStep::Conflicted(PrePublishConflict {
+            remote_generation: remote_manifest.generation,
+            songs: rebase::describe_songs(&song_ids, &sources)?,
+            whole_repository: true,
+        }))
+    };
+    if !base.is_file() {
+        return unmergeable(None);
+    }
+
+    let remote = fetch_remote_snapshot(
+        storage,
+        working_copy_root,
+        &request.operation_id,
+        remote_manifest,
+    )?;
+    let merged = rebased_candidate_path(working_copy_root, &request.operation_id);
+    let merge = rebase::merge_onto_remote(
+        &base,
+        &remote,
+        &local.path,
+        &request.changes,
+        request.conflict_policy,
+        &merged,
+    )?;
+    match merge {
+        MergeResult::Merged => Ok(RebaseStep::Publish(Candidate::measure(merged)?)),
+        MergeResult::Conflict {
+            song_ids,
+            whole_repository,
+        } => Ok(RebaseStep::Conflicted(PrePublishConflict {
+            remote_generation: remote_manifest.generation,
+            songs: rebase::describe_songs(&song_ids, &[local.path.as_path(), &remote])?,
+            whole_repository,
+        })),
+        MergeResult::Unmergeable => unmergeable(Some(&remote)),
+    }
+}
+
+/// Download and verify the snapshot `manifest` names into the rebase
+/// directory, reusing a copy an earlier attempt already verified.
+fn fetch_remote_snapshot(
+    storage: &dyn RepositoryStorage,
+    working_copy_root: &Path,
+    operation_id: &str,
+    manifest: &RepositoryManifest,
+) -> RemoteResult<PathBuf> {
+    let destination = remote_snapshot_path(working_copy_root, operation_id);
+    let expected_size = Some(manifest.database_size_bytes);
+    let expected_digest = Some(manifest.database_sha256.as_str());
+    if destination.is_file() {
+        if download::verify_file(&destination, expected_size, expected_digest).is_ok() {
+            return Ok(destination);
+        }
+        let _ = fs::remove_file(&destination);
+    }
+    let part = download::part_path_for(&destination, &format!("g{}", manifest.generation));
+    download::download_object(
+        storage,
+        &manifest.database_path,
+        expected_size,
+        &part,
+        SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
+        &mut |_| {},
+    )?;
+    let verified = download::verify_file(&part, expected_size, expected_digest)
+        .and_then(|_| verify_sqlite_candidate(&part));
+    if let Err(error) = verified {
+        let _ = fs::remove_file(&part);
+        return Err(error);
+    }
+    download::install_verified(&part, &destination)?;
+    Ok(destination)
+}
+
+/// After the manifest moved: the committed snapshot becomes the base of the
+/// next publication, and a rebased snapshot replaces the working database so
+/// the other device's changes are kept locally too.
+fn finish_commit(
+    working_copy_root: &Path,
+    working_database: &Path,
+    request: &PublishRequest,
+    generation: i64,
+    committed: &Candidate,
+    replaces_working_copy: bool,
+) -> RemoteResult<()> {
+    retain_base_snapshot(working_copy_root, generation, &committed.path)?;
+    if replaces_working_copy {
+        install_working_copy(&committed.path, working_database, &request.operation_id)?;
+    }
+    rebase::discard_rebase_state(working_copy_root, &request.operation_id);
+    Ok(())
+}
+
+/// Atomically replace the working database with `source`, keeping any
+/// publish outbox rows the working database still holds.
+fn install_working_copy(
+    source: &Path,
+    working_database: &Path,
+    operation_id: &str,
+) -> RemoteResult<()> {
+    let staging = download::part_path_for(working_database, &format!("rebase-{operation_id}"));
+    let _ = fs::remove_file(&staging);
+    fs::copy(source, &staging).map_err(|error| {
+        io_error(
+            format!(
+                "failed to stage rebased database {} as {}",
+                source.display(),
+                staging.display()
+            ),
+            error,
+        )
+    })?;
+    let installed = rebase::carry_outbox_rows(&staging, working_database)
+        .and_then(|()| download::install_verified(&staging, working_database));
+    if installed.is_err() {
+        let _ = fs::remove_file(&staging);
+    }
+    installed
+}
+
+/// The manifest that may not move during a publication, plus the revision
+/// token a conditional replace needs, or `None` for a repository that has no
+/// manifest yet (legacy or brand new).
 fn read_current_manifest(
     storage: &dyn RepositoryStorage,
 ) -> RemoteResult<Option<(RepositoryManifest, Option<String>)>> {
@@ -243,11 +529,13 @@ fn read_current_manifest(
     Ok(Some((manifest, metadata.revision)))
 }
 
-/// The manifest already names this operation at the target generation: the
-/// commit landed but the caller never learned. Accept it when the freshly
-/// snapshotted working database still holds exactly the committed bytes;
-/// otherwise the working copy moved on and this is an ordinary conflict.
+/// The manifest already names this operation past the expected generation:
+/// the commit landed but the caller never learned. Accept it when the freshly
+/// snapshotted working database still holds exactly the committed bytes, or
+/// — for a rebased commit — when the committed snapshot carries every local
+/// change; otherwise the working copy moved on and this is a conflict.
 fn resolve_accepted_commit(
+    storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
     working_database: &Path,
     request: &PublishRequest,
@@ -256,10 +544,7 @@ fn resolve_accepted_commit(
     on_step: &mut dyn FnMut(PublishStep),
 ) -> RemoteResult<PublishOutcome> {
     on_step(PublishStep::PrepareSnapshot);
-    let candidate = prepare_candidate(working_copy_root, working_database, &request.operation_id)?;
-    let accepted = manifest.database_sha256 == candidate.digest
-        && manifest.database_size_bytes == candidate.size;
-    let _ = fs::remove_file(&candidate.path);
+    let local = prepare_candidate(working_copy_root, working_database, &request.operation_id)?;
     let snapshot = CommittedSnapshot {
         generation: manifest.generation,
         database_path: manifest.database_path.clone(),
@@ -267,22 +552,52 @@ fn resolve_accepted_commit(
         database_sha256: manifest.database_sha256.clone(),
         manifest_revision,
     };
-    if accepted {
-        return Ok(PublishOutcome::AlreadyCommitted(snapshot));
-    }
-    Err(RemoteError::new(
-        RemoteErrorKind::RemoteConflict,
-        format!(
-            "remote generation {} was committed by operation {} with different \
-             database bytes; refresh the repository and publish again",
-            manifest.generation, manifest.operation_id
-        ),
-    ))
+    let result = (|| {
+        if manifest.database_sha256 == local.digest && manifest.database_size_bytes == local.size {
+            finish_commit(
+                working_copy_root,
+                working_database,
+                request,
+                manifest.generation,
+                &local,
+                false,
+            )?;
+            return Ok(PublishOutcome::AlreadyCommitted(snapshot.clone()));
+        }
+        let base = base_snapshot_path(working_copy_root, request.expected_generation);
+        if base.is_file() {
+            let committed_path =
+                fetch_remote_snapshot(storage, working_copy_root, &request.operation_id, manifest)?;
+            if rebase::carries_local_changes(&base, &committed_path, &local.path, &request.changes)?
+            {
+                let committed = Candidate::measure(committed_path)?;
+                finish_commit(
+                    working_copy_root,
+                    working_database,
+                    request,
+                    manifest.generation,
+                    &committed,
+                    true,
+                )?;
+                return Ok(PublishOutcome::AlreadyCommitted(snapshot.clone()));
+            }
+        }
+        Err(RemoteError::new(
+            RemoteErrorKind::RemoteConflict,
+            format!(
+                "remote generation {} was committed by operation {} with different \
+                 database bytes; refresh the repository and publish again",
+                manifest.generation, manifest.operation_id
+            ),
+        ))
+    })();
+    let _ = fs::remove_file(&local.path);
+    result
 }
 
 /// Upload the snapshot and move the manifest. The manifest replace is the
 /// only commit point, so every failure before it leaves the previous
-/// generation consistent.
+/// generation consistent. A lost CAS race is `RemoteConflict`.
 fn commit_candidate(
     storage: &dyn RepositoryStorage,
     request: &PublishRequest,
@@ -290,7 +605,7 @@ fn commit_candidate(
     target_generation: i64,
     candidate: &Candidate,
     on_step: &mut dyn FnMut(PublishStep),
-) -> RemoteResult<PublishOutcome> {
+) -> RemoteResult<CommittedSnapshot> {
     let database_path = database_path_for_operation(target_generation, &request.operation_id);
 
     on_step(PublishStep::UploadSnapshot);
@@ -327,15 +642,14 @@ fn commit_candidate(
     on_step(PublishStep::VerifyManifest);
     verify_committed_manifest(storage, &manifest)?;
 
-    Ok(PublishOutcome::Committed(CommittedSnapshot {
+    Ok(CommittedSnapshot {
         generation: target_generation,
         database_path,
         database_size_bytes: candidate.size,
         database_sha256: candidate.digest.clone(),
         manifest_revision: committed_metadata.revision,
-    }))
+    })
 }
-
 /// Ensure the operation-scoped snapshot object holds exactly the candidate
 /// bytes. An existing object belongs to an earlier attempt of the same
 /// operation (the path is operation-scoped), so a mismatch is a torn leftover
@@ -436,10 +750,28 @@ fn verify_committed_manifest(
 /// A snapshot of the working database with the machine-local publish outbox
 /// stripped, verified and digested. The candidate is rebuilt on every call:
 /// the only recovery journal is the outbox itself.
+#[derive(Clone)]
 struct Candidate {
     path: PathBuf,
     digest: String,
     size: u64,
+}
+
+impl Candidate {
+    /// Verify and digest a database file that is already outbox-free.
+    fn measure(path: PathBuf) -> RemoteResult<Self> {
+        verify_sqlite_candidate(&path)?;
+        let digest = sha256_file(&path)?;
+        let size = fs::metadata(&path)
+            .map(|metadata| metadata.len())
+            .map_err(|error| {
+                io_error(
+                    format!("failed to stat candidate {}", path.display()),
+                    error,
+                )
+            })?;
+        Ok(Self { path, digest, size })
+    }
 }
 
 fn prepare_candidate(
@@ -469,24 +801,8 @@ fn prepare_candidate(
             error,
         )
     })?;
-    let result = (|| {
-        strip_machine_local_outbox(&candidate_path)?;
-        verify_sqlite_candidate(&candidate_path)?;
-        let digest = sha256_file(&candidate_path)?;
-        let size = fs::metadata(&candidate_path)
-            .map(|metadata| metadata.len())
-            .map_err(|error| {
-                io_error(
-                    format!("failed to stat candidate {}", candidate_path.display()),
-                    error,
-                )
-            })?;
-        Ok(Candidate {
-            path: candidate_path.clone(),
-            digest,
-            size,
-        })
-    })();
+    let result = strip_machine_local_outbox(&candidate_path)
+        .and_then(|()| Candidate::measure(candidate_path.clone()));
     if result.is_err() {
         let _ = fs::remove_file(&candidate_path);
     }
@@ -800,10 +1116,11 @@ mod tests {
         refresh_repository, RefreshOutcome, RefreshPolicy, WorkingCopyDatabase,
         LEGACY_DATABASE_PATH,
     };
+    use crate::rebase::ConflictingSong;
     use crate::storage::{ListedObject, ObjectMetadata, StorageCapabilities};
     use crate::testing::{Fault, MemoryStorage};
     use rusqlite::params;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
 
     struct AllowAll;
@@ -916,6 +1233,29 @@ mod tests {
             writer_id: "writer-1".to_owned(),
             operation_id: operation_id.to_owned(),
             expected_generation,
+            changes: ChangeSet::default(),
+            conflict_policy: ConflictPolicy::Stop,
+        }
+    }
+
+    fn songs_request(
+        expected_generation: i64,
+        operation_id: &str,
+        songs: &[&str],
+    ) -> PublishRequest {
+        PublishRequest {
+            changes: ChangeSet {
+                song_ids: songs.iter().map(|song| (*song).to_owned()).collect(),
+                whole_repository: false,
+            },
+            ..request(expected_generation, operation_id)
+        }
+    }
+
+    fn conflicted(outcome: PublishOutcome) -> PrePublishConflict {
+        match outcome {
+            PublishOutcome::Conflicted(conflict) => conflict,
+            other => panic!("expected Conflicted, got {other:?}"),
         }
     }
 
@@ -1050,12 +1390,21 @@ mod tests {
         }
     }
 
-    /// Another device commits its own manifest right between our probe and
-    /// our conditional replace.
+    /// Other devices commit their queued manifests right before our
+    /// conditional replaces, one per attempt, so the remote moves between
+    /// our probe and our commit and again while we rebase.
     struct ConcurrentCommitStorage {
         inner: MemoryStorage,
-        intruder_manifest: Vec<u8>,
-        fired: Arc<AtomicBool>,
+        intruders: Mutex<VecDeque<Vec<u8>>>,
+    }
+
+    impl ConcurrentCommitStorage {
+        fn new(inner: MemoryStorage, intruders: Vec<Vec<u8>>) -> Self {
+            Self {
+                inner,
+                intruders: Mutex::new(intruders.into()),
+            }
+        }
     }
 
     impl RepositoryStorage for ConcurrentCommitStorage {
@@ -1086,7 +1435,12 @@ mod tests {
             bytes: &[u8],
             expected_revision: &str,
         ) -> RemoteResult<ObjectMetadata> {
-            if path == MANIFEST_PATH && !self.fired.swap(true, Ordering::SeqCst) {
+            let intruder = if path == MANIFEST_PATH {
+                self.intruders.lock().expect("intruders lock").pop_front()
+            } else {
+                None
+            };
+            if let Some(intruder) = intruder {
                 let current = self
                     .inner
                     .stat(MANIFEST_PATH)
@@ -1094,7 +1448,7 @@ mod tests {
                     .and_then(|metadata| metadata.revision)
                     .expect("manifest revision");
                 self.inner
-                    .conditional_replace(MANIFEST_PATH, &self.intruder_manifest, &current)
+                    .conditional_replace(MANIFEST_PATH, &intruder, &current)
                     .expect("the intruder commits against the current revision");
             }
             self.inner
@@ -1157,21 +1511,97 @@ mod tests {
         }
     }
 
-    fn intruder_manifest_json(generation: i64, operation_id: &str) -> Vec<u8> {
+    /// Another device's Local Working Copy: refreshed from the remote, with
+    /// its base snapshot retained the way the application does after a
+    /// refresh.
+    fn other_device(storage: &dyn RepositoryStorage) -> tempfile::TempDir {
+        let (dir, database) = refresh_into(storage);
+        let generation = remote_manifest(storage).generation;
+        retain_base_snapshot(dir.path(), generation, &database).expect("retain base");
+        dir
+    }
+
+    fn execute(working_copy: &tempfile::TempDir, sql: &str) {
+        Connection::open(working_copy.path().join("openkara.db"))
+            .expect("open working copy")
+            .execute_batch(sql)
+            .expect("mutate working copy");
+    }
+
+    fn working_database(working_copy: &tempfile::TempDir) -> PathBuf {
+        working_copy.path().join("openkara.db")
+    }
+
+    /// Upload `device`'s database as `generation` the way its writer would
+    /// and return the manifest that commits it, for a test storage to swap in
+    /// at a chosen moment.
+    fn stage_generation(
+        storage: &dyn RepositoryStorage,
+        device: &tempfile::TempDir,
+        generation: i64,
+        operation_id: &str,
+    ) -> Vec<u8> {
+        let candidate = prepare_candidate(device.path(), &working_database(device), operation_id)
+            .expect("candidate");
+        let database_path = database_path_for_operation(generation, operation_id);
+        storage
+            .write_new(
+                &database_path,
+                &fs::read(&candidate.path).expect("read candidate"),
+            )
+            .expect("upload the staged snapshot");
         RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
             generation,
-            database_path: database_path_for_operation(generation, operation_id),
-            database_size_bytes: 16,
-            database_sha256: "00".repeat(32),
+            database_path,
+            database_size_bytes: candidate.size,
+            database_sha256: candidate.digest,
             committed_at_ms: 1_700_000_000_000,
             writer_id: "other-device".to_owned(),
             operation_id: operation_id.to_owned(),
         }
         .to_json()
-        .expect("intruder manifest")
+        .expect("staged manifest")
         .into_bytes()
+    }
+
+    fn song_titles(database: &Path) -> Vec<(String, String)> {
+        let connection = open_readonly(database).expect("open database");
+        let mut statement = connection
+            .prepare("SELECT hash, title FROM songs ORDER BY hash")
+            .expect("prepare");
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect")
+    }
+
+    fn outbox_operations(database: &Path) -> Vec<String> {
+        let connection = open_readonly(database).expect("open database");
+        let mut statement = connection
+            .prepare("SELECT operation_id FROM remote_publish_outbox ORDER BY operation_id")
+            .expect("prepare");
+        statement
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .expect("collect")
+    }
+
+    fn titled(rows: &[(&str, &str)]) -> Vec<(String, String)> {
+        rows.iter()
+            .map(|(hash, title)| ((*hash).to_owned(), (*title).to_owned()))
+            .collect()
+    }
+
+    fn conflict_song_ids(conflict: &PrePublishConflict) -> Vec<&str> {
+        conflict
+            .songs
+            .iter()
+            .map(|song| song.song_id.as_str())
+            .collect()
     }
 
     #[test]
@@ -1400,7 +1830,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_expected_generation_is_a_pre_publish_conflict() {
+    fn a_publication_without_its_base_snapshot_is_a_whole_repository_conflict() {
         let storage = MemoryStorage::new();
         let dir = create_working_copy(
             &[SongRow {
@@ -1411,12 +1841,16 @@ mod tests {
         );
         committed(publish(&storage, &dir, &request(0, "op-1")).expect("first publish"));
         let objects_before = listed_paths(&storage);
+        let working_before = fs::read(working_database(&dir)).expect("working copy");
 
-        let error = publish(&storage, &dir, &request(0, "op-2")).expect_err("stale base");
+        let conflict = conflicted(
+            publish(&storage, &dir, &songs_request(0, "op-2", &["song-1"])).expect("publish"),
+        );
 
-        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
-        assert_eq!(error.code, "remote_conflict");
-        assert!(!error.retryable, "a conflict is not retried blindly");
+        assert_eq!(conflict.remote_generation, 1);
+        assert!(conflict.whole_repository, "without a base nothing rebases");
+        assert_eq!(conflict_song_ids(&conflict), ["song-1"]);
+        assert_eq!(conflict.songs[0].title.as_deref(), Some("Song song-1"));
         let manifest = remote_manifest(&storage);
         assert_eq!(manifest.generation, 1);
         assert_eq!(manifest.operation_id, "op-1");
@@ -1425,73 +1859,192 @@ mod tests {
             objects_before,
             "a conflicting publish uploads nothing"
         );
+        assert_eq!(
+            fs::read(working_database(&dir)).expect("working copy"),
+            working_before
+        );
     }
 
     #[test]
-    fn a_concurrent_publishers_generation_conflicts() {
-        let device_a = MemoryStorage::new();
-        let device_b = device_a.clone();
-        let dir_a = create_working_copy(
+    fn disjoint_song_changes_are_rebased_onto_a_newer_remote_and_republished() {
+        let storage = MemoryStorage::new();
+        let device_a = create_working_copy(
             &[SongRow {
                 hash: "song-a",
                 ..Default::default()
             }],
             &[],
         );
-        let dir_b = create_working_copy(
-            &[SongRow {
-                hash: "song-b",
-                ..Default::default()
-            }],
-            &[],
+        committed(
+            publish(&storage, &device_a, &songs_request(0, "op-a1", &["song-a"])).expect("gen 1"),
         );
-        committed(publish(&device_a, &dir_a, &request(0, "op-a1")).expect("gen 1"));
-        // Device B refreshed to gen 1 and published first.
-        committed(publish(&device_b, &dir_b, &request(1, "op-b")).expect("gen 2"));
+        let device_b = other_device(&storage);
+        execute(
+            &device_b,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        committed(
+            publish(&storage, &device_b, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
+        );
+        execute(
+            &device_a,
+            "INSERT INTO songs (hash, title) VALUES ('song-c', 'Song song-c');
+             INSERT INTO remote_publish_outbox (operation_id, song_ids_json)
+                 VALUES ('op-a2', '[\"song-c\"]');",
+        );
 
-        let error =
-            publish(&device_a, &dir_a, &request(1, "op-a2")).expect_err("device A is stale now");
+        let mut steps = Vec::new();
+        let snapshot = committed(
+            publish_changes(
+                &storage,
+                device_a.path(),
+                &working_database(&device_a),
+                &songs_request(1, "op-a2", &["song-c"]),
+                &mut |step| steps.push(step),
+            )
+            .expect("rebased publish"),
+        );
 
-        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
-        let manifest = remote_manifest(&device_a);
-        assert_eq!(manifest.generation, 2);
-        assert_eq!(manifest.operation_id, "op-b");
-        let (_pulled_dir, pulled_db) = refresh_into(&device_a);
-        assert_eq!(song_hashes(&pulled_db), ["song-b"]);
+        assert_eq!(snapshot.generation, 3);
+        assert!(steps.contains(&PublishStep::Rebase));
+        let manifest = remote_manifest(&storage);
+        assert_eq!(manifest.operation_id, "op-a2");
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-a", "song-b", "song-c"]);
+        let working = working_database(&device_a);
+        assert_eq!(
+            song_hashes(&working),
+            ["song-a", "song-b", "song-c"],
+            "the working copy takes the other device's song instead of reverting it later"
+        );
+        assert_eq!(outbox_operations(&working), ["op-a2"]);
+        assert!(base_snapshot_path(device_a.path(), 3).is_file());
+        assert!(!base_snapshot_path(device_a.path(), 1).exists());
+        assert!(!remote_snapshot_path(device_a.path(), "op-a2").exists());
+        assert!(!rebased_candidate_path(device_a.path(), "op-a2").exists());
     }
 
     #[test]
-    fn a_revision_moving_between_probe_and_commit_is_a_conflict() {
+    fn a_song_both_devices_changed_is_a_named_conflict_that_loses_nothing() {
         let storage = MemoryStorage::new();
-        let dir = create_working_copy(
+        let device_a = create_working_copy(
             &[SongRow {
-                hash: "song-1",
+                hash: "song-a",
                 ..Default::default()
             }],
             &[],
         );
-        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
-        let racing = ConcurrentCommitStorage {
-            inner: storage.clone(),
-            intruder_manifest: intruder_manifest_json(2, "op-intruder"),
-            fired: Arc::default(),
-        };
+        committed(
+            publish(&storage, &device_a, &songs_request(0, "op-a1", &["song-a"])).expect("gen 1"),
+        );
+        let device_b = other_device(&storage);
+        execute(
+            &device_b,
+            "UPDATE songs SET title = 'Title from B' WHERE hash = 'song-a';
+             INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b');",
+        );
+        committed(
+            publish(
+                &storage,
+                &device_b,
+                &songs_request(1, "op-b", &["song-a", "song-b"]),
+            )
+            .expect("gen 2"),
+        );
+        execute(
+            &device_a,
+            "UPDATE songs SET title = 'Title from A' WHERE hash = 'song-a';
+             INSERT INTO songs (hash, title) VALUES ('song-c', 'Song song-c');",
+        );
+        let working_before = fs::read(working_database(&device_a)).expect("working copy");
+        let request = songs_request(1, "op-a2", &["song-a", "song-c"]);
 
-        let error = publish(&racing, &dir, &request(1, "op-2")).expect_err("lost the CAS race");
+        let conflict = conflicted(publish(&storage, &device_a, &request).expect("publish"));
 
-        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
+        assert_eq!(
+            conflict,
+            PrePublishConflict {
+                remote_generation: 2,
+                songs: vec![ConflictingSong {
+                    song_id: "song-a".to_owned(),
+                    title: Some("Title from A".to_owned()),
+                    artist: None,
+                }],
+                whole_repository: false,
+            }
+        );
         let manifest = remote_manifest(&storage);
         assert_eq!(manifest.generation, 2);
-        assert_eq!(manifest.operation_id, "op-intruder");
-        // Our unreferenced snapshot remains; the remote is never torn.
-        assert!(storage
-            .stat(&database_path_for_operation(2, "op-2"))
-            .expect("stat")
-            .is_some());
+        assert_eq!(manifest.operation_id, "op-b");
+        assert_eq!(
+            fs::read(working_database(&device_a)).expect("working copy"),
+            working_before,
+            "the local changes stay in the working copy"
+        );
+        assert!(base_snapshot_path(device_a.path(), 1).is_file());
+        assert!(
+            remote_snapshot_path(device_a.path(), "op-a2").is_file(),
+            "the newer remote snapshot is kept next to the base until the conflict resolves"
+        );
+
+        let resolved = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal,
+            ..request
+        };
+        let snapshot = committed(publish(&storage, &device_a, &resolved).expect("keep local"));
+
+        assert_eq!(snapshot.generation, 3);
+        let expected = titled(&[
+            ("song-a", "Title from A"),
+            ("song-b", "Song song-b"),
+            ("song-c", "Song song-c"),
+        ]);
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_titles(&pulled_db), expected);
+        assert_eq!(song_titles(&working_database(&device_a)), expected);
+        assert!(!remote_snapshot_path(device_a.path(), "op-a2").exists());
     }
 
     #[test]
-    fn a_revision_moving_before_the_probe_is_a_conflict() {
+    fn whole_repository_changes_are_a_conflict_once_the_remote_moved() {
+        let storage = MemoryStorage::new();
+        let device_a = create_working_copy(
+            &[SongRow {
+                hash: "song-a",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &device_a, &request(0, "op-a1")).expect("gen 1"));
+        let device_b = other_device(&storage);
+        execute(
+            &device_b,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        committed(
+            publish(&storage, &device_b, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
+        );
+        execute(&device_a, "DELETE FROM songs");
+        let request = PublishRequest {
+            changes: ChangeSet {
+                song_ids: Vec::new(),
+                whole_repository: true,
+            },
+            ..request(1, "op-a2")
+        };
+
+        let conflict = conflicted(publish(&storage, &device_a, &request).expect("publish"));
+
+        assert_eq!(conflict.remote_generation, 2);
+        assert!(conflict.whole_repository);
+        assert_eq!(remote_manifest(&storage).operation_id, "op-b");
+        assert!(song_hashes(&working_database(&device_a)).is_empty());
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-a", "song-b"]);
+    }
+
+    #[test]
+    fn a_publisher_committing_between_probe_and_commit_is_rebased_onto() {
         let storage = MemoryStorage::new();
         let dir = create_working_copy(
             &[SongRow {
@@ -1501,15 +2054,257 @@ mod tests {
             &[],
         );
         committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        let intruder = stage_generation(&storage, &other, 2, "op-intruder");
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
+        let racing = ConcurrentCommitStorage::new(storage.clone(), vec![intruder]);
+
+        let snapshot = committed(
+            publish(&racing, &dir, &songs_request(1, "op-2", &["song-2"])).expect("rebased"),
+        );
+
+        assert_eq!(snapshot.generation, 3);
+        assert_eq!(remote_manifest(&storage).operation_id, "op-2");
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
+        assert!(
+            storage
+                .stat(&database_path_for_operation(2, "op-2"))
+                .expect("stat")
+                .is_some(),
+            "the snapshot that lost the race stays unreferenced; the remote is never torn"
+        );
+    }
+
+    #[test]
+    fn a_publisher_committing_during_the_rebase_is_rebased_onto_again() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        let first = stage_generation(&storage, &other, 2, "op-b1");
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-c', 'Song song-c')",
+        );
+        let second = stage_generation(&storage, &other, 3, "op-b2");
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
+        let racing = ConcurrentCommitStorage::new(storage.clone(), vec![first, second]);
+
+        let mut steps = Vec::new();
+        let snapshot = committed(
+            publish_changes(
+                &racing,
+                dir.path(),
+                &working_database(&dir),
+                &songs_request(1, "op-2", &["song-2"]),
+                &mut |step| steps.push(step),
+            )
+            .expect("rebased twice"),
+        );
+
+        assert_eq!(snapshot.generation, 4);
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|step| **step == PublishStep::Rebase)
+                .count(),
+            2
+        );
+        let expected = ["song-1", "song-2", "song-b", "song-c"];
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), expected);
+        assert_eq!(song_hashes(&working_database(&dir)), expected);
+    }
+
+    #[test]
+    fn a_same_song_change_landing_during_the_rebase_is_a_named_conflict() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        let first = stage_generation(&storage, &other, 2, "op-b1");
+        execute(
+            &other,
+            "UPDATE songs SET title = 'Title from B' WHERE hash = 'song-1'",
+        );
+        let second = stage_generation(&storage, &other, 3, "op-b2");
+        execute(
+            &dir,
+            "UPDATE songs SET title = 'Title from A' WHERE hash = 'song-1'",
+        );
+        let working_before = fs::read(working_database(&dir)).expect("working copy");
+        let racing = ConcurrentCommitStorage::new(storage.clone(), vec![first, second]);
+
+        let conflict = conflicted(
+            publish(&racing, &dir, &songs_request(1, "op-2", &["song-1"])).expect("publish"),
+        );
+
+        assert_eq!(conflict.remote_generation, 3);
+        assert_eq!(conflict_song_ids(&conflict), ["song-1"]);
+        assert!(!conflict.whole_repository);
+        let manifest = remote_manifest(&storage);
+        assert_eq!(manifest.generation, 3);
+        assert_eq!(manifest.operation_id, "op-b2");
+        assert_eq!(
+            fs::read(working_database(&dir)).expect("working copy"),
+            working_before
+        );
+    }
+
+    #[test]
+    fn a_revision_moving_during_the_probe_is_rebased_onto() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        let intruder = stage_generation(&storage, &other, 7, "op-intruder");
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
         storage.script(Fault::MoveRevision {
             path: MANIFEST_PATH.to_owned(),
-            bytes: intruder_manifest_json(7, "op-intruder"),
+            bytes: intruder,
         });
 
-        let error = publish(&storage, &dir, &request(1, "op-2")).expect_err("moved revision");
+        let snapshot = committed(
+            publish(&storage, &dir, &songs_request(1, "op-2", &["song-2"])).expect("rebased"),
+        );
 
-        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
-        assert_eq!(remote_manifest(&storage).generation, 7);
+        assert_eq!(snapshot.generation, 8);
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
+    }
+
+    #[test]
+    fn an_interrupted_rebase_download_resumes_on_republish() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        committed(
+            publish(&storage, &other, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
+        );
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
+        storage.script(Fault::InterruptTransfer {
+            path: database_path_for_operation(2, "op-b"),
+            after_bytes: 64,
+        });
+        let request = songs_request(1, "op-2", &["song-2"]);
+
+        let error = publish(&storage, &dir, &request).expect_err("interrupted");
+
+        assert!(
+            error.retryable,
+            "an interrupted download is retryable: {error}"
+        );
+        assert_eq!(remote_manifest(&storage).operation_id, "op-b");
+        assert_eq!(song_hashes(&working_database(&dir)), ["song-1", "song-2"]);
+        let snapshot = committed(publish(&storage, &dir, &request).expect("republish"));
+        assert_eq!(snapshot.generation, 3);
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
+    }
+
+    #[test]
+    fn a_rebased_commit_lost_before_completion_is_recognized_on_retry() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        let other = other_device(&storage);
+        execute(
+            &other,
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+        );
+        committed(
+            publish(&storage, &other, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
+        );
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
+        let working_before = fs::read(working_database(&dir)).expect("working copy");
+        let base_before = fs::read(base_snapshot_path(dir.path(), 1)).expect("base");
+        let request = songs_request(1, "op-2", &["song-2"]);
+        let first = committed(publish(&storage, &dir, &request).expect("rebased publish"));
+        // A crash between the CAS and local completion leaves the working copy
+        // and its base exactly as they were before the call.
+        fs::write(working_database(&dir), &working_before).expect("restore working copy");
+        fs::write(base_snapshot_path(dir.path(), 1), &base_before).expect("restore base");
+        fs::remove_file(base_snapshot_path(dir.path(), 3)).expect("drop the new base");
+
+        let outcome = publish(&storage, &dir, &request).expect("retry");
+
+        let PublishOutcome::AlreadyCommitted(snapshot) = outcome else {
+            panic!("expected AlreadyCommitted, got {outcome:?}");
+        };
+        assert_eq!(snapshot.generation, 3);
+        assert_eq!(snapshot.database_sha256, first.database_sha256);
+        assert_eq!(
+            song_hashes(&working_database(&dir)),
+            ["song-1", "song-2", "song-b"]
+        );
+        assert!(base_snapshot_path(dir.path(), 3).is_file());
     }
 
     #[test]
@@ -1901,7 +2696,7 @@ mod tests {
         }
 
         #[test]
-        fn a_revision_moving_between_steps_over_webdav_is_a_conflict() {
+        fn a_revision_moving_between_steps_over_webdav_is_rebased_onto() {
             let server = TestWebDavServer::start();
             let storage = server.storage().clone();
             let dir = create_working_copy(
@@ -1912,15 +2707,28 @@ mod tests {
                 &[],
             );
             committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+            let other = other_device(&storage);
+            execute(
+                &other,
+                "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
+            );
+            let intruder = stage_generation(&storage, &other, 9, "op-intruder");
+            execute(
+                &dir,
+                "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+            );
             server.script(Fault::MoveRevision {
                 path: MANIFEST_PATH.to_owned(),
-                bytes: intruder_manifest_json(9, "op-intruder"),
+                bytes: intruder,
             });
 
-            let error = publish(&storage, &dir, &request(1, "op-2")).expect_err("conflict");
+            let snapshot = committed(
+                publish(&storage, &dir, &songs_request(1, "op-2", &["song-2"])).expect("rebased"),
+            );
 
-            assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
-            assert_eq!(remote_manifest(&storage).generation, 9);
+            assert_eq!(snapshot.generation, 10);
+            let (_pulled_dir, pulled_db) = refresh_into(&storage);
+            assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
         }
     }
 }

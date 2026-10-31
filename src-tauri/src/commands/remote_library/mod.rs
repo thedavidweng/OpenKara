@@ -31,6 +31,19 @@ pub struct RemoteDiagnostics {
     pub last_success_at_ms: Option<i64>,
     pub last_error_code: Option<String>,
     pub recent_operations: Vec<RemoteOperationDiagnostic>,
+    /// The Pre-Publish Conflict the repository is stopped on, when the active
+    /// operation recorded which songs it names.
+    pub conflict: Option<RemoteConflictDiagnostic>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteConflictDiagnostic {
+    pub operation_id: String,
+    pub remote_generation: i64,
+    /// Songs both devices changed, sorted by song id.
+    pub songs: Vec<remote::control_db::ConflictingSongRecord>,
+    /// Library-wide changes are part of the conflict too.
+    pub whole_repository: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -259,6 +272,7 @@ pub fn get_remote_diagnostics(
                 last_success_at_ms: None,
                 last_error_code: None,
                 recent_operations: Vec::new(),
+                conflict: None,
             });
         }
     };
@@ -297,6 +311,11 @@ pub fn get_remote_diagnostics(
     };
 
     let mut ops = control_db::list_operations_for_library(&conn, &library_id)?;
+    let conflict = if local_state == control_db::LocalState::Conflicted.as_str() {
+        active_conflict(&ops, active_operation_id.as_deref())
+    } else {
+        None
+    };
     ops.sort_by_key(|op| std::cmp::Reverse(op.updated_at_ms));
     ops.truncate(20);
     let recent_operations = ops
@@ -327,5 +346,85 @@ pub fn get_remote_diagnostics(
         last_success_at_ms,
         last_error_code,
         recent_operations,
+        conflict,
     })
+}
+
+fn active_conflict(
+    operations: &[remote::control_db::OperationRow],
+    active_operation_id: Option<&str>,
+) -> Option<RemoteConflictDiagnostic> {
+    let operation = operations
+        .iter()
+        .find(|operation| Some(operation.operation_id.as_str()) == active_operation_id)?;
+    let record = remote::control_db::OperationPayload::from_json(&operation.payload_json)
+        .ok()?
+        .pre_publish_conflict?;
+    Some(RemoteConflictDiagnostic {
+        operation_id: operation.operation_id.clone(),
+        remote_generation: record.remote_generation,
+        songs: record.songs,
+        whole_repository: record.whole_repository,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::remote::control_db::{
+        ConflictingSongRecord, OperationKind, OperationPayload, OperationRow, OperationState,
+        PrePublishConflictRecord,
+    };
+
+    fn operation(operation_id: &str, payload: OperationPayload) -> OperationRow {
+        OperationRow {
+            operation_id: operation_id.to_owned(),
+            library_id: "lib-1".to_owned(),
+            operation_kind: OperationKind::Publish,
+            state: OperationState::Conflicted,
+            expected_generation: Some(1),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: payload.to_json().unwrap(),
+            attempt_count: 1,
+            next_attempt_at_ms: None,
+            error_code: Some("remote_conflict".to_owned()),
+            error_detail: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+        }
+    }
+
+    #[test]
+    fn the_active_conflict_names_the_songs_its_operation_recorded() {
+        let record = PrePublishConflictRecord {
+            remote_generation: 4,
+            songs: vec![ConflictingSongRecord {
+                song_id: "song-1".to_owned(),
+                title: Some("Title".to_owned()),
+                artist: Some("Artist".to_owned()),
+            }],
+            whole_repository: false,
+        };
+        let operations = [
+            operation("op-old", OperationPayload::default()),
+            operation(
+                "op-active",
+                OperationPayload {
+                    pre_publish_conflict: Some(record.clone()),
+                    ..Default::default()
+                },
+            ),
+        ];
+
+        let conflict = active_conflict(&operations, Some("op-active")).expect("conflict");
+
+        assert_eq!(conflict.operation_id, "op-active");
+        assert_eq!(conflict.remote_generation, 4);
+        assert_eq!(conflict.songs, record.songs);
+        assert!(!conflict.whole_repository);
+        assert!(active_conflict(&operations, Some("op-old")).is_none());
+        assert!(active_conflict(&operations, None).is_none());
+    }
 }

@@ -921,6 +921,7 @@ export function createTauriMock(data: any): TauriMockResult {
       last_success_at_ms: null,
       last_error_code: null,
       recent_operations: [],
+      conflict: null,
     }),
 
     get_cover_art: async (args: any) => {
