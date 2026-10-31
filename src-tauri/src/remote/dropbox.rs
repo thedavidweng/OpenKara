@@ -1210,6 +1210,32 @@ impl<'a> DropboxProvider<'a> {
 }
 
 impl RepositoryStorage for DropboxProvider<'_> {
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        dropbox_delete_path(
+            self.app_data_dir,
+            &mut secret,
+            &dropbox_join_path(root_path, relative_path),
+        )
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        refresh_existing_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+}
+
+impl LegacyReadStorage for DropboxProvider<'_> {
     fn media_source(&self) -> &dyn RemoteMediaSource {
         self
     }
@@ -1261,30 +1287,6 @@ impl RepositoryStorage for DropboxProvider<'_> {
             ))));
         }
         dropbox_download_file(self.app_data_dir, &mut secret, &remote_path, destination)
-    }
-
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
-        let mut secret = self.secret.borrow_mut();
-        let root_path = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        dropbox_delete_path(
-            self.app_data_dir,
-            &mut secret,
-            &dropbox_join_path(root_path, relative_path),
-        )
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
-    }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        refresh_existing_dropbox_library(self.app_data_dir, self.library, &secret)
     }
 }
 
@@ -1606,7 +1608,8 @@ impl RemoteMediaSource for DropboxProvider<'_> {
 }
 
 use super::provider::{
-    LegacyPublishStorage, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+    LegacyPublishStorage, LegacyReadStorage, RemoteMediaSource, RemoteMediaSourceCapabilities,
+    RepositoryStorage,
 };
 
 #[cfg(test)]

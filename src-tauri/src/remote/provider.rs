@@ -27,7 +27,21 @@ impl ConditionalSource {
     }
 }
 
+/// Repository-level actions every Remote Provider adapter serves: Register
+/// Repository, the Reauthorize/Relocate reopen, and remote deletion.
 pub(crate) trait RepositoryStorage {
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>>;
+}
+
+/// The reads of the legacy read path: Refresh Repository, asset caching and
+/// streaming for repositories that do not go through the Remote Repository
+/// core. Only the Dropbox and Google Drive adapters implement it: WebDAV
+/// repositories read through the core.
+pub(crate) trait LegacyReadStorage: RepositoryStorage {
     fn media_source(&self) -> &dyn RemoteMediaSource;
 
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>>;
@@ -48,12 +62,6 @@ pub(crate) trait RepositoryStorage {
     }
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
-
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>>;
 }
 
 /// The writes of the legacy publication protocol
@@ -61,7 +69,7 @@ pub(crate) trait RepositoryStorage {
 /// Google Drive adapters implement it: WebDAV repositories publish through
 /// the Remote Repository core, so the app-side WebDAV adapter never writes
 /// a publication.
-pub(crate) trait LegacyPublishStorage: RepositoryStorage {
+pub(crate) trait LegacyPublishStorage: LegacyReadStorage {
     fn capabilities(&self) -> RemoteProviderCapabilities;
 
     fn upload_file(&self, relative_path: &str) -> CommandResult<()>;
@@ -198,24 +206,35 @@ pub(crate) fn create_legacy_publish_storage<'a>(
     }
 }
 
+/// The storage that serves the legacy read path for a Dropbox or Google
+/// Drive repository. WebDAV repositories have none: they read through the
+/// Remote Repository core.
+pub(crate) fn create_legacy_read_storage<'a>(
+    app_data_dir: &'a Path,
+    library: &'a RegisteredLibrary,
+) -> CommandResult<Box<dyn LegacyReadStorage + 'a>> {
+    match library.provider() {
+        Some(RemoteLibraryProvider::WebDav) => Err(CommandError::from(LibraryError::Internal(
+            "WebDAV repositories read through the Remote Repository core".to_owned(),
+        ))),
+        _ => create_legacy_publish_storage(app_data_dir, library)
+            .map(|storage| storage as Box<dyn LegacyReadStorage + 'a>),
+    }
+}
+
+/// The media source that streams Dropbox or Google Drive assets. WebDAV
+/// repositories stream through the Remote Repository core.
 pub(crate) fn create_remote_media_source<'a>(
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
 ) -> CommandResult<Box<dyn RemoteMediaSource + 'a>> {
     use super::dropbox;
     use super::google_drive;
-    use super::webdav;
-    use crate::config::RemoteLibraryProvider;
 
     match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = webdav::load_webdav_secret(app_data_dir, library)?;
-            Ok(Box::new(webdav::WebDAVProvider::new(
-                app_data_dir,
-                secret,
-                library,
-            )))
-        }
+        Some(RemoteLibraryProvider::WebDav) => Err(CommandError::from(LibraryError::Internal(
+            "WebDAV repositories stream through the Remote Repository core".to_owned(),
+        ))),
         Some(RemoteLibraryProvider::GoogleDrive) => {
             let secret = google_drive::load_google_drive_secret(app_data_dir, library)?;
             Ok(Box::new(google_drive::GoogleDriveProvider::new(
