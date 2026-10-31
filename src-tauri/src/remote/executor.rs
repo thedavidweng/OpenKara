@@ -154,19 +154,11 @@ pub(crate) fn execute_publish_via_core(
         "Reading remote manifest",
     )?;
 
-    let payload = OperationPayload::from_json(&op.payload_json)?;
     let request = openkara_remote::PublishRequest {
         repository_id: ctx.repository_id.to_owned(),
         writer_id: ctx.writer_id.to_owned(),
         operation_id: op.operation_id.clone(),
         expected_generation: op.expected_generation.unwrap_or(0),
-        song_ids: payload.song_ids.clone(),
-        whole_repository: payload.whole_repository,
-        // The true merge base (ADR 0040): the base snapshot the working copy
-        // retained at `expected_generation`, verified against the outbox
-        // `source_db_digest` before any rebase merges.
-        base_snapshot_path: Some(openkara_remote::base_snapshot_path(ctx.working_copy_root)),
-        expected_base_digest: op.source_db_digest.clone(),
     };
     let working_database = ctx.working_copy_root.join("openkara.db");
     let mut report_step = |step: openkara_remote::PublishStep| {
