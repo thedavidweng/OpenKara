@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::Url;
 use tiny_http::{Header, Method as HttpMethod, Response, Server, StatusCode as HttpStatusCode};
@@ -17,6 +17,7 @@ use crate::webdav::WebDavStorage;
 struct StoredObject {
     bytes: Vec<u8>,
     etag: String,
+    modified_at_ms: i64,
 }
 
 #[derive(Default)]
@@ -27,6 +28,7 @@ struct WebDavServerState {
     faults: VecDeque<Fault>,
     stale_listings: VecDeque<BTreeMap<String, StoredObject>>,
     get_requests: BTreeMap<String, usize>,
+    clock_ms: Option<i64>,
 }
 
 impl WebDavServerState {
@@ -38,11 +40,13 @@ impl WebDavServerState {
     fn put_file(&mut self, url_path: String, bytes: Vec<u8>) -> String {
         let etag = self.next_etag();
         self.ensure_parent_dirs(&url_path);
+        let modified_at_ms = self.clock_ms.unwrap_or_else(current_unix_time_ms);
         self.files.insert(
             url_path,
             StoredObject {
                 bytes,
                 etag: etag.clone(),
+                modified_at_ms,
             },
         );
         etag
@@ -176,6 +180,16 @@ impl TestWebDavServer {
         }
     }
 
+    /// Files written from now on report `now_ms` as their last modification;
+    /// until the first call the server uses the real clock. PROPFIND reports
+    /// whole seconds, as HTTP dates do.
+    pub fn set_clock_ms(&self, now_ms: i64) {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clock_ms = Some(now_ms);
+    }
+
     pub fn directory_exists(&self, path: &str) -> bool {
         let normalized = ensure_trailing_slash(&normalize_url_path(path));
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -214,6 +228,10 @@ impl ConformanceFixture for TestWebDavServer {
 
     fn script(&self, fault: Fault) {
         TestWebDavServer::script(self, fault);
+    }
+
+    fn set_clock_ms(&self, now_ms: i64) {
+        TestWebDavServer::set_clock_ms(self, now_ms);
     }
 }
 
@@ -522,14 +540,28 @@ fn build_propfind_xml(dir_prefix: &str, files: &[(String, StoredObject)]) -> Str
     ));
     for (path, obj) in files {
         xml.push_str(&format!(
-            "  <D:response>\n    <D:href>{}</D:href>\n    <D:propstat>\n      <D:prop>\n        <D:resourcetype/>\n        <D:getcontentlength>{}</D:getcontentlength>\n        <D:getetag>{}</D:getetag>\n      </D:prop>\n      <D:status>HTTP/1.1 200 OK</D:status>\n    </D:propstat>\n  </D:response>\n",
+            "  <D:response>\n    <D:href>{}</D:href>\n    <D:propstat>\n      <D:prop>\n        <D:resourcetype/>\n        <D:getcontentlength>{}</D:getcontentlength>\n        <D:getetag>{}</D:getetag>\n        <D:getlastmodified>{}</D:getlastmodified>\n      </D:prop>\n      <D:status>HTTP/1.1 200 OK</D:status>\n    </D:propstat>\n  </D:response>\n",
             xml_escape(path),
             obj.bytes.len(),
             xml_escape(&obj.etag),
+            http_date(obj.modified_at_ms),
         ));
     }
     xml.push_str("</D:multistatus>\n");
     xml
+}
+
+fn http_date(unix_ms: i64) -> String {
+    let since_epoch = Duration::from_millis(u64::try_from(unix_ms).unwrap_or(0));
+    httpdate::fmt_http_date(UNIX_EPOCH + since_epoch)
+}
+
+fn current_unix_time_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
+        })
 }
 
 fn xml_escape(input: &str) -> String {

@@ -50,7 +50,7 @@ use crate::storage::{validate_object_path, RepositoryStorage};
 
 /// Managed top-level directories a database row may reference. Paths outside
 /// them are rejected before they reach the storage.
-const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
+pub(crate) const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
 
 /// Everything the writer needs from the application for one publication.
 ///
@@ -203,7 +203,7 @@ pub fn ensure_referenced_assets(
 
 /// The manifest plus the revision token a conditional replace needs, or
 /// `None` for a repository that has no manifest yet (legacy or brand new).
-fn read_current_manifest(
+pub(crate) fn read_current_manifest(
     storage: &dyn RepositoryStorage,
 ) -> RemoteResult<Option<(RepositoryManifest, Option<String>)>> {
     let Some(metadata) = storage.stat(MANIFEST_PATH)? else {
@@ -656,7 +656,7 @@ fn validate_referenced_asset_path(path: &str) -> RemoteResult<()> {
 /// deduplicated and sorted for a deterministic upload order. Optional columns
 /// (CDG, artwork derivatives) and the stems table are tolerated as absent so
 /// older snapshots still publish.
-fn collect_referenced_asset_paths(database: &Path) -> RemoteResult<Vec<String>> {
+pub(crate) fn collect_referenced_asset_paths(database: &Path) -> RemoteResult<Vec<String>> {
     let connection = open_readonly(database)?;
 
     let has_file_path = column_exists(&connection, "songs", "file_path")?;

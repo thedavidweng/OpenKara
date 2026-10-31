@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod cleanup;
 pub(crate) mod download;
 pub mod error;
 pub mod manifest;
@@ -14,6 +15,10 @@ pub mod writer;
 pub use asset::{
     asset_operation_id, content_digest_from_asset_path, fetch_asset, plan_asset_fetch, AssetSource,
     FetchedAsset, RangeReader, ASSET_DOWNLOAD_CHUNK_SIZE,
+};
+pub use cleanup::{
+    clean_up_unreferenced_uploads, CleanupPolicy, CleanupReport, DEFAULT_CLEANUP_GRACE_PERIOD_MS,
+    DEFAULT_KEPT_GENERATIONS,
 };
 pub use error::{
     kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
@@ -36,7 +41,7 @@ pub use reader::{
 };
 pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,
-    RepositoryStorage, StorageCapabilities,
+    ReadOnlyStorage, RepositoryStorage, StorageCapabilities,
 };
 pub use webdav::WebDavStorage;
 pub use writer::{

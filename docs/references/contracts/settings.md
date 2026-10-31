@@ -212,7 +212,8 @@ remote library. When no remote library is active, returns a snapshot with
 | `recent_operations`     | `Vec<RemoteOperationDiagnostic>` | Most recent 20 operations (newest first)               |
 
 `RemoteOperationDiagnostic` fields: `operation_id`, `operation_kind`
-(`publish` / `gc`), `state` (`pending` / `running` / `completed` / `failed` /
+(`publish` / `gc`; a `gc` operation of a WebDAV repository is the cleanup of
+unreferenced uploads described in `library.md`), `state` (`pending` / `running` / `completed` / `failed` /
 `conflicted` / `cancelled`), `expected_generation`, `target_generation`,
 `attempt_count`, `error_code`, `error_detail`, `created_at_ms`,
 `updated_at_ms`.
