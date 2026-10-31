@@ -309,7 +309,7 @@ fn uploads_of_a_publication_still_in_progress_are_left_alone() {
         .expect("other device uploads");
 
     let report = clean_up(&storage, now).expect("cleanup");
-    assert_eq!(report.deferred, [song_d.clone()]);
+    assert_eq!(report.deferred, std::slice::from_ref(&song_d));
     assert!(report.deleted.is_empty());
 
     other_device.publish(&storage);
@@ -336,7 +336,7 @@ fn an_object_rewritten_after_the_listing_is_not_deleted() {
         .expect("re-upload");
 
     let report = clean_up(&storage, now).expect("cleanup");
-    assert_eq!(report.deferred, [orphan.clone()]);
+    assert_eq!(report.deferred, std::slice::from_ref(&orphan));
     assert!(report.deleted.is_empty());
     assert!(storage.stat(&orphan).expect("stat").is_some());
 }
