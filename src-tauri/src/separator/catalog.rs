@@ -450,8 +450,18 @@ fn is_trusted_https_url(value: &str) -> bool {
 }
 
 pub fn parse_stable_pointer(bytes: &[u8]) -> Result<StablePointer> {
-    let pointer: StablePointer =
-        serde_json::from_slice(bytes).context("failed to parse stable catalog pointer")?;
+    parse_channel_pointer(bytes, "stable")
+}
+
+/// Parse a channel pointer and require the exact channel name.
+///
+/// The stable channel is the offline trust anchor, but the runtime-only
+/// evidence producer must consume the published `candidate` pointer without
+/// pretending it is stable. Verification of the pointed manifest is shared
+/// through [`verify_and_parse_manifest`].
+pub fn parse_channel_pointer(bytes: &[u8], expected_channel: &str) -> Result<StablePointer> {
+    let pointer: StablePointer = serde_json::from_slice(bytes)
+        .with_context(|| format!("failed to parse {expected_channel} catalog pointer"))?;
 
     if pointer.schema_version != POINTER_SCHEMA_VERSION {
         bail!(
@@ -460,8 +470,11 @@ pub fn parse_stable_pointer(bytes: &[u8]) -> Result<StablePointer> {
             POINTER_SCHEMA_VERSION
         );
     }
-    if pointer.channel != "stable" {
-        bail!("unexpected catalog channel {}", pointer.channel);
+    if pointer.channel != expected_channel {
+        bail!(
+            "unexpected catalog channel {} (expected {expected_channel})",
+            pointer.channel
+        );
     }
     if pointer.generation == 0 {
         bail!("catalog pointer generation must be positive");

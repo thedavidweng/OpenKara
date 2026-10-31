@@ -360,3 +360,48 @@ Payload is the same `BatchSeparationProgress` shape as `batch-separation-progres
 - Architecture: one normalized full-song input buffer plus fixed-size streaming OLA rings and atomic streaming OGG writers
 - No full-song vocals/drums/bass/other/accompaniment output buffers are retained
 - Output: 2-stem produces vocals.ogg + accompaniment.ogg; 4-stem produces vocals/drums/bass/other.ogg
+
+## Runtime-only promotion app evidence
+
+`openkara-models` runtime-only promotion requires an OpenKara app-integration
+report per `(runtime artifact, target, provider)` group. The producer lives in
+this repository and is not part of the product binary:
+
+```sh
+cargo run --manifest-path src-tauri/Cargo.toml \
+  --features runtime-only-evidence \
+  --bin openkara_runtime_only_evidence -- \
+  --pointer <candidate-channel.json|https-url> \
+  [--manifest <local-release-manifest.json>] \
+  --artifacts-dir <dir-with-candidate-archives> \
+  --audio <real-audio-file> \
+  --runtime <candidate-runtime-artifact-id> \
+  --provider <cpu|coreml|xnnpack|directml> \
+  --report <app-report.json>
+```
+
+`--work-dir` is optional and must be an existing real directory: the producer
+creates a fresh private run directory inside it and removes that run directory
+afterward, leaving the caller's parent untouched.
+
+It verifies the candidate pointer and manifest bytes, the runtime archive and
+its declared shared library, and every model archive before measuring. Each
+edge is decoded through `audio::decode`, normalized through
+`separator::preprocess`, and run through the production
+`separator::inference` streaming path for exactly one full spectral-core
+window. Output shapes and finiteness come from the session outputs of that
+same window; provider node counts come from the ONNX Runtime profile of that
+run, including any CPU-partition nodes on an accelerated provider. Four OGG
+stems are finalized and decoded to prove finite audio output. A whole-session
+provider fallback is refused; a provider's own partial CPU partition is
+recorded as measured, never hidden and never reported as fully accelerated.
+
+One process can load one ONNX Runtime, so run the producer once per runtime
+artifact. A report whose `status` is `failed` is not qualification evidence:
+an app-applicable edge was attempted and failed to load or measure. Supported
+manifest edges whose model is deprecated or declares the legacy `waveform`
+interface are catalog-compatible but not app-applicable in this OpenKara
+contract; the producer declares them in `skipped_edges` with `scope` =
+`interface` or `deprecated`, and they do not by themselves fail the report.
+The gate must recompute both conditions from the manifest rather than trust the
+declaration.

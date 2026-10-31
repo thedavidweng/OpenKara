@@ -10,6 +10,8 @@ pub mod model_cache;
 pub mod ola;
 pub mod preprocess;
 pub mod runtime_bootstrap;
+#[cfg(feature = "runtime-only-evidence")]
+pub mod runtime_only_evidence;
 pub mod spectral;
 pub mod spectral_session;
 pub mod verified_manifest;

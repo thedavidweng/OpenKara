@@ -50,6 +50,19 @@ pub const MIX_INPUT_NAME: &str = "mix";
 pub const SPECTRAL_OUTPUT_NAME: &str = "spectral_out";
 pub const TIME_OUTPUT_NAME: &str = "time_out";
 
+/// One observed inference window from the production spectral-core path.
+///
+/// The evidence producer asks for this so the app report records shapes and
+/// finiteness from the actual session outputs of the same window it feeds
+/// through the audio pipeline, rather than repeating a separate inference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChunkObservation {
+    /// Output shapes in session output order (`spectral_out`, `time_out`).
+    pub output_shapes: Vec<Vec<i64>>,
+    /// True when every element of both session outputs is finite.
+    pub finite_output: bool,
+}
+
 /// Verified spectral-core session interface. Constructed only by
 /// [`verify_spectral_interface`] at model-load time.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,7 +321,8 @@ pub(crate) fn process_spectral_chunk(
     chunk_frame_count: usize,
     window: &[f32],
     chunk_start_frame: usize,
-) -> Result<()> {
+    observe: bool,
+) -> Result<Option<ChunkObservation>> {
     let channels = workspace.channels;
     anyhow::ensure!(
         channels == CHANNELS,
@@ -338,7 +352,7 @@ pub(crate) fn process_spectral_chunk(
     // guard drops. No `?` may fire between the take of the forward buffer
     // and its restore below — every fallible step stays inside this
     // closure so the buffer survives errors unconditionally.
-    let compose_result = (|| -> Result<()> {
+    let compose_result = (|| -> Result<Option<ChunkObservation>> {
         let spectral_tensor =
             TensorRef::from_array_view((spectral_shape.as_slice(), spectral.as_slice()))
                 .context("failed to build borrowed spectral input tensor")?;
@@ -358,16 +372,33 @@ pub(crate) fn process_spectral_chunk(
             .run(session_inputs)
             .context("failed to run spectral-core inference")?;
 
-        let (_, spectral_out) = outputs
+        let (spectral_shape, spectral_out) = outputs
             .get(SPECTRAL_OUTPUT_NAME)
             .context("spectral-core did not produce its spectral output")?
             .try_extract_tensor::<f32>()
             .context("spectral-core spectral output was not f32")?;
-        let (_, time_out) = outputs
+        let (time_shape, time_out) = outputs
             .get(TIME_OUTPUT_NAME)
             .context("spectral-core did not produce its time output")?
             .try_extract_tensor::<f32>()
             .context("spectral-core time output was not f32")?;
+
+        // Only the evidence producer pays for scanning the full outputs. The
+        // production path passes `observe = false` and records nothing.
+        let observation = if observe {
+            let finite_output = spectral_out.iter().all(|value| value.is_finite())
+                && time_out.iter().all(|value| value.is_finite());
+            Some(ChunkObservation {
+                output_shapes: vec![
+                    spectral_shape.iter().copied().collect(),
+                    time_shape.iter().copied().collect(),
+                ],
+                finite_output,
+            })
+        } else {
+            None
+        };
+
         compose_outputs_into_buffers(
             state,
             iface,
@@ -376,11 +407,12 @@ pub(crate) fn process_spectral_chunk(
             stem_mode,
             &mut workspace.stem_output_buffers,
             chunk_frame_count,
-        )
+        )?;
+        Ok(observation)
     })();
     // The reused forward buffer goes back into the state even on error.
     state.spectral_in = spectral;
-    compose_result?;
+    let observation = compose_result?;
 
     // 3. Feed the OLA rings from the composed stem buffers.
     match stem_mode {
@@ -405,7 +437,7 @@ pub(crate) fn process_spectral_chunk(
             )?;
         }
     }
-    Ok(())
+    Ok(observation)
 }
 
 /// Copy a planar `[C, frames]` stem into an interleaved workspace buffer,

@@ -28,10 +28,18 @@ automation-smoke = []
 # `tauri build`: Tauri packs every package bin whose features are enabled, and
 # a nested driver breaks macOS codesign / pollutes installers.
 automation-driver = ["automation-smoke"]
+# Runtime-only app-integration evidence producer. Qualification-only; never
+# enabled for product builds so the binary is not packed into installers.
+runtime-only-evidence = []
 
 [[bin]]
 name = "openkara"
 path = "src/main.rs"
+
+[[bin]]
+name = "openkara_runtime_only_evidence"
+path = "src/bin/openkara_runtime_only_evidence.rs"
+required-features = ["runtime-only-evidence"]
 
 [[bin]]
 name = "openkara_automation_driver"
@@ -103,7 +111,7 @@ regex-lite = "0.1"
 unicode-normalization = "0.1"
 flate2 = "1.1.10"
 tar = "0.4"
-time = { version = "0.3.55", features = ["parsing"] }
+time = { version = "0.3.55", features = ["parsing", "formatting"] }
 tokio = { version = "1.54.1", features = ["sync", "rt", "macros", "process", "io-util", "time", "net"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 realfft = "3.5.0"
