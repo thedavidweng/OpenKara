@@ -13,7 +13,8 @@ use rusqlite::Connection;
 
 use crate::commands::error::{CommandError, CommandResult};
 use crate::remote::control_db::{
-    get_repository_state, upsert_repository_state, LocalState, OperationRow, RepositoryStateRow,
+    get_repository_state, list_operations_for_library, upsert_repository_state, LocalState,
+    OperationKind, OperationRow, OperationState, RepositoryStateRow,
 };
 use crate::remote::types::current_unix_time_ms;
 
@@ -48,38 +49,64 @@ pub(crate) fn ensure_base_identity(
     let Some(mut state) = get_repository_state(control_db, library_id)? else {
         return Ok(None);
     };
-    let Some(trusted) = state
-        .local_base_sha256
-        .clone()
-        .or_else(|| state.local_db_digest.clone())
-    else {
+    let recorded = state.local_base_sha256.clone();
+    let Some(trusted) = recorded.clone().or_else(|| state.local_db_digest.clone()) else {
         return Ok(None);
     };
     let generation = state.local_base_generation;
-    let retained =
+
+    let mut proven =
         openkara_remote::verified_base_snapshot(working_copy_root, generation, Some(&trusted))
             .map_err(CommandError::from)?
-            .is_some()
-            || matches!(
-                openkara_remote::adopt_legacy_base_snapshot(
-                    working_copy_root,
-                    generation,
-                    Some(&trusted),
-                )
-                .map_err(CommandError::from)?,
-                openkara_remote::LegacyBaseAdoption::Adopted
-                    | openkara_remote::LegacyBaseAdoption::AlreadyRetained
-            )
-            || retain_clean_working_copy(&state, working_copy_root, &trusted)?;
-    if !retained {
+            .is_some();
+
+    if !proven {
+        let adoption = openkara_remote::adopt_legacy_base_snapshot(
+            working_copy_root,
+            generation,
+            Some(&trusted),
+        )
+        .map_err(CommandError::from)?;
+        proven = matches!(
+            adoption,
+            openkara_remote::LegacyBaseAdoption::Adopted
+                | openkara_remote::LegacyBaseAdoption::AlreadyRetained
+        );
+    }
+
+    // Without a recorded identity, `local_db_digest` may have been recorded
+    // again from a working copy that a mutation changed just before a crash:
+    // such a copy is never trusted while a publication of that mutation is
+    // still unfinished.
+    let working_copy_may_be_base =
+        recorded.is_some() || !has_unfinished_publication(control_db, library_id)?;
+    if !proven && working_copy_may_be_base {
+        proven = retain_clean_working_copy(&state, working_copy_root, &trusted)?;
+    }
+
+    if !proven {
         return Ok(None);
     }
-    if state.local_base_sha256.as_deref() != Some(trusted.as_str()) {
+    if recorded.as_deref() != Some(trusted.as_str()) {
         state.local_base_sha256 = Some(trusted.clone());
         state.updated_at_ms = current_unix_time_ms();
         upsert_repository_state(control_db, &state)?;
     }
     Ok(Some(trusted))
+}
+
+/// Whether a publish operation of `library_id` may still carry edits the
+/// remote does not have.
+fn has_unfinished_publication(control_db: &Connection, library_id: &str) -> CommandResult<bool> {
+    Ok(list_operations_for_library(control_db, library_id)?
+        .iter()
+        .any(|op| {
+            op.operation_kind == OperationKind::Publish
+                && !matches!(
+                    op.state,
+                    OperationState::Completed | OperationState::Cancelled
+                )
+        }))
 }
 
 fn retain_clean_working_copy(
@@ -108,7 +135,7 @@ fn retain_clean_working_copy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote::control_db::{open_control_db, OperationKind, OperationState};
+    use crate::remote::control_db::{open_control_db, upsert_operation};
 
     fn state(local_state: LocalState, local_db_digest: Option<String>) -> RepositoryStateRow {
         RepositoryStateRow {
@@ -200,6 +227,33 @@ mod tests {
                 .local_base_sha256,
             Some(digest)
         );
+    }
+
+    #[test]
+    fn an_unrecorded_identity_never_trusts_the_working_copy_while_a_publication_is_unfinished() {
+        for unfinished in [
+            OperationState::Prepared,
+            OperationState::Pending,
+            OperationState::RetryWait,
+            OperationState::Conflicted,
+            OperationState::Failed,
+        ] {
+            let (root, control_db, digest) = working_copy();
+            upsert_repository_state(&control_db, &state(LocalState::Clean, Some(digest))).unwrap();
+            let mut op = operation(Some(4), "pre-op");
+            op.state = unfinished;
+            upsert_operation(&control_db, &op).unwrap();
+
+            assert_eq!(
+                ensure_base_identity(&control_db, "lib-1", root.path()).unwrap(),
+                None,
+                "{unfinished:?}"
+            );
+            assert!(
+                !openkara_remote::base_snapshot_path(root.path(), 4).exists(),
+                "{unfinished:?}"
+            );
+        }
     }
 
     #[test]
