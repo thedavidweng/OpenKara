@@ -190,7 +190,6 @@ export function createTauriMock(data: any): TauriMockResult {
       pinned_version: null,
       enabled: true,
       loaded: true,
-      runtime_ready: true,
       running: false,
       state: "ready",
       progress: null,
@@ -203,9 +202,9 @@ export function createTauriMock(data: any): TauriMockResult {
         publisher: "demo",
         version: "1.0.0",
         minimum_host_version: "1.0.0",
-        protocol: { majors: [1], minor: 0 },
-        runtime: { kind: "node", major: 22 },
-        entry: "index.js",
+        protocol: { majors: [2], minor: 0 },
+        runtime: { kind: "openkara-js", major: 1 },
+        entry: "source.mjs",
         name: index ? "Plugin Library" : "Web Library",
         description: "UI-only fixture",
         license: "MIT",
@@ -475,7 +474,6 @@ export function createTauriMock(data: any): TauriMockResult {
       pinned_version: null,
       enabled: false,
       loaded: true,
-      runtime_ready: true,
       running: false,
       state: "disabled",
       progress: null,
@@ -923,6 +921,7 @@ export function createTauriMock(data: any): TauriMockResult {
       last_success_at_ms: null,
       last_error_code: null,
       recent_operations: [],
+      conflict: null,
     }),
 
     get_cover_art: async (args: any) => {
@@ -1306,7 +1305,6 @@ export function createTauriMock(data: any): TauriMockResult {
       s.installed_version =
         args.version ?? s.pinned_version ?? s.available_version;
       s.state = s.enabled ? "ready" : "disabled";
-      s.runtime_ready = true;
       s.loaded = true;
       s.progress = null;
       return changed(args.sourceId);

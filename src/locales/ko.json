@@ -759,7 +759,9 @@
       "recentOps": "최근 작업",
       "refresh": "새로고침",
       "conflictTitle": "이 편집을 게시하기 전에 원격 저장소가 변경되었습니다.",
-      "conflictBody": "내 변경을 유지하면 원격 버전 위에 다시 게시합니다. 양쪽이 같은 곡을 변경한 경우에는 거부됩니다. 자동으로 한쪽을 고르면 작업이 사라질 수 있기 때문입니다.",
+      "conflictBody": "내 변경을 유지하면 양쪽 기기에서 바뀐 부분은 내 버전으로 게시하고 나머지 원격 변경은 모두 유지합니다. 원격 버전을 사용하면 게시하지 않은 변경이 삭제됩니다.",
+      "conflictSongs": "양쪽 기기에서 변경됨:",
+      "conflictWholeRepository": "라이브러리 전체 변경도 이 충돌에 포함됩니다.",
       "conflictKeepLocal": "내 변경 유지",
       "conflictUseRemote": "원격 버전 사용"
     },

@@ -1,8 +1,7 @@
 use super::*;
-use crate::source_host::test_support::{engine_fixture_manifest, RegistryFixture};
-use crate::source_host::{HostConfig, RuntimePolicy, SourceHost, SourceManifest};
+use crate::source_host::test_support::{fixture_manifest, RegistryFixture};
+use crate::source_host::{HostConfig, SourceHost, SourceManifest};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 const API_ORIGIN: &str = "https://api.streaming-fixture.test";
@@ -11,7 +10,7 @@ const MEDIA_ROOT: &str = "https://raw.githubusercontent.com/thedavidweng/OpenKar
 /// One registry package built from the repo's single-file engine fixture: the
 /// web package gets the wider capability set, the plugin package the smaller.
 fn workflow_manifest(registry: &RegistryFixture, id: &str, web: bool) -> SourceManifest {
-    let mut manifest = engine_fixture_manifest(id, "1.0.0");
+    let mut manifest = fixture_manifest(id, "1.0.0");
     manifest.package_id = registry.package_id(id);
     manifest.name = if web {
         "Official fixture"
@@ -76,13 +75,7 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
             .create_async()
             .await;
     }
-    let mut config = HostConfig::fixture(
-        directory.path().join("host"),
-        "0.17.0".into(),
-        String::new(),
-        BTreeMap::new(),
-        RuntimePolicy::Downloaded,
-    );
+    let mut config = HostConfig::fixture(directory.path().join("host"), "0.17.0".into());
     config.add_fixture_resource(
         format!("{MEDIA_ROOT}.wav"),
         vec!["93.184.216.34".parse().unwrap()],
@@ -147,7 +140,7 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         assert_eq!(start["presentation"]["kind"],"web");
         let failed=official.request("auth.complete",json!({"challenge":start["challenge"],"credentials":{"official_cookie":"wrong"}}));
         assert!(failed.is_err());
-        assert!(load_credentials(&root,"official",&worker_host.description("official").unwrap().owner_binding).unwrap().is_none());
+        assert!(load_credentials(&root,&worker_host.description("official").unwrap().owner_binding).unwrap().is_none());
         let verified=official.request("auth.complete",json!({"challenge":start["challenge"],"credentials":{"official_cookie":"verified-cookie"}})).unwrap();
         assert_eq!(official.save_verified_session(&verified).unwrap().display_name.as_deref(),Some("Official fixture singer"));
         let start=challenge.request("auth.start",json!({})).unwrap();
@@ -216,13 +209,13 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         drop(lease);
         tauri::async_runtime::block_on(worker_host.set_enabled("official",false,false)).unwrap();
         let official_owner=worker_host.description("official").unwrap().owner_binding;
-        assert!(load_credentials(&root,"official",&official_owner).unwrap().is_some());
+        assert!(load_credentials(&root,&official_owner).unwrap().is_some());
         tauri::async_runtime::block_on(worker_host.uninstall("official",false)).unwrap();
         assert_eq!(lookup_song_hash(&connection,&StreamingTrackIdentity{source:"official".into(),remote_track_id:"1".into()}).unwrap().as_deref(),Some(first.as_str()));
         assert_eq!(lookup_song_hash(&connection,&StreamingTrackIdentity{source:"challenge".into(),remote_track_id:"1".into()}).unwrap().as_deref(),Some(second.as_str()));
-        assert!(load_credentials(&root,"official","other-owner/package").unwrap().is_none());
+        assert!(load_credentials(&root,"other-owner/package").unwrap().is_none());
         challenge.sign_out().unwrap();
-        assert!(load_credentials(&root,"official",&official_owner).unwrap().is_some());
+        assert!(load_credentials(&root,&official_owner).unwrap().is_some());
         assert!(!challenge.session().unwrap().signed_in);
         let describe=tauri::async_runtime::block_on(worker_host.request("challenge","describe",json!({}))).unwrap();
         assert_eq!(describe["storage_keys"],json!([]),"sign-out clears the fixture KV entry");

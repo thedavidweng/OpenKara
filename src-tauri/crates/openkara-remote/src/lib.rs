@@ -6,6 +6,8 @@ pub mod manifest;
 pub mod media_cache;
 pub mod net_policy;
 pub mod reader;
+pub mod rebase;
+pub mod song;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -39,12 +41,18 @@ pub use reader::{
     RefreshedSnapshot, SnapshotSource, WorkingCopyDatabase, LEGACY_DATABASE_PATH,
     SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
 };
+pub use rebase::{
+    base_snapshot_path, discard_rebase_state, retain_base_snapshot,
+    retain_base_snapshot_if_missing, ChangeSet, ConflictPolicy, ConflictingSong,
+    PrePublishConflict,
+};
+pub use song::{publish_song_assets, PublishedSongAssets};
 pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,
     ReadOnlyStorage, RepositoryStorage, StorageCapabilities,
 };
 pub use webdav::WebDavStorage;
 pub use writer::{
-    ensure_referenced_assets, publish_changes, CommittedSnapshot, PublishOutcome, PublishRequest,
-    PublishStep,
+    ensure_referenced_assets, publish_changes, AssetUpload, CommittedSnapshot, PublishOutcome,
+    PublishRequest, PublishStep,
 };

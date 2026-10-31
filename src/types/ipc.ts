@@ -131,7 +131,6 @@ export interface SourceSnapshot {
   pinned_version: string | null;
   enabled: boolean;
   loaded: boolean;
-  runtime_ready: boolean;
   running: boolean;
   state: SourceState;
   progress: InstallProgress | null;
@@ -1043,6 +1042,24 @@ export interface RemoteDiagnostics {
   last_success_at_ms: number | null;
   last_error_code: string | null;
   recent_operations: RemoteOperationDiagnostic[];
+  /** The Pre-Publish Conflict the repository is stopped on, when its
+   *  operation recorded the songs it names. */
+  conflict: RemoteConflictDiagnostic | null;
+}
+
+export interface RemoteConflictSong {
+  song_id: string;
+  title: string | null;
+  artist: string | null;
+}
+
+export interface RemoteConflictDiagnostic {
+  operation_id: string;
+  remote_generation: number;
+  /** Songs both devices changed, sorted by song id. */
+  songs: RemoteConflictSong[];
+  /** Library-wide changes are part of the conflict too. */
+  whole_repository: boolean;
 }
 
 export interface RemotePlaybackReconnectEvent {

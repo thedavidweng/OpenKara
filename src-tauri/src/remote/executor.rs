@@ -127,6 +127,59 @@ pub(crate) fn execute_publish_via_core(
     remote_library: &RegisteredLibrary,
     operation_id: &str,
 ) -> CommandResult<()> {
+    publish_via_core(
+        ctx,
+        app_data_dir,
+        remote_library,
+        operation_id,
+        openkara_remote::ConflictPolicy::Stop,
+    )
+}
+
+/// Resolve a WebDAV Pre-Publish Conflict by keeping this device's changes:
+/// the same operation publishes again against its original base, and the
+/// core rebase lets the local rows win where both devices changed them while
+/// keeping every other remote change.
+pub(crate) fn resolve_conflict_keep_local_via_core(
+    ctx: &PublishContext<'_>,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(ctx.control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
+    if op.state != OperationState::Conflicted {
+        return Err(internal_error(
+            "conflict keep-local requires a conflicted operation",
+        ));
+    }
+    let mut payload = OperationPayload::from_json(&op.payload_json)?;
+    payload.pre_publish_conflict = None;
+    let mut updated = op.clone();
+    updated.state = OperationState::Pending;
+    updated.payload_json = payload.to_json()?;
+    updated.error_code = None;
+    updated.error_detail = None;
+    updated.next_attempt_at_ms = None;
+    updated.updated_at_ms = current_unix_time_ms();
+    upsert_operation(ctx.control_db, &updated)?;
+
+    publish_via_core(
+        ctx,
+        app_data_dir,
+        remote_library,
+        operation_id,
+        openkara_remote::ConflictPolicy::KeepLocal,
+    )
+}
+
+fn publish_via_core(
+    ctx: &PublishContext<'_>,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    operation_id: &str,
+    conflict_policy: openkara_remote::ConflictPolicy,
+) -> CommandResult<()> {
     let op = get_operation(ctx.control_db, operation_id)?
         .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
     if matches!(
@@ -138,6 +191,7 @@ pub(crate) fn execute_publish_via_core(
     ) {
         return Ok(());
     }
+    let payload = OperationPayload::from_json(&op.payload_json)?;
 
     let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
     let storage =
@@ -159,6 +213,11 @@ pub(crate) fn execute_publish_via_core(
         writer_id: ctx.writer_id.to_owned(),
         operation_id: op.operation_id.clone(),
         expected_generation: op.expected_generation.unwrap_or(0),
+        changes: openkara_remote::ChangeSet {
+            song_ids: payload.song_ids.clone(),
+            whole_repository: payload.whole_repository,
+        },
+        conflict_policy,
     };
     let working_database = ctx.working_copy_root.join("openkara.db");
     let mut report_step = |step: openkara_remote::PublishStep| {
@@ -166,6 +225,7 @@ pub(crate) fn execute_publish_via_core(
             openkara_remote::PublishStep::ReadManifest => (5, "Reading remote manifest"),
             openkara_remote::PublishStep::UploadAssets => (15, "Verifying remote assets"),
             openkara_remote::PublishStep::PrepareSnapshot => (50, "Preparing candidate database"),
+            openkara_remote::PublishStep::Rebase => (60, "Rebasing onto the newer remote version"),
             openkara_remote::PublishStep::UploadSnapshot => (70, "Uploading database snapshot"),
             openkara_remote::PublishStep::CommitManifest => (85, "Committing repository manifest"),
             openkara_remote::PublishStep::VerifyManifest => (90, "Verifying manifest"),
@@ -181,8 +241,14 @@ pub(crate) fn execute_publish_via_core(
         &mut report_step,
     );
     match result {
-        Ok(outcome) => {
-            let snapshot = outcome.snapshot();
+        Ok(openkara_remote::PublishOutcome::Conflicted(conflict)) => {
+            record_pre_publish_conflict(ctx, &op, payload, &conflict)?;
+            Err(RemoteError::new(RemoteErrorKind::RemoteConflict, conflict.describe()).into())
+        }
+        Ok(
+            openkara_remote::PublishOutcome::Committed(snapshot)
+            | openkara_remote::PublishOutcome::AlreadyCommitted(snapshot),
+        ) => {
             let completed = PublishOutcome {
                 operation_id: op.operation_id.clone(),
                 target_generation: snapshot.generation,
@@ -213,6 +279,21 @@ pub(crate) fn execute_publish_via_core(
     }
 }
 
+/// Persist a Pre-Publish Conflict: the operation and repository become
+/// `Conflicted` exactly like a lost CAS, and the payload names the songs the
+/// user has to decide about.
+fn record_pre_publish_conflict(
+    ctx: &PublishContext<'_>,
+    op: &OperationRow,
+    mut payload: OperationPayload,
+    conflict: &openkara_remote::PrePublishConflict,
+) -> CommandResult<()> {
+    payload.pre_publish_conflict = Some(conflict.into());
+    let mut conflicted = op.clone();
+    conflicted.payload_json = payload.to_json()?;
+    let error = RemoteError::new(RemoteErrorKind::RemoteConflict, conflict.describe());
+    record_failure(ctx, &conflicted, &error)
+}
 /// Run the 13-step publication protocol. Returns the outcome on success or a
 /// typed `RemoteError` on failure. State transitions are persisted at each
 /// milestone so a crash leaves the operation in a resumable state.
@@ -3486,6 +3567,14 @@ mod tests {
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Conflicted);
         assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
+        let conflict = OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .expect("the conflict is recorded");
+        assert!(
+            conflict.whole_repository,
+            "without a base snapshot nothing can be rebased"
+        );
 
         // The losing publish must not have moved the manifest.
         let mut manifest_bytes = Vec::new();
@@ -3497,6 +3586,131 @@ mod tests {
             RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
         assert_eq!(manifest.generation, 2);
         assert_eq!(manifest.operation_id, "other-operation");
+    }
+
+    #[test]
+    fn executor_via_core_names_the_conflicting_song_and_keep_local_republishes_it() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_db);
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let first = make_pending_op(&conn, "lib-1", 0);
+        execute_publish_via_core(&ctx, app_data.path(), &library, &first).expect("gen 1");
+
+        // Another device, refreshed to generation 1, adds stems to song-1.
+        let other_dir = TempDir::new().unwrap();
+        let other_db = other_dir.path().join("openkara.db");
+        std::fs::copy(&working_db, &other_db).unwrap();
+        openkara_remote::retain_base_snapshot(other_dir.path(), 1, &other_db).unwrap();
+        Connection::open(&other_db)
+            .unwrap()
+            .execute_batch("INSERT INTO stems (song_hash) VALUES ('song-1')")
+            .unwrap();
+        let other_request = openkara_remote::PublishRequest {
+            repository_id: "repo-1".to_owned(),
+            writer_id: "other-writer".to_owned(),
+            operation_id: "op-other".to_owned(),
+            expected_generation: 1,
+            changes: openkara_remote::ChangeSet {
+                song_ids: vec!["song-1".to_owned()],
+                whole_repository: false,
+            },
+            conflict_policy: openkara_remote::ConflictPolicy::Stop,
+        };
+        openkara_remote::publish_changes(
+            server.storage(),
+            other_dir.path(),
+            &other_db,
+            &other_request,
+            &mut |_| {},
+        )
+        .expect("the other device commits generation 2");
+
+        // This device deletes song-1 and imports song-3.
+        Connection::open(&working_db)
+            .unwrap()
+            .execute_batch(
+                "DELETE FROM songs WHERE hash = 'song-1';
+                 INSERT INTO songs (hash) VALUES ('song-3');",
+            )
+            .unwrap();
+        let op_id = make_pending_op(&conn, "lib-1", 1);
+
+        let result = execute_publish_via_core(&ctx, app_data.path(), &library, &op_id);
+
+        assert!(
+            result.is_err(),
+            "a song both devices changed stops publishing"
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Conflicted);
+        assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
+        let conflict = OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .expect("the conflict names its songs");
+        assert_eq!(conflict.remote_generation, 2);
+        assert_eq!(
+            conflict
+                .songs
+                .iter()
+                .map(|song| song.song_id.as_str())
+                .collect::<Vec<_>>(),
+            ["song-1"]
+        );
+        assert!(!conflict.whole_repository);
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Conflicted);
+        assert_eq!(repo.active_operation_id.as_deref(), Some(op_id.as_str()));
+
+        resolve_conflict_keep_local_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("keeping the local changes republishes them");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        assert!(OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .is_none());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert_eq!(manifest.generation, 3);
+        assert_eq!(manifest.database_sha256, sha256_file(&working_db).unwrap());
+        let songs: Vec<String> = {
+            let connection = Connection::open(&working_db).unwrap();
+            let mut statement = connection
+                .prepare("SELECT hash FROM songs ORDER BY hash")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .unwrap();
+            rows
+        };
+        assert_eq!(
+            songs,
+            ["song-3"],
+            "the local deletion won where both changed song-1"
+        );
     }
 
     fn pending_gc_rows(conn: &Connection) -> Vec<OperationRow> {

@@ -21,27 +21,14 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
         .package
         .as_ref()
         .and_then(|identity| registry::package(&state.registries, identity));
-    let available = state
-        .index
-        .as_ref()
-        .filter(|_| stored.package.is_none() && retired.is_none())
-        .and_then(|index| index.sources.iter().find(|source| source.source_id == id))
-        .and_then(|source| {
-            source
-                .releases
-                .iter()
-                .filter(|release| !stored.revoked.contains(&release.manifest.version))
-                .max_by_key(|release| semver::Version::parse(&release.manifest.version).ok())
-        });
     let manifest = stored
         .active
         .as_ref()
-        .or(available)
         .map(|release| release.manifest.clone());
     let invalid = stored
         .active
         .as_ref()
-        .is_some_and(|release| inner.blocked(stored, release));
+        .is_some_and(|release| !inner.compatible(release));
     let installing = live.is_some_and(|live| live.install.is_some());
     let active_work = live
         .map(|live| {
@@ -67,7 +54,8 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
         SourceState::NotInstalled
     } else if !stored.enabled {
         SourceState::Disabled
-    } else if live.is_some_and(|live| live.failures >= 4) {
+    } else if live.is_some_and(|live| live.start_failures >= super::supervisor::MAX_START_FAILURES)
+    {
         SourceState::Unavailable
     } else {
         SourceState::Ready
@@ -100,15 +88,13 @@ fn snapshot(inner: &Inner, state: &State, id: &str) -> HostResult<SourceSnapshot
             .or_else(|| listed.map(|package| package.license.clone()))
             .unwrap_or_default(),
         installed_version: stored.active.as_ref().map(|r| r.manifest.version.clone()),
-        available_version: match listed {
-            Some(package) => registry::newest(package).map(|version| version.version.clone()),
-            None => available.map(|r| r.manifest.version.clone()),
-        },
+        available_version: listed
+            .and_then(registry::newest)
+            .map(|version| version.version.clone()),
         staged_version: stored.staged.as_ref().map(|r| r.manifest.version.clone()),
         pinned_version: stored.pinned_version.clone(),
         enabled: stored.enabled,
         loaded: stored.active.is_some() && !invalid,
-        runtime_ready: stored.active.is_some() && !invalid,
         running: live
             .and_then(|live| live.instance.as_ref())
             .is_some_and(|instance| instance.alive()),

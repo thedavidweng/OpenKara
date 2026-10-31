@@ -46,6 +46,7 @@ export function SettingsRemoteDiagnosticsSection() {
     return null;
   }
 
+  const conflict = diagnostics.conflict;
   const stateColor =
     diagnostics.local_state === "conflicted"
       ? "text-[var(--color-destructive)]"
@@ -66,6 +67,30 @@ export function SettingsRemoteDiagnosticsSection() {
           <p className="text-[11px] text-[var(--color-text-dim)]">
             {t("settings.remoteDiagnostics.conflictBody")}
           </p>
+          {conflict && conflict.songs.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-[var(--color-text)]">
+                {t("settings.remoteDiagnostics.conflictSongs")}
+              </p>
+              <ul className="max-h-32 space-y-0.5 overflow-y-auto text-[11px] text-[var(--color-text)]">
+                {conflict.songs.map((song) => (
+                  <li key={song.song_id} className="flex gap-2">
+                    <span>{song.title ?? song.song_id}</span>
+                    {song.artist && (
+                      <span className="text-[var(--color-text-dim)]">
+                        {song.artist}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {conflict?.whole_repository && (
+            <p className="text-[11px] text-[var(--color-text-dim)]">
+              {t("settings.remoteDiagnostics.conflictWholeRepository")}
+            </p>
+          )}
           <div className="flex gap-2">
             <button
               type="button"

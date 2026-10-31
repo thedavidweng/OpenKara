@@ -58,14 +58,6 @@ if (ortX64.runtime.version !== ortArm64.runtime.version) {
   throw new Error("catalog Linux runtimes disagree on the ORT version");
 }
 
-const sourceRuntime = JSON.parse(
-  readFileSync(join("packaging", "source-runtime.json"), "utf8"),
-);
-const sourceRuntimeUrl = (target) =>
-  `https://nodejs.org/dist/v${sourceRuntime.version}/node-v${sourceRuntime.version}-${sourceRuntime.targets[target].archive_suffix}`;
-const sourceRuntimeX64 = "x86_64-unknown-linux-gnu";
-const sourceRuntimeArm64 = "aarch64-unknown-linux-gnu";
-
 const replacements = new Map([
   ["@@SOURCE_URL@@", sourceUrl],
   ["@@SOURCE_SHA256@@", sourceSha256],
@@ -75,16 +67,6 @@ const replacements = new Map([
   ["@@ORT_X64_SHA256@@", ortX64.archive_digest],
   ["@@ORT_ARM64_URL@@", ortArm64.download_url],
   ["@@ORT_ARM64_SHA256@@", ortArm64.archive_digest],
-  ["@@SOURCE_RUNTIME_X64_URL@@", sourceRuntimeUrl(sourceRuntimeX64)],
-  [
-    "@@SOURCE_RUNTIME_X64_SHA256@@",
-    sourceRuntime.targets[sourceRuntimeX64].archive_sha256,
-  ],
-  ["@@SOURCE_RUNTIME_ARM64_URL@@", sourceRuntimeUrl(sourceRuntimeArm64)],
-  [
-    "@@SOURCE_RUNTIME_ARM64_SHA256@@",
-    sourceRuntime.targets[sourceRuntimeArm64].archive_sha256,
-  ],
 ]);
 
 const replaceTokens = (content) => {

@@ -45,7 +45,7 @@ use crate::error::{RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{RepositoryManifest, MANIFEST_PATH};
 use crate::reader::SNAPSHOT_DOWNLOAD_CHUNK_SIZE;
 use crate::storage::{ListedObject, RepositoryStorage};
-use crate::writer::{collect_referenced_asset_paths, read_current_manifest, ASSET_TOP_LEVEL_DIRS};
+use crate::writer::{read_current_manifest, referenced_asset_paths, ASSET_TOP_LEVEL_DIRS};
 
 /// The current generation and the one before it.
 pub const DEFAULT_KEPT_GENERATIONS: i64 = 2;
@@ -285,7 +285,7 @@ fn referenced_assets(
             snapshot.expected_digest.as_deref(),
         )
         .map_err(|error| kept_snapshot_unreadable(&snapshot.path, &error))?;
-        let paths = collect_referenced_asset_paths(&copy.0)
+        let paths = referenced_asset_paths(&copy.0, None)
             .map_err(|error| kept_snapshot_unreadable(&snapshot.path, &error))?;
         referenced.extend(paths);
     }

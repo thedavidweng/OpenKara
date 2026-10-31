@@ -1,6 +1,11 @@
-use super::{incompatible, runtime::SourceInstance, types::*, unknown, RequestHandle, SourceHost};
+use super::{
+    engine, incompatible, runtime::SourceInstance, types::*, unknown, RequestHandle, SourceHost,
+};
 use serde_json::Value;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
+
+/// Consecutive failed starts after which a source waits for Retry or an update.
+pub(super) const MAX_START_FAILURES: u32 = 4;
 
 impl SourceHost {
     pub(super) async fn running(&self, id: &str) -> HostResult<Arc<dyn SourceInstance>> {
@@ -19,7 +24,7 @@ impl SourceHost {
                 ));
             }
             let release = stored.active.clone().ok_or_else(incompatible)?;
-            if self.inner.blocked(stored, &release) {
+            if !self.inner.compatible(&release) {
                 return Err(incompatible());
             }
             let live = state.sources.entry(id.into()).or_default();
@@ -30,12 +35,9 @@ impl SourceHost {
                 if instance.alive() {
                     return Ok(instance.clone());
                 }
-                if instance.backs_off_after_stop() {
-                    live.schedule_retry(self.inner.config.backoff_unit);
-                }
                 live.instance = None;
             }
-            if live.failures >= 4 {
+            if live.start_failures >= MAX_START_FAILURES {
                 return Err(HostError::new(
                     "source_unavailable",
                     "Source repeatedly failed to start. Choose Retry or install an update.",
@@ -43,45 +45,27 @@ impl SourceHost {
             }
             release
         };
-        let retry_at = self
-            .inner
-            .state
-            .lock()
-            .unwrap()
-            .sources
-            .get(id)
-            .and_then(|live| live.retry_at);
-        if let Some(retry_at) = retry_at {
-            tokio::time::sleep(retry_at.saturating_duration_since(Instant::now())).await;
-        }
         let result = async {
-            let config = &self.inner.config;
             let package = self.inner.verified_package(&release)?;
-            self.inner.runtime.require_installed(config, &release)?;
-            let runtime = self
-                .inner
-                .runtime
-                .prepare(config, &release, &Cancellation::new(), &|_, _| {})
-                .await?;
             let admit = |launch: &mut dyn FnMut() -> HostResult<()>| {
                 let state = self.inner.state.lock().unwrap();
                 let source = state.stored.sources.get(id).ok_or_else(unknown)?;
-                if !source.enabled || source.revoked.contains(&release.manifest.version) {
+                if !source.enabled {
                     return Err(incompatible());
                 }
                 launch()
             };
-            runtime.start(config, &release, &package, &admit).await
+            engine::start(&self.inner.config, &release, &package, &admit).await
         }
         .await;
         let still_allowed = {
             let state = self.inner.state.lock().unwrap();
             state.stored.sources.get(id).is_some_and(|source| {
                 source.enabled
-                    && source.active.as_ref().is_some_and(|active| {
-                        active.archive.sha256 == release.archive.sha256
-                            && !source.revoked.contains(&active.manifest.version)
-                    })
+                    && source
+                        .active
+                        .as_ref()
+                        .is_some_and(|active| active.archive.sha256 == release.archive.sha256)
             }) && state.sources.get(id).is_none_or(|live| !live.stopping)
         };
         if !still_allowed {
@@ -99,10 +83,11 @@ impl SourceHost {
             match &result {
                 Ok(instance) => {
                     live.instance = Some(instance.clone());
+                    live.start_failures = 0;
                     live.error = None
                 }
                 Err(error) => {
-                    live.schedule_retry(self.inner.config.backoff_unit);
+                    live.start_failures += 1;
                     live.error = Some(error.clone());
                 }
             }
@@ -170,45 +155,26 @@ impl SourceHost {
         self.start_request(id, method, params).await?.result().await
     }
     pub(super) async fn maintain(&self) {
-        let ids = {
+        let ids: Vec<_> = {
             let state = self.inner.state.lock().unwrap();
-            let ids: Vec<_> = state.stored.sources.keys().cloned().collect();
-            for id in &ids {
-                let source = &state.stored.sources[id];
-                let revoked = source
-                    .active
-                    .as_ref()
-                    .is_some_and(|release| self.inner.blocked(source, release));
-                if revoked {
-                    if let Some(live) = state.sources.get(id) {
-                        for (_, cancel) in live.work.values() {
-                            cancel.cancel();
-                        }
-                    }
-                }
-            }
-            ids
+            state.stored.sources.keys().cloned().collect()
         };
         for id in ids {
             let gate = self.inner.gate(&id, false);
             let Ok(guard) = gate.try_lock() else { continue };
             let (instance, activate, changed) = {
                 let mut state = self.inner.state.lock().unwrap();
-                let source = &state.stored.sources[&id];
-                let revoked = source
-                    .active
-                    .as_ref()
-                    .is_some_and(|release| self.inner.blocked(source, release));
-                let staged = source.staged.is_some();
+                let staged = state.stored.sources[&id].staged.is_some();
                 let live = state.sources.entry(id.clone()).or_default();
                 let mut changed = false;
-                if let Some(stopped) = live.instance.take_if(|instance| !instance.alive()) {
-                    if stopped.backs_off_after_stop() {
-                        live.schedule_retry(self.inner.config.backoff_unit);
-                    }
+                if live
+                    .instance
+                    .take_if(|instance| !instance.alive())
+                    .is_some()
+                {
                     live.error = Some(HostError::new(
                         "source_unavailable",
-                        "Source process stopped. Retry or install a source update.",
+                        "Source stopped at a time or memory limit. Retry or install a source update.",
                     ));
                     changed = true;
                 }
@@ -219,10 +185,9 @@ impl SourceHost {
                         .as_ref()
                         .is_none_or(|instance| instance.pending_count() == 0);
                 let stop = idle
-                    && (revoked
-                        || live.instance.as_ref().is_some_and(|instance| {
-                            instance.idle_for() >= self.inner.config.idle_timeout
-                        }));
+                    && live.instance.as_ref().is_some_and(|instance| {
+                        instance.idle_for() >= self.inner.config.idle_timeout
+                    });
                 let instance = if stop { live.instance.take() } else { None };
                 (instance, staged && idle && live.install.is_none(), changed)
             };

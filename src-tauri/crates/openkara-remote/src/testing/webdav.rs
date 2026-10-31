@@ -29,6 +29,7 @@ struct WebDavServerState {
     stale_listings: VecDeque<BTreeMap<String, StoredObject>>,
     get_requests: BTreeMap<String, usize>,
     clock_ms: Option<i64>,
+    put_requests: BTreeMap<String, usize>,
 }
 
 impl WebDavServerState {
@@ -205,6 +206,19 @@ impl TestWebDavServer {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get_requests
+            .get(&url_path)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// PUT requests received for the repository-relative `path`, so tests can
+    /// prove a publication did not re-upload an object.
+    pub fn put_request_count(&self, path: &str) -> usize {
+        let url_path = format!("/{}", path.trim_start_matches('/'));
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .put_requests
             .get(&url_path)
             .copied()
             .unwrap_or(0)
@@ -423,6 +437,7 @@ fn handle_put(
     if_none_match: Option<&str>,
 ) {
     let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+    *guard.put_requests.entry(url_path.clone()).or_insert(0) += 1;
     let rel = rel_path(&url_path).to_string();
 
     if guard.take_precondition_failure(&rel) {

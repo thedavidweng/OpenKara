@@ -53,11 +53,6 @@ on:
         required: false
         type: string
         default: ""
-      streaming_runtime_feasibility:
-        description: "Observe downloaded Node install and restart from actual AppImage and deb candidates"
-        required: false
-        type: boolean
-        default: false
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         description: "Minisign private key for updater artifacts"
@@ -146,7 +141,6 @@ jobs:
         env:
           CI: true
           RELEASE_BUILD: ${{ inputs.release_build }}
-          STREAMING_RUNTIME_FEASIBILITY: ${{ inputs.streaming_runtime_feasibility }}
           TAURI_TARGET: ${{ inputs.tauri_target }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -155,7 +149,7 @@ jobs:
           set -euo pipefail
           python3 scripts/test-appimage-zsync.py
           bundles="appimage"
-          if [ "${RELEASE_BUILD}" = "true" ] || [ "${STREAMING_RUNTIME_FEASIBILITY}" = "true" ]; then
+          if [ "${RELEASE_BUILD}" = "true" ]; then
             bundles="appimage,deb"
           fi
           # automation-smoke only: packs the openkara CLI entry point, not the
@@ -214,7 +208,7 @@ jobs:
           retention-days: ${{ inputs.retention_days }}
 
       - name: Upload Debian package
-        if: ${{ inputs.release_build || inputs.streaming_runtime_feasibility }}
+        if: ${{ inputs.release_build }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact_prefix }}-deb
@@ -268,74 +262,6 @@ jobs:
         with:
           name: ${{ inputs.artifact_prefix }}-updater
           path: ${{ runner.temp }}/linux-updater
-          if-no-files-found: error
-          retention-days: ${{ inputs.retention_days }}
-
-  streaming-runtime:
-    name: Observe distributed ${{ matrix.format }} streaming runtime
-    if: ${{ inputs.streaming_runtime_feasibility }}
-    runs-on: ${{ inputs.os }}
-    timeout-minutes: 20
-    needs: build-installer
-    strategy:
-      fail-fast: false
-      matrix:
-        format: [appimage, deb]
-    steps:
-      - name: Checkout observation script
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup observation Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26.12.1
-          package-manager-cache: false
-
-      - name: Install runtime dependencies and FUSE library
-        env:
-          OBSERVATION_ROOT: ${{ runner.temp }}/streaming-runtime-${{ matrix.format }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$OBSERVATION_ROOT"
-          sudo apt-get update 2>&1 | tee "$OBSERVATION_ROOT/apt-update.log"
-          sudo apt-get install -y \
-            libasound2 \
-            libegl1 \
-            libgl1 \
-            libgtk-3-0 \
-            libwebkit2gtk-4.1-0 \
-            libayatana-appindicator3-1 \
-            librsvg2-2 \
-            libfuse2 2>&1 | tee "$OBSERVATION_ROOT/runtime-dependencies.log"
-
-      - name: Download distributed candidate
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ inputs.artifact_prefix }}-${{ matrix.format == 'appimage' && 'installer' || 'deb' }}
-          path: ${{ runner.temp }}/streaming-candidate
-
-      - name: Observe runtime install and restart
-        env:
-          OBSERVATION_FORMAT: ${{ matrix.format }}
-          CANDIDATE_ROOT: ${{ runner.temp }}/streaming-candidate
-          OBSERVATION_ROOT: ${{ runner.temp }}/streaming-runtime-${{ matrix.format }}
-        run: |
-          node scripts/ci/observe-linux-streaming-runtime.mjs \
-            --format "$OBSERVATION_FORMAT" \
-            --artifact-dir "$CANDIDATE_ROOT" \
-            --output "$OBSERVATION_ROOT"
-
-      - name: Upload distributed runtime observations
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ inputs.artifact_prefix }}-streaming-runtime-${{ matrix.format }}-observations
-          path: |
-            ${{ runner.temp }}/streaming-runtime-${{ matrix.format }}/*.json
-            ${{ runner.temp }}/streaming-runtime-${{ matrix.format }}/*.log
-            ${{ runner.temp }}/streaming-runtime-${{ matrix.format }}/app-data/streaming-runtime-*.json
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}
 

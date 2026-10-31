@@ -9,6 +9,7 @@ use crate::asset::{asset_operation_id, fetch_asset, plan_asset_fetch};
 use crate::download::hex_lower;
 use crate::manifest::database_path_for_operation;
 use crate::reader::{refresh_repository, RefreshOutcome, RefreshPolicy, WorkingCopyDatabase};
+use crate::rebase::{ChangeSet, ConflictPolicy};
 use crate::storage::{ObjectMetadata, ReadOnlyStorage, StorageCapabilities};
 use crate::testing::{Fault, MemoryStorage, TestWebDavServer};
 use crate::writer::{ensure_referenced_assets, publish_changes, PublishRequest};
@@ -98,6 +99,8 @@ impl Desktop {
             writer_id: "desktop".to_owned(),
             operation_id: format!("op-{}", self.operation),
             expected_generation: self.generation,
+            changes: ChangeSet::default(),
+            conflict_policy: ConflictPolicy::Stop,
         };
         let outcome = publish_changes(
             storage,
@@ -107,7 +110,7 @@ impl Desktop {
             &mut |_| {},
         )
         .expect("publish");
-        self.generation = outcome.snapshot().generation;
+        self.generation = outcome.snapshot().expect("committed snapshot").generation;
         self.generation
     }
 }
@@ -150,7 +153,7 @@ fn read_like_a_phone(storage: &dyn RepositoryStorage) -> Vec<String> {
 }
 
 fn fetch_every_song(storage: &dyn RepositoryStorage, root: &Path, database: &Path) -> Vec<String> {
-    let paths = collect_referenced_asset_paths(database).expect("referenced assets");
+    let paths = referenced_asset_paths(database, None).expect("referenced assets");
     for path in &paths {
         let source = plan_asset_fetch(storage, path).expect("plan fetch");
         fetch_asset(
@@ -538,6 +541,8 @@ fn a_phone_never_deletes_remote_objects() {
             writer_id: "phone".to_owned(),
             operation_id: "op-phone".to_owned(),
             expected_generation: 3,
+            changes: ChangeSet::default(),
+            conflict_policy: ConflictPolicy::Stop,
         },
         &mut |_| {},
     )

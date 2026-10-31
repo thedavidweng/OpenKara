@@ -53,11 +53,6 @@ on:
         required: false
         type: string
         default: ""
-      streaming_runtime_smoke:
-        description: "Run the pinned Node feasibility spike from the installed application"
-        required: false
-        type: boolean
-        default: false
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         description: "Minisign private key for updater artifacts"
@@ -411,47 +406,6 @@ jobs:
           grep -Fxq "TeamIdentifier=$APPLE_TEAM_ID" <<< "$details"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
-
-      - name: Observe installed Streaming Source runtime
-        if: ${{ inputs.streaming_runtime_smoke }}
-        run: |
-          set -euo pipefail
-          root="${RUNNER_TEMP}/streaming-runtime-evidence"
-          mkdir -p "$root"
-          app="${OPENKARA_INSTALLED_APP%/Contents/MacOS/openkara}"
-          sw_vers > "$root/os.txt"
-          uname -m > "$root/host-architecture.txt"
-          codesign --display --verbose=4 "$app" 2> "$root/app-signature.txt"
-          spctl --status > "$root/gatekeeper-status.txt" || true
-          xattr -l "$app" > "$root/app-xattrs.txt"
-          "$OPENKARA_INSTALLED_APP" --automation-streaming-runtime install "$root"
-          "$OPENKARA_INSTALLED_APP" --automation-streaming-runtime restart "$root"
-          jq -e '
-            .macos_quarantine as $q |
-            ["downloaded_archive", "extracted_executable", "installed_executable"] |
-            all(.[]; $q[.].quarantine_present == false and ($q[.].attributes | type == "array"))
-          ' "$root/streaming-runtime-install.json"
-          jq -e '.macos_quarantine.installed_executable.quarantine_present == false' \
-            "$root/streaming-runtime-restart.json"
-          {
-            echo '### Streaming runtime quarantine invariant'
-            echo 'The installed application observed no com.apple.quarantine on the production download archive, extracted executable, installed executable, or restarted executable.'
-            echo 'No extended attributes were changed by this observation.'
-            echo 'See the streaming-runtime artifact for the exact paths, attributes, application/runtime hashes, and native host architecture.'
-          } >> "$GITHUB_STEP_SUMMARY"
-          codesign --display --verbose=4 "$root"/node-*/node 2> "$root/runtime-signature.txt"
-          xattr -l "$root"/node-*/node > "$root/runtime-xattrs.txt"
-
-      - name: Upload Streaming Source runtime observation
-        if: ${{ always() && inputs.streaming_runtime_smoke }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ inputs.artifact_prefix }}-streaming-runtime
-          path: |
-            ${{ runner.temp }}/streaming-runtime-evidence/*.json
-            ${{ runner.temp }}/streaming-runtime-evidence/*.txt
-          if-no-files-found: error
-          retention-days: ${{ inputs.retention_days }}
 
       - name: Run installed-app scenario
         env:
