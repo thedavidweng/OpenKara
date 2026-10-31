@@ -47,7 +47,8 @@ pub use reader::{
     SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
 };
 pub use rebase::{
-    discard_rebase_state, ChangeSet, ConflictPolicy, ConflictingSong, PrePublishConflict,
+    discard_rebase_state, ApprovedConflict, ChangeSet, ConflictPolicy, ConflictingSong,
+    PrePublishConflict,
 };
 pub use song::{publish_song_assets, PublishedSongAssets};
 pub use storage::{

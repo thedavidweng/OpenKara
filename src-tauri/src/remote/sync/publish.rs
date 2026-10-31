@@ -1197,7 +1197,7 @@ pub(crate) fn merge_pending_ops_for_publish(
             payload.protocol_step = None;
             // Keeping this device's changes answered the conflict of the
             // smaller change set; the songs merged in were never asked about.
-            payload.keep_local = false;
+            payload.keep_local_approval = None;
             primary.candidate_db_digest = None;
             let _ = crate::remote::control_db::delete_transfer_parts(&tx, primary_op_id);
         }

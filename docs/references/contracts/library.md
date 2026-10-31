@@ -302,7 +302,7 @@ Publish Song 在 WebDAV 资料库上经 Remote Repository core 执行，只上�
 0. `resolve_remote_conflict(resolution: "keep_local" | "use_remote") -> ()`
    - 只在活动远程资料库的 `local_state == conflicted` 时可用，否则返回错误。
    - 冲突列出的歌曲由 `get_remote_diagnostics` 的 `conflict` 字段返回（见 [settings contract](settings.md#remote-diagnostics)）。
-   - WebDAV 的 `keep_local` 用同一 operation、同一 base generation 重新执行发布，冲突策略为 keep-local：两边都改过的歌曲和整库行以本地为准，远端其他歌曲的修改照常 rebase 保留。远端在 rebase 过程中再次变化时重新 rebase；成功后 working copy 换成提交的合并快照。keep-local 策略记录在 pending operation 上，上传失败重试或应用重启后仍然生效。rebase 只使用 SHA-256 与记录的 base digest 一致的 base snapshot；base 缺失、未记录或被改动时整库进入 Pre-Publish Conflict，本地 pending 变更保留。
+   - WebDAV 的 `keep_local` 用同一 operation、同一 base generation 重新执行发布，冲突策略为 keep-local：只有用户看到的那次冲突列出的歌曲以本地为准（冲突为整库时，整个远端资料库换成本地数据库），远端其他歌曲的修改照常 rebase 保留。远端在 rebase 过程中再次变化时重新 rebase；成功后 working copy 换成提交的合并快照。被批准的冲突记录在 pending operation 上，上传失败重试或应用重启后仍然生效；之后出现批准范围以外的冲突（新的歌曲冲突，或歌曲级批准遇到无法 rebase 的整库冲突）时，清除批准，operation 回到 `conflicted` 并重新询问。没有记录歌曲的旧冲突不批准任何内容，重新 rebase 后记录新的冲突。rebase 只使用 SHA-256 与记录的 base digest 一致的 base snapshot；base 缺失、未记录或被改动时整库进入 Pre-Publish Conflict，本地 pending 变更保留。
    - 其他 provider 的 `keep_local` 先把胜出的远端数据库拉到 candidate 路径（不是 working copy），仅在本地与远端改动触及**不相交**的歌曲、且仓库级设置未变时才自动 rebase；重叠时后端拒绝并要求显式选择。
    - `use_remote` 先把胜出的远端数据库拉到 candidate 路径，再把 operation 标记为 cancelled，用 candidate 覆盖 working copy 数据库，保留它为新的 base snapshot，删除未完成 rebase 留下的远端快照，并把仓库状态推进到 candidate 所属的远端 generation 的 `Clean`。
    - WebDAV 的 candidate 经 Remote Repository core 下载，按 manifest 记录的大小和 SHA-256 校验并做 SQLite 完整性检查；校验失败或下载中断时不留下 candidate，working copy 与仓库状态保持 `conflicted` 不变。

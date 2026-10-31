@@ -229,11 +229,12 @@ pub struct OperationPayload {
     /// Pre-Publish Conflict; cleared when the user resolves it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_publish_conflict: Option<PrePublishConflictRecord>,
-    /// The user resolved this operation's Pre-Publish Conflict by keeping
-    /// this device's changes, so every later attempt, after a failure or a
-    /// restart, rebases with that choice instead of asking again.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub keep_local: bool,
+    /// The Pre-Publish Conflict the user resolved by keeping this device's
+    /// changes. Every later attempt, after a failure or a restart, lets the
+    /// local rows win only where this conflict covered them; a conflict
+    /// beyond it clears the approval and asks again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_local_approval: Option<PrePublishConflictRecord>,
 }
 
 /// The songs and whole-repository rows a Pre-Publish Conflict names.
@@ -267,6 +268,19 @@ impl From<&openkara_remote::PrePublishConflict> for PrePublishConflictRecord {
                 })
                 .collect(),
             whole_repository: conflict.whole_repository,
+        }
+    }
+}
+
+impl From<&PrePublishConflictRecord> for openkara_remote::ApprovedConflict {
+    fn from(record: &PrePublishConflictRecord) -> Self {
+        Self {
+            song_ids: record
+                .songs
+                .iter()
+                .map(|song| song.song_id.clone())
+                .collect(),
+            whole_repository: record.whole_repository,
         }
     }
 }

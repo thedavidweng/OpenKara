@@ -142,11 +142,12 @@ pub(crate) fn execute_publish_via_core(
         return Ok(());
     }
     let payload = OperationPayload::from_json(&op.payload_json)?;
-    let conflict_policy = if payload.keep_local {
-        openkara_remote::ConflictPolicy::KeepLocal
-    } else {
-        openkara_remote::ConflictPolicy::Stop
-    };
+    let conflict_policy = payload
+        .keep_local_approval
+        .as_ref()
+        .map_or(openkara_remote::ConflictPolicy::Stop, |approved| {
+            openkara_remote::ConflictPolicy::KeepLocal(approved.into())
+        });
 
     if let Err(error) = crate::remote::base_identity::ensure_base_identity(
         ctx.control_db,
@@ -254,9 +255,11 @@ pub(crate) fn execute_publish_via_core(
 
 /// Resolve a WebDAV Pre-Publish Conflict by keeping this device's changes:
 /// the same operation publishes again against its original base, and the
-/// core rebase lets the local rows win where both devices changed them while
-/// keeping every other remote change. The choice is stored with the
-/// operation, so a retry after a failure or a restart keeps it.
+/// core rebase lets the local rows win where the recorded conflict covered
+/// them while keeping every other remote change. The approved conflict is
+/// stored with the operation, so a retry after a failure or a restart keeps
+/// it. A conflict recorded without its songs approves nothing: the retry
+/// rebases with the Stop policy and records the conflict it finds.
 pub(crate) fn resolve_conflict_keep_local_via_core(
     ctx: &PublishContext<'_>,
     app_data_dir: &Path,
@@ -271,8 +274,7 @@ pub(crate) fn resolve_conflict_keep_local_via_core(
         ));
     }
     let mut payload = OperationPayload::from_json(&op.payload_json)?;
-    payload.pre_publish_conflict = None;
-    payload.keep_local = true;
+    payload.keep_local_approval = payload.pre_publish_conflict.take();
     let mut updated = op.clone();
     updated.state = OperationState::Pending;
     updated.payload_json = payload.to_json()?;
@@ -295,6 +297,7 @@ fn record_pre_publish_conflict(
     conflict: &openkara_remote::PrePublishConflict,
 ) -> CommandResult<()> {
     payload.pre_publish_conflict = Some(conflict.into());
+    payload.keep_local_approval = None;
     let mut conflicted = op.clone();
     conflicted.payload_json = payload.to_json()?;
     let error = RemoteError::new(RemoteErrorKind::RemoteConflict, conflict.describe());
@@ -4007,10 +4010,20 @@ mod tests {
 
     impl MovedRepository {
         fn new(other_sql: &str) -> Self {
+            Self::seeded("", other_sql)
+        }
+
+        /// Like [`Self::new`], with `seed_sql` run on the working copy before
+        /// it is published as generation 1.
+        fn seeded(seed_sql: &str, other_sql: &str) -> Self {
             let (db_dir, conn) = fresh_control_db();
             let working_dir = TempDir::new().unwrap();
             let working_db = working_dir.path().join("openkara.db");
             make_valid_db(&working_db);
+            Connection::open(&working_db)
+                .unwrap()
+                .execute_batch(seed_sql)
+                .unwrap();
             let server = openkara_remote::testing::TestWebDavServer::start();
             let library = webdav_remote_library(server.base_url(), &working_db);
             let app_data = TempDir::new().unwrap();
@@ -4130,6 +4143,80 @@ mod tests {
             openkara_remote::base_snapshot_path(self.root(), generation)
         }
 
+        /// Another device, refreshed to the current remote generation, runs
+        /// `sql` and commits it as `operation_id`.
+        fn another_device_commits(&self, operation_id: &str, sql: &str) {
+            use openkara_remote::RepositoryStorage as CoreStorage;
+
+            let manifest = self.manifest();
+            let device = TempDir::new().unwrap();
+            let database = device.path().join("openkara.db");
+            let mut bytes = Vec::new();
+            self.server
+                .storage()
+                .read(&manifest.database_path, &mut bytes)
+                .expect("read the current snapshot");
+            std::fs::write(&database, bytes).unwrap();
+            let base = openkara_remote::retain_base_snapshot(
+                device.path(),
+                manifest.generation,
+                &database,
+            )
+            .unwrap();
+            Connection::open(&database)
+                .unwrap()
+                .execute_batch(sql)
+                .unwrap();
+            openkara_remote::publish_changes(
+                self.server.storage(),
+                device.path(),
+                &database,
+                &openkara_remote::PublishRequest {
+                    repository_id: "repo-1".to_owned(),
+                    writer_id: "other-writer".to_owned(),
+                    operation_id: operation_id.to_owned(),
+                    expected_generation: manifest.generation,
+                    expected_base_sha256: Some(base),
+                    changes: openkara_remote::ChangeSet::default(),
+                    conflict_policy: openkara_remote::ConflictPolicy::Stop,
+                },
+                &mut |_| {},
+            )
+            .expect("the other device commits");
+        }
+
+        /// Resolve the conflict of `operation_id` with Keep Local while the
+        /// server cannot be reached, so the approval waits in RetryWait.
+        fn keep_local_while_offline(&self, operation_id: &str) {
+            let unreachable = webdav_remote_library("http://127.0.0.1:1/", &self.working_db());
+            resolve_conflict_keep_local_via_core(
+                &self.ctx(),
+                self.app_data.path(),
+                &unreachable,
+                operation_id,
+            )
+            .expect_err("the server cannot be reached before the CAS");
+            assert_eq!(
+                self.operation(operation_id).state,
+                OperationState::RetryWait
+            );
+        }
+
+        /// Publish `operation_id` again from a restarted process.
+        fn publish_after_restart(&self, operation_id: &str) -> CommandResult<()> {
+            let restarted = open_control_db(&self.db_dir.path().join("remote-state.db")).unwrap();
+            execute_publish_via_core(
+                &make_context(&restarted, self.root(), "lib-1", "repo-1", "w-1"),
+                self.app_data.path(),
+                &self.library,
+                operation_id,
+            )
+        }
+
+        fn payload(&self, operation_id: &str) -> OperationPayload {
+            OperationPayload::from_json(&self.operation(operation_id).payload_json).unwrap()
+        }
+
         fn legacy_base(&self) -> PathBuf {
             self.root().join(".openkara/base-snapshot.sqlite")
         }
@@ -4186,9 +4273,17 @@ mod tests {
         let op = repo.operation(&op_id);
         assert_eq!(op.state, OperationState::RetryWait);
         let payload = OperationPayload::from_json(&op.payload_json).unwrap();
-        assert!(
-            payload.keep_local,
-            "the choice is stored with the operation"
+        let approved = payload
+            .keep_local_approval
+            .expect("the choice is stored with the operation");
+        assert_eq!(approved.remote_generation, 2);
+        assert_eq!(
+            approved
+                .songs
+                .iter()
+                .map(|song| song.song_id.as_str())
+                .collect::<Vec<_>>(),
+            ["song-1"]
         );
         assert!(payload.pre_publish_conflict.is_none());
 
@@ -4205,6 +4300,109 @@ mod tests {
         assert_eq!(op.state, OperationState::Completed);
         assert_eq!(op.target_generation, Some(3));
         assert_eq!(repo.songs(), ["song-3"], "the local deletion won");
+    }
+
+    /// This device deletes song-1 and song-2 after another device added
+    /// stems to song-1, so its publication stops with a conflict that names
+    /// only song-1. The user keeps the local changes while offline.
+    fn keep_local_approved_for_song_one() -> (MovedRepository, String) {
+        let repo = MovedRepository::seeded(
+            "INSERT INTO songs (hash) VALUES ('song-2')",
+            "INSERT INTO stems (song_hash) VALUES ('song-1')",
+        );
+        repo.edit("DELETE FROM songs WHERE hash IN ('song-1', 'song-2')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        repo.publish(&op_id)
+            .expect_err("a song both devices changed stops publishing");
+        let conflict = repo
+            .payload(&op_id)
+            .pre_publish_conflict
+            .expect("the conflict names its songs");
+        assert_eq!(conflict.songs.len(), 1);
+        assert_eq!(conflict.songs[0].song_id, "song-1");
+        repo.keep_local_while_offline(&op_id);
+        (repo, op_id)
+    }
+
+    fn conflicted_song_ids(payload: &OperationPayload) -> Vec<&str> {
+        payload
+            .pre_publish_conflict
+            .as_ref()
+            .expect("the new conflict is recorded")
+            .songs
+            .iter()
+            .map(|song| song.song_id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_stored_keep_local_asks_again_when_another_song_now_conflicts() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "INSERT INTO stems (song_hash) VALUES ('song-2')",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("song-2 was never approved");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        assert_eq!(repo.state().local_state, LocalState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert_eq!(conflicted_song_ids(&payload), ["song-1", "song-2"]);
+        assert!(
+            payload.keep_local_approval.is_none(),
+            "the old approval is cleared so the user is asked again"
+        );
+        assert_eq!(repo.manifest().generation, 3);
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+    }
+
+    #[test]
+    fn a_song_scoped_keep_local_never_replaces_a_remote_it_cannot_rebase_onto() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "ALTER TABLE songs ADD COLUMN rating INTEGER;
+             INSERT INTO songs (hash) VALUES ('song-9');
+             INSERT INTO stems (song_hash) VALUES ('song-2');",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("the other device's schema cannot be rebased onto");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert!(
+            payload
+                .pre_publish_conflict
+                .as_ref()
+                .expect("the new conflict is recorded")
+                .whole_repository
+        );
+        assert!(payload.keep_local_approval.is_none());
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("approving the whole-repository conflict publishes the local library");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(4));
+        assert_eq!(
+            repo.manifest().database_sha256,
+            sha256_file(&repo.working_db()).unwrap()
+        );
+        assert!(repo.songs().is_empty());
     }
 
     #[test]

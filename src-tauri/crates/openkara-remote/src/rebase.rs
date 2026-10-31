@@ -42,15 +42,55 @@ pub struct ChangeSet {
 }
 
 /// What a rebase does with changes both devices made.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ConflictPolicy {
     /// Stop with a Pre-Publish Conflict that names the songs both sides
     /// changed.
     #[default]
     Stop,
-    /// The user chose to keep this device's changes: local rows win where
-    /// both sides changed them, and remote changes elsewhere are kept.
-    KeepLocal,
+    /// The user chose to keep this device's changes for one Pre-Publish
+    /// Conflict. Local rows win only where that conflict covered them, and
+    /// remote changes elsewhere are kept. A conflict outside it stops again,
+    /// so a stored choice never overwrites remote changes the user never saw.
+    KeepLocal(ApprovedConflict),
+}
+
+impl ConflictPolicy {
+    fn approves_song(&self, song_id: &str) -> bool {
+        match self {
+            Self::Stop => false,
+            Self::KeepLocal(approved) => {
+                approved.whole_repository || approved.song_ids.iter().any(|id| id == song_id)
+            }
+        }
+    }
+
+    pub(crate) fn approves_whole_repository(&self) -> bool {
+        matches!(self, Self::KeepLocal(approved) if approved.whole_repository)
+    }
+}
+
+/// The Pre-Publish Conflict a Keep Local choice answered.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ApprovedConflict {
+    /// Songs whose local rows replace the remote rows.
+    pub song_ids: Vec<String>,
+    /// The user agreed to replace the whole remote library with this
+    /// device's database.
+    pub whole_repository: bool,
+}
+
+impl From<&PrePublishConflict> for ApprovedConflict {
+    fn from(conflict: &PrePublishConflict) -> Self {
+        Self {
+            song_ids: conflict
+                .songs
+                .iter()
+                .map(|song| song.song_id.clone())
+                .collect(),
+            whole_repository: conflict.whole_repository,
+        }
+    }
 }
 
 /// A song named by a Pre-Publish Conflict.
@@ -127,8 +167,9 @@ pub(crate) enum MergeResult {
         song_ids: Vec<String>,
         whole_repository: bool,
     },
-    /// The snapshots cannot be compared row by row (different schemas, or
-    /// applying the rows breaks a constraint the user did not cause).
+    /// The snapshots cannot be compared row by row (different schemas), or
+    /// the local rows break a constraint on the remote snapshot after the
+    /// user approved replacing the whole remote library.
     Unmergeable,
 }
 
@@ -138,7 +179,7 @@ pub(crate) fn merge_onto_remote(
     remote: &Path,
     local: &Path,
     changes: &ChangeSet,
-    policy: ConflictPolicy,
+    policy: &ConflictPolicy,
     output: &Path,
 ) -> RemoteResult<MergeResult> {
     let Some(schema) = common_schema(&[base, remote, local])? else {
@@ -163,7 +204,11 @@ pub(crate) fn merge_onto_remote(
         || local_tables
             .intersection(&remote_tables)
             .any(|table| local_rows.tables.get(table) != remote_rows.tables.get(table));
-    if policy == ConflictPolicy::Stop && (whole_repository || !conflicting_songs.is_empty()) {
+    let unapproved = (whole_repository && !policy.approves_whole_repository())
+        || conflicting_songs
+            .iter()
+            .any(|song| !policy.approves_song(song));
+    if unapproved {
         return Ok(MergeResult::Conflict {
             song_ids: conflicting_songs,
             whole_repository,
@@ -204,17 +249,17 @@ pub(crate) fn merge_onto_remote(
     let result = apply_local_rows(output, local, &schema, &songs_to_apply, &tables_to_apply);
     match result {
         Ok(Applied::Clean) => Ok(MergeResult::Merged),
-        Ok(Applied::Broken {
-            song_ids,
-            whole_repository,
-        }) => {
+        Ok(Applied::Broken { song_ids }) => {
             let _ = fs::remove_file(output);
-            Ok(match policy {
-                ConflictPolicy::Stop => MergeResult::Conflict {
+            // Rows that break a constraint on the remote snapshot cannot be
+            // rebased at all: only replacing the whole remote library keeps them.
+            Ok(if policy.approves_whole_repository() {
+                MergeResult::Unmergeable
+            } else {
+                MergeResult::Conflict {
                     song_ids,
-                    whole_repository,
-                },
-                ConflictPolicy::KeepLocal => MergeResult::Unmergeable,
+                    whole_repository: true,
+                }
             })
         }
         Err(error) => {
@@ -314,10 +359,10 @@ fn changed_keys(
 
 enum Applied {
     Clean,
-    /// Applying these rows violated a constraint, so they cannot be rebased.
+    /// Applying the local rows violated a constraint, so they cannot be
+    /// rebased. `song_ids` names the songs whose rows broke it.
     Broken {
         song_ids: Vec<String>,
-        whole_repository: bool,
     },
 }
 
@@ -393,7 +438,6 @@ fn apply_local_rows(
         } else {
             Ok(Applied::Broken {
                 song_ids: broken_songs.into_iter().collect(),
-                whole_repository: broken_tables,
             })
         }
     })();
@@ -791,7 +835,7 @@ mod tests {
                 &self.path("remote"),
                 &self.path("local"),
                 changes,
-                policy,
+                &policy,
                 &self.path("merged"),
             )
             .expect("merge")
@@ -813,6 +857,13 @@ mod tests {
                 "SELECT hash || ':' || COALESCE(title, '') FROM songs ORDER BY hash",
             )
         }
+    }
+
+    fn keep_local(song_ids: &[&str], whole_repository: bool) -> ConflictPolicy {
+        ConflictPolicy::KeepLocal(ApprovedConflict {
+            song_ids: song_ids.iter().map(|id| (*id).to_owned()).collect(),
+            whole_repository,
+        })
     }
 
     fn songs(ids: &[&str]) -> ChangeSet {
@@ -902,7 +953,7 @@ mod tests {
 
     #[test]
     fn a_song_the_outbox_names_but_left_unchanged_never_overrides_the_remote() {
-        for policy in [ConflictPolicy::Stop, ConflictPolicy::KeepLocal] {
+        for policy in [ConflictPolicy::Stop, keep_local(&["s1"], false)] {
             let databases = Databases::new(TWO_SONGS);
             databases.execute(
                 "remote",
@@ -913,7 +964,7 @@ mod tests {
                 "UPDATE songs SET title = 'Two (local)' WHERE hash = 's2'",
             );
 
-            let result = databases.merge(&songs(&["s1", "s2"]), policy);
+            let result = databases.merge(&songs(&["s1", "s2"]), policy.clone());
 
             assert_eq!(result, MergeResult::Merged, "{policy:?}");
             assert_eq!(
@@ -950,10 +1001,100 @@ mod tests {
             "UPDATE songs SET title = 'Local' WHERE hash = 's1'",
         );
 
-        let result = databases.merge(&songs(&["s1"]), ConflictPolicy::KeepLocal);
+        let result = databases.merge(&songs(&["s1"]), keep_local(&["s1"], false));
 
         assert_eq!(result, MergeResult::Merged);
         assert_eq!(databases.songs("merged"), ["s1:Local", "s2:Two (remote)"]);
+    }
+
+    #[test]
+    fn keep_local_never_overrides_a_song_the_user_was_not_asked_about() {
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute(
+            "remote",
+            "UPDATE songs SET title = 'One (remote)' WHERE hash = 's1';
+             UPDATE songs SET title = 'Two (remote)' WHERE hash = 's2';",
+        );
+        databases.execute(
+            "local",
+            "UPDATE songs SET title = 'One (local)' WHERE hash = 's1';
+             UPDATE songs SET title = 'Two (local)' WHERE hash = 's2';",
+        );
+
+        let result = databases.merge(&songs(&["s1", "s2"]), keep_local(&["s1"], false));
+
+        assert_eq!(
+            result,
+            MergeResult::Conflict {
+                song_ids: vec!["s1".to_owned(), "s2".to_owned()],
+                whole_repository: false,
+            },
+            "the new conflict names every song, so the user is asked again"
+        );
+        assert!(!databases.path("merged").exists());
+    }
+
+    #[test]
+    fn song_scoped_keep_local_never_resolves_a_whole_repository_conflict() {
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute("remote", "UPDATE settings SET value = 'light'");
+        databases.execute(
+            "local",
+            "UPDATE settings SET value = 'system';
+             UPDATE songs SET title = 'One (local)' WHERE hash = 's1';",
+        );
+
+        let song_scoped = databases.merge(&songs(&["s1"]), keep_local(&["s1"], false));
+        let whole = databases.merge(&songs(&["s1"]), keep_local(&[], true));
+
+        assert_eq!(
+            song_scoped,
+            MergeResult::Conflict {
+                song_ids: Vec::new(),
+                whole_repository: true,
+            }
+        );
+        assert_eq!(whole, MergeResult::Merged);
+        assert_eq!(
+            databases.rows("merged", "SELECT value FROM settings"),
+            ["system"]
+        );
+        assert_eq!(databases.songs("merged"), ["s1:One (local)", "s2:Two"]);
+    }
+
+    #[test]
+    fn rows_that_break_a_constraint_are_published_only_with_a_whole_repository_approval() {
+        let databases = Databases::new(TWO_SONGS);
+        for side in ["base", "remote", "local"] {
+            databases.execute(
+                side,
+                "CREATE TABLE favorites (song TEXT NOT NULL REFERENCES songs(hash))",
+            );
+        }
+        databases.execute("remote", "DELETE FROM songs WHERE hash = 's1'");
+        databases.execute(
+            "local",
+            "INSERT INTO favorites VALUES ('s1');
+             UPDATE songs SET title = 'Two (local)' WHERE hash = 's2';",
+        );
+        let broken = MergeResult::Conflict {
+            song_ids: Vec::new(),
+            whole_repository: true,
+        };
+
+        assert_eq!(
+            databases.merge(&songs(&["s2"]), ConflictPolicy::Stop),
+            broken,
+            "a favorite of a song the remote removed breaks the foreign key"
+        );
+        assert_eq!(
+            databases.merge(&songs(&["s2"]), keep_local(&["s2"], false)),
+            broken
+        );
+        assert_eq!(
+            databases.merge(&songs(&["s1"]), keep_local(&[], true)),
+            MergeResult::Unmergeable
+        );
     }
 
     #[test]
