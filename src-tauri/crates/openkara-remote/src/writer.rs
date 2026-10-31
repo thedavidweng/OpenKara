@@ -60,7 +60,7 @@ use crate::storage::{validate_object_path, RepositoryStorage};
 
 /// Managed top-level directories a database row may reference. Paths outside
 /// them are rejected before they reach the storage.
-const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
+pub(crate) const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
 
 /// How many times one publication rebases onto a remote that keeps moving
 /// before it gives up with a conflict.
@@ -499,7 +499,7 @@ fn install_working_copy(
 /// The manifest that may not move during a publication, plus the revision
 /// token a conditional replace needs, or `None` for a repository that has no
 /// manifest yet (legacy or brand new).
-fn read_current_manifest(
+pub(crate) fn read_current_manifest(
     storage: &dyn RepositoryStorage,
 ) -> RemoteResult<Option<(RepositoryManifest, Option<String>)>> {
     let Some(metadata) = storage.stat(MANIFEST_PATH)? else {

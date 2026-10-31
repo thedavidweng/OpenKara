@@ -289,6 +289,14 @@
 
 Publish Song 在 WebDAV 资料库上经 Remote Repository core 执行，只上传远端缺少的内容寻址资产：音频与 stems 位于 `<top>/content/<sha256>.<ext>`，封面派生图以派生图字节的 SHA-256 命名。远端已有同尺寸对象时跳过，因此重复发布不会重复传输，字节相同的资产只存一份；本地字节与其内容寻址名称不符时发布失败且不上传。上传中断后再次发布会删除并重写残缺对象，已完成的资产不再上传。Dropbox 与 Google Drive 仍走旧适配器，每次发布都会上传已暂存的资产。
 
+清理未引用的上传（cleanup of unreferenced uploads）没有命令入口，由桌面端自动发起：
+
+- WebDAV 资料库每次 Publish Changes 成功后，桌面端为该资料库保留至多一个待执行的 `gc` operation，在 24 小时宽限期之后由后台执行器运行 `openkara_remote::clean_up_unreferenced_uploads`。Dropbox 与 Google Drive 仍使用旧执行器的 generation GC。
+- 清理保留当前与上一个 generation 的数据库快照，以及在宽限期内才被取代的更早 generation，确保手机能读完刷新时的 generation。被这些快照引用的资产都保留。
+- 其余 `media/`、`media-g/`、`stems/`、`artwork/` 对象和 `.openkara/databases/` 快照，只有在最后写入时间早于宽限期时才删除，因此其他设备正在进行的发布不受影响；存储未报告修改时间的对象永不删除。
+- manifest、旧版根目录 `openkara.db` 与无法识别的对象永不删除；没有 manifest 的资料库不清理；任一保留快照无法下载或解析时，不删除任何对象；每次删除前都会重新检查 manifest，manifest 一旦改变就停止删除，其余对象留给下一次清理。
+- 手机通过只读存储（`openkara_remote::ReadOnlyStorage`）打开资料库，永不删除、写入或替换远端对象。
+
 新增命令：
 
 0. `resolve_remote_conflict(resolution: "keep_local" | "use_remote") -> ()`

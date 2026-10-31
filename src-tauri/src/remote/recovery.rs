@@ -280,13 +280,31 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 Ok(lib) => lib,
                 Err(_) => continue,
             };
-        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
         let control_db_path = crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
         let exec_conn = match crate::remote::control_db::open_control_db(&control_db_path) {
             Ok(c) => c,
+            Err(_) => continue,
+        };
+        if matches!(
+            remote_library.provider(),
+            Some(crate::config::RemoteLibraryProvider::WebDav)
+        ) {
+            let Ok(remote_root) =
+                crate::remote::types::load_remote_root(&state.shell.app_data_dir, &remote_library)
+            else {
+                continue;
+            };
+            let _ = crate::remote::executor::execute_cleanup_via_core(
+                &exec_conn,
+                &state.shell.app_data_dir,
+                &remote_library,
+                &remote_root.root().join(".openkara/cleanup"),
+                &op.operation_id,
+            );
+            continue;
+        }
+        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
+            Ok(p) => p,
             Err(_) => continue,
         };
         let _ = execute_gc(provider.as_ref(), &exec_conn, library_id, &op.operation_id);
