@@ -762,7 +762,7 @@
       "conflictTitle": "Pustaka Anda berubah di jarak jauh sebelum suntingan ini terbit.",
       "conflictBody": "Mempertahankan perubahan Anda menerbitkan versi Anda untuk hal yang diubah kedua perangkat dan mempertahankan semua perubahan jarak jauh lainnya. Menggunakan versi jarak jauh membuang perubahan Anda yang belum diterbitkan.",
       "conflictSongs": "Diubah di kedua perangkat:",
-      "conflictWholeRepository": "Perubahan seluruh pustaka termasuk dalam konflik ini.",
+      "conflictWholeRepository": "Konflik ini mencakup perubahan seluruh pustaka. Mempertahankan perubahan Anda mengganti seluruh pustaka jarak jauh dengan pustaka di perangkat ini, dan perubahan dari perangkat lain bisa hilang. Menggunakan versi jarak jauh membuang perubahan Anda yang belum diterbitkan.",
       "conflictKeepLocal": "Pertahankan perubahan saya",
       "conflictUseRemote": "Gunakan versi jarak jauh"
     },

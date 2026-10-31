@@ -762,7 +762,7 @@
       "conflictTitle": "Bu düzenlemeler yayımlanmadan önce kitaplık uzakta değişti.",
       "conflictBody": "Değişikliklerinizi korumak, iki cihazın da değiştirdiği kısımlarda sizin sürümünüzü yayımlar ve diğer tüm uzak değişiklikleri korur. Uzak sürümü kullanmak yayımlanmamış değişikliklerinizi siler.",
       "conflictSongs": "İki cihazda da değişti:",
-      "conflictWholeRepository": "Kitaplık genelindeki değişiklikler de bu çakışmanın parçası.",
+      "conflictWholeRepository": "Bu çakışma kitaplık genelindeki değişiklikleri içeriyor. Değişikliklerinizi korumak tüm uzak kitaplığı bu cihazdaki kitaplıkla değiştirir ve diğer cihazlarda yapılan değişiklikler kaybolabilir. Uzak sürümü kullanmak yayımlanmamış değişikliklerinizi siler.",
       "conflictKeepLocal": "Değişikliklerimi koru",
       "conflictUseRemote": "Uzak sürümü kullan"
     },

@@ -766,7 +766,7 @@
       "conflictTitle": "這些修改發佈之前，遠端資料庫已經變了。",
       "conflictBody": "保留你的修改會發佈你這一邊對兩台裝置都改過的內容，並保留遠端的其他所有修改。使用遠端版本會捨棄你尚未發佈的修改。",
       "conflictSongs": "兩台裝置都修改了：",
-      "conflictWholeRepository": "整個資料庫範圍的修改也在這次衝突中。",
+      "conflictWholeRepository": "這次衝突包含整個資料庫範圍的修改。保留你的修改會用這台裝置上的資料庫取代整個遠端資料庫，其他裝置上的修改可能會遺失。使用遠端版本會捨棄你尚未發佈的修改。",
       "conflictKeepLocal": "保留我的修改",
       "conflictUseRemote": "使用遠端版本"
     },

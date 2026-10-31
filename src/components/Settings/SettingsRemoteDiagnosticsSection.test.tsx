@@ -208,6 +208,39 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     ).toBeTruthy();
   });
 
+  test("warns that keeping a library-wide conflict replaces the whole remote library", async () => {
+    mockGetRemoteDiagnostics.mockResolvedValue({
+      has_active_remote: true,
+      local_state: "conflicted",
+      committed_generation: 10,
+      repository_id: null,
+      writer_id: null,
+      local_base_generation: 9,
+      local_db_digest: null,
+      active_operation_id: "op-1",
+      last_success_at_ms: null,
+      last_error_code: "remote_conflict",
+      recent_operations: [],
+      conflict: {
+        operation_id: "op-1",
+        remote_generation: 10,
+        songs: [],
+        whole_repository: true,
+      },
+    });
+
+    render(<SettingsRemoteDiagnosticsSection />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("settings.remoteDiagnostics.conflictWholeRepository"),
+      ).toBeTruthy();
+    });
+    expect(
+      screen.queryByText("settings.remoteDiagnostics.conflictBody"),
+    ).toBeNull();
+  });
+
   test("keeps the song list hidden when the conflict names no songs", async () => {
     mockGetRemoteDiagnostics.mockResolvedValue({
       has_active_remote: true,
@@ -237,6 +270,9 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     expect(
       screen.queryByText("settings.remoteDiagnostics.conflictWholeRepository"),
     ).toBeNull();
+    expect(
+      screen.getByText("settings.remoteDiagnostics.conflictBody"),
+    ).toBeTruthy();
   });
 
   test("keeps the conflict exits hidden when the repository is clean", async () => {

@@ -764,7 +764,7 @@
       "conflictTitle": "Biblioteka zmieniła się zdalnie, zanim te zmiany zostały opublikowane.",
       "conflictBody": "Zachowanie twoich zmian publikuje twoją wersję tego, co zmieniły oba urządzenia, i zachowuje wszystkie inne zmiany zdalne. Użycie wersji zdalnej odrzuca twoje nieopublikowane zmiany.",
       "conflictSongs": "Zmienione na obu urządzeniach:",
-      "conflictWholeRepository": "Zmiany w całej bibliotece są częścią tego konfliktu.",
+      "conflictWholeRepository": "Ten konflikt obejmuje zmiany w całej bibliotece. Zachowanie twoich zmian zastępuje całą zdalną bibliotekę biblioteką z tego urządzenia, a zmiany wprowadzone na innych urządzeniach mogą zostać utracone. Użycie wersji zdalnej odrzuca twoje nieopublikowane zmiany.",
       "conflictKeepLocal": "Zachowaj moje zmiany",
       "conflictUseRemote": "Użyj wersji zdalnej"
     },

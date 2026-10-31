@@ -762,7 +762,7 @@
       "conflictTitle": "Thư viện đã thay đổi ở phía từ xa trước khi các chỉnh sửa này được đăng.",
       "conflictBody": "Giữ thay đổi của bạn sẽ đăng phiên bản của bạn cho những gì cả hai thiết bị đã sửa và giữ mọi thay đổi khác từ xa. Dùng bản từ xa sẽ bỏ các thay đổi chưa đăng của bạn.",
       "conflictSongs": "Đã sửa trên cả hai thiết bị:",
-      "conflictWholeRepository": "Thay đổi toàn thư viện cũng thuộc xung đột này.",
+      "conflictWholeRepository": "Xung đột này có thay đổi toàn thư viện. Giữ thay đổi của bạn sẽ thay toàn bộ thư viện từ xa bằng thư viện trên thiết bị này, và các thay đổi từ thiết bị khác có thể bị mất. Dùng bản từ xa sẽ bỏ các thay đổi chưa đăng của bạn.",
       "conflictKeepLocal": "Giữ thay đổi của tôi",
       "conflictUseRemote": "Dùng bản từ xa"
     },

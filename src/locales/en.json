@@ -868,7 +868,7 @@
       "conflictTitle": "Your library changed on the remote before these edits published.",
       "conflictBody": "Keeping your changes publishes your version of what both devices changed and keeps every other remote change. Using the remote version discards your unpublished changes.",
       "conflictSongs": "Changed on both devices:",
-      "conflictWholeRepository": "Library-wide changes are part of this conflict.",
+      "conflictWholeRepository": "This conflict includes library-wide changes. Keeping your changes replaces the whole remote library with the library on this device, and changes made on other devices can be lost. Using the remote version discards your unpublished changes.",
       "conflictKeepLocal": "Keep my changes",
       "conflictUseRemote": "Use the remote version"
     },

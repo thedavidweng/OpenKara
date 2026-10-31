@@ -763,7 +763,7 @@
       "conflictTitle": "Votre bibliothèque a changé côté distant avant la publication de ces modifications.",
       "conflictBody": "Conserver vos modifications publie votre version de ce que les deux appareils ont modifié et garde toutes les autres modifications distantes. Utiliser la version distante abandonne vos modifications non publiées.",
       "conflictSongs": "Modifié sur les deux appareils :",
-      "conflictWholeRepository": "Des modifications de toute la bibliothèque font partie de ce conflit.",
+      "conflictWholeRepository": "Ce conflit comprend des modifications de toute la bibliothèque. Conserver vos modifications remplace toute la bibliothèque distante par la bibliothèque de cet appareil, et les modifications faites sur d'autres appareils peuvent être perdues. Utiliser la version distante abandonne vos modifications non publiées.",
       "conflictKeepLocal": "Conserver mes modifications",
       "conflictUseRemote": "Utiliser la version distante"
     },

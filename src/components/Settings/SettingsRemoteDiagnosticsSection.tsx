@@ -65,7 +65,9 @@ export function SettingsRemoteDiagnosticsSection() {
             {t("settings.remoteDiagnostics.conflictTitle")}
           </p>
           <p className="text-[11px] text-[var(--color-text-dim)]">
-            {t("settings.remoteDiagnostics.conflictBody")}
+            {conflict?.whole_repository
+              ? t("settings.remoteDiagnostics.conflictWholeRepository")
+              : t("settings.remoteDiagnostics.conflictBody")}
           </p>
           {conflict && conflict.songs.length > 0 && (
             <div className="space-y-1">
@@ -86,11 +88,7 @@ export function SettingsRemoteDiagnosticsSection() {
               </ul>
             </div>
           )}
-          {conflict?.whole_repository && (
-            <p className="text-[11px] text-[var(--color-text-dim)]">
-              {t("settings.remoteDiagnostics.conflictWholeRepository")}
-            </p>
-          )}
+
           <div className="flex gap-2">
             <button
               type="button"

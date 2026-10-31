@@ -762,7 +762,7 @@
       "conflictTitle": "Die Mediathek wurde entfernt geändert, bevor diese Bearbeitungen veröffentlicht wurden.",
       "conflictBody": "Deine Änderungen zu behalten veröffentlicht deine Version dessen, was beide Geräte geändert haben, und behält alle anderen Remote-Änderungen. Die Remote-Version zu verwenden verwirft deine unveröffentlichten Änderungen.",
       "conflictSongs": "Auf beiden Geräten geändert:",
-      "conflictWholeRepository": "Bibliotheksweite Änderungen gehören zu diesem Konflikt.",
+      "conflictWholeRepository": "Dieser Konflikt enthält bibliotheksweite Änderungen. Deine Änderungen zu behalten ersetzt die gesamte Remote-Bibliothek durch die Bibliothek auf diesem Gerät, und Änderungen von anderen Geräten können verloren gehen. Die Remote-Version zu verwenden verwirft deine unveröffentlichten Änderungen.",
       "conflictKeepLocal": "Meine Änderungen behalten",
       "conflictUseRemote": "Remote-Version verwenden"
     },

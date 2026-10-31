@@ -763,7 +763,7 @@
       "conflictTitle": "Tu biblioteca cambió en el remoto antes de que estas ediciones se publicaran.",
       "conflictBody": "Mantener tus cambios publica tu versión de lo que cambiaron ambos dispositivos y conserva todos los demás cambios remotos. Usar la versión remota descarta tus cambios sin publicar.",
       "conflictSongs": "Cambiado en ambos dispositivos:",
-      "conflictWholeRepository": "Los cambios de toda la biblioteca forman parte de este conflicto.",
+      "conflictWholeRepository": "Este conflicto incluye cambios de toda la biblioteca. Mantener tus cambios reemplaza toda la biblioteca remota por la biblioteca de este dispositivo, y se pueden perder los cambios hechos en otros dispositivos. Usar la versión remota descarta tus cambios sin publicar.",
       "conflictKeepLocal": "Mantener mis cambios",
       "conflictUseRemote": "Usar la versión remota"
     },
