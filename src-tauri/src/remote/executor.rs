@@ -44,7 +44,7 @@ use crate::remote::manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
-use crate::remote::provider::{ConditionalSource, RepositoryStorage};
+use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, RepositoryStorage};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
@@ -55,7 +55,6 @@ use uuid::Uuid;
 
 pub(crate) struct PublishContext<'a> {
     pub control_db: &'a Connection,
-    pub provider: &'a dyn RepositoryStorage,
     pub working_copy_root: &'a Path,
     pub library_id: &'a str,
     pub writer_id: &'a str,
@@ -81,7 +80,11 @@ pub(crate) struct PublishOutcome {
 /// The caller is responsible for acquiring the per-library commit lock
 /// (`commit_lock(library_id)`) before calling this, so two concurrent
 /// manifest commits for the same library cannot run.
-pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> CommandResult<()> {
+pub(crate) fn execute_publish(
+    ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
+    operation_id: &str,
+) -> CommandResult<()> {
     let op = get_operation(ctx.control_db, operation_id)?
         .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
 
@@ -96,7 +99,7 @@ pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> C
         return Ok(());
     }
 
-    let result = run_publish_protocol(ctx, &op);
+    let result = run_publish_protocol(ctx, storage, &op);
     match result {
         Ok(outcome) => {
             record_completed(ctx, &op, &outcome, GcSchedule::AfterSafetyDelay)?;
@@ -299,6 +302,7 @@ fn record_pre_publish_conflict(
 /// milestone so a crash leaves the operation in a resumable state.
 fn run_publish_protocol(
     ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
     op: &OperationRow,
 ) -> Result<PublishOutcome, RemoteError> {
     let now = current_unix_time_ms();
@@ -312,7 +316,7 @@ fn run_publish_protocol(
         "Reading remote manifest",
     )?;
 
-    let caps = ctx.provider.capabilities();
+    let caps = storage.capabilities();
     if !caps.conditional_replace {
         return Err(RemoteError::new(
             RemoteErrorKind::ProviderCapabilityUnavailable,
@@ -320,11 +324,10 @@ fn run_publish_protocol(
         ));
     }
 
-    let current_manifest = read_manifest(ctx.provider)
+    let current_manifest = read_manifest(storage)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-    let manifest_revision: Option<String> = ctx
-        .provider
+    let manifest_revision: Option<String> = storage
         .stat(crate::remote::manifest::MANIFEST_PATH)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
         .and_then(|m| m.revision);
@@ -393,7 +396,7 @@ fn run_publish_protocol(
             "Verifying remote assets",
         )?;
         Some(verify_referenced_assets(
-            ctx.provider,
+            storage,
             ctx.working_copy_root,
             &working_db_path,
             true,
@@ -420,7 +423,7 @@ fn run_publish_protocol(
         op,
     ) = if let Some(candidate) = persisted_candidate {
         let actual_fingerprint =
-            verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate.path, false)?;
+            verify_referenced_assets(storage, ctx.working_copy_root, &candidate.path, false)?;
         if actual_fingerprint != candidate.asset_fingerprint {
             return Err(RemoteError::new(
                 RemoteErrorKind::RemoteIntegrityFailed,
@@ -554,7 +557,7 @@ fn run_publish_protocol(
         )
     })?;
     upload_candidate_database(
-        ctx.provider,
+        storage,
         ctx.working_copy_root,
         &db_remote_path,
         &candidate_bytes,
@@ -565,7 +568,7 @@ fn run_publish_protocol(
     )?;
     // Digest verify: size-only misses equal-size mixed resumable sessions.
     verify_remote_candidate_digest(
-        ctx.provider,
+        storage,
         &db_remote_path,
         candidate_size,
         &candidate_digest,
@@ -582,8 +585,7 @@ fn run_publish_protocol(
         "candidate_uploaded",
     )?;
 
-    let candidate_meta = ctx
-        .provider
+    let candidate_meta = storage
         .stat(&db_remote_path)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     let candidate_meta = candidate_meta.ok_or_else(|| {
@@ -604,7 +606,7 @@ fn run_publish_protocol(
     }
 
     let pre_cas_asset_fingerprint =
-        verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate_path, false)?;
+        verify_referenced_assets(storage, ctx.working_copy_root, &candidate_path, false)?;
     if pre_cas_asset_fingerprint != candidate_assets_fingerprint {
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
@@ -630,7 +632,7 @@ fn run_publish_protocol(
         .to_json()
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
 
-    let committed_meta = ctx.provider.conditional_replace(
+    let committed_meta = storage.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
         ConditionalSource::Bytes(manifest_json.into_bytes()),
         manifest_revision.as_deref(),
@@ -645,7 +647,7 @@ fn run_publish_protocol(
         "Verifying manifest",
     )?;
 
-    let verified_manifest = read_manifest(ctx.provider)
+    let verified_manifest = read_manifest(storage)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     let verified_manifest = verified_manifest.ok_or_else(|| {
         RemoteError::new(
@@ -1050,7 +1052,7 @@ fn verify_referenced_assets(
 /// large enough, progress is bound to `expected_digest` so a restart cannot
 /// append a different candidate's bytes into the same session.
 fn upload_candidate_database(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyPublishStorage,
     working_copy_root: &Path,
     remote_relative_path: &str,
     bytes: &[u8],
@@ -1582,11 +1584,10 @@ fn schedule_gc_on_conn(
 /// net so a reader that started a pull just before the manifest advanced can
 /// still complete.
 ///
-/// Staging directories (`.openkara/staging/<operation-id>`) for completed
-/// operations are also removed. Assets in `media/`, `stems/`, and `artwork/`
-/// are NOT deleted — they are referenced by the committed database and
-/// removed only when a future generation's database no longer references them
-/// (a future reference-counting GC pass).
+/// Only Dropbox and Google Drive repositories run this; WebDAV repositories
+/// clean up through [`execute_cleanup_via_core`]. Assets in `media/`,
+/// `stems/`, and `artwork/` are NOT deleted — they are referenced by the
+/// committed database.
 pub(crate) fn execute_gc(
     provider: &dyn RepositoryStorage,
     control_db: &Connection,
@@ -1834,6 +1835,7 @@ pub(crate) fn generate_repository_id() -> String {
 /// attempted.
 pub(crate) fn conflict_keep_local_as_new_generation(
     ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
     operation_id: &str,
     conflict_candidate_db: &Path,
 ) -> CommandResult<()> {
@@ -1846,7 +1848,7 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         ));
     }
 
-    let remote_manifest = read_manifest(ctx.provider)?
+    let remote_manifest = read_manifest(storage)?
         .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
     let local_db_path = ctx.working_copy_root.join("openkara.db");
@@ -1900,11 +1902,12 @@ pub(crate) fn conflict_keep_local_as_new_generation(
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)?;
 
-    execute_publish(ctx, operation_id)
+    execute_publish(ctx, storage, operation_id)
 }
 
 pub(crate) fn conflict_use_remote(
     ctx: &PublishContext<'_>,
+    storage: &dyn RepositoryStorage,
     operation_id: &str,
     conflict_candidate_db: &Path,
 ) -> CommandResult<()> {
@@ -1929,7 +1932,7 @@ pub(crate) fn conflict_use_remote(
         .map_err(|e| internal_error(format!("failed to activate remote database: {e}")))?;
 
     let new_digest = sha256_file(&working_db)?;
-    let remote_manifest = read_manifest(ctx.provider)?
+    let remote_manifest = read_manifest(storage)?
         .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
     let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
@@ -2056,7 +2059,7 @@ mod tests {
         RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
     };
     use crate::remote::manifest::MANIFEST_PATH;
-    use crate::remote::provider::{ConditionalSource, RepositoryStorage};
+    use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, RepositoryStorage};
     use rusqlite::Connection;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -2069,6 +2072,8 @@ mod tests {
         no_cas: bool,
         working_copy_root: Option<PathBuf>,
         mutate_asset_on_candidate_upload: Option<(String, Vec<u8>, String)>,
+        upload_failures_remaining: Mutex<usize>,
+        cas_network_failures_remaining: Mutex<usize>,
     }
 
     impl FakeProvider {
@@ -2079,6 +2084,8 @@ mod tests {
                 no_cas: false,
                 working_copy_root: None,
                 mutate_asset_on_candidate_upload: None,
+                upload_failures_remaining: Mutex::new(0),
+                cas_network_failures_remaining: Mutex::new(0),
             }
         }
 
@@ -2089,6 +2096,8 @@ mod tests {
                 no_cas: true,
                 working_copy_root: None,
                 mutate_asset_on_candidate_upload: None,
+                upload_failures_remaining: Mutex::new(0),
+                cas_network_failures_remaining: Mutex::new(0),
             }
         }
 
@@ -2108,6 +2117,23 @@ mod tests {
             self
         }
 
+        fn fail_next_upload(&self) {
+            *self.upload_failures_remaining.lock().unwrap() += 1;
+        }
+
+        fn fail_next_cas_with_network_error(&self) {
+            *self.cas_network_failures_remaining.lock().unwrap() += 1;
+        }
+
+        fn take_failure(counter: &Mutex<usize>) -> bool {
+            let mut remaining = counter.lock().unwrap();
+            if *remaining == 0 {
+                return false;
+            }
+            *remaining -= 1;
+            true
+        }
+
         fn store(&self, path: &str, bytes: Vec<u8>, revision: &str) {
             self.revisions
                 .lock()
@@ -2120,15 +2146,6 @@ mod tests {
     impl RepositoryStorage for FakeProvider {
         fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
             self
-        }
-
-        fn capabilities(&self) -> RemoteProviderCapabilities {
-            RemoteProviderCapabilities {
-                conditional_replace: !self.no_cas,
-                resumable_upload: false,
-                revision_metadata: true,
-                server_side_move: false,
-            }
         }
 
         fn stat(&self, path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
@@ -2159,7 +2176,38 @@ mod tests {
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
         }
 
+        fn delete_path(&self, path: &str) -> CommandResult<()> {
+            self.files.lock().unwrap().remove(path);
+            self.revisions.lock().unwrap().remove(path);
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl LegacyPublishStorage for FakeProvider {
+        fn capabilities(&self) -> RemoteProviderCapabilities {
+            RemoteProviderCapabilities {
+                conditional_replace: !self.no_cas,
+                resumable_upload: false,
+                revision_metadata: true,
+                server_side_move: false,
+            }
+        }
+
         fn upload_file(&self, path: &str) -> CommandResult<()> {
+            if Self::take_failure(&self.upload_failures_remaining) {
+                return Err(CommandError::from(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated upload failure",
+                )));
+            }
             if let Some(ref root) = self.working_copy_root {
                 let local_path = root.join(path);
                 if local_path.exists() {
@@ -2191,12 +2239,6 @@ mod tests {
             Ok(())
         }
 
-        fn delete_path(&self, path: &str) -> CommandResult<()> {
-            self.files.lock().unwrap().remove(path);
-            self.revisions.lock().unwrap().remove(path);
-            Ok(())
-        }
-
         fn conditional_replace(
             &self,
             path: &str,
@@ -2206,6 +2248,12 @@ mod tests {
             if self.no_cas {
                 return Err(RemoteError::from_kind(
                     RemoteErrorKind::ProviderCapabilityUnavailable,
+                ));
+            }
+            if Self::take_failure(&self.cas_network_failures_remaining) {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated network failure during manifest CAS",
                 ));
             }
 
@@ -2254,14 +2302,6 @@ mod tests {
                 revision: Some(new_rev),
             })
         }
-
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
     }
 
     impl crate::remote::provider::RemoteMediaSource for FakeProvider {
@@ -2309,7 +2349,6 @@ mod tests {
 
     fn make_context<'a>(
         control_db: &'a Connection,
-        provider: &'a dyn RepositoryStorage,
         working_copy_root: &'a Path,
         library_id: &'a str,
         repository_id: &'a str,
@@ -2317,7 +2356,6 @@ mod tests {
     ) -> PublishContext<'a> {
         PublishContext {
             control_db,
-            provider,
             working_copy_root,
             library_id,
             writer_id,
@@ -2326,7 +2364,21 @@ mod tests {
     }
 
     fn make_pending_op(conn: &Connection, library_id: &str, expected_gen: i64) -> String {
-        let op_id = format!("publish-test-{}", expected_gen);
+        make_named_pending_op(
+            conn,
+            &format!("publish-test-{expected_gen}"),
+            library_id,
+            expected_gen,
+        )
+    }
+
+    fn make_named_pending_op(
+        conn: &Connection,
+        op_id: &str,
+        library_id: &str,
+        expected_gen: i64,
+    ) -> String {
+        let op_id = op_id.to_owned();
         let now = crate::remote::types::current_unix_time_ms();
         let payload = OperationPayload {
             song_ids: vec!["song-1".to_owned()],
@@ -2396,14 +2448,13 @@ mod tests {
 
         let ctx = make_context(
             &conn,
-            &provider,
             &working_root,
             "lib-1",
             "repo-uuid-1",
             "writer-uuid-1",
         );
 
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest_bytes.is_some(), "manifest should be written");
@@ -2436,11 +2487,11 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
         let op1 = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op1).expect("first publish");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op1).expect("first publish");
 
         let op2 = make_pending_op(&conn, "lib-1", 1);
-        execute_publish(&ctx, &op2).expect("second publish");
+        execute_publish(&ctx, &provider, &op2).expect("second publish");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2458,8 +2509,8 @@ mod tests {
         let provider = FakeProvider::with_no_cas();
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
 
         assert!(result.is_err());
 
@@ -2500,8 +2551,8 @@ mod tests {
         );
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
 
         assert!(result.is_err());
 
@@ -2517,6 +2568,171 @@ mod tests {
         assert_eq!(state.local_state, LocalState::Conflicted);
     }
 
+    fn seed_clean_repository_state(conn: &Connection, library_id: &str) {
+        upsert_repository_state(
+            conn,
+            &RepositoryStateRow {
+                library_id: library_id.to_owned(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Clean,
+                active_operation_id: None,
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: crate::remote::types::current_unix_time_ms(),
+                repository_id: Some("repo-1".to_owned()),
+                writer_id: Some("w-1".to_owned()),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn executor_cas_network_failure_keeps_remote_generation_and_retry_converges() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.fail_next_cas_with_network_error();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        execute_publish(&ctx, &provider, &op_id).expect_err("CAS network failure");
+
+        assert!(read_manifest(&provider).unwrap().is_none());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Publishing);
+        assert_eq!(repo.committed_generation, 0);
+
+        let mut op = op;
+        op.state = OperationState::Pending;
+        upsert_operation(&conn, &op).unwrap();
+        execute_publish(&ctx, &provider, &op_id).expect("retry converges");
+
+        let manifest = read_manifest(&provider).unwrap().unwrap();
+        assert_eq!(manifest.generation, 1);
+        assert_eq!(manifest.writer_id, "w-1");
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn executor_completes_its_own_commit_accepted_before_a_crash() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let digest = sha256_file(&working_db).unwrap();
+        let db_bytes = std::fs::read(&working_db).unwrap();
+        let db_size = db_bytes.len() as u64;
+        provider.store(".openkara/databases/1.sqlite", db_bytes, "rev-db-1");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let accepted = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 1,
+            database_path: ".openkara/databases/1.sqlite".to_owned(),
+            database_size_bytes: db_size,
+            database_sha256: digest.clone(),
+            committed_at_ms: 5000,
+            writer_id: "w-1".to_owned(),
+            operation_id: op_id.clone(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            accepted.to_json().unwrap().into_bytes(),
+            "rev-manifest-1",
+        );
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        payload.candidate_sha256 = Some(digest.clone());
+        payload.candidate_size = Some(db_size);
+        payload.protocol_step = Some("candidate_uploaded".to_owned());
+        op.state = OperationState::RetryWait;
+        op.candidate_db_digest = Some(digest.clone());
+        op.payload_json = payload.to_json().unwrap();
+        upsert_operation(&conn, &op).unwrap();
+
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("own accepted commit completes");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(1));
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.committed_generation, 1);
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.local_db_digest.as_deref(), Some(digest.as_str()));
+        assert_eq!(read_manifest(&provider).unwrap().unwrap().generation, 1);
+    }
+
+    #[test]
+    fn executor_candidate_upload_failure_keeps_working_db_and_stays_retryable() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+        let working_digest = sha256_file(&working_db).unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.fail_next_upload();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        execute_publish(&ctx, &provider, &op_id).expect_err("candidate upload failure");
+
+        assert!(read_manifest(&provider).unwrap().is_none());
+        assert_eq!(sha256_file(&working_db).unwrap(), working_digest);
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+    }
+
+    #[test]
+    fn executor_second_writer_conflicts_without_overwriting_the_winner() {
+        let (_db_a, conn_a) = fresh_control_db();
+        let (_db_b, conn_b) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        seed_clean_repository_state(&conn_a, "lib-shared");
+        seed_clean_repository_state(&conn_b, "lib-shared");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_a = make_named_pending_op(&conn_a, "op-writer-a", "lib-shared", 0);
+        let op_b = make_named_pending_op(&conn_b, "op-writer-b", "lib-shared", 0);
+        let ctx_a = make_context(&conn_a, &working_root, "lib-shared", "repo-1", "writer-a");
+        let ctx_b = make_context(&conn_b, &working_root, "lib-shared", "repo-1", "writer-b");
+
+        execute_publish(&ctx_a, &provider, &op_a).expect("writer A wins");
+        execute_publish(&ctx_b, &provider, &op_b).expect_err("writer B conflicts");
+
+        let op_b_row = get_operation(&conn_b, &op_b).unwrap().unwrap();
+        assert_eq!(op_b_row.state, OperationState::Conflicted);
+        let mut retry = op_b_row;
+        retry.state = OperationState::Pending;
+        retry.error_code = None;
+        upsert_operation(&conn_b, &retry).unwrap();
+        execute_publish(&ctx_b, &provider, &op_b).expect_err("retrying the loser still conflicts");
+
+        let manifest = read_manifest(&provider).unwrap().unwrap();
+        assert_eq!(manifest.generation, 1);
+        assert_eq!(manifest.writer_id, "writer-a");
+    }
+
     #[test]
     fn executor_does_not_reexecute_terminal_operations() {
         let (_db_dir, conn) = fresh_control_db();
@@ -2527,13 +2743,13 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
-        execute_publish(&ctx, &op_id).expect("first publish");
+        execute_publish(&ctx, &provider, &op_id).expect("first publish");
 
         let files_before = provider.files.lock().unwrap().len();
 
-        execute_publish(&ctx, &op_id).expect("second call is no-op");
+        execute_publish(&ctx, &provider, &op_id).expect("second call is no-op");
 
         let files_after = provider.files.lock().unwrap().len();
         assert_eq!(files_before, files_after);
@@ -2549,8 +2765,8 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2586,8 +2802,8 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let all_ops = crate::remote::control_db::list_operations_in_states(
             &conn,
@@ -2625,13 +2841,12 @@ mod tests {
 
         let ctx = make_context(
             &conn,
-            &provider,
             &working_root,
             "lib-1",
             "repo-uuid-x",
             "writer-uuid-y",
         );
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
             .unwrap()
@@ -2719,9 +2934,9 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
-        let result = execute_publish(&ctx, &op_id);
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when an asset is missing"
@@ -2762,8 +2977,8 @@ mod tests {
         provider.store("media/song-1.mp3", b"trunc".to_vec(), "rev-1");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when remote asset size mismatches"
@@ -2802,8 +3017,9 @@ mod tests {
             .expect("fake upload should succeed");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed when all assets are present");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("publish should succeed when all assets are present");
 
         let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest.is_some(), "manifest should be committed");
@@ -2834,8 +3050,9 @@ mod tests {
             &working_root,
         );
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("retry should publish the immutable candidate");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("retry should publish the immutable candidate");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2885,8 +3102,8 @@ mod tests {
 
         provider.store("media/song-1.mp3", b"other-bytes".to_vec(), "rev-replaced");
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2915,8 +3132,8 @@ mod tests {
         provider.upload_file("media/song-1.mp3").unwrap();
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2934,8 +3151,8 @@ mod tests {
         let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
         std::fs::remove_file(&candidate).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         assert!(
             !candidate.exists(),
             "missing candidate must not be regenerated"
@@ -2957,8 +3174,8 @@ mod tests {
         let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
         std::fs::write(&candidate, b"corrupt-candidate").unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         assert_eq!(
             std::fs::read(&candidate).unwrap(),
             b"corrupt-candidate".to_vec()
@@ -2986,8 +3203,8 @@ mod tests {
         op.state = OperationState::RetryWait;
         upsert_operation(&conn, &op).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -3008,8 +3225,8 @@ mod tests {
         op.state = OperationState::RetryWait;
         upsert_operation(&conn, &op).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -3050,8 +3267,8 @@ mod tests {
         );
 
         let op_id = make_pending_op(&conn, "lib-1", 1);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(result.is_err(), "publish must fail");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
@@ -3084,8 +3301,8 @@ mod tests {
         provider.upload_file(vocals).expect("upload vocals");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when a stem is missing remotely"
@@ -3120,8 +3337,8 @@ mod tests {
         provider.upload_file(thumb).expect("upload thumb");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when artwork is missing remotely"
@@ -3142,8 +3359,9 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish with no asset paths should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("publish with no asset paths should succeed");
     }
 
     #[test]
@@ -3465,9 +3683,8 @@ mod tests {
         let app_data = TempDir::new().unwrap();
         webdav_app_data(&app_data, &library);
 
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
         execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
             .expect("core publish should succeed");
@@ -3557,9 +3774,8 @@ mod tests {
             .write_new(MANIFEST_PATH, other_manifest.to_json().unwrap().as_bytes())
             .expect("seed remote manifest");
 
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
         let result = execute_publish_via_core(&ctx, app_data.path(), &library, &op_id);
         assert!(result.is_err(), "stale generation must conflict");
@@ -3602,8 +3818,7 @@ mod tests {
         let library = webdav_remote_library(server.base_url(), &working_db);
         let app_data = TempDir::new().unwrap();
         webdav_app_data(&app_data, &library);
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
         let first = make_pending_op(&conn, "lib-1", 0);
         execute_publish_via_core(&ctx, app_data.path(), &library, &first).expect("gen 1");
 
@@ -3731,8 +3946,7 @@ mod tests {
         let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
         let app_data = TempDir::new().unwrap();
         webdav_app_data(&app_data, &library);
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
         let before = current_unix_time_ms();
         for expected_generation in 0..2 {
@@ -3760,8 +3974,7 @@ mod tests {
         let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
         let app_data = TempDir::new().unwrap();
         webdav_app_data(&app_data, &library);
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
         let scratch = working_root.join(".openkara/cleanup");
 
         server.set_clock_ms(1_000_000_000_000);

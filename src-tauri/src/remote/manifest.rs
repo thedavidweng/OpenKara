@@ -99,9 +99,6 @@ mod tests {
             self
         }
 
-        fn capabilities(&self) -> crate::remote::errors::RemoteProviderCapabilities {
-            crate::remote::errors::RemoteProviderCapabilities::default()
-        }
         fn stat(
             &self,
             path: &str,
@@ -129,9 +126,6 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| internal_error(format!("fake provider: {path} not found")))?;
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
-        }
-        fn upload_file(&self, _path: &str) -> CommandResult<()> {
-            Ok(())
         }
         fn delete_path(&self, _path: &str) -> CommandResult<()> {
             Ok(())

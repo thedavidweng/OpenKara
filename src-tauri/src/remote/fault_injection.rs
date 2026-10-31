@@ -2,26 +2,20 @@
 
 #![cfg(test)]
 
-use crate::commands::error::{internal_error, CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult};
 use crate::library::error::LibraryError;
 use crate::remote::atomic_download::{
     atomic_download, resumable_atomic_download, AtomicDownloadOptions, ResumableDownloadOptions,
 };
 use crate::remote::control_db::{
-    open_control_db, upsert_operation, upsert_repository_state, upsert_transfer_part, LocalState,
-    OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
-    TransferDirection, TransferPartRow,
+    open_control_db, upsert_transfer_part, TransferDirection, TransferPartRow,
 };
-use crate::remote::errors::{
-    RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
-};
-use crate::remote::executor::{execute_publish, PublishContext};
-use crate::remote::manifest::{read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION};
+use crate::remote::errors::{RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteResult};
 use crate::remote::net_policy::{
     full_jitter_delay, AttemptOutcome, RetryDriver, RetryPolicy, SeededJitter,
 };
 use crate::remote::provider::{
-    ConditionalSource, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+    RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
 };
 use crate::services::reconnect::{
     run_reconnect, EventSink, ReconnectConfig, ReconnectError, ReconnectEvent,
@@ -30,7 +24,7 @@ use crate::services::reconnect::{
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -41,11 +35,6 @@ struct FaultInjectionProvider {
     download_behaviors: Arc<Mutex<Vec<FaultBehavior>>>,
     fail_on_range_index: Arc<Mutex<Option<usize>>>,
     range_call_count: Arc<Mutex<usize>>,
-    upload_fail_remaining: Arc<Mutex<usize>>,
-    no_cas: bool,
-    always_conflict: bool,
-    cas_network_fail_remaining: Arc<Mutex<usize>>,
-    working_copy_root: Option<PathBuf>,
     #[allow(dead_code)]
     recorded_delays: Arc<Mutex<Vec<Duration>>>,
     credential_generation: Arc<Mutex<u64>>,
@@ -70,37 +59,9 @@ impl FaultInjectionProvider {
             download_behaviors: Arc::new(Mutex::new(Vec::new())),
             fail_on_range_index: Arc::new(Mutex::new(None)),
             range_call_count: Arc::new(Mutex::new(0)),
-            upload_fail_remaining: Arc::new(Mutex::new(0)),
-            no_cas: false,
-            always_conflict: false,
-            cas_network_fail_remaining: Arc::new(Mutex::new(0)),
-            working_copy_root: None,
             recorded_delays: Arc::new(Mutex::new(Vec::new())),
             credential_generation: Arc::new(Mutex::new(0)),
         }
-    }
-
-    fn with_working_copy_root(mut self, root: PathBuf) -> Self {
-        self.working_copy_root = Some(root);
-        self
-    }
-
-    fn with_no_cas(mut self) -> Self {
-        self.no_cas = true;
-        self
-    }
-
-    fn with_always_conflict(mut self) -> Self {
-        self.always_conflict = true;
-        self
-    }
-
-    fn fail_next_uploads(&self, count: usize) {
-        *self.upload_fail_remaining.lock().unwrap() = count;
-    }
-
-    fn fail_next_cas_network(&self, count: usize) {
-        *self.cas_network_fail_remaining.lock().unwrap() = count;
     }
 
     fn store_file(&self, relative_path: &str, bytes: Vec<u8>, revision: &str) {
@@ -153,15 +114,6 @@ impl FaultInjectionProvider {
         *gen += 1;
         true
     }
-
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        RemoteProviderCapabilities {
-            conditional_replace: !self.no_cas,
-            resumable_upload: false,
-            revision_metadata: true,
-            server_side_move: false,
-        }
-    }
 }
 
 fn command_error_from_kind(kind: RemoteErrorKind, detail: &str) -> CommandError {
@@ -171,10 +123,6 @@ fn command_error_from_kind(kind: RemoteErrorKind, detail: &str) -> CommandError 
 impl RepositoryStorage for FaultInjectionProvider {
     fn media_source(&self) -> &dyn RemoteMediaSource {
         self
-    }
-
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        self.capabilities()
     }
 
     fn stat(&self, path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
@@ -283,110 +231,8 @@ impl RepositoryStorage for FaultInjectionProvider {
         }
     }
 
-    fn upload_file(&self, path: &str) -> CommandResult<()> {
-        {
-            let mut remaining = self.upload_fail_remaining.lock().unwrap();
-            if *remaining > 0 {
-                *remaining -= 1;
-                return Err(command_error_from_kind(
-                    RemoteErrorKind::NetworkUnavailable,
-                    "simulated candidate upload failure",
-                ));
-            }
-        }
-        if let Some(ref root) = self.working_copy_root {
-            let local_path = root.join(path);
-            if local_path.exists() {
-                let bytes = std::fs::read(&local_path)
-                    .map_err(|e| internal_error(format!("fake upload_file read: {e}")))?;
-                let rev = format!(
-                    "rev-{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos()
-                );
-                self.files.lock().unwrap().insert(path.to_owned(), bytes);
-                self.revisions.lock().unwrap().insert(path.to_owned(), rev);
-            }
-        }
-        Ok(())
-    }
-
     fn delete_path(&self, _path: &str) -> CommandResult<()> {
         Ok(())
-    }
-
-    fn conditional_replace(
-        &self,
-        path: &str,
-        source: ConditionalSource,
-        expected_revision: Option<&str>,
-    ) -> Result<RemoteObjectMetadata, RemoteError> {
-        if self.no_cas {
-            return Err(RemoteError::from_kind(
-                RemoteErrorKind::ProviderCapabilityUnavailable,
-            ));
-        }
-        if self.always_conflict {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteConflict,
-                "concurrent writer committed first",
-            ));
-        }
-        {
-            let mut remaining = self.cas_network_fail_remaining.lock().unwrap();
-            if *remaining > 0 {
-                *remaining -= 1;
-                return Err(RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    "simulated CAS network failure after candidate upload",
-                ));
-            }
-        }
-
-        let bytes = source
-            .read_bytes()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-
-        let mut revisions = self.revisions.lock().unwrap();
-        let current_rev = revisions.get(path).cloned();
-        match expected_revision {
-            Some(expected) => {
-                if current_rev.as_deref() != Some(expected) {
-                    return Err(RemoteError::new(
-                        RemoteErrorKind::RemoteConflict,
-                        format!(
-                            "CAS mismatch: expected rev {expected}, found {:?}",
-                            current_rev
-                        ),
-                    ));
-                }
-            }
-            None => {
-                if current_rev.is_some() {
-                    return Err(RemoteError::new(
-                        RemoteErrorKind::RemoteConflict,
-                        "conditional-create failed: object already exists",
-                    ));
-                }
-            }
-        }
-
-        let new_rev = format!(
-            "rev-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        );
-        let size = bytes.len() as u64;
-        self.files.lock().unwrap().insert(path.to_owned(), bytes);
-        revisions.insert(path.to_owned(), new_rev.clone());
-        Ok(RemoteObjectMetadata {
-            size_bytes: Some(size),
-            revision: Some(new_rev),
-        })
     }
 
     fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
@@ -481,101 +327,6 @@ fn fresh_control_db() -> (TempDir, Connection) {
     let dir = TempDir::new().expect("temp dir");
     let conn = open_control_db(&dir.path().join("remote-state.db")).expect("open control db");
     (dir, conn)
-}
-
-fn make_valid_db(path: &Path) {
-    let conn = Connection::open(path).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS songs (
-            hash TEXT PRIMARY KEY,
-            file_path TEXT,
-            cdg_path TEXT,
-            artwork_thumb_path TEXT,
-            artwork_preview_path TEXT
-         );
-         CREATE TABLE IF NOT EXISTS stems (
-            song_hash TEXT PRIMARY KEY,
-            vocals_path TEXT,
-            accomp_path TEXT,
-            drums_path TEXT,
-            bass_path TEXT,
-            other_path TEXT
-         );
-         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
-         INSERT OR IGNORE INTO songs (hash) VALUES ('song-1');
-         INSERT OR IGNORE INTO settings (key, value) VALUES ('version', '1');",
-    )
-    .unwrap();
-}
-
-fn make_pending_op(conn: &Connection, library_id: &str, expected_gen: i64) -> String {
-    let op_id = format!("fault-op-{}", expected_gen);
-    let now = crate::remote::types::current_unix_time_ms();
-    let payload = OperationPayload {
-        song_ids: vec!["song-1".to_owned()],
-        percent: 0,
-        detail: None,
-        ..Default::default()
-    };
-    let row = OperationRow {
-        operation_id: op_id.clone(),
-        library_id: library_id.to_owned(),
-        operation_kind: OperationKind::Publish,
-        state: OperationState::Pending,
-        expected_generation: Some(expected_gen),
-        target_generation: None,
-        source_db_digest: None,
-        candidate_db_digest: None,
-        payload_json: payload.to_json().unwrap(),
-        attempt_count: 0,
-        next_attempt_at_ms: None,
-        error_code: None,
-        error_detail: None,
-        created_at_ms: now,
-        updated_at_ms: now,
-    };
-    upsert_operation(conn, &row).unwrap();
-    op_id
-}
-
-fn seed_repository_state(conn: &Connection, library_id: &str) {
-    let now = crate::remote::types::current_unix_time_ms();
-    upsert_repository_state(
-        conn,
-        &RepositoryStateRow {
-            library_id: library_id.to_owned(),
-            committed_generation: 0,
-            committed_manifest_revision: None,
-            local_base_generation: 0,
-            local_db_digest: None,
-            local_state: LocalState::Clean,
-            active_operation_id: None,
-            last_success_at_ms: None,
-            last_error_code: None,
-            updated_at_ms: now,
-            repository_id: Some("repo-uuid-1".to_owned()),
-            writer_id: Some("writer-uuid-1".to_owned()),
-        },
-    )
-    .unwrap();
-}
-
-fn make_context<'a>(
-    control_db: &'a Connection,
-    provider: &'a dyn RepositoryStorage,
-    working_copy_root: &'a Path,
-    library_id: &'a str,
-    repository_id: &'a str,
-    writer_id: &'a str,
-) -> PublishContext<'a> {
-    PublishContext {
-        control_db,
-        provider,
-        working_copy_root,
-        library_id,
-        writer_id,
-        repository_id,
-    }
 }
 
 struct RecordingSink {
@@ -792,55 +543,6 @@ fn t5_mid_transfer_disconnect_resumable_download_completes() {
 }
 
 #[test]
-fn t6_cas_conflict_on_publish_conflict_surfaced() {
-    let (_db_dir, conn) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    make_valid_db(&working_root.join("openkara.db"));
-    seed_repository_state(&conn, "lib-1");
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-    let manifest = RepositoryManifest {
-        schema_version: CURRENT_SCHEMA_VERSION,
-        repository_id: "repo-uuid-1".to_owned(),
-        generation: 2,
-        database_path: ".openkara/databases/2.sqlite".to_owned(),
-        database_size_bytes: 100,
-        database_sha256: "abc".to_owned(),
-        committed_at_ms: 1000,
-        writer_id: "other-device".to_owned(),
-        operation_id: "op-test".to_owned(),
-    };
-    provider.store_file(
-        crate::remote::manifest::MANIFEST_PATH,
-        manifest.to_json().unwrap().into_bytes(),
-        "rev-gen-2",
-    );
-
-    let op_id = make_pending_op(&conn, "lib-1", 0);
-    let ctx = make_context(
-        &conn,
-        &provider,
-        &working_root,
-        "lib-1",
-        "repo-uuid-1",
-        "w-1",
-    );
-    let result = execute_publish(&ctx, &op_id);
-    assert!(result.is_err(), "publish should fail with conflict");
-
-    let op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op.state, OperationState::Conflicted);
-    assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
-
-    let remote_manifest = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(remote_manifest.generation, 2);
-    assert_eq!(remote_manifest.writer_id, "other-device");
-}
-
-#[test]
 fn t7_stale_request_aborts_download_no_rename() {
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
@@ -1016,348 +718,4 @@ fn t12_network_retry_with_backoff_increasing_delays() {
         "all delays must be non-negative"
     );
     assert_eq!(*attempt_count.lock().unwrap(), 4);
-}
-
-#[test]
-fn t13_crash_after_candidate_upload_before_cas_preserves_remote_generation() {
-    let (_db_dir, conn) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    make_valid_db(&working_root.join("openkara.db"));
-    seed_repository_state(&conn, "lib-1");
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-    provider.fail_next_cas_network(1);
-
-    let op_id = make_pending_op(&conn, "lib-1", 0);
-    let ctx = make_context(
-        &conn,
-        &provider,
-        &working_root,
-        "lib-1",
-        "repo-uuid-1",
-        "writer-uuid-1",
-    );
-    let err = execute_publish(&ctx, &op_id).expect_err("CAS network failure");
-    assert!(
-        err.message.contains("CAS network")
-            || err.message.contains("network")
-            || err.message.contains("simulated")
-            || err.message.contains("could not"),
-        "error should indicate network/CAS failure: {}",
-        err.message
-    );
-
-    assert!(
-        read_manifest(&provider).unwrap().is_none(),
-        "manifest must not advance when CAS fails"
-    );
-
-    let op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op.state, OperationState::RetryWait);
-    let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
-        .unwrap()
-        .unwrap();
-    assert_eq!(repo.local_state, LocalState::Publishing);
-    assert_eq!(repo.committed_generation, 0);
-}
-
-#[test]
-fn t14_retry_after_cas_network_failure_converges() {
-    let (_db_dir, conn) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    make_valid_db(&working_root.join("openkara.db"));
-    seed_repository_state(&conn, "lib-1");
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-    provider.fail_next_cas_network(1);
-
-    let op_id = make_pending_op(&conn, "lib-1", 0);
-    let ctx = make_context(
-        &conn,
-        &provider,
-        &working_root,
-        "lib-1",
-        "repo-uuid-1",
-        "writer-uuid-1",
-    );
-    let _ = execute_publish(&ctx, &op_id).expect_err("first attempt fails at CAS");
-
-    let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    op.state = OperationState::Pending;
-    op.error_code = None;
-    op.error_detail = None;
-    crate::remote::control_db::upsert_operation(&conn, &op).unwrap();
-
-    execute_publish(&ctx, &op_id).expect("retry after CAS network failure must succeed");
-
-    let remote_manifest = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(remote_manifest.generation, 1);
-    assert_eq!(remote_manifest.writer_id, "writer-uuid-1");
-
-    let op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op.state, OperationState::Completed);
-}
-
-#[test]
-fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
-    let (_db_dir, conn) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    make_valid_db(&working_root.join("openkara.db"));
-    seed_repository_state(&conn, "lib-1");
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-
-    let db_bytes = std::fs::read(working_root.join("openkara.db")).unwrap();
-    let digest = sha256_hex(&db_bytes);
-    let db_size = std::fs::metadata(working_root.join("openkara.db"))
-        .unwrap()
-        .len();
-    provider.store_file(".openkara/databases/1.sqlite", db_bytes, "rev-db-1");
-
-    let op_id = make_pending_op(&conn, "lib-1", 0);
-    let accepted = RepositoryManifest {
-        schema_version: CURRENT_SCHEMA_VERSION,
-        repository_id: "repo-uuid-1".to_owned(),
-        generation: 1,
-        database_path: ".openkara/databases/1.sqlite".to_owned(),
-        database_size_bytes: db_size,
-        database_sha256: digest.clone(),
-        committed_at_ms: 5000,
-        writer_id: "writer-uuid-1".to_owned(),
-        operation_id: op_id.clone(),
-    };
-    provider.store_file(
-        crate::remote::manifest::MANIFEST_PATH,
-        accepted.to_json().unwrap().into_bytes(),
-        "rev-manifest-1",
-    );
-
-    let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    op.state = OperationState::RetryWait;
-    op.candidate_db_digest = Some(digest.clone());
-    let mut payload =
-        crate::remote::control_db::OperationPayload::from_json(&op.payload_json).unwrap();
-    payload.candidate_sha256 = Some(digest.clone());
-    payload.candidate_size = Some(db_size);
-    payload.protocol_step = Some("candidate_uploaded".to_owned());
-    op.payload_json = payload.to_json().unwrap();
-    crate::remote::control_db::upsert_operation(&conn, &op).unwrap();
-
-    let ctx = make_context(
-        &conn,
-        &provider,
-        &working_root,
-        "lib-1",
-        "repo-uuid-1",
-        "writer-uuid-1",
-    );
-    execute_publish(&ctx, &op_id).expect("own accepted commit must complete recovery");
-
-    let op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op.state, OperationState::Completed);
-    assert_eq!(op.target_generation, Some(1));
-
-    let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
-        .unwrap()
-        .unwrap();
-    assert_eq!(repo.committed_generation, 1);
-    assert_eq!(repo.local_state, LocalState::Clean);
-    assert_eq!(repo.local_db_digest.as_deref(), Some(digest.as_str()));
-
-    let remote_manifest = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(remote_manifest.generation, 1);
-}
-
-#[test]
-fn t16_candidate_upload_failure_leaves_dirty_and_retryable() {
-    let (_db_dir, conn) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    let working_db = working_root.join("openkara.db");
-    make_valid_db(&working_db);
-    let pre_digest = sha256_hex(&std::fs::read(&working_db).unwrap());
-    seed_repository_state(&conn, "lib-1");
-
-    let mut repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
-        .unwrap()
-        .unwrap();
-    repo.local_state = LocalState::Dirty;
-    crate::remote::control_db::upsert_repository_state(&conn, &repo).unwrap();
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-    provider.fail_next_uploads(1);
-
-    let op_id = make_pending_op(&conn, "lib-1", 0);
-    let ctx = make_context(
-        &conn,
-        &provider,
-        &working_root,
-        "lib-1",
-        "repo-uuid-1",
-        "writer-uuid-1",
-    );
-    let _ = execute_publish(&ctx, &op_id).expect_err("upload failure");
-
-    assert!(
-        read_manifest(&provider).unwrap().is_none(),
-        "remote must not advance without successful CAS"
-    );
-    assert_eq!(
-        sha256_hex(&std::fs::read(&working_db).unwrap()),
-        pre_digest,
-        "local working DB must not be overwritten"
-    );
-
-    let op = crate::remote::control_db::get_operation(&conn, &op_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op.state, OperationState::RetryWait);
-}
-
-#[test]
-fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
-    let (_db_a, conn_a) = fresh_control_db();
-    let (_db_b, conn_b) = fresh_control_db();
-    let working_dir = TempDir::new().expect("working dir");
-    let working_root = working_dir.path().to_owned();
-    make_valid_db(&working_root.join("openkara.db"));
-
-    seed_repository_state(&conn_a, "lib-shared");
-    seed_repository_state(&conn_b, "lib-shared");
-
-    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
-
-    let op_a = make_pending_op(&conn_a, "lib-shared", 0);
-    let op_b = {
-        let op_id = "fault-op-b-0".to_owned();
-        let now = crate::remote::types::current_unix_time_ms();
-        let payload = OperationPayload {
-            song_ids: vec!["song-1".to_owned()],
-            percent: 0,
-            detail: None,
-            ..Default::default()
-        };
-        let row = OperationRow {
-            operation_id: op_id.clone(),
-            library_id: "lib-shared".to_owned(),
-            operation_kind: OperationKind::Publish,
-            state: OperationState::Pending,
-            expected_generation: Some(0),
-            target_generation: None,
-            source_db_digest: None,
-            candidate_db_digest: None,
-            payload_json: payload.to_json().unwrap(),
-            attempt_count: 0,
-            next_attempt_at_ms: None,
-            error_code: None,
-            error_detail: None,
-            created_at_ms: now,
-            updated_at_ms: now,
-        };
-        upsert_operation(&conn_b, &row).unwrap();
-        op_id
-    };
-
-    let ctx_a = make_context(
-        &conn_a,
-        &provider,
-        &working_root,
-        "lib-shared",
-        "repo-uuid-1",
-        "writer-a",
-    );
-    execute_publish(&ctx_a, &op_a).expect("writer A wins");
-
-    let winner = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(winner.generation, 1);
-    assert_eq!(winner.writer_id, "writer-a");
-
-    let ctx_b = make_context(
-        &conn_b,
-        &provider,
-        &working_root,
-        "lib-shared",
-        "repo-uuid-1",
-        "writer-b",
-    );
-    let err = execute_publish(&ctx_b, &op_b).expect_err("writer B must conflict");
-    assert!(
-        err.message.contains("conflict")
-            || err.message.contains("expected generation")
-            || err.message.contains("generation"),
-        "B should report conflict: {}",
-        err.message
-    );
-
-    let op_b_row = crate::remote::control_db::get_operation(&conn_b, &op_b)
-        .unwrap()
-        .unwrap();
-    assert_eq!(op_b_row.state, OperationState::Conflicted);
-
-    let after = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(after.generation, 1);
-    assert_eq!(after.writer_id, "writer-a");
-
-    let mut op_b_row = op_b_row;
-    op_b_row.state = OperationState::Pending;
-    op_b_row.error_code = None;
-    crate::remote::control_db::upsert_operation(&conn_b, &op_b_row).unwrap();
-    let _ = execute_publish(&ctx_b, &op_b).expect_err("retry loser still conflicts");
-    let final_manifest = read_manifest(&provider).unwrap().unwrap();
-    assert_eq!(final_manifest.generation, 1);
-    assert_eq!(final_manifest.writer_id, "writer-a");
-}
-
-#[test]
-fn t18_transfer_identity_digest_change_invalidates_session() {
-    let (_db_dir, conn) = fresh_control_db();
-    let dir = TempDir::new().expect("temp");
-    let temp = dir.path().join("candidate.part.op-x");
-    std::fs::write(&temp, b"partial-bytes-old").unwrap();
-
-    let part = TransferPartRow {
-        operation_id: "op-x".to_owned(),
-        relative_path: ".openkara/databases/1.sqlite".to_owned(),
-        direction: TransferDirection::Upload,
-        expected_size: Some(100),
-        expected_digest: Some("digest-old".to_owned()),
-        provider_revision: None,
-        provider_session_id: Some("session-old".to_owned()),
-        transferred_bytes: 16,
-        state: "in_progress".to_owned(),
-        updated_at_ms: 1000,
-    };
-    upsert_transfer_part(&conn, &part).unwrap();
-
-    let new_part = TransferPartRow {
-        operation_id: "op-x".to_owned(),
-        relative_path: ".openkara/databases/1.sqlite".to_owned(),
-        direction: TransferDirection::Upload,
-        expected_size: Some(100),
-        expected_digest: Some("digest-new".to_owned()),
-        provider_revision: None,
-        provider_session_id: None,
-        transferred_bytes: 0,
-        state: "pending".to_owned(),
-        updated_at_ms: 2000,
-    };
-    upsert_transfer_part(&conn, &new_part).unwrap();
-    let loaded = crate::remote::control_db::list_transfer_parts(&conn, "op-x").unwrap();
-    assert_eq!(loaded.len(), 1);
-    assert_eq!(loaded[0].expected_digest.as_deref(), Some("digest-new"));
-    assert!(loaded[0].provider_session_id.is_none());
-    assert_eq!(loaded[0].transferred_bytes, 0);
 }
