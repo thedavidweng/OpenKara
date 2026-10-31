@@ -19,7 +19,7 @@ use super::super::types::{
     current_unix_time_ms, load_app_config, load_remote_root, persist_app_config,
 };
 
-use super::super::provider::{create_repository_storage, RepositoryStorage};
+use super::super::provider::{create_legacy_read_storage, LegacyReadStorage};
 
 pub(crate) fn update_remote_revision_in_config(
     app_data_dir: &Path,
@@ -218,7 +218,7 @@ impl openkara_remote::RefreshPolicy for CleanWorkingCopyPolicy<'_> {
 }
 
 pub(in crate::remote) fn remote_database_revision(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
 ) -> CommandResult<Option<String>> {
     // Manifest revision is the staleness signal; legacy falls back to openkara.db.
     let manifest_rev = provider.get_revision(MANIFEST_PATH)?;
@@ -267,7 +267,7 @@ pub(crate) fn prepare_remote_database_for_mutation(
         return refresh_working_copy_via_core(control_db_conn, app_data_dir, library);
     }
 
-    let provider = create_repository_storage(app_data_dir, library)?;
+    let provider = create_legacy_read_storage(app_data_dir, library)?;
     let provider_revision = remote_database_revision(provider.as_ref())?;
     if remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
         return pull_remote_database_atomically(
@@ -315,7 +315,7 @@ pub(in crate::remote) fn should_allow_automatic_pull(
 /// On failure, falls back to the existing local DB (returns the library
 /// unchanged) so the caller can proceed offline.
 pub(in crate::remote) fn pull_remote_database_atomically(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     control_db_conn: &Connection,
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -411,7 +411,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
     let root = load_remote_root(app_data_dir, &library)?;
     let destination = root.resolve(relative_path);
 
-    let provider = create_repository_storage(app_data_dir, &library)?;
+    let provider = create_legacy_read_storage(app_data_dir, &library)?;
 
     // Identity-keyed cache catalog (library_id, path, revision, size) — defect #7.
     let provider_revision = provider.get_revision(relative_path)?;

@@ -4,7 +4,7 @@
 //! until the manifest references it.
 
 use crate::commands::error::{internal_error, CommandResult};
-use crate::remote::provider::RepositoryStorage;
+use crate::remote::provider::LegacyReadStorage;
 use std::path::PathBuf;
 
 pub(crate) use openkara_remote::manifest::{
@@ -15,7 +15,7 @@ pub(crate) use openkara_remote::manifest::{
 pub(crate) use openkara_remote::manifest::{staging_dir_for_operation, validate_manifest};
 
 pub(crate) fn read_manifest(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
 ) -> CommandResult<Option<RepositoryManifest>> {
     // Use a unique temp path under the system temp dir. The manifest is small
     // (a few hundred bytes) so a full download is cheap. Include a UUID-like
@@ -95,6 +95,20 @@ mod tests {
     }
 
     impl crate::remote::provider::RepositoryStorage for FakeProvider {
+        fn delete_path(&self, _path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl crate::remote::provider::LegacyReadStorage for FakeProvider {
         fn media_source(&self) -> &dyn RemoteMediaSource {
             self
         }
@@ -114,9 +128,11 @@ mod tests {
                 Ok(None)
             }
         }
+
         fn get_revision(&self, path: &str) -> CommandResult<Option<String>> {
             Ok(self.revisions.lock().unwrap().get(path).cloned())
         }
+
         fn download_file(&self, path: &str, dest: &std::path::Path) -> CommandResult<()> {
             let bytes = self
                 .files
@@ -126,15 +142,6 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| internal_error(format!("fake provider: {path} not found")))?;
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
-        }
-        fn delete_path(&self, _path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 

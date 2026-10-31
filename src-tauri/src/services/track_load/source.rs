@@ -221,7 +221,7 @@ mod tests {
     use crate::library_root::LibraryRoot;
     use crate::remote::control_db::open_control_db;
     use crate::remote::provider::{
-        RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+        LegacyReadStorage, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
     };
     use openkara_remote::{MediaCache, DEFAULT_CACHE_BYTES_LIMIT};
     use std::collections::HashMap;
@@ -249,6 +249,20 @@ mod tests {
     }
 
     impl RepositoryStorage for FakeRemoteProvider {
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl LegacyReadStorage for FakeRemoteProvider {
         fn media_source(&self) -> &dyn RemoteMediaSource {
             self
         }
@@ -275,18 +289,6 @@ mod tests {
             })?;
             Ok(())
         }
-
-        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
     }
 
     impl RemoteMediaSource for FakeRemoteProvider {
@@ -307,7 +309,7 @@ mod tests {
     }
     /// Adapt a fake provider to the download closure `ensure_stem_set_cached` takes.
     fn download_via(
-        provider: &dyn RepositoryStorage,
+        provider: &dyn LegacyReadStorage,
     ) -> impl Fn(&str, &Path) -> anyhow::Result<()> + '_ {
         move |relative_path, destination| {
             provider
@@ -788,6 +790,20 @@ mod tests {
     }
 
     impl RepositoryStorage for CountingFakeProvider {
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl LegacyReadStorage for CountingFakeProvider {
         fn media_source(&self) -> &dyn RemoteMediaSource {
             self
         }
@@ -815,18 +831,6 @@ mod tests {
                 )))
             })?;
             Ok(())
-        }
-
-        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 

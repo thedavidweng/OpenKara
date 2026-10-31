@@ -218,7 +218,7 @@ fn force_dirty_for_active_publish_ops(connection: &Connection, clock: &Clock) ->
 pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_in_states, OperationKind};
     use crate::remote::executor::{execute_gc, generate_repository_id, generate_writer_id};
-    use crate::remote::provider::{create_legacy_publish_storage, create_repository_storage};
+    use crate::remote::provider::{create_legacy_publish_storage, create_legacy_read_storage};
     use crate::remote::sync::{
         load_registered_remote_library, may_have_crossed_cas_boundary,
         merge_pending_ops_for_publish, reconcile_cas_boundary_ops, run_publication_driver,
@@ -303,7 +303,8 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             );
             continue;
         }
-        let provider = match create_repository_storage(&state.shell.app_data_dir, &remote_library) {
+        let provider = match create_legacy_read_storage(&state.shell.app_data_dir, &remote_library)
+        {
             Ok(p) => p,
             Err(_) => continue,
         };
