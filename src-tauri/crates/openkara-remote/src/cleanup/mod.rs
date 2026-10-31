@@ -32,9 +32,15 @@
 //! objects cleanup does not recognize are left alone. A repository without a
 //! manifest is never cleaned.
 //!
-//! The port offers no conditional delete. An object that was rewritten after
-//! the listing is skipped by comparing revisions right before the delete, and
-//! nothing is deleted when the manifest moved while cleanup was planning.
+//! The port offers no conditional delete. Right before each delete, cleanup
+//! re-reads the manifest revision and the object's revision: once the
+//! manifest has moved it deletes nothing more, and an object rewritten after
+//! the listing is skipped. One race stays open. A publication that finds an
+//! old unreferenced asset already present skips its upload, and cleanup can
+//! delete that asset between the publisher's check and its manifest commit.
+//! The asset then stays missing until the next Publish Changes from that
+//! device, which uploads it again because every publication checks every
+//! asset it references.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -81,7 +87,7 @@ pub struct CleanupReport {
     pub kept_generations: Vec<i64>,
     pub deleted: Vec<String>,
     /// Unreferenced objects left for a later cleanup: written within the
-    /// grace period, rewritten since the listing, or planned while the
+    /// grace period, rewritten since the listing, or not yet deleted when the
     /// manifest moved.
     pub deferred: Vec<String>,
     /// Unreferenced objects the storage reported no modification time for.
@@ -185,18 +191,18 @@ pub fn clean_up_unreferenced_uploads(
         }
     }
 
-    let current_revision = storage
-        .stat(MANIFEST_PATH)?
-        .and_then(|metadata| metadata.revision);
-    if current_revision != manifest_revision {
-        report
-            .deferred
-            .extend(deletable.into_iter().map(|object| object.path.clone()));
-        report.deferred.sort();
-        return Ok(report);
-    }
-
-    for object in deletable {
+    let mut deletable = deletable.into_iter();
+    while let Some(object) = deletable.next() {
+        let current_revision = storage
+            .stat(MANIFEST_PATH)?
+            .and_then(|metadata| metadata.revision);
+        if current_revision != manifest_revision {
+            report.deferred.push(object.path.clone());
+            report
+                .deferred
+                .extend(deletable.map(|object| object.path.clone()));
+            break;
+        }
         match storage.stat(&object.path)? {
             None => {}
             Some(metadata) if metadata.revision != object.metadata.revision => {

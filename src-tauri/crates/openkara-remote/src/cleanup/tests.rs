@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -438,19 +439,42 @@ fn objects_outside_the_managed_directories_are_left_alone() {
     assert_eq!(listed_paths(&storage), before);
 }
 
-/// Lists objects without modification times, like a server that omits
-/// `getlastmodified`.
-struct UndatedStorage(MemoryStorage);
+/// A [`MemoryStorage`] whose listings can omit modification times, like a
+/// server that does not report `getlastmodified`, and on which another device
+/// can commit a generation right after the first delete.
+struct ScriptedStorage {
+    inner: MemoryStorage,
+    undated: bool,
+    commit_after_first_delete: Cell<bool>,
+}
 
-impl RepositoryStorage for UndatedStorage {
+impl ScriptedStorage {
+    fn undated(inner: MemoryStorage) -> Self {
+        Self {
+            inner,
+            undated: true,
+            commit_after_first_delete: Cell::new(false),
+        }
+    }
+
+    fn committing_after_first_delete(inner: MemoryStorage) -> Self {
+        Self {
+            inner,
+            undated: false,
+            commit_after_first_delete: Cell::new(true),
+        }
+    }
+}
+
+impl RepositoryStorage for ScriptedStorage {
     fn capabilities(&self) -> StorageCapabilities {
-        self.0.capabilities()
+        self.inner.capabilities()
     }
     fn stat(&self, path: &str) -> RemoteResult<Option<ObjectMetadata>> {
-        self.0.stat(path)
+        self.inner.stat(path)
     }
     fn read(&self, path: &str, sink: &mut dyn std::io::Write) -> RemoteResult<u64> {
-        self.0.read(path, sink)
+        self.inner.read(path, sink)
     }
     fn read_range(
         &self,
@@ -459,10 +483,10 @@ impl RepositoryStorage for UndatedStorage {
         length: u64,
         sink: &mut dyn std::io::Write,
     ) -> RemoteResult<u64> {
-        self.0.read_range(path, offset, length, sink)
+        self.inner.read_range(path, offset, length, sink)
     }
     fn write_new(&self, path: &str, bytes: &[u8]) -> RemoteResult<ObjectMetadata> {
-        self.0.write_new(path, bytes)
+        self.inner.write_new(path, bytes)
     }
     fn conditional_replace(
         &self,
@@ -470,22 +494,56 @@ impl RepositoryStorage for UndatedStorage {
         bytes: &[u8],
         expected_revision: &str,
     ) -> RemoteResult<ObjectMetadata> {
-        self.0.conditional_replace(path, bytes, expected_revision)
+        self.inner
+            .conditional_replace(path, bytes, expected_revision)
     }
     fn list(&self, prefix: &str) -> RemoteResult<Vec<ListedObject>> {
         Ok(self
-            .0
+            .inner
             .list(prefix)?
             .into_iter()
             .map(|object| ListedObject {
-                modified_at_ms: None,
+                modified_at_ms: object.modified_at_ms.filter(|_| !self.undated),
                 ..object
             })
             .collect())
     }
     fn delete(&self, path: &str) -> RemoteResult<()> {
-        self.0.delete(path)
+        self.inner.delete(path)?;
+        if self.commit_after_first_delete.replace(false) {
+            let mut manifest = Vec::new();
+            self.inner.read(MANIFEST_PATH, &mut manifest)?;
+            let revision = self
+                .inner
+                .stat(MANIFEST_PATH)?
+                .and_then(|metadata| metadata.revision)
+                .expect("manifest revision");
+            self.inner
+                .conditional_replace(MANIFEST_PATH, &manifest, &revision)?;
+        }
+        Ok(())
     }
+}
+
+#[test]
+fn cleanup_stops_deleting_once_another_device_commits() {
+    let start = base_clock_ms();
+    let repository = three_generations(MemoryStorage::new(), start, HOUR_MS);
+    let orphan = format!("media/content/{}.flac", "e".repeat(64));
+    repository
+        .storage
+        .write_new(&orphan, b"orphan audio")
+        .expect("orphan asset");
+    let storage = ScriptedStorage::committing_after_first_delete(repository.storage.clone());
+
+    let report = clean_up(&storage, repository.last_publish_ms + 2 * GRACE_MS).expect("cleanup");
+    assert_eq!(
+        report.deleted,
+        std::slice::from_ref(&repository.first_snapshot)
+    );
+    assert_eq!(report.deferred, sorted(&[&orphan, &repository.song_b]));
+    assert!(storage.stat(&orphan).expect("stat").is_some());
+    assert!(storage.stat(&repository.song_b).expect("stat").is_some());
 }
 
 #[test]
@@ -497,7 +555,7 @@ fn objects_without_a_modification_time_are_never_deleted() {
         .storage
         .write_new(&orphan, b"orphan audio")
         .expect("orphan asset");
-    let undated = UndatedStorage(repository.storage.clone());
+    let undated = ScriptedStorage::undated(repository.storage.clone());
     let before = listed_paths(&undated);
 
     let report = clean_up(&undated, repository.last_publish_ms + 2 * GRACE_MS).expect("cleanup");

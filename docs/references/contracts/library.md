@@ -294,7 +294,7 @@ Publish Song 在 WebDAV 资料库上经 Remote Repository core 执行，只上�
 - WebDAV 资料库每次 Publish Changes 成功后，桌面端为该资料库保留至多一个待执行的 `gc` operation，在 24 小时宽限期之后由后台执行器运行 `openkara_remote::clean_up_unreferenced_uploads`。Dropbox 与 Google Drive 仍使用旧执行器的 generation GC。
 - 清理保留当前与上一个 generation 的数据库快照，以及在宽限期内才被取代的更早 generation，确保手机能读完刷新时的 generation。被这些快照引用的资产都保留。
 - 其余 `media/`、`media-g/`、`stems/`、`artwork/` 对象和 `.openkara/databases/` 快照，只有在最后写入时间早于宽限期时才删除，因此其他设备正在进行的发布不受影响；存储未报告修改时间的对象永不删除。
-- manifest、旧版根目录 `openkara.db` 与无法识别的对象永不删除；没有 manifest 的资料库不清理；任一保留快照无法下载或解析、或清理期间 manifest 改变时，不删除任何对象。
+- manifest、旧版根目录 `openkara.db` 与无法识别的对象永不删除；没有 manifest 的资料库不清理；任一保留快照无法下载或解析时，不删除任何对象；每次删除前都会重新检查 manifest，manifest 一旦改变就停止删除，其余对象留给下一次清理。
 - 手机通过只读存储（`openkara_remote::ReadOnlyStorage`）打开资料库，永不删除、写入或替换远端对象。
 
 新增命令：
