@@ -394,6 +394,7 @@ artifact. A report whose `status` is `failed` is not qualification evidence:
 an app-applicable edge was attempted and failed to load or measure. Supported
 manifest edges whose model is deprecated or declares the legacy `waveform`
 interface are catalog-compatible but not app-applicable in this OpenKara
-contract; the producer declares them in `skipped_edges` and they do not by
-themselves fail the report. The gate must recompute that set from the manifest
-rather than trust the declaration.
+contract; the producer declares them in `skipped_edges` with `scope` =
+`interface` or `deprecated`, and they do not by themselves fail the report.
+The gate must recompute both conditions from the manifest rather than trust the
+declaration.

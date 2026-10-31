@@ -24,10 +24,11 @@
 //! spectral-core only (`catalog::resolve_model`, `model::
 //! ensure_spectral_core_metadata`), so a supported manifest edge whose model is
 //! deprecated or declares the legacy `waveform` interface is catalog-compatible
-//! but not app-applicable. Those edges are declared in `skipped_edges` and do
-//! not fail the report. An app-applicable edge that fails to measure keeps the
-//! report `failed`; a skipped edge outside the catalog-declared non-loadable
-//! set is never silently accepted by the gate.
+//! but not app-applicable. Those edges are declared in `skipped_edges` with a
+//! `scope` (`interface` or `deprecated`) and do not fail the report. An
+//! app-applicable edge that fails to measure keeps the report `failed`; a
+//! skipped edge outside the catalog-declared non-loadable set is never silently
+//! accepted by the gate, which recomputes both conditions from the manifest.
 //!
 //! The producer never writes to the model catalog repository. It reads the
 //! candidate pointer/manifest and the local artifact archives named by the
@@ -129,6 +130,11 @@ struct SkippedEdge {
     tensor_interface: String,
     /// True when the model artifact is deprecated in the manifest.
     deprecated: bool,
+    /// Which manifest-declared condition makes this edge non-applicable.
+    /// The gate recomputes `interface` (`tensor_interface != "spectral-core"`)
+    /// and `deprecated` (`deprecation.deprecated`) from the manifest and only
+    /// accepts a row whose declared scope matches that recomputation.
+    scope: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -348,7 +354,7 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
     let mut skipped = Vec::new();
     let mut failed = Vec::new();
     for (edge, model_meta) in &edges {
-        if !is_app_loadable(model_meta) {
+        if let Some(scope) = non_applicable_scope(model_meta) {
             skipped.push(SkippedEdge {
                 model_artifact_id: model_meta.artifact_id.clone(),
                 runtime_artifact_id: edge.runtime_artifact_id.clone(),
@@ -356,6 +362,7 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
                 execution_provider: edge.execution_provider.clone(),
                 tensor_interface: model_meta.model.tensor_interface.clone(),
                 deprecated: model_meta.deprecation.deprecated,
+                scope: scope.to_owned(),
             });
             continue;
         }
@@ -465,8 +472,17 @@ pub fn produce(config: EvidenceConfig) -> Result<EvidenceOutcome> {
 /// is catalog-compatible but not app-applicable.
 const APP_LOADABLE_TENSOR_INTERFACE: &str = "spectral-core";
 
-fn is_app_loadable(model: &catalog::CatalogModel) -> bool {
-    !model.deprecation.deprecated && model.model.tensor_interface == APP_LOADABLE_TENSOR_INTERFACE
+/// Why a supported manifest edge is not app-applicable. `interface` wins when
+/// both conditions hold: a waveform artifact is also deprecated in current
+/// catalogs, and the interface is the stronger, loader-level reason.
+fn non_applicable_scope(model: &catalog::CatalogModel) -> Option<&'static str> {
+    if model.model.tensor_interface != APP_LOADABLE_TENSOR_INTERFACE {
+        Some("interface")
+    } else if model.deprecation.deprecated {
+        Some("deprecated")
+    } else {
+        None
+    }
 }
 
 fn supported_edges(
