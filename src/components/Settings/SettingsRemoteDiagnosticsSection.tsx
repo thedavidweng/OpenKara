@@ -88,7 +88,6 @@ export function SettingsRemoteDiagnosticsSection() {
               </ul>
             </div>
           )}
-
           <div className="flex gap-2">
             <button
               type="button"
