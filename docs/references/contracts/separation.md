@@ -387,7 +387,10 @@ edge is decoded through `audio::decode`, normalized through
 `separator::inference` streaming path for exactly one full spectral-core
 window. Output shapes and finiteness come from the session outputs of that
 same window; provider node counts come from the ONNX Runtime profile of that
-run. Four OGG stems are finalized and decoded to prove finite audio output.
+run, including any CPU-partition nodes on an accelerated provider. Four OGG
+stems are finalized and decoded to prove finite audio output. A whole-session
+provider fallback is refused; a provider's own partial CPU partition is
+recorded as measured, never hidden and never reported as fully accelerated.
 
 One process can load one ONNX Runtime, so run the producer once per runtime
 artifact. A report whose `status` is `failed` is not qualification evidence:

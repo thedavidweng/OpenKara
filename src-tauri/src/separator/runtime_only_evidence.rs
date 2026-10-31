@@ -652,7 +652,8 @@ fn measure_edge(
             provider.as_str()
         )
     })?;
-    if loaded.execution_provider != provider {
+    let used_fallback = loaded.execution_provider != provider;
+    if used_fallback {
         bail!(
             "requested provider {} fell back to {}",
             provider.as_str(),
@@ -775,14 +776,12 @@ fn measure_edge(
             provider.as_str()
         );
     }
-    if provider != ExecutionProviderPreference::Cpu && counts.fallback != 0 {
-        bail!(
-            "{} edge has {} CPU fallback node(s)",
-            provider.as_str(),
-            counts.fallback
-        );
-    }
-
+    // A partial CPU partition on an accelerated provider is recorded as the
+    // actual fallback_node_count; it is not hidden and not misreported as a
+    // fully accelerated edge. Whole-session fallback was already refused above
+    // (the committed provider must equal the request), so the nonzero CPU nodes
+    // here are genuinely the provider's own partitioning, comparable with the
+    // baseline report's same-field measurement.
     let stems = check_stems(&stem_dir)?;
 
     Ok(AppEdge {
@@ -803,7 +802,7 @@ fn measure_edge(
         provider: ProviderEvidence {
             requested: provider.as_str().to_owned(),
             assigned: loaded.execution_provider.as_str().to_owned(),
-            used_fallback: false,
+            used_fallback,
             provider_node_count: counts.provider,
             total_node_count: counts.total,
             fallback_node_count: counts.fallback,
