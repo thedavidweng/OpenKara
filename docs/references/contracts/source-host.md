@@ -7,6 +7,34 @@ import, and library writes. See
 [ADR 0041](../../adr/0041-run-streaming-sources-as-sandboxed-packages-from-user-added-registries.md)
 and the [source protocol](streaming-source-protocol.md).
 
+## Build feature
+
+The Cargo feature `streaming-sources` is on by default. A build with
+`--no-default-features` compiles Streaming Sources out of the app. That build
+does not contain:
+
+- The `source_host` module, the embedded engine, and the engine-only
+  dependencies (`rquickjs`, the source crypto crates, `ring`, `semver`, and the
+  reqwest cookie store).
+- The application adapter: source credentials, authentication windows,
+  catalog pages, Streaming Import, and Online Preview.
+- Every Streaming Source command in the [catalog contract](catalog.md), except
+  `streaming_sources_supported()`.
+- The events `streaming-source-status`, `source-registry-link`,
+  `streaming-sign-in-complete`, `streaming-sign-in-error`,
+  `streaming-import-progress`, and `streaming-import-complete`.
+- The `source_registry_link` module and the Tauri deep-link plugin. The config
+  overlay `src-tauri/tauri.no-streaming-sources.conf.json` removes the
+  `openkara` scheme registration from the bundle.
+
+Build the app without Streaming Sources with
+`pnpm tauri build --config src-tauri/tauri.no-streaming-sources.conf.json -- --no-default-features`.
+App Store builds always use this build. An iOS build with the feature on
+fails to compile. The build does not read or delete
+`<app_data>/streaming-sources/` or saved Streaming Credentials, so a later
+build with the feature finds them again. Songs that a Streaming Import added
+stay ordinary library songs.
+
 ## Source Registry distribution
 
 A Source Registry is a UTF-8 JSON document at an HTTPS URL. OpenKara ships

@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { StreamingImportBar } from "@/components/Catalog/StreamingImportBar";
 import { LibraryDecisionDialog } from "@/components/Library/LibraryDecisionDialog";
@@ -9,11 +16,16 @@ import type {
   SourceRegistryLink,
   StreamingImportCompleteEvent,
 } from "@/types/ipc";
-import { startStreamingRuntime } from "./streaming-runtime";
+import {
+  startStreamingRuntime,
+  useStreamingRuntime,
+} from "./streaming-runtime";
 
-const { handlers, pendingLinks } = vi.hoisted(() => ({
+const { handlers, pendingLinks, invoked, support } = vi.hoisted(() => ({
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
   pendingLinks: [] as SourceRegistryLink[],
+  invoked: [] as string[],
+  support: { supported: true },
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (
@@ -25,8 +37,14 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async (command: string) =>
-    command === "take_source_registry_links" ? pendingLinks.splice(0) : [],
+  invoke: async (command: string) => {
+    invoked.push(command);
+    if (command === "streaming_sources_supported") return support.supported;
+    if (command === "get_streaming_import_status") return null;
+    return command === "take_source_registry_links"
+      ? pendingLinks.splice(0)
+      : [];
+  },
 }));
 vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: () => {} },
@@ -37,8 +55,11 @@ afterEach(() => {
   cleanup();
   handlers.clear();
   pendingLinks.splice(0);
+  invoked.splice(0);
+  support.supported = true;
   useSettingsStore.setState({ isOpen: false });
   useCatalogStore.setState({
+    sourcesSupported: null,
     registryLink: null,
     importRun: null,
     pendingConflict: null,
@@ -189,6 +210,41 @@ describe("source registry links", () => {
       expect(useCatalogStore.getState().registryLink).toEqual(link);
     } finally {
       stop();
+    }
+  });
+});
+
+describe("streaming runtime availability", () => {
+  test("a build with Streaming Sources subscribes and loads sources", async () => {
+    const { unmount } = renderHook(() => useStreamingRuntime(true));
+    try {
+      await waitFor(() =>
+        expect(handlers.has("streaming-source-status")).toBe(true),
+      );
+      expect(invoked).toContain("list_streaming_sources");
+      expect(useCatalogStore.getState().sourcesSupported).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a build without Streaming Sources calls no source command and listens to no source event", async () => {
+    support.supported = false;
+    pendingLinks.push({
+      kind: "add_registry",
+      url: "https://sources.example.com/registry.json",
+    });
+    const { unmount } = renderHook(() => useStreamingRuntime(true));
+    try {
+      await waitFor(() =>
+        expect(useCatalogStore.getState().sourcesSupported).toBe(false),
+      );
+      await act(async () => {});
+      expect(invoked).toEqual(["streaming_sources_supported"]);
+      expect(handlers.size).toBe(0);
+      expect(useSettingsStore.getState().isOpen).toBe(false);
+    } finally {
+      unmount();
     }
   });
 });

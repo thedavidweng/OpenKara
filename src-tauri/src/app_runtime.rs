@@ -194,35 +194,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         unpackaged_generated_resource_dir(),
         |path| path.exists(),
     );
-    let source_config = crate::source_host::HostConfig::production(
-        app_data_dir.clone(),
-        app_resource_dir.clone(),
-        app.package_info().version.to_string(),
-    );
-    let source_host = match tauri::async_runtime::block_on(crate::source_host::SourceHost::new(
-        source_config.clone(),
-    )) {
-        Ok(host) => host,
-        Err(error) => crate::source_host::SourceHost::unavailable(source_config, error),
-    };
-    if let Err(error) = crate::catalog::clear_retired_sessions(&source_host, &app_data_dir) {
-        tracing::warn!(%error, "could not remove credentials of retired Node-era sources");
-    }
-    let mut source_updates = source_host.subscribe();
-    app.manage(source_host);
-    crate::source_registry_link::listen(app);
-    let source_app = app.handle().clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            match source_updates.recv().await {
-                Ok(snapshot) => {
-                    let _ = source_app.emit_to("main", "streaming-source-status", snapshot);
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    });
+    #[cfg(feature = "streaming-sources")]
+    start_streaming_sources(app, &app_data_dir, &app_resource_dir);
 
     if let Err(err) = separator::activation::resolve_and_load(
         &app_data_dir,
@@ -417,6 +390,43 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     spawn_window_reveal_watchdog(app);
 
     Ok(())
+}
+
+#[cfg(feature = "streaming-sources")]
+fn start_streaming_sources<R: Runtime>(
+    app: &mut tauri::App<R>,
+    app_data_dir: &Path,
+    app_resource_dir: &Path,
+) {
+    let source_config = crate::source_host::HostConfig::production(
+        app_data_dir.to_path_buf(),
+        app_resource_dir.to_path_buf(),
+        app.package_info().version.to_string(),
+    );
+    let source_host = match tauri::async_runtime::block_on(crate::source_host::SourceHost::new(
+        source_config.clone(),
+    )) {
+        Ok(host) => host,
+        Err(error) => crate::source_host::SourceHost::unavailable(source_config, error),
+    };
+    if let Err(error) = crate::catalog::clear_retired_sessions(&source_host, app_data_dir) {
+        tracing::warn!(%error, "could not remove credentials of retired Node-era sources");
+    }
+    let mut source_updates = source_host.subscribe();
+    app.manage(source_host);
+    crate::source_registry_link::listen(app);
+    let source_app = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match source_updates.recv().await {
+                Ok(snapshot) => {
+                    let _ = source_app.emit_to("main", "streaming-source-status", snapshot);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 }
 
 /// Watchdog reveal if the frontend `window_ready` handshake never arrives.

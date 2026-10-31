@@ -11,6 +11,7 @@ import {
   test,
   vi,
 } from "vite-plus/test";
+import { useCatalogStore } from "@/stores/catalog-store";
 import { createInitializedSettingsHarness } from "@/test-utils/settings-controller";
 import { SettingsControllerContext } from "./SettingsController.context";
 import { SettingsOnlineSourcesSection } from "./SettingsOnlineSourcesSection";
@@ -45,6 +46,67 @@ describe("SettingsOnlineSourcesSection", () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    useCatalogStore.setState({ sourcesSupported: null });
+  });
+
+  test("a build with Streaming Sources shows source management", async () => {
+    useCatalogStore.setState({ sourcesSupported: true });
+    const harness = await createInitializedSettingsHarness();
+
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsOnlineSourcesSection />
+        </SettingsControllerContext>,
+      );
+    });
+
+    expect(container.textContent).toContain("Source management");
+    expect(container.textContent).toContain("Registry management");
+    expect(container.textContent).toContain("Source market");
+    expect(container.textContent).not.toContain(
+      "This OpenKara build does not include Streaming Sources.",
+    );
+  });
+
+  test("source management waits for the support check", async () => {
+    const harness = await createInitializedSettingsHarness();
+
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsOnlineSourcesSection />
+        </SettingsControllerContext>,
+      );
+    });
+
+    expect(container.textContent).not.toContain("Source management");
+    expect(container.textContent).not.toContain(
+      "This OpenKara build does not include Streaming Sources.",
+    );
+  });
+
+  test("a build without Streaming Sources states the limit instead of source management", async () => {
+    useCatalogStore.setState({ sourcesSupported: false });
+    const harness = await createInitializedSettingsHarness();
+
+    act(() => {
+      root.render(
+        <SettingsControllerContext value={harness.controller}>
+          <SettingsOnlineSourcesSection />
+        </SettingsControllerContext>,
+      );
+    });
+
+    expect(container.textContent).toContain(
+      "This OpenKara build does not include Streaming Sources.",
+    );
+    expect(container.textContent).not.toContain("Source management");
+    expect(container.textContent).not.toContain("Registry management");
+    expect(container.textContent).not.toContain("Source market");
+    expect(
+      container.querySelector('[data-testid="online-source-youtube"]'),
+    ).not.toBeNull();
   });
 
   test("renders the built-in video source off by default", async () => {

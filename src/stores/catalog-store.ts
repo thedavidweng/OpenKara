@@ -68,6 +68,7 @@ export interface SourceBrowseState {
 export interface CatalogState extends SourceBrowseState {
   activeView: "library" | "streaming";
   activeSourceId: string | null;
+  sourcesSupported: boolean | null;
   sources: SourceSnapshot[];
   sourceStates: Record<string, SourceBrowseState>;
   sourcesStatus: LoadStatus;
@@ -87,6 +88,7 @@ export interface CatalogState extends SourceBrowseState {
   importRun: ImportRun | null;
   activeImportIds: string[];
   youtubeLinkOpen: boolean;
+  loadSourcesSupport: () => Promise<boolean>;
   applySources: (sources: SourceSnapshot[]) => void;
   loadSources: (refresh?: boolean) => Promise<void>;
   applySource: (source: SourceSnapshot) => void;
@@ -209,6 +211,7 @@ export function createCatalogStore(
 ): CatalogStore {
   const generations = new Map<string, number>();
   const authTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let supportCheck: Promise<boolean> | null = null;
   const generation = (id: string, operation: string) => {
     const key = `${id}:${operation}`;
     const next = (generations.get(key) ?? 0) + 1;
@@ -405,6 +408,7 @@ export function createCatalogStore(
     ...emptyBrowse(),
     activeView: "library",
     activeSourceId: null,
+    sourcesSupported: null,
     sources: [],
     sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
     sourcesStatus: "idle",
@@ -424,6 +428,19 @@ export function createCatalogStore(
     importRun: null,
     activeImportIds: [],
     youtubeLinkOpen: false,
+    loadSourcesSupport: async () => {
+      const known = get().sourcesSupported;
+      if (known !== null) return known;
+      supportCheck ??= backend.catalog
+        .streamingSourcesSupported()
+        .catch(() => false)
+        .then((supported) => {
+          supportCheck = null;
+          set({ sourcesSupported: supported });
+          return supported;
+        });
+      return supportCheck;
+    },
     applySources: (sources) => {
       for (const source of sources) get().applySource(source);
     },

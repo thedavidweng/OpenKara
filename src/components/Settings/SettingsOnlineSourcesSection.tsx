@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useCatalogStore } from "@/stores/catalog-store";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettings } from "./SettingsController.context";
 import { SourceMarket } from "./SourceMarket";
@@ -10,6 +11,7 @@ export function SettingsOnlineSourcesSection() {
   const { view, preferences } = useSettings();
   const { isInitializing } = view;
   const settings = view.preferences;
+  const sourcesSupported = useCatalogStore((s) => s.sourcesSupported);
 
   return (
     <SettingsSectionCard title={t("settings.onlineSources.label")}>
@@ -39,15 +41,24 @@ export function SettingsOnlineSourcesSection() {
             {t("settings.onlineSources.youtubeDescription")}
           </p>
         </div>
-        <div className="border-t border-[var(--color-border)] pt-4">
-          <StreamingSources />
-        </div>
-        <div className="border-t border-[var(--color-border)] pt-4">
-          <SourceRegistries />
-        </div>
-        <div className="border-t border-[var(--color-border)] pt-4">
-          <SourceMarket />
-        </div>
+        {sourcesSupported === false ? (
+          <p className="border-t border-[var(--color-border)] pt-4 text-[11px] text-[var(--color-text-dim)]">
+            {t("settings.streaming.notIncluded")}
+          </p>
+        ) : null}
+        {sourcesSupported ? (
+          <>
+            <div className="border-t border-[var(--color-border)] pt-4">
+              <StreamingSources />
+            </div>
+            <div className="border-t border-[var(--color-border)] pt-4">
+              <SourceRegistries />
+            </div>
+            <div className="border-t border-[var(--color-border)] pt-4">
+              <SourceMarket />
+            </div>
+          </>
+        ) : null}
       </div>
     </SettingsSectionCard>
   );
