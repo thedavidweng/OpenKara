@@ -1,7 +1,7 @@
 # ADR 0040 — Rebase song-scoped outbox changes on publish
 
 Date: 2026-10-26
-Status: accepted
+Status: accepted, amended by [0045](./0045-verify-the-rebase-base-and-limit-keep-local-to-the-approved-conflict.md)
 
 ## Context
 
@@ -15,10 +15,6 @@ Keep ADR 0011 and ADR 0018. Supersede the `CONTEXT.md` wording that raised a who
 
 - Edits to different songs on two devices publish without a Pre-Publish Conflict and without silent overwrites.
 - The writer must retain the base database snapshot for the active generation until Publish Changes commits.
-- The Local Working Copy keeps one base database snapshot per remote generation and records the SHA-256 digest of the base it trusts. A rebase uses a base only when its bytes match that recorded digest; a missing, unrecorded, or altered base turns the publication into a whole-repository Pre-Publish Conflict and keeps the local changes. Older bases are pruned only after the new commit is recorded durably, so a crash at any point of the commit leaves a base the retry can verify.
-- The rebase decides a song's scope by comparing the base and local snapshots, not by trusting outbox song ids, so an outbox entry for a song whose rows did not change never overrides the remote rows.
-- A Keep Local resolution is stored on the pending operation, so a retry after a failed upload or an app restart keeps the keep-local policy.
-- The singleton base snapshot written by 0.19.x is adopted once if its bytes match the recorded local database digest, then removed; an unverified legacy base is never used for a rebase.
 - Local mutations must record accurate song ids or set the whole-repository flag in the outbox.
 - A Pre-Publish Conflict must name the conflicting songs whenever song-scoped changes collide.
 - Tests script failures through the in-memory storage port instead of production fault-injection code, which changes how tests exercise ADR 0018 restart recovery without changing recovery behavior.
