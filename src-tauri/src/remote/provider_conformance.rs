@@ -4,7 +4,8 @@ use super::{
         RemoteResult,
     },
     provider::{
-        LegacyPublishStorage, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+        LegacyPublishStorage, LegacyReadStorage, RemoteMediaSource, RemoteMediaSourceCapabilities,
+        RepositoryStorage,
     },
 };
 use crate::commands::error::{internal_error, CommandResult};
@@ -71,6 +72,24 @@ impl ScriptedProvider {
 }
 
 impl RepositoryStorage for ScriptedProvider {
+    fn delete_path(&self, path: &str) -> CommandResult<()> {
+        self.files
+            .lock()
+            .expect("scripted provider lock")
+            .remove(path);
+        Ok(())
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        Ok(Some(self.revision()))
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        Ok(Some(self.revision()))
+    }
+}
+
+impl LegacyReadStorage for ScriptedProvider {
     fn media_source(&self) -> &dyn RemoteMediaSource {
         self
     }
@@ -101,22 +120,6 @@ impl RepositoryStorage for ScriptedProvider {
             .cloned()
             .ok_or_else(|| internal_error(format!("missing scripted file {path}")))?;
         fs::write(destination, bytes).map_err(|error| internal_error(error.to_string()))
-    }
-
-    fn delete_path(&self, path: &str) -> CommandResult<()> {
-        self.files
-            .lock()
-            .expect("scripted provider lock")
-            .remove(path);
-        Ok(())
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        Ok(Some(self.revision()))
-    }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        Ok(Some(self.revision()))
     }
 }
 

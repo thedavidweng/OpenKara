@@ -14,7 +14,10 @@ use std::path::Path;
 use super::{
     atomic_download::reconcile_database_state_after_restart,
     auth_binding::BindContext,
-    provider::{compute_remote_path_display, create_repository_storage, RepositoryStorage},
+    provider::{
+        compute_remote_path_display, create_legacy_read_storage, create_repository_storage,
+        LegacyReadStorage, RepositoryStorage,
+    },
     registry::{mark_session_binding, ready_session_binding},
     sync::{
         pull_remote_database_atomically, refresh_working_copy_via_core, remote_database_revision,
@@ -24,7 +27,7 @@ use super::{
 };
 
 /// Everything the Remote Repository access actions need from the Remote
-/// Provider. Both entries are bound to one registered repository: credentials
+/// Provider. Every entry is bound to one registered repository: credentials
 /// must be stored before storage can be opened for it.
 pub(crate) trait RepositoryAccess {
     fn bind_credentials(
@@ -40,6 +43,14 @@ pub(crate) trait RepositoryAccess {
         app_data_dir: &'a Path,
         library: &'a RegisteredLibrary,
     ) -> CommandResult<Box<dyn RepositoryStorage + 'a>>;
+
+    /// The legacy read path that refreshes Dropbox and Google Drive
+    /// repositories; WebDAV repositories refresh through the core.
+    fn open_legacy_read_storage<'a>(
+        &self,
+        app_data_dir: &'a Path,
+        library: &'a RegisteredLibrary,
+    ) -> CommandResult<Box<dyn LegacyReadStorage + 'a>>;
 }
 
 pub(crate) struct ProviderRepositoryAccess;
@@ -61,6 +72,14 @@ impl RepositoryAccess for ProviderRepositoryAccess {
         library: &'a RegisteredLibrary,
     ) -> CommandResult<Box<dyn RepositoryStorage + 'a>> {
         create_repository_storage(app_data_dir, library)
+    }
+
+    fn open_legacy_read_storage<'a>(
+        &self,
+        app_data_dir: &'a Path,
+        library: &'a RegisteredLibrary,
+    ) -> CommandResult<Box<dyn LegacyReadStorage + 'a>> {
+        create_legacy_read_storage(app_data_dir, library)
     }
 }
 
@@ -301,7 +320,9 @@ impl<'a> RemoteRepositoryLifecycle<'a> {
         // Pull via manifest (or legacy root DB). Do not call initialize_or_sync —
         // it always downloads root openkara.db and can clobber a generation
         // working copy.
-        let storage = self.access.open_storage(self.app_data_dir, library)?;
+        let storage = self
+            .access
+            .open_legacy_read_storage(self.app_data_dir, library)?;
         let provider_revision = remote_database_revision(storage.as_ref())?;
         if !remote_database_revision_is_stale(
             library.remote_revision(),
@@ -455,6 +476,14 @@ mod tests {
                 .lock()
                 .expect("scripted access lock")
                 .push(library.remote_root_locator().unwrap_or_default().to_owned());
+            Ok(Box::new(self.provider.handle()))
+        }
+
+        fn open_legacy_read_storage<'b>(
+            &self,
+            _app_data_dir: &'b Path,
+            _library: &'b RegisteredLibrary,
+        ) -> CommandResult<Box<dyn LegacyReadStorage + 'b>> {
             Ok(Box::new(self.provider.handle()))
         }
     }
@@ -697,6 +726,14 @@ mod tests {
             config.active_library_id = None;
             persist_app_config(&self.app_data_dir, &config).expect("persist removal");
             self.inner.open_storage(app_data_dir, library)
+        }
+
+        fn open_legacy_read_storage<'b>(
+            &self,
+            app_data_dir: &'b Path,
+            library: &'b RegisteredLibrary,
+        ) -> CommandResult<Box<dyn LegacyReadStorage + 'b>> {
+            self.inner.open_legacy_read_storage(app_data_dir, library)
         }
     }
 

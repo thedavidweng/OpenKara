@@ -6,11 +6,9 @@ use crate::library::error::LibraryError;
 use crate::remote::control_db::{get_repository_state, LocalState};
 use crate::remote::executor::{
     conflict_keep_local_as_new_generation, conflict_use_remote, pull_conflict_candidate,
-    resolve_conflict_keep_local_via_core, PublishContext,
+    pull_conflict_candidate_via_core, resolve_conflict_keep_local_via_core, PublishContext,
 };
-use crate::remote::provider::{
-    create_legacy_publish_storage, create_repository_storage, RepositoryStorage,
-};
+use crate::remote::provider::create_legacy_publish_storage;
 use crate::remote::types::load_app_config;
 use crate::AppState;
 
@@ -103,16 +101,13 @@ pub fn resolve_active_remote_conflict(
     // until they choose to discard it.
     let candidate = candidate_path(&working_copy_root, &operation_id);
     let result = if uses_core_writer {
-        let storage = create_repository_storage(&state.shell.app_data_dir, active_library)?;
-        pull_conflict_candidate(storage.as_ref(), &candidate).and_then(|manifest| {
-            use_remote(
-                &ctx,
-                storage.as_ref(),
-                &operation_id,
-                &candidate,
-                manifest.generation,
-            )
-        })
+        let secret =
+            crate::remote::webdav::load_webdav_secret(&state.shell.app_data_dir, active_library)?;
+        let storage =
+            openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+                .map_err(CommandError::from)?;
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .and_then(|generation| use_remote(&ctx, &operation_id, &candidate, generation))
     } else {
         let storage = create_legacy_publish_storage(&state.shell.app_data_dir, active_library)?;
         pull_conflict_candidate(storage.as_ref(), &candidate).and_then(
@@ -123,13 +118,9 @@ pub fn resolve_active_remote_conflict(
                     &operation_id,
                     &candidate,
                 ),
-                ConflictResolution::UseRemote => use_remote(
-                    &ctx,
-                    storage.as_ref(),
-                    &operation_id,
-                    &candidate,
-                    manifest.generation,
-                ),
+                ConflictResolution::UseRemote => {
+                    use_remote(&ctx, &operation_id, &candidate, manifest.generation)
+                }
             },
         )
     };
@@ -139,12 +130,11 @@ pub fn resolve_active_remote_conflict(
 
 fn use_remote(
     ctx: &PublishContext<'_>,
-    storage: &dyn RepositoryStorage,
     operation_id: &str,
     candidate: &std::path::Path,
     remote_generation: i64,
 ) -> CommandResult<()> {
-    conflict_use_remote(ctx, storage, operation_id, candidate)?;
+    conflict_use_remote(ctx, operation_id, candidate, remote_generation)?;
     openkara_remote::retain_base_snapshot(ctx.working_copy_root, remote_generation, candidate)
         .map_err(CommandError::from)?;
     openkara_remote::discard_rebase_state(ctx.working_copy_root, operation_id);

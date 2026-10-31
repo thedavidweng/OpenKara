@@ -11,7 +11,7 @@ use crate::{
     library::Song,
     library_root::LibraryRoot,
     remote,
-    remote::provider::{create_remote_media_source, create_repository_storage},
+    remote::provider::{create_legacy_read_storage, create_remote_media_source},
 };
 use anyhow::{Context, Result};
 use openkara_remote::media_cache::{CacheIdentity, CacheLease, MediaCache};
@@ -109,7 +109,7 @@ impl<'a> RemoteContent<'a> {
                 is_current,
             );
         }
-        let provider = create_repository_storage(app_data_dir, &library).map_err(|error| {
+        let provider = create_legacy_read_storage(app_data_dir, &library).map_err(|error| {
             remote::errors::RemoteError::new(
                 remote::errors::RemoteErrorKind::NetworkUnavailable,
                 error.message.clone(),
@@ -231,7 +231,7 @@ impl<'a> RemoteContent<'a> {
                 if !media_source.capabilities().range_download {
                     return Ok(None);
                 }
-                let repository = create_repository_storage(app_data_dir, &library)
+                let repository = create_legacy_read_storage(app_data_dir, &library)
                     .map_err(|error| PlaybackError::Internal(error.message.clone()))?;
                 let fetcher = match media_source.create_range_fetcher(song_path) {
                     Ok(Some(fetcher)) => fetcher,

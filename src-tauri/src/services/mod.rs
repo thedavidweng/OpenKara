@@ -12,8 +12,3 @@ pub(crate) mod playback_source {
         load_playback_source, load_song_audio, probe_song_audio,
     };
 }
-
-/// `remote::fault_injection` drives `run_reconnect` directly against injected
-/// closures; production reconnect goes through `track_load`.
-#[cfg(test)]
-pub(crate) use track_load::reconnect;

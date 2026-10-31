@@ -44,7 +44,7 @@ use crate::remote::manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
-use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, RepositoryStorage};
+use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, LegacyReadStorage};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
@@ -925,7 +925,7 @@ fn validate_asset_path(path: &str) -> Result<(), RemoteError> {
 /// Remote path, size, and revision are fingerprinted in both modes, allowing a
 /// retry to detect a missing, truncated, or replaced remote object.
 fn verify_referenced_assets(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     working_copy_root: &Path,
     database_path: &Path,
     compare_local_size: bool,
@@ -1124,7 +1124,7 @@ fn upload_candidate_database(
 }
 
 fn verify_remote_candidate_digest(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     remote_relative_path: &str,
     expected_size: u64,
     expected_digest: &str,
@@ -1589,7 +1589,7 @@ fn schedule_gc_on_conn(
 /// `stems/`, and `artwork/` are NOT deleted — they are referenced by the
 /// committed database.
 pub(crate) fn execute_gc(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     control_db: &Connection,
     library_id: &str,
     operation_id: &str,
@@ -1905,11 +1905,13 @@ pub(crate) fn conflict_keep_local_as_new_generation(
     execute_publish(ctx, storage, operation_id)
 }
 
+/// Discard the conflicted operation and install the winning remote database,
+/// pulled earlier to `conflict_candidate_db` at `remote_generation`.
 pub(crate) fn conflict_use_remote(
     ctx: &PublishContext<'_>,
-    storage: &dyn RepositoryStorage,
     operation_id: &str,
     conflict_candidate_db: &Path,
+    remote_generation: i64,
 ) -> CommandResult<()> {
     let op = get_operation(ctx.control_db, operation_id)?
         .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
@@ -1932,14 +1934,12 @@ pub(crate) fn conflict_use_remote(
         .map_err(|e| internal_error(format!("failed to activate remote database: {e}")))?;
 
     let new_digest = sha256_file(&working_db)?;
-    let remote_manifest = read_manifest(storage)?
-        .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
     let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
         Some(mut row) => {
-            row.committed_generation = remote_manifest.generation;
+            row.committed_generation = remote_generation;
             row.committed_manifest_revision = None;
-            row.local_base_generation = remote_manifest.generation;
+            row.local_base_generation = remote_generation;
             row.local_db_digest = Some(new_digest);
             row.local_state = LocalState::Clean;
             row.active_operation_id = None;
@@ -1949,9 +1949,9 @@ pub(crate) fn conflict_use_remote(
         }
         None => RepositoryStateRow {
             library_id: ctx.library_id.to_owned(),
-            committed_generation: remote_manifest.generation,
+            committed_generation: remote_generation,
             committed_manifest_revision: None,
-            local_base_generation: remote_manifest.generation,
+            local_base_generation: remote_generation,
             local_db_digest: Some(new_digest),
             local_state: LocalState::Clean,
             active_operation_id: None,
@@ -1966,10 +1966,10 @@ pub(crate) fn conflict_use_remote(
     Ok(())
 }
 
-/// Pull the winning remote manifest + database to a conflict candidate path
-/// (NOT the active working DB). Uses the provider's download_file.
+/// Pull the winning remote manifest + database of a Dropbox or Google Drive
+/// repository to a conflict candidate path (NOT the active working DB).
 pub(crate) fn pull_conflict_candidate(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     destination: &Path,
 ) -> CommandResult<RepositoryManifest> {
     let manifest = read_manifest(provider)?
@@ -1981,6 +1981,55 @@ pub(crate) fn pull_conflict_candidate(
     provider.download_file(&manifest.database_path, destination)?;
     verify_sqlite_integrity_pub(destination)?;
     Ok(manifest)
+}
+
+struct ReplaceConflictCandidate;
+
+impl openkara_remote::RefreshPolicy for ReplaceConflictCandidate {
+    fn may_replace_working_copy(&self) -> bool {
+        true
+    }
+}
+
+/// Pull the database the remote manifest commits to a conflict candidate path
+/// (NOT the active working DB) through the Remote Repository core, verified
+/// against the manifest's size and SHA-256 and checked for SQLite integrity.
+/// Returns the generation the candidate belongs to.
+pub(crate) fn pull_conflict_candidate_via_core(
+    storage: &dyn openkara_remote::RepositoryStorage,
+    destination: &Path,
+) -> CommandResult<i64> {
+    let plan = openkara_remote::plan_refresh(storage).map_err(CommandError::from)?;
+    if plan.manifest.is_none() {
+        return Err(internal_error(
+            "no remote manifest found to pull conflict candidate",
+        ));
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| internal_error(format!("failed to create conflict candidate dir: {e}")))?;
+    }
+    // The core keeps a replaced database as last-known-good; a candidate from
+    // an earlier attempt has no value to keep.
+    let _ = std::fs::remove_file(destination);
+    let candidate = openkara_remote::WorkingCopyDatabase::new(destination.to_path_buf());
+    let operation_id = openkara_remote::snapshot_operation_id(plan.remote_revision.as_deref());
+    let pulled = openkara_remote::pull_database_snapshot(
+        storage,
+        &plan,
+        &candidate,
+        &operation_id,
+        &ReplaceConflictCandidate,
+        &mut |_| {},
+    );
+    match pulled {
+        Ok(Some(snapshot)) => Ok(snapshot.generation),
+        Ok(None) => Err(internal_error("conflict candidate pull was skipped")),
+        Err(error) => {
+            let _ = std::fs::remove_file(candidate.part_path(&operation_id));
+            Err(CommandError::from(error))
+        }
+    }
 }
 
 fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<String>> {
@@ -2059,7 +2108,9 @@ mod tests {
         RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
     };
     use crate::remote::manifest::MANIFEST_PATH;
-    use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, RepositoryStorage};
+    use crate::remote::provider::{
+        ConditionalSource, LegacyPublishStorage, LegacyReadStorage, RepositoryStorage,
+    };
     use rusqlite::Connection;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -2144,6 +2195,22 @@ mod tests {
     }
 
     impl RepositoryStorage for FakeProvider {
+        fn delete_path(&self, path: &str) -> CommandResult<()> {
+            self.files.lock().unwrap().remove(path);
+            self.revisions.lock().unwrap().remove(path);
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl LegacyReadStorage for FakeProvider {
         fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
             self
         }
@@ -2174,20 +2241,6 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| internal_error(format!("fake provider: {path} not found")))?;
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
-        }
-
-        fn delete_path(&self, path: &str) -> CommandResult<()> {
-            self.files.lock().unwrap().remove(path);
-            self.revisions.lock().unwrap().remove(path);
-            Ok(())
-        }
-
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -2409,7 +2462,7 @@ mod tests {
 
     fn persist_test_candidate(
         conn: &Connection,
-        provider: &dyn RepositoryStorage,
+        provider: &dyn LegacyReadStorage,
         working_root: &Path,
         operation_id: &str,
     ) -> PathBuf {
@@ -4021,5 +4074,173 @@ mod tests {
         let follow_up = pending_gc_rows(&conn);
         assert_eq!(follow_up.len(), 1, "a later cleanup is scheduled");
         assert_ne!(follow_up[0].operation_id, cleanup_id);
+    }
+
+    fn publish_to_memory(
+        storage: &openkara_remote::testing::MemoryStorage,
+        generation: i64,
+        snapshot: &Path,
+        recorded_sha256: Option<&str>,
+    ) {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let bytes = std::fs::read(snapshot).unwrap();
+        let database_path = database_path_for_generation(generation);
+        storage.write_new(&database_path, &bytes).unwrap();
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation,
+            database_path,
+            database_size_bytes: bytes.len() as u64,
+            database_sha256: recorded_sha256
+                .map(str::to_owned)
+                .unwrap_or_else(|| sha256_file(snapshot).unwrap()),
+            committed_at_ms: 1,
+            writer_id: "other-writer".to_owned(),
+            operation_id: format!("op-{generation}"),
+        };
+        storage
+            .write_new(MANIFEST_PATH, manifest.to_json().unwrap().as_bytes())
+            .unwrap();
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_pulls_the_committed_generation_beside_the_working_copy() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        Connection::open(&remote_db)
+            .unwrap()
+            .execute_batch("INSERT INTO songs (hash) VALUES ('remote-song');")
+            .unwrap();
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 4, &remote_db, None);
+
+        let working_dir = TempDir::new().unwrap();
+        let working_db = working_dir.path().join("openkara.db");
+        make_valid_db(&working_db);
+        let working_digest = sha256_file(&working_db).unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+        std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+        std::fs::write(&candidate, b"stale candidate from an earlier attempt").unwrap();
+
+        let generation =
+            pull_conflict_candidate_via_core(&storage, &candidate).expect("candidate pulls");
+
+        assert_eq!(generation, 4);
+        assert_eq!(
+            sha256_file(&candidate).unwrap(),
+            sha256_file(&remote_db).unwrap()
+        );
+        assert_eq!(sha256_file(&working_db).unwrap(), working_digest);
+        let leftovers: Vec<_> = std::fs::read_dir(candidate.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != candidate.file_name().unwrap())
+            .collect();
+        assert!(leftovers.is_empty(), "no part or lkg files: {leftovers:?}");
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_rejects_a_snapshot_the_manifest_does_not_describe() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 2, &remote_db, Some(&"0".repeat(64)));
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+
+        let error = pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("a digest mismatch is never activated");
+
+        assert!(!candidate.exists());
+        assert!(
+            !std::fs::read_dir(candidate.parent().unwrap())
+                .unwrap()
+                .any(|_| true),
+            "the corrupt part is discarded: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn an_interrupted_conflict_candidate_pull_leaves_no_candidate_behind() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 2, &remote_db, None);
+        storage.script(openkara_remote::testing::Fault::InterruptTransfer {
+            path: database_path_for_generation(2),
+            after_bytes: 16,
+        });
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("the scripted interruption fails the pull");
+
+        assert!(!candidate.exists());
+        assert!(!std::fs::read_dir(candidate.parent().unwrap())
+            .unwrap()
+            .any(|_| true));
+        let generation = pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect("the next attempt pulls the candidate");
+        assert_eq!(generation, 2);
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_requires_a_committed_manifest() {
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir.path().join("candidate.sqlite");
+
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("a repository without a manifest has no winning generation");
+
+        assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn conflict_use_remote_installs_the_candidate_at_its_generation() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let candidate = working_root.join("candidate.sqlite");
+        make_valid_db(&candidate);
+        Connection::open(&candidate)
+            .unwrap()
+            .execute_batch("INSERT INTO songs (hash) VALUES ('remote-song');")
+            .unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+        let op_id = make_pending_op(&conn, "lib-1", 1);
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        op.state = OperationState::Conflicted;
+        upsert_operation(&conn, &op).unwrap();
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        conflict_use_remote(&ctx, &op_id, &candidate, 3).expect("use remote");
+
+        let working_digest = sha256_file(&working_root.join("openkara.db")).unwrap();
+        assert_eq!(working_digest, sha256_file(&candidate).unwrap());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.committed_generation, 3);
+        assert_eq!(repo.local_base_generation, 3);
+        assert_eq!(
+            repo.local_db_digest.as_deref(),
+            Some(working_digest.as_str())
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Cancelled);
     }
 }
