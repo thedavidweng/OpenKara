@@ -1,6 +1,7 @@
 pub mod airplay;
 pub mod batch_separation;
 pub mod bootstrap;
+#[cfg(feature = "streaming-sources")]
 pub mod catalog;
 pub mod cdg;
 pub mod diagnostics;
@@ -13,12 +14,15 @@ pub mod maintenance;
 pub mod playback;
 pub mod playlist;
 pub mod remote_library;
+pub mod reveal;
 pub mod runtime_bootstrap;
 pub mod runtime_worker;
 pub mod self_update;
 pub mod separation;
 pub mod settings;
+#[cfg(feature = "streaming-sources")]
 pub mod source_host;
+pub mod video_source;
 pub mod youtube_watch;
 
 pub use bootstrap::get_model_bootstrap_status;

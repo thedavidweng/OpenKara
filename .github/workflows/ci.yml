@@ -691,6 +691,10 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Clippy without Streaming Sources
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
+
       - name: Install nextest
         uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:

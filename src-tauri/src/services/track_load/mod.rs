@@ -6,7 +6,9 @@
 //! track that is playing; request allocation, staleness adjudication, source
 //! resolution, streaming runtime and mid-song reconnect all live behind that.
 
+#[cfg(feature = "streaming-sources")]
 pub(crate) mod preview;
+#[cfg(feature = "streaming-sources")]
 mod preview_stream;
 pub(crate) mod reconnect;
 mod request;

@@ -1,8 +1,8 @@
 use crate::cache;
-use crate::catalog::{self, StreamingSource, VideoSource};
+use crate::catalog::{self, StreamingSource};
 use crate::commands::error::{database_error, internal_error, state_lock_error, CommandResult};
 use crate::source_host::{Cancellation, SourceHost, WorkKind, WorkLease};
-use crate::{config, AppState};
+use crate::AppState;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -905,41 +905,4 @@ pub(crate) fn settle_cancelled_import(
         Some(catalog::LibraryDecisionAction::Cancel),
     )?;
     Ok(())
-}
-#[tauri::command]
-pub async fn resolve_video_source_url(
-    app_handle: AppHandle,
-    source_id: String,
-    url: String,
-) -> CommandResult<Vec<catalog::VideoQueueItem>> {
-    let config = config::load_config(&app_data_dir(&app_handle)?)
-        .map_err(internal_error)?
-        .unwrap_or_default();
-    catalog::require_enabled(&config, &source_id)?;
-    if source_id != catalog::YOUTUBE_SOURCE_ID {
-        return Err(internal_error("unknown video source"));
-    }
-    if url.contains("/player") {
-        return Err(internal_error("YouTube /player stream URLs are not used"));
-    }
-    blocking(move || {
-        let fetcher = catalog::LiveYoutubeFetcher::new()?;
-        catalog::YoutubeVideoSource::new(fetcher)
-            .resolve(&url)
-            .map_err(Into::into)
-    })
-    .await
-}
-#[tauri::command]
-pub fn get_reveal_targets(
-    state: State<'_, AppState>,
-    song_id: String,
-) -> CommandResult<catalog::RevealTargets> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-    catalog::get_reveal_targets(&connection, &library, &song_id).map_err(Into::into)
-}
-#[tauri::command]
-pub fn reveal_in_folder(path: String) -> CommandResult<()> {
-    catalog::reveal_path(&path).map_err(Into::into)
 }

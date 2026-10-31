@@ -3,7 +3,6 @@ use crate::commands::error::{
     video_source_unavailable, CommandError,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 pub const YOUTUBE_SOURCE_ID: &str = "youtube";
 pub const YOUTUBE_QUEUE_PREFIX: &str = "yt:";
@@ -242,20 +241,23 @@ pub struct StreamingPlaylistListing {
     pub next_cursor: Option<String>,
 }
 
+#[cfg(feature = "streaming-sources")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedStreamingFile {
-    pub path: PathBuf,
+    pub path: std::path::PathBuf,
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
 }
 
+#[cfg(feature = "streaming-sources")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamingResolveOutcome {
     File(ResolvedStreamingFile),
     Refusal(ImportRefusal),
 }
 
+#[cfg(feature = "streaming-sources")]
 #[derive(Debug, Clone)]
 pub struct ResolvedStreamingUrl {
     pub descriptor: crate::source_host::ResourceDescriptor,
@@ -263,6 +265,7 @@ pub struct ResolvedStreamingUrl {
     pub extension: String,
 }
 
+#[cfg(feature = "streaming-sources")]
 #[derive(Debug, Clone)]
 pub enum StreamingPreviewOutcome {
     Stream(ResolvedStreamingUrl),

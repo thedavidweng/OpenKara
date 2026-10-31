@@ -21,6 +21,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
 [features]
+default = ["streaming-sources"]
+# Streaming Sources: the embedded source host, its commands and events, and the
+# openkara:// registry link. Store builds compile it out with
+# --no-default-features.
+streaming-sources = [
+    "dep:aes",
+    "dep:cbc",
+    "dep:ctr",
+    "dep:ecb",
+    "dep:hmac",
+    "dep:md-5",
+    "dep:num-bigint",
+    "dep:ring",
+    "dep:rquickjs",
+    "dep:semver",
+    "dep:sha1",
+    "dep:tauri-plugin-deep-link",
+    "reqwest/cookies",
+    "tauri-plugin-single-instance/deep-link",
+]
 # CI-only CLI on the packaged openkara binary (--automation-smoke prepare/...).
 # Safe to enable for installed-app product builds: does not add extra bins.
 automation-smoke = []
@@ -54,42 +74,42 @@ cc = "1"
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-aes = "0.9.3"
+aes = { version = "0.9.3", optional = true }
 anyhow = "1.0.104"
 biquad = "0.6"
 thiserror = "2"
 audioadapter-buffers = "5.2.0"
 base64 = "0.23.1"
-cbc = { version = "0.2.1", features = ["alloc", "block-padding"] }
-ctr = "0.10.1"
-ecb = { version = "0.2.1", features = ["alloc", "block-padding"] }
-hmac = "0.13.0"
+cbc = { version = "0.2.1", features = ["alloc", "block-padding"], optional = true }
+ctr = { version = "0.10.1", optional = true }
+ecb = { version = "0.2.1", features = ["alloc", "block-padding"], optional = true }
+hmac = { version = "0.13.0", optional = true }
 cpal = "0.18.2"
 libc = "0.2.191"
 lofty = "0.25.4"
-md-5 = "0.11.0"
-num-bigint = "0.5.1"
+md-5 = { version = "0.11.0", optional = true }
+num-bigint = { version = "0.5.1", optional = true }
 openkara-remote = { version = "0.1.0", path = "crates/openkara-remote" }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "coreml", "directml", "xnnpack"] }
 rand = "0.10.3"
 rayon = "1.12.0"
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "cookies", "form", "json", "query", "rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "form", "json", "query", "rustls"] }
 ringbuf = "0.5"
-ring = "0.17.14"
-semver = "1.0.28"
+ring = { version = "0.17.14", optional = true }
+semver = { version = "1.0.28", optional = true }
 rubato = "5.0.1"
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 schemars = "1.2.3"
-sha1 = "0.11.0"
+sha1 = { version = "0.11.0", optional = true }
 sha2 = "0.11.1"
 symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav", "all-meta"] }
 tauri = { version = "2.12.5", features = ["unstable", "protocol-asset"] }
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-process = "2.4.0"
-tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
+tauri-plugin-single-instance = "2.5.4"
 # Releases use raw NSIS/AppImage payloads; macOS tar support is unconditional.
 tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 uuid = { version = "1.28.0", features = ["v4"] }
@@ -98,7 +118,7 @@ tracing = "0.1"
 vorbis_rs = "0.5.6"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.42"
-rquickjs = { version = "0.14.0", features = ["futures", "allocator"] }
+rquickjs = { version = "0.14.0", features = ["futures", "allocator"], optional = true }
 regex-lite = "0.1"
 unicode-normalization = "0.1"
 flate2 = "1.1.10"
@@ -111,7 +131,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-appender = "0.2.5"
 tauri-plugin-notification = "2.7.0"
 tauri-plugin-window-state = "2.5.0"
-tauri-plugin-deep-link = "2.6.3"
+tauri-plugin-deep-link = { version = "2.6.3", optional = true }
 
 # Every `unsafe` block carries a SAFETY comment. The lint is what keeps that
 # true: the FFI bridges are the only unsafe surface in the app, and an
