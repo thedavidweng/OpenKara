@@ -366,8 +366,8 @@ enum RebaseStep {
 /// Without a verified base snapshot, or when the snapshots cannot be
 /// compared row by row, the local changes cannot be rebased: that is a
 /// whole-repository conflict. Only a Keep Local choice that approved a
-/// whole-repository conflict resolves it, by publishing the local candidate
-/// as it is.
+/// whole-repository conflict at this remote generation resolves it, by
+/// publishing the local candidate as it is.
 fn rebase_candidate(
     storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
@@ -375,8 +375,11 @@ fn rebase_candidate(
     remote_manifest: &RepositoryManifest,
     local: &Candidate,
 ) -> RemoteResult<RebaseStep> {
+    let policy = request
+        .conflict_policy
+        .for_remote_generation(remote_manifest.generation);
     let unmergeable = |remote: Option<&Path>| -> RemoteResult<RebaseStep> {
-        if request.conflict_policy.approves_whole_repository() {
+        if policy.approves_whole_repository() {
             return Ok(RebaseStep::Publish(local.clone()));
         }
         let song_ids: Vec<String> = if request.changes.whole_repository {
@@ -415,7 +418,7 @@ fn rebase_candidate(
         &remote,
         &local.path,
         &request.changes,
-        &request.conflict_policy,
+        policy,
         &merged,
     )?;
     match merge {
@@ -2250,6 +2253,134 @@ mod tests {
             song_titles(&pulled_db),
             titled(&[("s1", "A1"), ("s2", "A2")]),
             "only an approved whole-repository conflict replaces the remote library"
+        );
+    }
+
+    #[test]
+    fn a_stored_keep_local_asks_again_when_the_remote_re_edits_an_approved_song() {
+        let storage = MemoryStorage::new();
+        let (device_a, request, conflict) = a_conflict_on_s1(&storage);
+        another_device_commits(
+            &storage,
+            "op-b2",
+            "UPDATE songs SET title = 'B1-again' WHERE hash = 's1'",
+        );
+        let working_before = fs::read(working_database(&device_a)).expect("working copy");
+        let retried = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&conflict).into()),
+            ..request
+        };
+
+        let again = conflicted(publish(&storage, &device_a, &retried).expect("publish"));
+
+        assert_eq!(again.remote_generation, 3);
+        assert_eq!(conflict_song_ids(&again), ["s1"]);
+        assert!(!again.whole_repository);
+        assert_eq!(remote_manifest(&storage).operation_id, "op-b2");
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_titles(&pulled_db),
+            titled(&[("s1", "B1-again"), ("s2", "Song s2")]),
+            "the approval answered generation 2, never the edit generation 3 made"
+        );
+        assert_eq!(
+            fs::read(working_database(&device_a)).expect("working copy"),
+            working_before
+        );
+
+        let approved_again = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&again).into()),
+            ..retried
+        };
+        let snapshot =
+            committed(publish(&storage, &device_a, &approved_again).expect("keep local"));
+
+        assert_eq!(snapshot.generation, 4);
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_titles(&pulled_db),
+            titled(&[("s1", "A1"), ("s2", "A2")])
+        );
+    }
+
+    #[test]
+    fn a_whole_repository_keep_local_asks_again_once_the_remote_moved() {
+        let storage = MemoryStorage::new();
+        let (device_a, request, conflict) = a_conflict_on_s1(&storage);
+        another_device_commits(
+            &storage,
+            "op-b2",
+            "ALTER TABLE songs ADD COLUMN rating INTEGER;
+             INSERT INTO songs (hash, title) VALUES ('s3', 'B3');",
+        );
+        let retried = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&conflict).into()),
+            ..request
+        };
+        let whole = conflicted(publish(&storage, &device_a, &retried).expect("publish"));
+        assert_eq!(whole.remote_generation, 3);
+        assert!(whole.whole_repository);
+        another_device_commits(
+            &storage,
+            "op-b3",
+            "INSERT INTO songs (hash, title) VALUES ('s4', 'B4')",
+        );
+        let replace = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&whole).into()),
+            ..retried
+        };
+
+        let again = conflicted(publish(&storage, &device_a, &replace).expect("publish"));
+
+        assert_eq!(again.remote_generation, 4);
+        assert!(again.whole_repository);
+        assert_eq!(remote_manifest(&storage).operation_id, "op-b3");
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_titles(&pulled_db),
+            titled(&[("s1", "B1"), ("s2", "Song s2"), ("s3", "B3"), ("s4", "B4")]),
+            "replacing generation 3 was approved, never replacing generation 4"
+        );
+
+        let replace_again = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&again).into()),
+            ..replace
+        };
+        let snapshot = committed(publish(&storage, &device_a, &replace_again).expect("keep local"));
+
+        assert_eq!(snapshot.generation, 5);
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_titles(&pulled_db),
+            titled(&[("s1", "A1"), ("s2", "A2")])
+        );
+    }
+
+    #[test]
+    fn a_keep_local_never_covers_a_commit_that_lands_while_it_publishes() {
+        let storage = MemoryStorage::new();
+        let (device_a, request, conflict) = a_conflict_on_s1(&storage);
+        let device_b = other_device(&storage);
+        execute(
+            &device_b,
+            "UPDATE songs SET title = 'B1-again' WHERE hash = 's1'",
+        );
+        let intruder = stage_generation(&storage, &device_b, 3, "op-b2");
+        let racing = ConcurrentCommitStorage::new(storage.clone(), vec![intruder]);
+        let retried = PublishRequest {
+            conflict_policy: ConflictPolicy::KeepLocal((&conflict).into()),
+            ..request
+        };
+
+        let again = conflicted(publish(&racing, &device_a, &retried).expect("publish"));
+
+        assert_eq!(again.remote_generation, 3);
+        assert_eq!(conflict_song_ids(&again), ["s1"]);
+        assert_eq!(remote_manifest(&storage).operation_id, "op-b2");
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_titles(&pulled_db),
+            titled(&[("s1", "B1-again"), ("s2", "Song s2")])
         );
     }
 

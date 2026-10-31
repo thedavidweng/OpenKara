@@ -231,8 +231,10 @@ pub struct OperationPayload {
     pub pre_publish_conflict: Option<PrePublishConflictRecord>,
     /// The Pre-Publish Conflict the user resolved by keeping this device's
     /// changes. Every later attempt, after a failure or a restart, lets the
-    /// local rows win only where this conflict covered them; a conflict
-    /// beyond it clears the approval and asks again.
+    /// local rows win only while the remote is still at the conflict's
+    /// `remote_generation`, and only where the conflict covered them. A newer
+    /// remote generation or a conflict beyond it clears the approval and asks
+    /// again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_local_approval: Option<PrePublishConflictRecord>,
 }
@@ -275,6 +277,7 @@ impl From<&openkara_remote::PrePublishConflict> for PrePublishConflictRecord {
 impl From<&PrePublishConflictRecord> for openkara_remote::ApprovedConflict {
     fn from(record: &PrePublishConflictRecord) -> Self {
         Self {
+            remote_generation: record.remote_generation,
             song_ids: record
                 .songs
                 .iter()

@@ -49,13 +49,24 @@ pub enum ConflictPolicy {
     #[default]
     Stop,
     /// The user chose to keep this device's changes for one Pre-Publish
-    /// Conflict. Local rows win only where that conflict covered them, and
-    /// remote changes elsewhere are kept. A conflict outside it stops again,
+    /// Conflict. It applies only to a rebase onto the remote generation that
+    /// conflict was found at, and there local rows win only where the
+    /// conflict covered them; remote changes elsewhere are kept. Once the
+    /// remote moved, or for a conflict outside it, publication stops again,
     /// so a stored choice never overwrites remote changes the user never saw.
     KeepLocal(ApprovedConflict),
 }
 
 impl ConflictPolicy {
+    /// The policy for a rebase onto `remote_generation`: a Keep Local choice
+    /// for any other generation answered a remote state that is gone.
+    pub(crate) fn for_remote_generation(&self, remote_generation: i64) -> &Self {
+        match self {
+            Self::KeepLocal(approved) if approved.remote_generation == remote_generation => self,
+            _ => &Self::Stop,
+        }
+    }
+
     fn approves_song(&self, song_id: &str) -> bool {
         match self {
             Self::Stop => false,
@@ -73,6 +84,8 @@ impl ConflictPolicy {
 /// The Pre-Publish Conflict a Keep Local choice answered.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApprovedConflict {
+    /// The remote generation the user saw when approving.
+    pub remote_generation: i64,
     /// Songs whose local rows replace the remote rows.
     pub song_ids: Vec<String>,
     /// The user agreed to replace the whole remote library with this
@@ -83,6 +96,7 @@ pub struct ApprovedConflict {
 impl From<&PrePublishConflict> for ApprovedConflict {
     fn from(conflict: &PrePublishConflict) -> Self {
         Self {
+            remote_generation: conflict.remote_generation,
             song_ids: conflict
                 .songs
                 .iter()
@@ -861,9 +875,46 @@ mod tests {
 
     fn keep_local(song_ids: &[&str], whole_repository: bool) -> ConflictPolicy {
         ConflictPolicy::KeepLocal(ApprovedConflict {
+            remote_generation: 2,
             song_ids: song_ids.iter().map(|id| (*id).to_owned()).collect(),
             whole_repository,
         })
+    }
+
+    #[test]
+    fn keep_local_applies_only_at_the_remote_generation_the_user_saw() {
+        let policy = keep_local(&["s1"], true);
+
+        assert_eq!(policy.for_remote_generation(2), &policy);
+        for moved in [1, 3] {
+            let stale = policy.for_remote_generation(moved);
+            assert_eq!(stale, &ConflictPolicy::Stop, "generation {moved}");
+            assert!(!stale.approves_song("s1"));
+            assert!(!stale.approves_whole_repository());
+        }
+        assert_eq!(
+            ConflictPolicy::Stop.for_remote_generation(2),
+            &ConflictPolicy::Stop
+        );
+    }
+
+    #[test]
+    fn an_approval_carries_the_remote_generation_of_its_conflict() {
+        let conflict = PrePublishConflict {
+            remote_generation: 7,
+            songs: vec![ConflictingSong {
+                song_id: "s1".to_owned(),
+                title: None,
+                artist: None,
+            }],
+            whole_repository: false,
+        };
+
+        let approved = ApprovedConflict::from(&conflict);
+
+        assert_eq!(approved.remote_generation, 7);
+        assert_eq!(approved.song_ids, ["s1"]);
+        assert!(!approved.whole_repository);
     }
 
     fn songs(ids: &[&str]) -> ChangeSet {

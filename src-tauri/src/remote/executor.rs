@@ -258,8 +258,10 @@ pub(crate) fn execute_publish_via_core(
 /// core rebase lets the local rows win where the recorded conflict covered
 /// them while keeping every other remote change. The approved conflict is
 /// stored with the operation, so a retry after a failure or a restart keeps
-/// it. A conflict recorded without its songs approves nothing: the retry
-/// rebases with the Stop policy and records the conflict it finds.
+/// it, but only while the remote is still at the conflict's generation; once
+/// the remote moved, the retry records the conflict it finds and asks again.
+/// A conflict recorded without its songs approves nothing: the retry rebases
+/// with the Stop policy and records the conflict it finds.
 pub(crate) fn resolve_conflict_keep_local_via_core(
     ctx: &PublishContext<'_>,
     app_data_dir: &Path,
@@ -4402,6 +4404,97 @@ mod tests {
             repo.manifest().database_sha256,
             sha256_file(&repo.working_db()).unwrap()
         );
+        assert!(repo.songs().is_empty());
+    }
+
+    #[test]
+    fn a_stored_keep_local_asks_again_when_the_remote_re_edits_an_approved_song() {
+        let repo = MovedRepository::seeded(
+            "CREATE TABLE song_notes (song_hash TEXT PRIMARY KEY, note TEXT)",
+            "INSERT INTO song_notes VALUES ('song-1', 'from the other device')",
+        );
+        repo.edit("DELETE FROM songs WHERE hash = 'song-1'");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        repo.publish(&op_id)
+            .expect_err("a song both devices changed stops publishing");
+        assert_eq!(conflicted_song_ids(&repo.payload(&op_id)), ["song-1"]);
+        repo.keep_local_while_offline(&op_id);
+        repo.another_device_commits(
+            "op-third",
+            "UPDATE song_notes SET note = 'edited again' WHERE song_hash = 'song-1'",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("the approval answered generation 2, not generation 3");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        assert_eq!(repo.state().local_state, LocalState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert_eq!(conflicted_song_ids(&payload), ["song-1"]);
+        assert_eq!(
+            payload
+                .pre_publish_conflict
+                .as_ref()
+                .expect("the new conflict is recorded")
+                .remote_generation,
+            3
+        );
+        assert!(
+            payload.keep_local_approval.is_none(),
+            "the old approval is cleared so the user is asked again"
+        );
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+    }
+
+    #[test]
+    fn a_whole_repository_keep_local_asks_again_once_the_remote_moved() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "ALTER TABLE songs ADD COLUMN rating INTEGER;
+             INSERT INTO songs (hash) VALUES ('song-9');",
+        );
+        repo.publish_after_restart(&op_id)
+            .expect_err("the other device's schema cannot be rebased onto");
+        repo.keep_local_while_offline(&op_id);
+        let approved = repo
+            .payload(&op_id)
+            .keep_local_approval
+            .expect("the whole-repository approval is stored");
+        assert!(approved.whole_repository);
+        assert_eq!(approved.remote_generation, 3);
+        repo.another_device_commits("op-fourth", "INSERT INTO songs (hash) VALUES ('song-10')");
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("replacing generation 3 was approved, not generation 4");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        let payload = repo.payload(&op_id);
+        let conflict = payload
+            .pre_publish_conflict
+            .as_ref()
+            .expect("the new conflict is recorded");
+        assert!(conflict.whole_repository);
+        assert_eq!(conflict.remote_generation, 4);
+        assert!(payload.keep_local_approval.is_none());
+        assert_eq!(repo.manifest().generation, 4);
+        assert_eq!(repo.manifest().operation_id, "op-fourth");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("approving the conflict at generation 4 publishes the local library");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(5));
         assert!(repo.songs().is_empty());
     }
 
