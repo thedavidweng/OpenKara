@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
+use crate::asset::content_digest_from_asset_path;
 use crate::download::{hex_lower, integrity_error, io_error, sha256_file};
 use crate::error::{RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{
@@ -94,6 +95,15 @@ impl PublishOutcome {
             Self::Committed(snapshot) | Self::AlreadyCommitted(snapshot) => snapshot,
         }
     }
+}
+
+/// What happened to one referenced asset during a publication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetUpload {
+    /// The asset's bytes were written to the remote.
+    Uploaded,
+    /// The remote already held the asset, so nothing was transferred.
+    AlreadyPresent,
 }
 
 /// Coarse publication milestones, reported so the caller can mirror progress
@@ -195,7 +205,7 @@ pub fn ensure_referenced_assets(
     working_copy_root: &Path,
     working_database: &Path,
 ) -> RemoteResult<()> {
-    for path in collect_referenced_asset_paths(working_database)? {
+    for path in referenced_asset_paths(working_database, None)? {
         ensure_asset(storage, working_copy_root, &path)?;
     }
     Ok(())
@@ -536,11 +546,11 @@ fn is_missing_table(error: &rusqlite::Error) -> bool {
 }
 
 /// Upload one referenced asset when the remote lacks it.
-fn ensure_asset(
+pub(crate) fn ensure_asset(
     storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
     relative_path: &str,
-) -> RemoteResult<()> {
+) -> RemoteResult<AssetUpload> {
     validate_referenced_asset_path(relative_path)?;
     let local_path = working_copy_root.join(relative_path);
     let local_size = fs::metadata(&local_path)
@@ -551,7 +561,7 @@ fn ensure_asset(
 
     let Some(local_size) = local_size else {
         return match remote {
-            Some(_) => Ok(()),
+            Some(_) => Ok(AssetUpload::AlreadyPresent),
             None => Err(integrity_error(format!(
                 "asset referenced by database is missing locally and remotely: {relative_path}"
             ))),
@@ -559,7 +569,7 @@ fn ensure_asset(
     };
 
     match remote {
-        Some(metadata) if metadata.size_bytes == local_size => Ok(()),
+        Some(metadata) if metadata.size_bytes == local_size => Ok(AssetUpload::AlreadyPresent),
         Some(_) => {
             // A size mismatch is a torn leftover from an interrupted upload,
             // but only a content-addressed name proves the local bytes are the
@@ -583,24 +593,37 @@ fn ensure_asset(
     }
 }
 
+/// Write one asset object. Bytes stored under a content-addressed name must
+/// hash to that name: a reader rejects anything else, so a mismatch fails
+/// closed before the transfer.
 fn write_asset(
     storage: &dyn RepositoryStorage,
     local_path: &Path,
     relative_path: &str,
     local_size: u64,
-) -> RemoteResult<()> {
+) -> RemoteResult<AssetUpload> {
     let bytes = fs::read(local_path).map_err(|error| {
         io_error(
             format!("failed to read asset {}", local_path.display()),
             error,
         )
     })?;
+    if let Some(claimed_digest) = content_digest_from_asset_path(relative_path) {
+        if hex_lower(&Sha256::digest(&bytes)) != claimed_digest {
+            return Err(integrity_error(format!(
+                "local asset {} does not hash to the digest its path {relative_path} names",
+                local_path.display()
+            )));
+        }
+    }
     match storage.write_new(relative_path, &bytes) {
         Ok(_) => {}
         Err(error) if error.kind == RemoteErrorKind::RemoteConflict => {
             // Another writer published the same content-addressed object first.
             return match storage.stat(relative_path)? {
-                Some(metadata) if metadata.size_bytes == local_size => Ok(()),
+                Some(metadata) if metadata.size_bytes == local_size => {
+                    Ok(AssetUpload::AlreadyPresent)
+                }
                 _ => Err(integrity_error(format!(
                     "asset {relative_path} was created concurrently with different content"
                 ))),
@@ -609,7 +632,7 @@ fn write_asset(
         Err(error) => return Err(error),
     }
     match storage.stat(relative_path)? {
-        Some(metadata) if metadata.size_bytes == local_size => Ok(()),
+        Some(metadata) if metadata.size_bytes == local_size => Ok(AssetUpload::Uploaded),
         other => Err(integrity_error(format!(
             "remote asset {relative_path} was not found at size {local_size} after upload \
              (stat reports {other:?})"
@@ -618,7 +641,8 @@ fn write_asset(
 }
 
 /// Whether `path` names its content by digest: the file stem is exactly the
-/// 64-hex-character SHA-256 of the local bytes.
+/// 64-hex-character SHA-256 of the local bytes, or an artwork derivative
+/// name (`thumb_<sha256>_80`, `preview_<sha256>_256`) built around it.
 fn path_claims_digest(path: &str, digest: &str) -> bool {
     let Some(file_name) = path.rsplit('/').next() else {
         return false;
@@ -627,9 +651,14 @@ fn path_claims_digest(path: &str, digest: &str) -> bool {
         .rsplit_once('.')
         .map(|(stem, _)| stem)
         .unwrap_or(file_name);
-    stem.len() == 64
-        && stem.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && stem.eq_ignore_ascii_case(digest)
+    let named_digest = match stem.split('_').collect::<Vec<_>>().as_slice() {
+        [whole] => *whole,
+        ["thumb", named, "80"] | ["preview", named, "256"] => *named,
+        _ => return false,
+    };
+    named_digest.len() == 64
+        && named_digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && named_digest.eq_ignore_ascii_case(digest)
 }
 
 /// Mirror of the app's managed-path rule: relative, no traversal, under a
@@ -652,11 +681,15 @@ fn validate_referenced_asset_path(path: &str) -> RemoteResult<()> {
     Ok(())
 }
 
-/// Every managed asset path referenced by the database's song and stem rows,
-/// deduplicated and sorted for a deterministic upload order. Optional columns
-/// (CDG, artwork derivatives) and the stems table are tolerated as absent so
-/// older snapshots still publish.
-fn collect_referenced_asset_paths(database: &Path) -> RemoteResult<Vec<String>> {
+/// Every managed asset path referenced by the database's song and stem rows
+/// (only `song_hash`'s rows when given), deduplicated and sorted for a
+/// deterministic upload order. Optional columns (CDG, artwork derivatives)
+/// and the stems table are tolerated as absent so older snapshots still
+/// publish.
+pub(crate) fn referenced_asset_paths(
+    database: &Path,
+    song_hash: Option<&str>,
+) -> RemoteResult<Vec<String>> {
     let connection = open_readonly(database)?;
 
     let has_file_path = column_exists(&connection, "songs", "file_path")?;
@@ -689,18 +722,25 @@ fn collect_referenced_asset_paths(database: &Path) -> RemoteResult<Vec<String>> 
         "NULL, NULL, NULL, NULL, NULL"
     };
 
+    let song_filter = if song_hash.is_some() {
+        "WHERE s.hash = ?1"
+    } else {
+        ""
+    };
     let sql = format!(
         "SELECT {file_col}, {cdg_col}, {artwork_thumb_col}, {artwork_preview_col}, {stems_cols}
          FROM songs s
          {stems_join}
+         {song_filter}
          ORDER BY s.hash ASC"
     );
 
     let mut statement = connection.prepare(&sql).map_err(|error| {
         integrity_error(format!("failed to prepare referenced-asset query: {error}"))
     })?;
+    let parameters: Vec<&str> = song_hash.into_iter().collect();
     let rows = statement
-        .query_map([], |row| {
+        .query_map(rusqlite::params_from_iter(parameters), |row| {
             Ok([
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Option<String>>(1)?,

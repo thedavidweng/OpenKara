@@ -287,6 +287,8 @@
 | Delete Repository              | `delete_library`                                                                      | 删除 provider-hosted 远程资料库内容和本地 working copy；UI 必须把它表达为永久删除远程资料库。                                                                            |
 | Pre-Publish Conflict 出口      | `resolve_remote_conflict`                                                             | 仓库进入 `conflicted` 后的两条出路。`keep_local` 把本地 pending 变更 rebase 到胜出的远端 generation 之后重新发布；`use_remote` 丢弃 pending operation 并采用远端数据库。 |
 
+Publish Song 在 WebDAV 资料库上经 Remote Repository core 执行，只上传远端缺少的内容寻址资产：音频与 stems 位于 `<top>/content/<sha256>.<ext>`，封面派生图以派生图字节的 SHA-256 命名。远端已有同尺寸对象时跳过，因此重复发布不会重复传输，字节相同的资产只存一份；本地字节与其内容寻址名称不符时发布失败且不上传。上传中断后再次发布会删除并重写残缺对象，已完成的资产不再上传。Dropbox 与 Google Drive 仍走旧适配器，每次发布都会上传已暂存的资产。
+
 新增命令：
 
 0. `resolve_remote_conflict(resolution: "keep_local" | "use_remote") -> ()`
