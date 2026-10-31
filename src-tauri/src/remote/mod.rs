@@ -1,6 +1,7 @@
 pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
+pub(crate) mod base_identity;
 mod bootstrap;
 pub(crate) mod content;
 pub(crate) mod control_db;

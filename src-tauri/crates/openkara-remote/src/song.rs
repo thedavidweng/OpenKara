@@ -478,6 +478,7 @@ mod tests {
             writer_id: "writer-1".to_owned(),
             operation_id: "op-1".to_owned(),
             expected_generation: 0,
+            expected_base_sha256: None,
             changes: ChangeSet {
                 song_ids: vec!["song-1".to_owned()],
                 whole_repository: false,

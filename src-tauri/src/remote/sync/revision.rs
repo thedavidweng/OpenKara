@@ -88,7 +88,16 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
         library.remote_revision(),
         remote_revision.as_deref(),
     ) {
-        retain_clean_base_if_missing(control_db_conn, library.id(), &root);
+        if let Err(error) = crate::remote::base_identity::ensure_base_identity(
+            control_db_conn,
+            library.id(),
+            root.root(),
+        ) {
+            tracing::info!(
+                "failed to retain the base snapshot of library {}: {error:?}",
+                library.id()
+            );
+        }
         return Ok(library.clone());
     }
     let plan = openkara_remote::plan_refresh(&storage).map_err(CommandError::from)?;
@@ -128,11 +137,27 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
         Ok(None) => Ok(library.clone()),
         Ok(Some(pulled)) => {
             let _ = delete_transfer_parts(control_db_conn, &operation_id);
+            // The pulled snapshot is the base a later publication rebases from.
+            let base_sha256 = openkara_remote::retain_base_snapshot(
+                root.root(),
+                pulled.generation,
+                &root.database_path(),
+            )
+            .map_err(|error| {
+                tracing::info!(
+                    "failed to retain the base snapshot of library {}: {:?}",
+                    library.id(),
+                    error
+                );
+            })
+            .ok()
+            .filter(|retained| retained.eq_ignore_ascii_case(&pulled.database_sha256));
             if let Err(error) = update_repository_state_after_pull(
                 control_db_conn,
                 library.id(),
                 &pulled.database_sha256,
                 pulled.generation,
+                base_sha256.as_deref(),
             ) {
                 tracing::info!(
                     "failed to persist repository state after refreshing library {}: {:?}",
@@ -141,17 +166,8 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
                 );
                 return Ok(library.clone());
             }
-            // The pulled snapshot is the base a later publication rebases from.
-            if let Err(error) = openkara_remote::retain_base_snapshot(
-                root.root(),
-                pulled.generation,
-                &root.database_path(),
-            ) {
-                tracing::info!(
-                    "failed to retain the base snapshot of library {}: {:?}",
-                    library.id(),
-                    error
-                );
+            if base_sha256.is_some() {
+                openkara_remote::prune_base_snapshots(root.root(), pulled.generation);
             }
             let new_revision = if plan.manifest.is_some() {
                 storage
@@ -174,34 +190,6 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
             );
             Ok(library.clone())
         }
-    }
-}
-
-/// A clean working copy still holds exactly its base generation, so it can
-/// serve as the base snapshot when none was retained (working copies created
-/// before bases were kept).
-fn retain_clean_base_if_missing(
-    control_db_conn: &Connection,
-    library_id: &str,
-    root: &crate::library_root::LibraryRoot,
-) {
-    let Ok(Some(state)) = get_repository_state(control_db_conn, library_id) else {
-        return;
-    };
-    if state.local_state != LocalState::Clean
-        || openkara_remote::base_snapshot_path(root.root(), state.local_base_generation).is_file()
-    {
-        return;
-    }
-    let database = root.database_path();
-    let digest = crate::remote::atomic_download::sha256_file(&database).ok();
-    if digest.is_none() || digest != state.local_db_digest {
-        return;
-    }
-    if let Err(error) =
-        openkara_remote::retain_base_snapshot(root.root(), state.local_base_generation, &database)
-    {
-        tracing::info!("failed to retain the base snapshot of library {library_id}: {error:?}");
     }
 }
 
@@ -587,6 +575,7 @@ mod tests {
             updated_at_ms: 1000,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         }
     }
 

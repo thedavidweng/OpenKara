@@ -233,4 +233,5 @@ for a conflict without that record (for example a non-WebDAV provider).
   snapshot when this device deleted the song.
 - `whole_repository`: `true` when whole-repository changes are part of the
   conflict, or when the snapshots could not be compared row by row (no
-  retained base snapshot, or different schemas).
+  retained base snapshot whose SHA-256 matches the recorded base digest, or
+  different schemas).

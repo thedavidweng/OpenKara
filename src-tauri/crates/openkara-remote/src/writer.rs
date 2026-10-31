@@ -34,6 +34,12 @@
 //! committed rebase replaces the working database with the merged snapshot so
 //! the other device's changes are not reverted by the next publication.
 //!
+//! The base is only trusted when its bytes hash to the identity the request
+//! carries; without that proof every rebase is a whole-repository conflict.
+//! A commit retains the new base next to the old one and never deletes the
+//! old one: a retry after a crash anywhere between the CAS and the caller's
+//! durable completion still needs it, so pruning is the caller's job.
+//!
 //! The writer never decides *whether* publishing is allowed; the application
 //! owns that policy along with its operation bookkeeping.
 
@@ -46,6 +52,7 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
 use crate::asset::content_digest_from_asset_path;
+use crate::base::{retain_base_snapshot, verified_base_snapshot};
 use crate::download::{self, hex_lower, integrity_error, io_error, sha256_file};
 use crate::error::{RemoteError, RemoteErrorKind, RemoteResult};
 use crate::manifest::{
@@ -53,8 +60,8 @@ use crate::manifest::{
 };
 use crate::reader::{open_readonly, verify_sqlite_candidate, SNAPSHOT_DOWNLOAD_CHUNK_SIZE};
 use crate::rebase::{
-    self, base_snapshot_path, rebased_candidate_path, remote_snapshot_path, retain_base_snapshot,
-    ChangeSet, ConflictPolicy, MergeResult, PrePublishConflict,
+    self, rebased_candidate_path, remote_snapshot_path, ChangeSet, ConflictPolicy, MergeResult,
+    PrePublishConflict,
 };
 use crate::storage::{validate_object_path, RepositoryStorage};
 
@@ -64,14 +71,17 @@ pub(crate) const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", 
 
 /// How many times one publication rebases onto a remote that keeps moving
 /// before it gives up with a conflict.
-const MAX_REBASE_ATTEMPTS: usize = 3;
+const MAX_REBASES: usize = 3;
 
 /// Everything the writer needs from the application for one publication.
 ///
 /// `operation_id` scopes the snapshot object so two writers never upload to
 /// the same path, and recognizes the publisher's own accepted commit after a
 /// crash. `expected_generation` is the generation the working copy was based
-/// on; its base snapshot must be retained for a rebase. `changes` is the
+/// on; its base snapshot must be retained for a rebase.
+/// `expected_base_sha256` is the identity the caller recorded for that base
+/// (the snapshot digest of `expected_generation`), or `None` when it has
+/// none; a base that does not hash to it is never used. `changes` is the
 /// outbox change set and `conflict_policy` decides what happens to rows both
 /// devices changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +90,7 @@ pub struct PublishRequest {
     pub writer_id: String,
     pub operation_id: String,
     pub expected_generation: i64,
+    pub expected_base_sha256: Option<String>,
     pub changes: ChangeSet,
     pub conflict_policy: ConflictPolicy,
 }
@@ -90,6 +101,8 @@ pub struct CommittedSnapshot {
     pub generation: i64,
     pub database_path: String,
     pub database_size_bytes: u64,
+    /// Also the identity of the base snapshot retained for `generation`: the
+    /// caller records it and passes it back as `expected_base_sha256`.
     pub database_sha256: String,
     /// Manifest revision after the commit, for the caller to store as its new
     /// Remote Revision baseline.
@@ -261,8 +274,9 @@ fn publish_with_rebase(
         .filter(|(manifest, _)| manifest.generation == request.expected_generation)
         .map(|(manifest, _)| manifest.database_sha256.clone());
     let mut observed = prior;
+    let mut rebases = 0;
 
-    for _ in 0..=MAX_REBASE_ATTEMPTS {
+    loop {
         let rebase_target = observed.as_ref().and_then(|(manifest, _)| {
             let moved = manifest.generation != request.expected_generation
                 || base_remote_digest.as_deref() != Some(manifest.database_sha256.as_str());
@@ -270,7 +284,15 @@ fn publish_with_rebase(
         });
         let rebased = match rebase_target {
             None => None,
+            Some(_) if rebases == MAX_REBASES => {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::RemoteConflict,
+                    "the remote repository kept moving while this publication rebased; \
+                     publish again",
+                ));
+            }
             Some(remote_manifest) => {
+                rebases += 1;
                 on_step(PublishStep::Rebase);
                 match rebase_candidate(storage, working_copy_root, request, remote_manifest, local)?
                 {
@@ -332,10 +354,6 @@ fn publish_with_rebase(
             Err(error) => return Err(error),
         }
     }
-    Err(RemoteError::new(
-        RemoteErrorKind::RemoteConflict,
-        "the remote repository kept moving while this publication rebased; publish again",
-    ))
 }
 
 enum RebaseStep {
@@ -345,10 +363,10 @@ enum RebaseStep {
 
 /// Build the candidate to publish on top of `remote_manifest`.
 ///
-/// Without a base snapshot, or when the snapshots cannot be compared row by
-/// row, the local changes cannot be rebased: that is a whole-repository
-/// conflict, which [`ConflictPolicy::KeepLocal`] resolves by publishing the
-/// local candidate as it is.
+/// Without a verified base snapshot, or when the snapshots cannot be
+/// compared row by row, the local changes cannot be rebased: that is a
+/// whole-repository conflict, which [`ConflictPolicy::KeepLocal`] resolves by
+/// publishing the local candidate as it is.
 fn rebase_candidate(
     storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
@@ -356,7 +374,6 @@ fn rebase_candidate(
     remote_manifest: &RepositoryManifest,
     local: &Candidate,
 ) -> RemoteResult<RebaseStep> {
-    let base = base_snapshot_path(working_copy_root, request.expected_generation);
     let unmergeable = |remote: Option<&Path>| -> RemoteResult<RebaseStep> {
         if request.conflict_policy == ConflictPolicy::KeepLocal {
             return Ok(RebaseStep::Publish(local.clone()));
@@ -381,9 +398,9 @@ fn rebase_candidate(
             whole_repository: true,
         }))
     };
-    if !base.is_file() {
+    let Some(base) = verified_base(working_copy_root, request)? else {
         return unmergeable(None);
-    }
+    };
 
     let remote = fetch_remote_snapshot(
         storage,
@@ -450,9 +467,25 @@ fn fetch_remote_snapshot(
     Ok(destination)
 }
 
+/// The base of the request's expected generation, when its bytes hash to the
+/// identity the request carries.
+fn verified_base(
+    working_copy_root: &Path,
+    request: &PublishRequest,
+) -> RemoteResult<Option<PathBuf>> {
+    verified_base_snapshot(
+        working_copy_root,
+        request.expected_generation,
+        request.expected_base_sha256.as_deref(),
+    )
+}
+
 /// After the manifest moved: the committed snapshot becomes the base of the
 /// next publication, and a rebased snapshot replaces the working database so
 /// the other device's changes are kept locally too.
+///
+/// The base of the expected generation stays: until the caller durably
+/// records the new generation, a retry is judged against it.
 fn finish_commit(
     working_copy_root: &Path,
     working_database: &Path,
@@ -462,11 +495,33 @@ fn finish_commit(
     replaces_working_copy: bool,
 ) -> RemoteResult<()> {
     retain_base_snapshot(working_copy_root, generation, &committed.path)?;
+    reached(CommitPoint::BaseRetained)?;
     if replaces_working_copy {
         install_working_copy(&committed.path, working_database, &request.operation_id)?;
+        reached(CommitPoint::WorkingCopyInstalled)?;
     }
     rebase::discard_rebase_state(working_copy_root, &request.operation_id);
     Ok(())
+}
+
+/// The moments between the CAS and the end of [`finish_commit`] a crash can
+/// interrupt; tests stop the publication at each of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommitPoint {
+    ManifestReplaced,
+    ManifestVerified,
+    BaseRetained,
+    WorkingCopyInstalled,
+}
+
+#[cfg(not(test))]
+fn reached(_point: CommitPoint) -> RemoteResult<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn reached(point: CommitPoint) -> RemoteResult<()> {
+    tests::crash_if_scheduled(point)
 }
 
 /// Atomically replace the working database with `source`, keeping any
@@ -564,12 +619,10 @@ fn resolve_accepted_commit(
             )?;
             return Ok(PublishOutcome::AlreadyCommitted(snapshot.clone()));
         }
-        let base = base_snapshot_path(working_copy_root, request.expected_generation);
-        if base.is_file() {
+        if let Some(base) = verified_base(working_copy_root, request)? {
             let committed_path =
                 fetch_remote_snapshot(storage, working_copy_root, &request.operation_id, manifest)?;
-            if rebase::carries_local_changes(&base, &committed_path, &local.path, &request.changes)?
-            {
+            if rebase::carries_local_changes(&base, &committed_path, &local.path)? {
                 let committed = Candidate::measure(committed_path)?;
                 finish_commit(
                     working_copy_root,
@@ -638,9 +691,11 @@ fn commit_candidate(
         // The first manifest relies on write_new's no-replace guarantee.
         None => storage.write_new(MANIFEST_PATH, manifest_json.as_bytes())?,
     };
+    reached(CommitPoint::ManifestReplaced)?;
 
     on_step(PublishStep::VerifyManifest);
     verify_committed_manifest(storage, &manifest)?;
+    reached(CommitPoint::ManifestVerified)?;
 
     Ok(CommittedSnapshot {
         generation: target_generation,
@@ -650,6 +705,7 @@ fn commit_candidate(
         manifest_revision: committed_metadata.revision,
     })
 }
+
 /// Ensure the operation-scoped snapshot object holds exactly the candidate
 /// bytes. An existing object belongs to an earlier attempt of the same
 /// operation (the path is operation-scoped), so a mismatch is a torn leftover
@@ -1111,6 +1167,7 @@ fn current_unix_time_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::base::base_snapshot_path;
     use crate::manifest::MANIFEST_PATH;
     use crate::reader::{
         refresh_repository, RefreshOutcome, RefreshPolicy, WorkingCopyDatabase,
@@ -1120,8 +1177,30 @@ mod tests {
     use crate::storage::{ListedObject, ObjectMetadata, StorageCapabilities};
     use crate::testing::{Fault, MemoryStorage};
     use rusqlite::params;
+    use std::cell::Cell;
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
+
+    thread_local! {
+        static CRASH_AT: Cell<Option<CommitPoint>> = const { Cell::new(None) };
+    }
+
+    /// Stop the next publication on this thread at `point`, the way a crash
+    /// would: nothing after it runs.
+    fn crash_at(point: CommitPoint) {
+        CRASH_AT.with(|scheduled| scheduled.set(Some(point)));
+    }
+
+    pub(super) fn crash_if_scheduled(point: CommitPoint) -> RemoteResult<()> {
+        if CRASH_AT.with(|scheduled| scheduled.get()) != Some(point) {
+            return Ok(());
+        }
+        CRASH_AT.with(|scheduled| scheduled.set(None));
+        Err(RemoteError::new(
+            RemoteErrorKind::LocalStorageFailed,
+            format!("injected crash at {point:?}"),
+        ))
+    }
 
     struct AllowAll;
     impl RefreshPolicy for AllowAll {
@@ -1233,6 +1312,7 @@ mod tests {
             writer_id: "writer-1".to_owned(),
             operation_id: operation_id.to_owned(),
             expected_generation,
+            expected_base_sha256: None,
             changes: ChangeSet::default(),
             conflict_policy: ConflictPolicy::Stop,
         }
@@ -1259,7 +1339,37 @@ mod tests {
         }
     }
 
+    /// `request` carrying the identity the application records for the
+    /// working copy's retained base. These tests never alter a retained base
+    /// behind the writer's back, so that identity is the digest of its bytes.
+    fn with_recorded_base(
+        working_copy: &tempfile::TempDir,
+        request: PublishRequest,
+    ) -> PublishRequest {
+        let base = base_snapshot_path(working_copy.path(), request.expected_generation);
+        PublishRequest {
+            expected_base_sha256: request.expected_base_sha256.or_else(|| {
+                base.is_file()
+                    .then(|| sha256_file(&base).expect("hash base"))
+            }),
+            ..request
+        }
+    }
+
     fn publish(
+        storage: &dyn RepositoryStorage,
+        working_copy: &tempfile::TempDir,
+        request: &PublishRequest,
+    ) -> RemoteResult<PublishOutcome> {
+        publish_exactly(
+            storage,
+            working_copy,
+            &with_recorded_base(working_copy, request.clone()),
+        )
+    }
+
+    /// Publish `request` with exactly the base identity it carries.
+    fn publish_exactly(
         storage: &dyn RepositoryStorage,
         working_copy: &tempfile::TempDir,
         request: &PublishRequest,
@@ -1899,7 +2009,7 @@ mod tests {
                 &storage,
                 device_a.path(),
                 &working_database(&device_a),
-                &songs_request(1, "op-a2", &["song-c"]),
+                &with_recorded_base(&device_a, songs_request(1, "op-a2", &["song-c"])),
                 &mut |step| steps.push(step),
             )
             .expect("rebased publish"),
@@ -1918,8 +2028,16 @@ mod tests {
             "the working copy takes the other device's song instead of reverting it later"
         );
         assert_eq!(outbox_operations(&working), ["op-a2"]);
-        assert!(base_snapshot_path(device_a.path(), 3).is_file());
-        assert!(!base_snapshot_path(device_a.path(), 1).exists());
+        assert_eq!(
+            verified_base_snapshot(device_a.path(), 3, Some(&snapshot.database_sha256))
+                .expect("verify"),
+            Some(base_snapshot_path(device_a.path(), 3)),
+            "the committed snapshot is the next base, under its digest"
+        );
+        assert!(
+            base_snapshot_path(device_a.path(), 1).is_file(),
+            "the old base stays until the caller prunes it"
+        );
         assert!(!remote_snapshot_path(device_a.path(), "op-a2").exists());
         assert!(!rebased_candidate_path(device_a.path(), "op-a2").exists());
     }
@@ -2117,7 +2235,7 @@ mod tests {
                 &racing,
                 dir.path(),
                 &working_database(&dir),
-                &songs_request(1, "op-2", &["song-2"]),
+                &with_recorded_base(&dir, songs_request(1, "op-2", &["song-2"])),
                 &mut |step| steps.push(step),
             )
             .expect("rebased twice"),
@@ -2260,53 +2378,304 @@ mod tests {
         assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
     }
 
-    #[test]
-    fn a_rebased_commit_lost_before_completion_is_recognized_on_retry() {
+    /// Device A at generation 1 adds song-2 while device B commits song-b as
+    /// generation 2, so A's publication of song-2 has to rebase.
+    struct RebasingPublication {
+        storage: MemoryStorage,
+        device_a: tempfile::TempDir,
+        base_identity: String,
+        request: PublishRequest,
+    }
+
+    fn rebasing_publication() -> RebasingPublication {
         let storage = MemoryStorage::new();
-        let dir = create_working_copy(
+        let device_a = create_working_copy(
             &[SongRow {
                 hash: "song-1",
                 ..Default::default()
             }],
             &[],
         );
-        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
-        let other = other_device(&storage);
+        let first = committed(publish(&storage, &device_a, &request(0, "op-1")).expect("gen 1"));
+        let device_b = other_device(&storage);
         execute(
-            &other,
+            &device_b,
             "INSERT INTO songs (hash, title) VALUES ('song-b', 'Song song-b')",
         );
         committed(
-            publish(&storage, &other, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
+            publish(&storage, &device_b, &songs_request(1, "op-b", &["song-b"])).expect("gen 2"),
         );
         execute(
-            &dir,
-            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+            &device_a,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2');
+             INSERT INTO remote_publish_outbox (operation_id, song_ids_json)
+                 VALUES ('op-2', '[\"song-2\"]');",
         );
-        let working_before = fs::read(working_database(&dir)).expect("working copy");
-        let base_before = fs::read(base_snapshot_path(dir.path(), 1)).expect("base");
-        let request = songs_request(1, "op-2", &["song-2"]);
-        let first = committed(publish(&storage, &dir, &request).expect("rebased publish"));
-        // A crash between the CAS and local completion leaves the working copy
-        // and its base exactly as they were before the call.
-        fs::write(working_database(&dir), &working_before).expect("restore working copy");
-        fs::write(base_snapshot_path(dir.path(), 1), &base_before).expect("restore base");
-        fs::remove_file(base_snapshot_path(dir.path(), 3)).expect("drop the new base");
-
-        let outcome = publish(&storage, &dir, &request).expect("retry");
-
-        let PublishOutcome::AlreadyCommitted(snapshot) = outcome else {
-            panic!("expected AlreadyCommitted, got {outcome:?}");
+        let request = PublishRequest {
+            expected_base_sha256: Some(first.database_sha256.clone()),
+            ..songs_request(1, "op-2", &["song-2"])
         };
-        assert_eq!(snapshot.generation, 3);
-        assert_eq!(snapshot.database_sha256, first.database_sha256);
-        assert_eq!(
-            song_hashes(&working_database(&dir)),
-            ["song-1", "song-2", "song-b"]
-        );
-        assert!(base_snapshot_path(dir.path(), 3).is_file());
+        RebasingPublication {
+            storage,
+            device_a,
+            base_identity: first.database_sha256,
+            request,
+        }
     }
 
+    #[test]
+    fn a_rebased_commit_interrupted_after_the_cas_finishes_on_retry() {
+        for point in [
+            CommitPoint::ManifestReplaced,
+            CommitPoint::ManifestVerified,
+            CommitPoint::BaseRetained,
+            CommitPoint::WorkingCopyInstalled,
+        ] {
+            let publication = rebasing_publication();
+            let (storage, dir, request) = (
+                &publication.storage,
+                &publication.device_a,
+                &publication.request,
+            );
+
+            crash_at(point);
+            let error = publish_exactly(storage, dir, request).expect_err("the crash stops it");
+            assert_eq!(error.kind, RemoteErrorKind::LocalStorageFailed, "{point:?}");
+            assert_eq!(
+                remote_manifest(storage).operation_id,
+                "op-2",
+                "{point:?}: the commit landed"
+            );
+            assert!(
+                verified_base_snapshot(dir.path(), 1, Some(&publication.base_identity))
+                    .expect("verify")
+                    .is_some(),
+                "{point:?}: the base the retry is judged against survives"
+            );
+
+            let outcome = publish_exactly(storage, dir, request).expect("retry");
+
+            let PublishOutcome::AlreadyCommitted(snapshot) = outcome else {
+                panic!("{point:?}: expected AlreadyCommitted, got {outcome:?}");
+            };
+            assert_eq!(snapshot.generation, 3, "{point:?}");
+            let working = working_database(dir);
+            assert_eq!(
+                song_hashes(&working),
+                ["song-1", "song-2", "song-b"],
+                "{point:?}: the working copy holds the merged snapshot"
+            );
+            assert_eq!(outbox_operations(&working), ["op-2"], "{point:?}");
+            assert!(
+                verified_base_snapshot(dir.path(), 3, Some(&snapshot.database_sha256))
+                    .expect("verify")
+                    .is_some(),
+                "{point:?}"
+            );
+            assert!(
+                base_snapshot_path(dir.path(), 1).is_file(),
+                "{point:?}: only the caller prunes the old base"
+            );
+            assert!(
+                !remote_snapshot_path(dir.path(), "op-2").exists(),
+                "{point:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_commit_interrupted_after_the_cas_finishes_on_retry() {
+        for point in [
+            CommitPoint::ManifestReplaced,
+            CommitPoint::ManifestVerified,
+            CommitPoint::BaseRetained,
+        ] {
+            let storage = MemoryStorage::new();
+            let dir = create_working_copy(
+                &[SongRow {
+                    hash: "song-1",
+                    ..Default::default()
+                }],
+                &[],
+            );
+            let first = committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+            execute(
+                &dir,
+                "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2');
+                 INSERT INTO remote_publish_outbox (operation_id, song_ids_json)
+                     VALUES ('op-2', '[\"song-2\"]');",
+            );
+            let request = PublishRequest {
+                expected_base_sha256: Some(first.database_sha256.clone()),
+                ..songs_request(1, "op-2", &["song-2"])
+            };
+
+            crash_at(point);
+            let error = publish_exactly(&storage, &dir, &request).expect_err("the crash stops it");
+            assert_eq!(error.kind, RemoteErrorKind::LocalStorageFailed, "{point:?}");
+
+            let outcome = publish_exactly(&storage, &dir, &request).expect("retry");
+
+            let PublishOutcome::AlreadyCommitted(snapshot) = outcome else {
+                panic!("{point:?}: expected AlreadyCommitted, got {outcome:?}");
+            };
+            assert_eq!(snapshot.generation, 2, "{point:?}");
+            assert!(
+                verified_base_snapshot(dir.path(), 2, Some(&snapshot.database_sha256))
+                    .expect("verify")
+                    .is_some(),
+                "{point:?}"
+            );
+            assert!(
+                verified_base_snapshot(dir.path(), 1, Some(&first.database_sha256))
+                    .expect("verify")
+                    .is_some(),
+                "{point:?}: only the caller prunes the old base"
+            );
+        }
+    }
+
+    #[test]
+    fn a_base_without_proof_of_its_identity_is_never_rebased_from() {
+        type Tamper = fn(&RebasingPublication) -> PublishRequest;
+        let cases: [(&str, Tamper); 5] = [
+            ("no recorded identity", |publication| PublishRequest {
+                expected_base_sha256: None,
+                ..publication.request.clone()
+            }),
+            ("a missing base", |publication| {
+                fs::remove_file(base_snapshot_path(publication.device_a.path(), 1))
+                    .expect("remove base");
+                publication.request.clone()
+            }),
+            ("today's remote snapshot as the base", |publication| {
+                let (_dir, today) = refresh_into(&publication.storage);
+                fs::copy(today, base_snapshot_path(publication.device_a.path(), 1))
+                    .expect("replace base");
+                publication.request.clone()
+            }),
+            ("the dirty working copy as the base", |publication| {
+                fs::copy(
+                    working_database(&publication.device_a),
+                    base_snapshot_path(publication.device_a.path(), 1),
+                )
+                .expect("replace base");
+                publication.request.clone()
+            }),
+            ("same-size different bytes", |publication| {
+                let path = base_snapshot_path(publication.device_a.path(), 1);
+                let mut bytes = fs::read(&path).expect("read base");
+                let last = bytes.len() - 1;
+                bytes[last] ^= 0x01;
+                fs::write(&path, bytes).expect("write base");
+                publication.request.clone()
+            }),
+        ];
+        for (case, tamper) in cases {
+            let publication = rebasing_publication();
+            let request = tamper(&publication);
+            let working = working_database(&publication.device_a);
+            let working_before = fs::read(&working).expect("working copy");
+
+            let conflict = conflicted(
+                publish_exactly(&publication.storage, &publication.device_a, &request).expect(case),
+            );
+
+            assert!(conflict.whole_repository, "{case}");
+            assert_eq!(conflict_song_ids(&conflict), ["song-2"], "{case}");
+            assert_eq!(
+                remote_manifest(&publication.storage).operation_id,
+                "op-b",
+                "{case}"
+            );
+            assert_eq!(
+                fs::read(&working).expect("working copy"),
+                working_before,
+                "{case}: the local changes stay"
+            );
+        }
+    }
+
+    #[test]
+    fn a_base_identity_matches_case_insensitively() {
+        let publication = rebasing_publication();
+        let request = PublishRequest {
+            expected_base_sha256: Some(publication.base_identity.to_ascii_uppercase()),
+            ..publication.request.clone()
+        };
+
+        let snapshot = committed(
+            publish_exactly(&publication.storage, &publication.device_a, &request)
+                .expect("rebased"),
+        );
+
+        assert_eq!(snapshot.generation, 3);
+        assert_eq!(
+            song_hashes(&working_database(&publication.device_a)),
+            ["song-1", "song-2", "song-b"]
+        );
+    }
+
+    #[test]
+    fn the_retained_base_rebases_after_the_remote_deleted_its_snapshot() {
+        let publication = rebasing_publication();
+        publication
+            .storage
+            .delete(&database_path_for_operation(1, "op-1"))
+            .expect("remote cleanup removes generation 1");
+
+        let snapshot = committed(
+            publish_exactly(
+                &publication.storage,
+                &publication.device_a,
+                &publication.request,
+            )
+            .expect("rebased"),
+        );
+
+        assert_eq!(snapshot.generation, 3);
+        let (_pulled_dir, pulled_db) = refresh_into(&publication.storage);
+        assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
+    }
+
+    #[test]
+    fn a_remote_that_keeps_moving_stops_the_publication_after_three_rebases() {
+        let publication = rebasing_publication();
+        let other = other_device(&publication.storage);
+        let intruders: Vec<Vec<u8>> = (3..=5)
+            .map(|generation| {
+                execute(
+                    &other,
+                    &format!("INSERT INTO songs (hash, title) VALUES ('song-x{generation}', 'X')"),
+                );
+                stage_generation(
+                    &publication.storage,
+                    &other,
+                    generation,
+                    &format!("op-x{generation}"),
+                )
+            })
+            .collect();
+        let racing = ConcurrentCommitStorage::new(publication.storage.clone(), intruders);
+        let mut rebases = 0;
+
+        let error = publish_changes(
+            &racing,
+            publication.device_a.path(),
+            &working_database(&publication.device_a),
+            &publication.request,
+            &mut |step| {
+                if step == PublishStep::Rebase {
+                    rebases += 1;
+                }
+            },
+        )
+        .expect_err("the remote kept moving");
+
+        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
+        assert_eq!(rebases, MAX_REBASES);
+        assert_eq!(remote_manifest(&publication.storage).operation_id, "op-x5");
+    }
     #[test]
     fn an_interrupted_snapshot_upload_leaves_no_torn_state_and_recovers_on_republish() {
         let storage = MemoryStorage::new();

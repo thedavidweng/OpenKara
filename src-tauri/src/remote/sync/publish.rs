@@ -1195,6 +1195,9 @@ pub(crate) fn merge_pending_ops_for_publish(
             payload.candidate_sha256 = None;
             payload.candidate_assets_fingerprint = None;
             payload.protocol_step = None;
+            // Keeping this device's changes answered the conflict of the
+            // smaller change set; the songs merged in were never asked about.
+            payload.keep_local = false;
             primary.candidate_db_digest = None;
             let _ = crate::remote::control_db::delete_transfer_parts(&tx, primary_op_id);
         }
@@ -1381,6 +1384,7 @@ fn commit_via_executor(
                 updated_at_ms: crate::remote::types::current_unix_time_ms(),
                 repository_id: Some(repository_id.clone()),
                 writer_id: Some(writer_id.clone()),
+                local_base_sha256: None,
             });
             row.repository_id = Some(repository_id.clone());
             row.writer_id = Some(writer_id.clone());
@@ -1610,6 +1614,7 @@ mod merge_tests {
                 updated_at_ms: 1,
                 repository_id: None,
                 writer_id: None,
+                local_base_sha256: None,
             },
         )
         .unwrap();

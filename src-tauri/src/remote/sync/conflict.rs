@@ -128,18 +128,30 @@ pub fn resolve_active_remote_conflict(
     result
 }
 
+/// The winning remote snapshot becomes the working copy and its base. The
+/// base is retained before the state names it and the bases it replaces are
+/// pruned only after.
 fn use_remote(
     ctx: &PublishContext<'_>,
     operation_id: &str,
     candidate: &std::path::Path,
     remote_generation: i64,
 ) -> CommandResult<()> {
-    conflict_use_remote(ctx, operation_id, candidate, remote_generation)?;
-    openkara_remote::retain_base_snapshot(ctx.working_copy_root, remote_generation, candidate)
-        .map_err(CommandError::from)?;
+    let base_sha256 =
+        openkara_remote::retain_base_snapshot(ctx.working_copy_root, remote_generation, candidate)
+            .map_err(CommandError::from)?;
+    conflict_use_remote(
+        ctx,
+        operation_id,
+        candidate,
+        remote_generation,
+        Some(base_sha256),
+    )?;
+    openkara_remote::prune_base_snapshots(ctx.working_copy_root, remote_generation);
     openkara_remote::discard_rebase_state(ctx.working_copy_root, operation_id);
     Ok(())
 }
+
 fn candidate_path(working_copy_root: &std::path::Path, operation_id: &str) -> PathBuf {
     working_copy_root.join(format!(
         ".openkara/candidates/{operation_id}.conflict-candidate.sqlite"

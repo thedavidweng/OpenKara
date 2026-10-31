@@ -148,6 +148,7 @@ fn repair_completed_repository_state(
         repo.committed_generation = generation;
         repo.local_base_generation = generation;
         repo.local_db_digest = Some(committed_digest.clone());
+        repo.local_base_sha256 = Some(committed_digest.clone());
         repo.active_operation_id = None;
         repo.updated_at_ms = now;
 
@@ -719,6 +720,7 @@ fn mark_repository_dirty(
             updated_at_ms: now_ms,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         },
     };
     upsert_repository_state(connection, &row)
@@ -864,6 +866,7 @@ mod tests {
             updated_at_ms: 1000,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         }
     }
 

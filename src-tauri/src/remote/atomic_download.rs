@@ -524,6 +524,7 @@ fn run_database_pull(
         opts.library_id,
         &candidate_digest,
         opts.committed_generation,
+        None,
     )?;
 
     Ok(DatabasePullResult {
@@ -682,16 +683,20 @@ fn integrity_error(detail: impl std::fmt::Display) -> CommandError {
     internal_error(format!("{REMOTE_INTEGRITY_FAILED}: {detail}"))
 }
 
+/// `base_sha256` is the identity of the base retained for
+/// `committed_generation`, or `None` when none was retained.
 pub(crate) fn update_repository_state_after_pull(
     connection: &Connection,
     library_id: &str,
     new_digest: &str,
     committed_generation: i64,
+    base_sha256: Option<&str>,
 ) -> CommandResult<()> {
     let now = crate::remote::types::current_unix_time_ms();
     let row = match get_repository_state(connection, library_id)? {
         Some(mut row) => {
             row.local_db_digest = Some(new_digest.to_owned());
+            row.local_base_sha256 = base_sha256.map(str::to_owned);
             row.local_state = LocalState::Clean;
             row.committed_generation = committed_generation;
             row.local_base_generation = committed_generation;
@@ -713,6 +718,7 @@ pub(crate) fn update_repository_state_after_pull(
             updated_at_ms: now,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: base_sha256.map(str::to_owned),
         },
     };
     upsert_repository_state(connection, &row)
@@ -748,11 +754,17 @@ pub(crate) fn reconcile_database_state_after_restart(
     if state.local_db_digest.as_deref() == Some(actual_digest.as_str()) {
         return Ok(None);
     }
+    // The generation does not change, so neither does the identity of its base.
+    let base_sha256 = state
+        .local_base_sha256
+        .as_deref()
+        .filter(|_| state.local_base_generation == state.committed_generation);
     update_repository_state_after_pull(
         control_db_conn,
         library_id,
         &actual_digest,
         state.committed_generation,
+        base_sha256,
     )?;
     Ok(Some(actual_digest))
 }
@@ -1440,6 +1452,7 @@ mod tests {
                 updated_at_ms: 1000,
                 repository_id: None,
                 writer_id: None,
+                local_base_sha256: None,
             },
         )
         .unwrap();
@@ -1476,6 +1489,7 @@ mod tests {
                 updated_at_ms: 1000,
                 repository_id: None,
                 writer_id: None,
+                local_base_sha256: None,
             },
         )
         .unwrap();
@@ -1517,6 +1531,7 @@ mod tests {
                 updated_at_ms: 1000,
                 repository_id: None,
                 writer_id: None,
+                local_base_sha256: None,
             },
         )
         .unwrap();

@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod base;
 pub mod cleanup;
 pub(crate) mod download;
 pub mod error;
@@ -17,6 +18,10 @@ pub mod writer;
 pub use asset::{
     asset_operation_id, content_digest_from_asset_path, fetch_asset, plan_asset_fetch, AssetSource,
     FetchedAsset, RangeReader, ASSET_DOWNLOAD_CHUNK_SIZE,
+};
+pub use base::{
+    adopt_legacy_base_snapshot, base_snapshot_path, prune_base_snapshots, retain_base_snapshot,
+    verified_base_snapshot, LegacyBaseAdoption,
 };
 pub use cleanup::{
     clean_up_unreferenced_uploads, CleanupPolicy, CleanupReport, DEFAULT_CLEANUP_GRACE_PERIOD_MS,
@@ -42,9 +47,7 @@ pub use reader::{
     SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
 };
 pub use rebase::{
-    base_snapshot_path, discard_rebase_state, retain_base_snapshot,
-    retain_base_snapshot_if_missing, ChangeSet, ConflictPolicy, ConflictingSong,
-    PrePublishConflict,
+    discard_rebase_state, ChangeSet, ConflictPolicy, ConflictingSong, PrePublishConflict,
 };
 pub use song::{publish_song_assets, PublishedSongAssets};
 pub use storage::{

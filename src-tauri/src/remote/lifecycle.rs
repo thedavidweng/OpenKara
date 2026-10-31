@@ -585,6 +585,7 @@ mod tests {
                     updated_at_ms: 1,
                     repository_id: None,
                     writer_id: None,
+                    local_base_sha256: None,
                 },
             )
             .expect("seed repository state");

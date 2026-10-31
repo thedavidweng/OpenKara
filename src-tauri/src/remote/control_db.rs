@@ -229,6 +229,11 @@ pub struct OperationPayload {
     /// Pre-Publish Conflict; cleared when the user resolves it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_publish_conflict: Option<PrePublishConflictRecord>,
+    /// The user resolved this operation's Pre-Publish Conflict by keeping
+    /// this device's changes, so every later attempt, after a failure or a
+    /// restart, rebases with that choice instead of asking again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_local: bool,
 }
 
 /// The songs and whole-repository rows a Pre-Publish Conflict names.
@@ -297,6 +302,10 @@ pub struct RepositoryStateRow {
     /// Stable installation UUID of the writer. For diagnostics only, not a
     /// security principal. `None` for rows created before the writer ID field.
     pub writer_id: Option<String>,
+    /// SHA-256 of the snapshot of `local_base_generation`, the identity the
+    /// retained base must hash to before a rebase trusts it. `None` until
+    /// one is proven (rows from older releases).
+    pub local_base_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -372,19 +381,14 @@ pub fn apply_migrations(connection: &Connection) -> CommandResult<()> {
     }
     // ALTER ADD COLUMN is not idempotent; existence-checked in helper.
     apply_migration_002_manifest_columns(connection)?;
+    apply_migration_003_base_identity(connection)?;
     Ok(())
 }
 
 /// Add `repository_id` and `writer_id` columns to `remote_repository_state`
 /// if they do not already exist. Idempotent.
 fn apply_migration_002_manifest_columns(connection: &Connection) -> CommandResult<()> {
-    let existing_columns: Vec<String> = connection
-        .prepare("PRAGMA table_info(remote_repository_state);")
-        .map_err(|e| database_error(format!("failed to inspect remote_repository_state: {e}")))?
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|e| database_error(format!("failed to query column info: {e}")))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| database_error(format!("failed to collect column names: {e}")))?;
+    let existing_columns = repository_state_columns(connection)?;
 
     if !existing_columns.iter().any(|c| c == "repository_id") {
         connection
@@ -405,6 +409,35 @@ fn apply_migration_002_manifest_columns(connection: &Connection) -> CommandResul
     Ok(())
 }
 
+/// Add `local_base_sha256` to `remote_repository_state` if it does not exist
+/// yet. Rows from older releases keep `NULL`: their base has no recorded
+/// identity until one is proven. Idempotent.
+fn apply_migration_003_base_identity(connection: &Connection) -> CommandResult<()> {
+    if repository_state_columns(connection)?
+        .iter()
+        .any(|column| column == "local_base_sha256")
+    {
+        return Ok(());
+    }
+    connection
+        .execute(
+            "ALTER TABLE remote_repository_state ADD COLUMN local_base_sha256 TEXT;",
+            [],
+        )
+        .map_err(|e| database_error(format!("failed to add local_base_sha256 column: {e}")))?;
+    Ok(())
+}
+
+fn repository_state_columns(connection: &Connection) -> CommandResult<Vec<String>> {
+    connection
+        .prepare("PRAGMA table_info(remote_repository_state);")
+        .map_err(|e| database_error(format!("failed to inspect remote_repository_state: {e}")))?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| database_error(format!("failed to query column info: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| database_error(format!("failed to collect column names: {e}")))
+}
+
 #[allow(dead_code)]
 pub fn journal_mode(connection: &Connection) -> CommandResult<String> {
     connection
@@ -422,8 +455,8 @@ pub fn upsert_repository_state(
                 library_id, committed_generation, committed_manifest_revision,
                 local_base_generation, local_db_digest, local_state,
                 active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
-                repository_id, writer_id
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                repository_id, writer_id, local_base_sha256
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             ON CONFLICT(library_id) DO UPDATE SET
                 committed_generation = excluded.committed_generation,
                 committed_manifest_revision = excluded.committed_manifest_revision,
@@ -435,7 +468,8 @@ pub fn upsert_repository_state(
                 last_error_code = excluded.last_error_code,
                 updated_at_ms = excluded.updated_at_ms,
                 repository_id = COALESCE(excluded.repository_id, remote_repository_state.repository_id),
-                writer_id = COALESCE(excluded.writer_id, remote_repository_state.writer_id)",
+                writer_id = COALESCE(excluded.writer_id, remote_repository_state.writer_id),
+                local_base_sha256 = excluded.local_base_sha256",
             params![
                 row.library_id,
                 row.committed_generation,
@@ -449,6 +483,7 @@ pub fn upsert_repository_state(
                 row.updated_at_ms,
                 row.repository_id,
                 row.writer_id,
+                row.local_base_sha256,
             ],
         )
         .map_err(|e| database_error(format!("failed to upsert repository state: {e}")))?;
@@ -464,7 +499,7 @@ pub fn get_repository_state(
             "SELECT library_id, committed_generation, committed_manifest_revision,
                     local_base_generation, local_db_digest, local_state,
                     active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
-                    repository_id, writer_id
+                    repository_id, writer_id, local_base_sha256
              FROM remote_repository_state WHERE library_id = ?1",
         )
         .map_err(|e| database_error(format!("failed to prepare repository state query: {e}")))?;
@@ -500,6 +535,7 @@ fn map_repository_state_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reposit
         updated_at_ms: row.get(9)?,
         repository_id: row.get(10)?,
         writer_id: row.get(11)?,
+        local_base_sha256: row.get(12)?,
     })
 }
 
@@ -654,6 +690,7 @@ pub fn bind_scope_mark_pending_and_dirty_tx(
             updated_at_ms: now,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         },
     };
     upsert_repository_state(&tx, &repo_row)?;
@@ -943,6 +980,7 @@ mod tests {
             updated_at_ms: now_ms(),
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         };
         upsert_repository_state(&conn2, &row).expect("upsert after re-migration");
     }
@@ -963,6 +1001,7 @@ mod tests {
             updated_at_ms: now_ms(),
             repository_id: Some("repo-uuid".to_owned()),
             writer_id: Some("writer-uuid".to_owned()),
+            local_base_sha256: None,
         };
         upsert_repository_state(&conn, &row).expect("upsert");
         let loaded = get_repository_state(&conn, "lib-1").expect("get").unwrap();

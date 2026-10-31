@@ -8,6 +8,11 @@
 //! changed is applied onto the remote snapshot when the remote side left it
 //! equal to the base. A group both sides changed is a Pre-Publish Conflict.
 //!
+//! Which songs the local side changed is read from the rows, not from the
+//! outbox: a song the outbox names but left equal to the base never
+//! overrides the remote, and a song a mutation under-reported is still
+//! carried. The outbox only says whether whole-repository rows changed.
+//!
 //! The comparison is by row content, never by bytes, so local migrations or
 //! row order do not count as changes. The machine-local publish outbox and
 //! full-text index tables (derived from `songs`) take no part.
@@ -93,71 +98,11 @@ impl PrePublishConflict {
     }
 }
 
-/// Where the Local Working Copy keeps the database snapshot of
-/// `generation`, the base a later rebase compares against.
-pub fn base_snapshot_path(working_copy_root: &Path, generation: i64) -> PathBuf {
-    base_directory(working_copy_root).join(format!("{generation}.sqlite"))
-}
-
-/// Keep a copy of `source` as the base snapshot of `generation` and drop the
-/// bases of every other generation.
-pub fn retain_base_snapshot(
-    working_copy_root: &Path,
-    generation: i64,
-    source: &Path,
-) -> RemoteResult<()> {
-    let directory = base_directory(working_copy_root);
-    fs::create_dir_all(&directory).map_err(|error| {
-        io_error(
-            format!("failed to create directory {}", directory.display()),
-            error,
-        )
-    })?;
-    let destination = base_snapshot_path(working_copy_root, generation);
-    let staging = directory.join(format!("{generation}.sqlite.tmp"));
-    fs::copy(source, &staging).map_err(|error| {
-        io_error(
-            format!(
-                "failed to copy {} to base snapshot {}",
-                source.display(),
-                staging.display()
-            ),
-            error,
-        )
-    })?;
-    crate::download::install_verified(&staging, &destination)?;
-    if let Ok(entries) = fs::read_dir(&directory) {
-        for entry in entries.flatten() {
-            if entry.path() != destination {
-                let _ = fs::remove_file(entry.path());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Like [`retain_base_snapshot`], but leaves an existing base of
-/// `generation` untouched.
-pub fn retain_base_snapshot_if_missing(
-    working_copy_root: &Path,
-    generation: i64,
-    source: &Path,
-) -> RemoteResult<()> {
-    if base_snapshot_path(working_copy_root, generation).is_file() {
-        return Ok(());
-    }
-    retain_base_snapshot(working_copy_root, generation, source)
-}
-
 /// Remove the remote snapshot and rebased candidate an unfinished rebase of
 /// `operation_id` kept, once the user discarded that operation.
 pub fn discard_rebase_state(working_copy_root: &Path, operation_id: &str) {
     let _ = fs::remove_file(remote_snapshot_path(working_copy_root, operation_id));
     let _ = fs::remove_file(rebased_candidate_path(working_copy_root, operation_id));
-}
-
-fn base_directory(working_copy_root: &Path) -> PathBuf {
-    working_copy_root.join(".openkara/base")
 }
 
 pub(crate) fn remote_snapshot_path(working_copy_root: &Path, operation_id: &str) -> PathBuf {
@@ -203,7 +148,7 @@ pub(crate) fn merge_onto_remote(
     let remote_rows = Fingerprint::read(remote, &schema)?;
     let local_rows = Fingerprint::read(local, &schema)?;
 
-    let local_songs = local_song_changes(&base_rows, &local_rows, changes);
+    let local_songs = changed_keys(&base_rows.songs, &local_rows.songs);
     let remote_songs = changed_keys(&base_rows.songs, &remote_rows.songs);
     let local_tables = changed_keys(&base_rows.tables, &local_rows.tables);
     let remote_tables = changed_keys(&base_rows.tables, &remote_rows.tables);
@@ -286,7 +231,6 @@ pub(crate) fn carries_local_changes(
     base: &Path,
     committed: &Path,
     local: &Path,
-    changes: &ChangeSet,
 ) -> RemoteResult<bool> {
     let Some(schema) = common_schema(&[base, committed, local])? else {
         return Ok(false);
@@ -294,7 +238,7 @@ pub(crate) fn carries_local_changes(
     let base_rows = Fingerprint::read(base, &schema)?;
     let committed_rows = Fingerprint::read(committed, &schema)?;
     let local_rows = Fingerprint::read(local, &schema)?;
-    let songs_carried = local_song_changes(&base_rows, &local_rows, changes)
+    let songs_carried = changed_keys(&base_rows.songs, &local_rows.songs)
         .iter()
         .all(|song| committed_rows.songs.get(song) == local_rows.songs.get(song));
     let tables_carried = changed_keys(&base_rows.tables, &local_rows.tables)
@@ -354,19 +298,6 @@ pub(crate) fn carry_outbox_rows(replacement: &Path, working_database: &Path) -> 
             .map_err(sql_error)
     })();
     close(connection, result)
-}
-
-/// Local song changes: the outbox songs plus every song whose rows differ
-/// from the base, so a mutation that under-reported its scope still cannot
-/// be dropped by the rebase.
-fn local_song_changes(
-    base: &Fingerprint,
-    local: &Fingerprint,
-    changes: &ChangeSet,
-) -> BTreeSet<String> {
-    let mut songs = changed_keys(&base.songs, &local.songs);
-    songs.extend(changes.song_ids.iter().cloned());
-    songs
 }
 
 fn changed_keys(
@@ -970,6 +901,30 @@ mod tests {
     }
 
     #[test]
+    fn a_song_the_outbox_names_but_left_unchanged_never_overrides_the_remote() {
+        for policy in [ConflictPolicy::Stop, ConflictPolicy::KeepLocal] {
+            let databases = Databases::new(TWO_SONGS);
+            databases.execute(
+                "remote",
+                "UPDATE songs SET title = 'One (remote)' WHERE hash = 's1'",
+            );
+            databases.execute(
+                "local",
+                "UPDATE songs SET title = 'Two (local)' WHERE hash = 's2'",
+            );
+
+            let result = databases.merge(&songs(&["s1", "s2"]), policy);
+
+            assert_eq!(result, MergeResult::Merged, "{policy:?}");
+            assert_eq!(
+                databases.songs("merged"),
+                ["s1:One (remote)", "s2:Two (local)"],
+                "{policy:?}"
+            );
+        }
+    }
+
+    #[test]
     fn identical_changes_on_both_sides_are_not_a_conflict() {
         let databases = Databases::new(TWO_SONGS);
         for side in ["remote", "local"] {
@@ -1111,7 +1066,6 @@ mod tests {
                 &databases.path("base"),
                 &databases.path(committed),
                 &databases.path("local"),
-                &songs(&["s1"]),
             )
             .expect("compare")
         };
@@ -1166,22 +1120,5 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn retaining_a_base_snapshot_drops_older_bases() {
-        let databases = Databases::new(TWO_SONGS);
-        let root = databases.dir.path();
-        retain_base_snapshot(root, 1, &databases.path("base")).expect("retain 1");
-        retain_base_snapshot_if_missing(root, 1, &databases.path("remote")).expect("keep 1");
-        assert_eq!(
-            fs::read(base_snapshot_path(root, 1)).expect("base 1"),
-            fs::read(databases.path("base")).expect("base bytes")
-        );
-
-        retain_base_snapshot(root, 2, &databases.path("remote")).expect("retain 2");
-
-        assert!(base_snapshot_path(root, 2).is_file());
-        assert!(!base_snapshot_path(root, 1).exists());
     }
 }

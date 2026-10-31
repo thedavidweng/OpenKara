@@ -100,6 +100,7 @@ impl Desktop {
             writer_id: "desktop".to_owned(),
             operation_id: format!("op-{}", self.operation),
             expected_generation: self.generation,
+            expected_base_sha256: None,
             changes: ChangeSet::default(),
             conflict_policy: ConflictPolicy::Stop,
         };
@@ -599,6 +600,7 @@ fn a_phone_never_deletes_remote_objects() {
             writer_id: "phone".to_owned(),
             operation_id: "op-phone".to_owned(),
             expected_generation: 3,
+            expected_base_sha256: None,
             changes: ChangeSet::default(),
             conflict_policy: ConflictPolicy::Stop,
         },
