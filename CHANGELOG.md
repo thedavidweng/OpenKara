@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.20.0](https://github.com/thedavidweng/OpenKara/compare/v0.19.2...v0.20.0) (2026-10-31)
+
+
+### Features
+
+* **remote:** land the remaining Remote Repository core and Streaming Sources feature tickets ([#656](https://github.com/thedavidweng/OpenKara/issues/656)) ([6e22afe](https://github.com/thedavidweng/OpenKara/commit/6e22afe881254a7a6e5dcd70916462b80cefd48b))
+
+
+### Bug Fixes
+
+* **ci:** unbreak main and nightly CI pending live registry publication ([#657](https://github.com/thedavidweng/OpenKara/issues/657)) ([255cc46](https://github.com/thedavidweng/OpenKara/commit/255cc46aa56e2b289fa316b6c1e00e02f45797de))
+* focus interactive preview after activation ([#653](https://github.com/thedavidweng/OpenKara/issues/653)) ([919923b](https://github.com/thedavidweng/OpenKara/commit/919923b6a09af05fc9b90ca67df848e97952f638))
+* improve website accessibility and performance ([#650](https://github.com/thedavidweng/OpenKara/issues/650)) ([7c75645](https://github.com/thedavidweng/OpenKara/commit/7c75645fc5c5b0e9eca4f2869dbd94d79a2f4710))
+
+
+### Performance Improvements
+
+* load interactive preview on demand ([#652](https://github.com/thedavidweng/OpenKara/issues/652)) ([238660d](https://github.com/thedavidweng/OpenKara/commit/238660dbb70f8a883bd0324a62ed39b00c347139))
+
 ## [0.19.2](https://github.com/thedavidweng/OpenKara/compare/v0.19.1...v0.19.2) (2026-10-29)
 
 
