@@ -225,6 +225,45 @@ pub struct OperationPayload {
     /// captured before candidate freeze. Retry must reproduce this fingerprint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_assets_fingerprint: Option<String>,
+    /// What the rebase could not apply when the operation stopped with a
+    /// Pre-Publish Conflict; cleared when the user resolves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_publish_conflict: Option<PrePublishConflictRecord>,
+}
+
+/// The songs and whole-repository rows a Pre-Publish Conflict names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrePublishConflictRecord {
+    pub remote_generation: i64,
+    #[serde(default)]
+    pub songs: Vec<ConflictingSongRecord>,
+    #[serde(default)]
+    pub whole_repository: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConflictingSongRecord {
+    pub song_id: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+}
+
+impl From<&openkara_remote::PrePublishConflict> for PrePublishConflictRecord {
+    fn from(conflict: &openkara_remote::PrePublishConflict) -> Self {
+        Self {
+            remote_generation: conflict.remote_generation,
+            songs: conflict
+                .songs
+                .iter()
+                .map(|song| ConflictingSongRecord {
+                    song_id: song.song_id.clone(),
+                    title: song.title.clone(),
+                    artist: song.artist.clone(),
+                })
+                .collect(),
+            whole_repository: conflict.whole_repository,
+        }
+    }
 }
 
 impl OperationPayload {

@@ -761,7 +761,9 @@
       "recentOps": "Ostatnie operacje",
       "refresh": "Odśwież",
       "conflictTitle": "Biblioteka zmieniła się zdalnie, zanim te zmiany zostały opublikowane.",
-      "conflictBody": "Zachowanie twoich zmian publikuje je ponownie na wersji zdalnej. Zostanie to odrzucone, gdy obie strony zmieniły te same utwory — automatyczny wybór mógłby usunąć pracę.",
+      "conflictBody": "Zachowanie twoich zmian publikuje twoją wersję tego, co zmieniły oba urządzenia, i zachowuje wszystkie inne zmiany zdalne. Użycie wersji zdalnej odrzuca twoje nieopublikowane zmiany.",
+      "conflictSongs": "Zmienione na obu urządzeniach:",
+      "conflictWholeRepository": "Zmiany w całej bibliotece są częścią tego konfliktu.",
       "conflictKeepLocal": "Zachowaj moje zmiany",
       "conflictUseRemote": "Użyj wersji zdalnej"
     },

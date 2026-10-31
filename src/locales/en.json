@@ -865,7 +865,9 @@
       "recentOps": "Recent operations",
       "refresh": "Refresh",
       "conflictTitle": "Your library changed on the remote before these edits published.",
-      "conflictBody": "Keeping your changes republishes them on top of the remote version. That is refused when both sides changed the same songs, because picking a winner automatically could lose work.",
+      "conflictBody": "Keeping your changes publishes your version of what both devices changed and keeps every other remote change. Using the remote version discards your unpublished changes.",
+      "conflictSongs": "Changed on both devices:",
+      "conflictWholeRepository": "Library-wide changes are part of this conflict.",
       "conflictKeepLocal": "Keep my changes",
       "conflictUseRemote": "Use the remote version"
     },

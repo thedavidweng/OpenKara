@@ -760,7 +760,9 @@
       "recentOps": "Operações recentes",
       "refresh": "Atualizar",
       "conflictTitle": "Sua biblioteca mudou no remoto antes que estas edições fossem publicadas.",
-      "conflictBody": "Manter suas alterações as republica sobre a versão remota. Isso é recusado quando os dois lados alteraram as mesmas músicas, porque escolher automaticamente poderia perder trabalho.",
+      "conflictBody": "Manter suas alterações publica sua versão do que os dois dispositivos alteraram e mantém todas as outras alterações remotas. Usar a versão remota descarta suas alterações não publicadas.",
+      "conflictSongs": "Alterado nos dois dispositivos:",
+      "conflictWholeRepository": "Alterações na biblioteca inteira fazem parte deste conflito.",
       "conflictKeepLocal": "Manter minhas alterações",
       "conflictUseRemote": "Usar a versão remota"
     },

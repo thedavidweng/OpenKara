@@ -759,7 +759,9 @@
       "recentOps": "Operasi terbaru",
       "refresh": "Segarkan",
       "conflictTitle": "Pustaka Anda berubah di jarak jauh sebelum suntingan ini terbit.",
-      "conflictBody": "Mempertahankan perubahan Anda menerbitkannya ulang di atas versi jarak jauh. Ini ditolak bila kedua sisi mengubah lagu yang sama, karena memilih otomatis bisa menghilangkan pekerjaan.",
+      "conflictBody": "Mempertahankan perubahan Anda menerbitkan versi Anda untuk hal yang diubah kedua perangkat dan mempertahankan semua perubahan jarak jauh lainnya. Menggunakan versi jarak jauh membuang perubahan Anda yang belum diterbitkan.",
+      "conflictSongs": "Diubah di kedua perangkat:",
+      "conflictWholeRepository": "Perubahan seluruh pustaka termasuk dalam konflik ini.",
       "conflictKeepLocal": "Pertahankan perubahan saya",
       "conflictUseRemote": "Gunakan versi jarak jauh"
     },

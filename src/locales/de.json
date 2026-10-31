@@ -759,7 +759,9 @@
       "recentOps": "Letzte Vorgänge",
       "refresh": "Aktualisieren",
       "conflictTitle": "Die Mediathek wurde entfernt geändert, bevor diese Bearbeitungen veröffentlicht wurden.",
-      "conflictBody": "Deine Änderungen zu behalten veröffentlicht sie erneut über der Remote-Version. Das wird abgelehnt, wenn beide Seiten dieselben Titel geändert haben — eine automatische Auswahl könnte Arbeit verlieren.",
+      "conflictBody": "Deine Änderungen zu behalten veröffentlicht deine Version dessen, was beide Geräte geändert haben, und behält alle anderen Remote-Änderungen. Die Remote-Version zu verwenden verwirft deine unveröffentlichten Änderungen.",
+      "conflictSongs": "Auf beiden Geräten geändert:",
+      "conflictWholeRepository": "Bibliotheksweite Änderungen gehören zu diesem Konflikt.",
       "conflictKeepLocal": "Meine Änderungen behalten",
       "conflictUseRemote": "Remote-Version verwenden"
     },
