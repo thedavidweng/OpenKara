@@ -25,6 +25,7 @@ const PROPFIND_REQUEST_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
     <D:resourcetype/>
     <D:getcontentlength/>
     <D:getetag/>
+    <D:getlastmodified/>
   </D:prop>
 </D:propfind>"#;
 
@@ -708,6 +709,7 @@ enum PropfindField {
     Href,
     GetContentLength,
     GetEtag,
+    GetLastModified,
 }
 
 #[derive(Default)]
@@ -716,6 +718,7 @@ struct PropfindEntry {
     is_collection: bool,
     size_bytes: Option<u64>,
     etag: Option<String>,
+    modified_at_ms: Option<i64>,
 }
 
 pub fn parse_propfind_xml(
@@ -766,6 +769,10 @@ pub fn parse_propfind_xml(
                     }
                     "getetag" if current_entry.is_some() => {
                         current_field = Some(PropfindField::GetEtag);
+                        text_buf.clear();
+                    }
+                    "getlastmodified" if current_entry.is_some() => {
+                        current_field = Some(PropfindField::GetLastModified);
                         text_buf.clear();
                     }
                     _ => {}
@@ -826,6 +833,12 @@ pub fn parse_propfind_xml(
                         }
                         current_field = None;
                     }
+                    "getlastmodified" if current_field == Some(PropfindField::GetLastModified) => {
+                        if let Some(entry) = &mut current_entry {
+                            entry.modified_at_ms = parse_http_date_ms(text_buf.trim());
+                        }
+                        current_field = None;
+                    }
                     "resourcetype" => {
                         in_resourcetype = false;
                     }
@@ -875,11 +888,18 @@ pub fn parse_propfind_xml(
                 size_bytes: entry.size_bytes.unwrap_or(0),
                 revision: entry.etag,
             },
+            modified_at_ms: entry.modified_at_ms,
         });
     }
     objects.sort_by(|a, b| a.path.cmp(&b.path));
     objects.dedup_by(|a, b| a.path == b.path);
     Ok(objects)
+}
+
+fn parse_http_date_ms(value: &str) -> Option<i64> {
+    let modified = httpdate::parse_http_date(value).ok()?;
+    let since_epoch = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(since_epoch.as_millis()).ok()
 }
 
 fn xml_local_name(raw: &str) -> &str {
@@ -1105,6 +1125,7 @@ mod tests {
         <D:resourcetype/>
         <D:getcontentlength>42</D:getcontentlength>
         <D:getetag>&quot;etag-42&quot;</D:getetag>
+        <D:getlastmodified>Tue, 14 Nov 2023 22:13:20 GMT</D:getlastmodified>
       </D:prop>
     </D:propstat>
   </D:response>
@@ -1116,6 +1137,7 @@ mod tests {
         assert_eq!(listed[0].path, "media/ab/song.flac");
         assert_eq!(listed[0].metadata.size_bytes, 42);
         assert_eq!(listed[0].metadata.revision.as_deref(), Some("\"etag-42\""));
+        assert_eq!(listed[0].modified_at_ms, Some(1_700_000_000_000));
 
         let err = parse_propfind_xml("<D:multistatus><unclosed>", "https://dav.example.com/", "")
             .expect_err("malformed XML");

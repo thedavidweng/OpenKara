@@ -4,7 +4,8 @@ use super::{
         RemoteResult,
     },
     provider::{
-        ConditionalSource, RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage,
+        LegacyPublishStorage, LegacyReadStorage, RemoteMediaSource, RemoteMediaSourceCapabilities,
+        RepositoryStorage,
     },
 };
 use crate::commands::error::{internal_error, CommandResult};
@@ -12,12 +13,12 @@ use std::{
     collections::HashMap,
     fs,
     io::{Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, Mutex},
 };
 
 pub(crate) fn assert_provider_capabilities(
-    storage: &dyn RepositoryStorage,
+    storage: &dyn LegacyPublishStorage,
     expected_storage: RemoteProviderCapabilities,
     expected_media: RemoteMediaSourceCapabilities,
 ) {
@@ -34,15 +35,13 @@ pub(crate) const SCRIPTED_REVISION: &str = "scripted-revision";
 pub(crate) struct ScriptedProvider {
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     revision: Arc<Mutex<String>>,
-    root: PathBuf,
 }
 
 impl ScriptedProvider {
-    pub(crate) fn new(root: PathBuf) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             files: Arc::new(Mutex::new(HashMap::new())),
             revision: Arc::new(Mutex::new(SCRIPTED_REVISION.to_owned())),
-            root,
         }
     }
 
@@ -50,7 +49,6 @@ impl ScriptedProvider {
         Self {
             files: Arc::clone(&self.files),
             revision: Arc::clone(&self.revision),
-            root: self.root.clone(),
         }
     }
 
@@ -74,17 +72,26 @@ impl ScriptedProvider {
 }
 
 impl RepositoryStorage for ScriptedProvider {
-    fn media_source(&self) -> &dyn RemoteMediaSource {
-        self
+    fn delete_path(&self, path: &str) -> CommandResult<()> {
+        self.files
+            .lock()
+            .expect("scripted provider lock")
+            .remove(path);
+        Ok(())
     }
 
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        RemoteProviderCapabilities {
-            conditional_replace: true,
-            resumable_upload: false,
-            revision_metadata: true,
-            server_side_move: false,
-        }
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        Ok(Some(self.revision()))
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        Ok(Some(self.revision()))
+    }
+}
+
+impl LegacyReadStorage for ScriptedProvider {
+    fn media_source(&self) -> &dyn RemoteMediaSource {
+        self
     }
 
     fn get_revision(&self, path: &str) -> CommandResult<Option<String>> {
@@ -113,52 +120,6 @@ impl RepositoryStorage for ScriptedProvider {
             .cloned()
             .ok_or_else(|| internal_error(format!("missing scripted file {path}")))?;
         fs::write(destination, bytes).map_err(|error| internal_error(error.to_string()))
-    }
-
-    fn upload_file(&self, path: &str) -> CommandResult<()> {
-        let source = self.root.join(path);
-        let bytes = fs::read(source).map_err(|error| internal_error(error.to_string()))?;
-        self.files
-            .lock()
-            .expect("scripted provider lock")
-            .insert(path.to_owned(), bytes);
-        Ok(())
-    }
-
-    fn conditional_replace(
-        &self,
-        path: &str,
-        source: ConditionalSource,
-        _expected_revision: Option<&str>,
-    ) -> RemoteResult<RemoteObjectMetadata> {
-        let bytes = source.read_bytes().map_err(|error| {
-            RemoteError::new(RemoteErrorKind::NetworkUnavailable, error.message)
-        })?;
-        let size_bytes = bytes.len() as u64;
-        self.files
-            .lock()
-            .expect("scripted provider lock")
-            .insert(path.to_owned(), bytes);
-        Ok(RemoteObjectMetadata {
-            size_bytes: Some(size_bytes),
-            revision: Some(self.revision()),
-        })
-    }
-
-    fn delete_path(&self, path: &str) -> CommandResult<()> {
-        self.files
-            .lock()
-            .expect("scripted provider lock")
-            .remove(path);
-        Ok(())
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        Ok(Some(self.revision()))
-    }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        Ok(Some(self.revision()))
     }
 }
 
@@ -227,23 +188,15 @@ impl RemoteMediaSource for ScriptedProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn scripted_adapter_uses_the_shared_storage_and_media_seam() {
-        let directory = tempdir().expect("temp directory should create");
-        let provider = ScriptedProvider::new(directory.path().to_owned());
-        assert_provider_capabilities(
-            &provider,
-            RemoteProviderCapabilities {
-                conditional_replace: true,
-                resumable_upload: false,
-                revision_metadata: true,
-                server_side_move: false,
-            },
+        let provider = ScriptedProvider::new();
+        assert_eq!(
+            provider.media_source().capabilities(),
             RemoteMediaSourceCapabilities {
                 range_download: true,
-            },
+            }
         );
 
         assert!(provider
@@ -259,8 +212,7 @@ mod tests {
 
     #[test]
     fn handles_share_contents_and_revision() {
-        let directory = tempdir().expect("temp directory should create");
-        let provider = ScriptedProvider::new(directory.path().to_owned());
+        let provider = ScriptedProvider::new();
         let handle = provider.handle();
 
         provider.put_file("openkara.db", b"contents".to_vec());

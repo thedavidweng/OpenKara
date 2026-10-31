@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use crate::commands::error::{CommandError, CommandResult};
-use crate::config::RegisteredLibrary;
+use crate::config::{RegisteredLibrary, RemoteLibraryProvider};
 use crate::library::error::LibraryError;
 use crate::remote::control_db::{get_repository_state, LocalState};
 use crate::remote::executor::{
     conflict_keep_local_as_new_generation, conflict_use_remote, pull_conflict_candidate,
-    PublishContext,
+    pull_conflict_candidate_via_core, resolve_conflict_keep_local_via_core, PublishContext,
 };
-use crate::remote::provider::create_repository_storage;
+use crate::remote::provider::create_legacy_publish_storage;
 use crate::remote::types::load_app_config;
 use crate::AppState;
 
@@ -43,6 +43,12 @@ pub fn resolve_active_remote_conflict(
         ))
     })?;
 
+    // Both exits rewrite the working database, so they serialize with
+    // mutations and publications like every other working-copy writer.
+    let commit_lock = state.remote.commit_lock(&library_id);
+    let _commit_guard = commit_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let control_db =
         state.remote.control_db()?.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -68,30 +74,82 @@ pub fn resolve_active_remote_conflict(
         repo_state.writer_id.clone().unwrap_or_default(),
     );
 
-    let provider = create_repository_storage(&state.shell.app_data_dir, active_library)?;
     let ctx = PublishContext {
         control_db: &control_db,
-        provider: provider.as_ref(),
         working_copy_root: &working_copy_root,
         library_id: &library_id,
         writer_id: &writer_id,
         repository_id: &repository_id,
     };
 
-    // Both strategies compare against the winning remote database, so it is
-    // pulled to a candidate path rather than over the working copy — the local
-    // side is still the user's only copy of their pending changes until they
-    // choose to discard it.
+    let uses_core_writer = matches!(
+        active_library.provider(),
+        Some(RemoteLibraryProvider::WebDav)
+    );
+    if uses_core_writer && resolution == ConflictResolution::KeepLocal {
+        return resolve_conflict_keep_local_via_core(
+            &ctx,
+            &state.shell.app_data_dir,
+            active_library,
+            &operation_id,
+        );
+    }
+
+    // The remaining strategies compare against the winning remote database,
+    // so it is pulled to a candidate path rather than over the working copy —
+    // the local side is still the user's only copy of their pending changes
+    // until they choose to discard it.
     let candidate = candidate_path(&working_copy_root, &operation_id);
-    let result =
-        pull_conflict_candidate(provider.as_ref(), &candidate).and_then(|_| match resolution {
-            ConflictResolution::KeepLocal => {
-                conflict_keep_local_as_new_generation(&ctx, &operation_id, &candidate)
-            }
-            ConflictResolution::UseRemote => conflict_use_remote(&ctx, &operation_id, &candidate),
-        });
+    let result = if uses_core_writer {
+        let secret =
+            crate::remote::webdav::load_webdav_secret(&state.shell.app_data_dir, active_library)?;
+        let storage =
+            openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+                .map_err(CommandError::from)?;
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .and_then(|generation| use_remote(&ctx, &operation_id, &candidate, generation))
+    } else {
+        let storage = create_legacy_publish_storage(&state.shell.app_data_dir, active_library)?;
+        pull_conflict_candidate(storage.as_ref(), &candidate).and_then(
+            |manifest| match resolution {
+                ConflictResolution::KeepLocal => conflict_keep_local_as_new_generation(
+                    &ctx,
+                    storage.as_ref(),
+                    &operation_id,
+                    &candidate,
+                ),
+                ConflictResolution::UseRemote => {
+                    use_remote(&ctx, &operation_id, &candidate, manifest.generation)
+                }
+            },
+        )
+    };
     let _ = std::fs::remove_file(&candidate);
     result
+}
+
+/// The winning remote snapshot becomes the working copy and its base. The
+/// base is retained before the state names it and the bases it replaces are
+/// pruned only after.
+fn use_remote(
+    ctx: &PublishContext<'_>,
+    operation_id: &str,
+    candidate: &std::path::Path,
+    remote_generation: i64,
+) -> CommandResult<()> {
+    let base_sha256 =
+        openkara_remote::retain_base_snapshot(ctx.working_copy_root, remote_generation, candidate)
+            .map_err(CommandError::from)?;
+    conflict_use_remote(
+        ctx,
+        operation_id,
+        candidate,
+        remote_generation,
+        Some(base_sha256),
+    )?;
+    openkara_remote::prune_base_snapshots(ctx.working_copy_root, remote_generation);
+    openkara_remote::discard_rebase_state(ctx.working_copy_root, operation_id);
+    Ok(())
 }
 
 fn candidate_path(working_copy_root: &std::path::Path, operation_id: &str) -> PathBuf {

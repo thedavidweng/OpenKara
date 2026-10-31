@@ -227,6 +227,7 @@ fn commit_mirror_via_executor<R: tauri::Runtime>(
                 updated_at_ms: now,
                 repository_id: Some(repository_id.clone()),
                 writer_id: Some(writer_id.clone()),
+                local_base_sha256: None,
             });
             row.repository_id = Some(repository_id.clone());
             row.writer_id = Some(writer_id.clone());

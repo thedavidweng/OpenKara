@@ -37,3 +37,19 @@ Initial submission boundary:
 After Flathub creates `flathub/io.github.thedavidweng.OpenKara`, point
 `FLATHUB_TARGET_REPO` at that app repository and `FLATHUB_BASE_BRANCH` at
 `master`; update PRs can then be created automatically by the release workflow.
+
+## Variant without Streaming Sources
+
+The Flatpak build includes Streaming Sources. If the Flathub review rejects
+downloadable source packages, ship the variant without them:
+
+1. In `io.github.thedavidweng.OpenKara.yml.in`, change the build command to
+   `pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --config src-tauri/tauri.no-streaming-sources.conf.json --no-bundle -- --no-default-features`.
+2. In `io.github.thedavidweng.OpenKara.desktop`, remove
+   `MimeType=x-scheme-handler/openkara;`. No `openkara://` handler exists in
+   this build.
+3. State in the release notes and the Flathub submission notes that the
+   Flatpak has no Streaming Sources. Settings states the same limit.
+
+The vendored Cargo sources stay the same: `cargo-sources.json` covers both
+builds.

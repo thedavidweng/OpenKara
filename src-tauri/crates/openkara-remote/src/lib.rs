@@ -1,11 +1,14 @@
 pub mod asset;
 pub mod base;
+pub mod cleanup;
 pub(crate) mod download;
 pub mod error;
 pub mod manifest;
 pub mod media_cache;
 pub mod net_policy;
 pub mod reader;
+pub mod rebase;
+pub mod song;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -17,7 +20,12 @@ pub use asset::{
     FetchedAsset, RangeReader, ASSET_DOWNLOAD_CHUNK_SIZE,
 };
 pub use base::{
-    base_snapshot_path, clear_base_snapshot, retain_base_snapshot, retain_base_snapshot_if_missing,
+    adopt_legacy_base_snapshot, base_snapshot_path, prune_base_snapshots, retain_base_snapshot,
+    verified_base_snapshot, LegacyBaseAdoption,
+};
+pub use cleanup::{
+    clean_up_unreferenced_uploads, CleanupPolicy, CleanupReport, DEFAULT_CLEANUP_GRACE_PERIOD_MS,
+    DEFAULT_KEPT_GENERATIONS,
 };
 pub use error::{
     kind_from_http_status, kind_from_http_status_code, kind_from_io_error,
@@ -38,12 +46,17 @@ pub use reader::{
     RefreshedSnapshot, SnapshotSource, WorkingCopyDatabase, LEGACY_DATABASE_PATH,
     SNAPSHOT_DOWNLOAD_CHUNK_SIZE,
 };
+pub use rebase::{
+    discard_rebase_state, ApprovedConflict, ChangeSet, ConflictPolicy, ConflictingSong,
+    PrePublishConflict,
+};
+pub use song::{publish_song_assets, PublishedSongAssets};
 pub use storage::{
     is_under_prefix, validate_object_path, validate_prefix, ListedObject, ObjectMetadata,
-    RepositoryStorage, StorageCapabilities,
+    ReadOnlyStorage, RepositoryStorage, StorageCapabilities,
 };
 pub use webdav::WebDavStorage;
 pub use writer::{
-    ensure_referenced_assets, publish_changes, CommittedSnapshot, PublishOutcome, PublishRequest,
-    PublishStep,
+    ensure_referenced_assets, publish_changes, AssetUpload, CommittedSnapshot, PublishOutcome,
+    PublishRequest, PublishStep,
 };

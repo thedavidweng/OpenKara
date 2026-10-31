@@ -341,6 +341,7 @@
   "settings": {
     "streaming": {
       "title": "Streaming Sources",
+      "notIncluded": "This OpenKara build does not include Streaming Sources.",
       "refresh": "Check for sources and updates",
       "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. You see the declared origins and capabilities before you install. Source Registries are maintained outside OpenKara.",
       "empty": "No sources are available. Check for sources to try again.",
@@ -759,7 +760,9 @@
       "recentOps": "Thao tác gần đây",
       "refresh": "Làm mới",
       "conflictTitle": "Thư viện đã thay đổi ở phía từ xa trước khi các chỉnh sửa này được đăng.",
-      "conflictBody": "Giữ thay đổi của bạn sẽ đăng lại chúng lên trên bản từ xa. Thao tác này bị từ chối khi cả hai bên cùng sửa một bài, vì tự động chọn một bên có thể làm mất công sức.",
+      "conflictBody": "Giữ thay đổi của bạn sẽ đăng phiên bản của bạn cho những gì cả hai thiết bị đã sửa và giữ mọi thay đổi khác từ xa. Dùng bản từ xa sẽ bỏ các thay đổi chưa đăng của bạn.",
+      "conflictSongs": "Đã sửa trên cả hai thiết bị:",
+      "conflictWholeRepository": "Xung đột này có thay đổi toàn thư viện. Giữ thay đổi của bạn sẽ thay toàn bộ thư viện từ xa bằng thư viện trên thiết bị này, và các thay đổi từ thiết bị khác có thể bị mất. Dùng bản từ xa sẽ bỏ các thay đổi chưa đăng của bạn.",
       "conflictKeepLocal": "Giữ thay đổi của tôi",
       "conflictUseRemote": "Dùng bản từ xa"
     },

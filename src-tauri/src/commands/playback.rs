@@ -44,6 +44,7 @@ pub async fn play(
 ) -> CommandResult<PlaybackStateSnapshot> {
     let background_state = state.inner().clone();
     let background_handle = app_handle.clone();
+    #[cfg(feature = "streaming-sources")]
     if let Some((source_id, remote_track_id)) = catalog::streaming_preview_reference(&song_id) {
         return Ok(tauri::async_runtime::spawn_blocking(move || {
             services::track_load::preview::start(

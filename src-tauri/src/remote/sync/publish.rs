@@ -17,7 +17,7 @@ use crate::{
 };
 use tauri::AppHandle;
 
-use super::super::provider::{create_repository_storage, RepositoryStorage};
+use super::super::provider::{create_legacy_publish_storage, LegacyPublishStorage};
 use super::super::types::{
     load_app_config, load_remote_root, upsert_stem_entry, UploadState, UploadStatusSnapshot,
 };
@@ -38,7 +38,7 @@ fn publish_artwork_derivatives(
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
     remote_connection: &rusqlite::Connection,
-    provider: &dyn RepositoryStorage,
+    legacy_upload: Option<&dyn LegacyPublishStorage>,
     song_id: &str,
     _same_root: bool,
 ) -> CommandResult<()> {
@@ -138,18 +138,20 @@ fn publish_artwork_derivatives(
             return Ok(());
         }
     };
-    for path in [&remote_thumb, &remote_preview] {
-        if let Err(error) = provider.upload_file(path) {
-            tracing::warn!(
-                "failed to upload artwork derivative {path}: {}",
-                error.message
-            );
-            return Ok(());
+    if let Some(provider) = legacy_upload {
+        for path in [&remote_thumb, &remote_preview] {
+            if let Err(error) = provider.upload_file(path) {
+                tracing::warn!(
+                    "failed to upload artwork derivative {path}: {}",
+                    error.message
+                );
+                return Ok(());
+            }
         }
     }
 
-    // Both immutable derivative objects are present remotely. Persist only
-    // their byte-addressed paths in the candidate database.
+    // Persist only byte-addressed derivative paths in the candidate database;
+    // without a legacy upload the core uploads them with the song's assets.
     if let Err(error) = cache::update_artwork_derivative_paths(
         remote_connection,
         song_id,
@@ -206,10 +208,12 @@ fn content_addressed_asset_relative_path(
     Ok(format!("{top_level}/content/{digest}.{extension}"))
 }
 
+/// Stage one asset under its content-addressed path. A legacy provider also
+/// uploads it here; without one the core uploads it with the song.
 fn publish_content_addressed_asset(
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn RepositoryStorage,
+    legacy_upload: Option<&dyn LegacyPublishStorage>,
     source_relative_path: &str,
 ) -> CommandResult<String> {
     let source = local_root.resolve(source_relative_path);
@@ -233,6 +237,9 @@ fn publish_content_addressed_asset(
             "asset changed while staging {source_relative_path}"
         ))));
     }
+    let Some(provider) = legacy_upload else {
+        return Ok(remote_relative_path);
+    };
     let local_size = std::fs::metadata(&destination)
         .map_err(|error| {
             database_error(format!("failed to stat {}: {error}", destination.display()))
@@ -267,7 +274,7 @@ fn publish_content_addressed_stem_entry(
     entry: &crate::cache::stems::StemCacheEntry,
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn RepositoryStorage,
+    provider: Option<&dyn LegacyPublishStorage>,
 ) -> CommandResult<crate::cache::stems::StemCacheEntry> {
     let mut remote_entry = entry.clone();
     remote_entry.vocals_path =
@@ -583,7 +590,8 @@ fn publish_song_internal<R: tauri::Runtime>(
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
     let local_root = remote_root.clone();
     let same_root = true;
-    let provider = create_repository_storage(&state.shell.app_data_dir, &remote_library)?;
+    let asset_storage = SongAssetStorage::open(&state.shell.app_data_dir, &remote_library)?;
+    let upload = asset_storage.upload();
 
     // Phase 1: CAS-boundary ops before any new freeze.
     reconcile_cas_boundary_ops(state, &remote_library_id, &remote_library, &remote_root)?;
@@ -699,7 +707,7 @@ fn publish_song_internal<R: tauri::Runtime>(
             &mut remote_connection,
             &local_root,
             &remote_root,
-            &*provider,
+            upload,
             sid,
             same_root,
         ) {
@@ -772,6 +780,58 @@ fn publish_song_internal<R: tauri::Runtime>(
     }
 }
 
+/// Where Publish Song sends a song's staged assets.
+#[derive(Clone, Copy)]
+enum SongAssetUpload<'a> {
+    /// Dropbox and Google Drive upload every staged asset through their
+    /// legacy adapter.
+    Legacy(&'a dyn LegacyPublishStorage),
+    /// WebDAV publishes through the core, which uploads only the assets the
+    /// remote lacks.
+    Core(&'a dyn openkara_remote::RepositoryStorage),
+}
+
+impl<'a> SongAssetUpload<'a> {
+    fn legacy(self) -> Option<&'a dyn LegacyPublishStorage> {
+        match self {
+            Self::Legacy(storage) => Some(storage),
+            Self::Core(_) => None,
+        }
+    }
+}
+
+/// The storage behind a repository's Publish Song: WebDAV runs on the core,
+/// Dropbox and Google Drive keep their legacy adapter.
+enum SongAssetStorage<'a> {
+    Legacy(Box<dyn LegacyPublishStorage + 'a>),
+    Core(openkara_remote::WebDavStorage),
+}
+
+impl<'a> SongAssetStorage<'a> {
+    fn open(
+        app_data_dir: &'a std::path::Path,
+        remote_library: &'a RegisteredLibrary,
+    ) -> CommandResult<Self> {
+        if !matches!(
+            remote_library.provider(),
+            Some(RemoteLibraryProvider::WebDav)
+        ) {
+            return create_legacy_publish_storage(app_data_dir, remote_library).map(Self::Legacy);
+        }
+        let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map(Self::Core)
+            .map_err(CommandError::from)
+    }
+
+    fn upload(&self) -> SongAssetUpload<'_> {
+        match self {
+            Self::Legacy(storage) => SongAssetUpload::Legacy(storage.as_ref()),
+            Self::Core(storage) => SongAssetUpload::Core(storage),
+        }
+    }
+}
+
 /// Upload assets and update the remote working DB for one song. Shared by
 /// single-song and multi-song batch publication under one commit lock.
 fn upload_one_song_assets(
@@ -779,10 +839,11 @@ fn upload_one_song_assets(
     remote_connection: &mut rusqlite::Connection,
     local_root: &LibraryRoot,
     remote_root: &LibraryRoot,
-    provider: &dyn RepositoryStorage,
+    upload: SongAssetUpload<'_>,
     song_id: &str,
     same_root: bool,
 ) -> CommandResult<()> {
+    let provider = upload.legacy();
     let song = cache::get_song_by_hash(local_connection, song_id)
         .map_err(|error| database_error(error.to_string()))?
         .ok_or_else(|| {
@@ -845,6 +906,21 @@ fn upload_one_song_assets(
             same_root,
         )?;
         sync_song_lyrics_to_remote(local_connection, remote_connection, song_id)?;
+    }
+
+    if let SongAssetUpload::Core(storage) = upload {
+        let published = openkara_remote::publish_song_assets(
+            storage,
+            remote_root.root(),
+            &remote_root.database_path(),
+            song_id,
+        )
+        .map_err(CommandError::from)?;
+        tracing::debug!(
+            "published song {song_id}: {} asset(s) uploaded, {} already on the remote",
+            published.uploaded.len(),
+            published.already_present.len()
+        );
     }
     Ok(())
 }
@@ -1119,6 +1195,9 @@ pub(crate) fn merge_pending_ops_for_publish(
             payload.candidate_sha256 = None;
             payload.candidate_assets_fingerprint = None;
             payload.protocol_step = None;
+            // Keeping this device's changes answered the conflict of the
+            // smaller change set; the songs merged in were never asked about.
+            payload.keep_local_approval = None;
             primary.candidate_db_digest = None;
             let _ = crate::remote::control_db::delete_transfer_parts(&tx, primary_op_id);
         }
@@ -1254,7 +1333,17 @@ fn commit_via_executor(
     // Caller already holds the per-library commit lock.
     state.remote.ensure_available()?;
 
-    let provider = create_repository_storage(&state.shell.app_data_dir, remote_library)?;
+    let legacy_storage = if matches!(
+        remote_library.provider(),
+        Some(RemoteLibraryProvider::WebDav)
+    ) {
+        None
+    } else {
+        Some(create_legacy_publish_storage(
+            &state.shell.app_data_dir,
+            remote_library,
+        )?)
+    };
 
     let (repository_id, writer_id) = {
         let conn = state.remote.control_db()?.lock().map_err(|_| {
@@ -1295,6 +1384,7 @@ fn commit_via_executor(
                 updated_at_ms: crate::remote::types::current_unix_time_ms(),
                 repository_id: Some(repository_id.clone()),
                 writer_id: Some(writer_id.clone()),
+                local_base_sha256: None,
             });
             row.repository_id = Some(repository_id.clone());
             row.writer_id = Some(writer_id.clone());
@@ -1310,33 +1400,29 @@ fn commit_via_executor(
         crate::commands::error::database_error(format!("failed to open control DB: {e:?}"))
     })?;
 
-    if matches!(
-        remote_library.provider(),
-        Some(RemoteLibraryProvider::WebDav)
-    ) {
-        let ctx = PublishContext {
-            control_db: &exec_conn,
-            provider: provider.as_ref(),
-            working_copy_root: remote_root.root(),
-            library_id: remote_library_id,
-            writer_id: &writer_id,
-            repository_id: &repository_id,
-        };
-        return execute_publish_via_core(
-            &ctx,
-            &state.shell.app_data_dir,
-            remote_library,
+    if let Some(storage) = legacy_storage {
+        return run_publication_driver(
+            &exec_conn,
+            storage.as_ref(),
+            remote_root.root(),
+            remote_library_id,
+            &writer_id,
+            &repository_id,
             operation_id,
         );
     }
 
-    run_publication_driver(
-        &exec_conn,
-        provider.as_ref(),
-        remote_root.root(),
-        remote_library_id,
-        &writer_id,
-        &repository_id,
+    let ctx = PublishContext {
+        control_db: &exec_conn,
+        working_copy_root: remote_root.root(),
+        library_id: remote_library_id,
+        writer_id: &writer_id,
+        repository_id: &repository_id,
+    };
+    execute_publish_via_core(
+        &ctx,
+        &state.shell.app_data_dir,
+        remote_library,
         operation_id,
     )
 }
@@ -1348,7 +1434,7 @@ fn commit_via_executor(
 /// operation transitions, and publication events have one implementation.
 pub(crate) fn run_publication_driver(
     control_db: &rusqlite::Connection,
-    provider: &dyn RepositoryStorage,
+    storage: &dyn LegacyPublishStorage,
     working_copy_root: &std::path::Path,
     library_id: &str,
     writer_id: &str,
@@ -1357,14 +1443,13 @@ pub(crate) fn run_publication_driver(
 ) -> CommandResult<()> {
     let ctx = PublishContext {
         control_db,
-        provider,
         working_copy_root,
         library_id,
         writer_id,
         repository_id,
     };
 
-    execute_publish(&ctx, operation_id)
+    execute_publish(&ctx, storage, operation_id)
 }
 
 /// Re-upload song assets for a durable pre-freeze operation after a crash.
@@ -1380,13 +1465,13 @@ pub(crate) fn reupload_song_assets_for_recovery(
         .map_err(|error| database_error(error.to_string()))?;
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let provider = create_repository_storage(&state.shell.app_data_dir, remote_library)?;
+    let asset_storage = SongAssetStorage::open(&state.shell.app_data_dir, remote_library)?;
     upload_one_song_assets(
         &local_connection,
         &mut remote_connection,
         remote_root,
         remote_root,
-        provider.as_ref(),
+        asset_storage.upload(),
         song_id,
         true,
     )
@@ -1529,6 +1614,7 @@ mod merge_tests {
                 updated_at_ms: 1,
                 repository_id: None,
                 writer_id: None,
+                local_base_sha256: None,
             },
         )
         .unwrap();
@@ -1784,5 +1870,110 @@ mod merge_tests {
             get_operation(&conn, "op-b").unwrap().unwrap().state,
             OperationState::Cancelled
         );
+    }
+}
+
+#[cfg(test)]
+mod core_song_tests {
+    use super::{upload_one_song_assets, SongAssetUpload};
+    use crate::{cache, library::Song, library_root::LibraryRoot};
+    use openkara_remote::testing::{Fault, TestWebDavServer};
+    use sha2::{Digest, Sha256};
+
+    const AUDIO: &[u8] = b"openkara instrumental audio bytes";
+
+    fn working_copy_with_instrumental(dir: &std::path::Path) -> LibraryRoot {
+        let root = LibraryRoot::create(&dir.join("working-copy")).expect("working copy");
+        std::fs::write(root.resolve("media/song-1.wav"), AUDIO).expect("audio");
+        let connection = cache::open_database(&root.database_path()).expect("database");
+        cache::apply_migrations(&connection).expect("migrations");
+        cache::upsert_song(
+            &connection,
+            &Song {
+                hash: "song-1".to_owned(),
+                file_path: Some("media/song-1.wav".to_owned()),
+                cdg_path: None,
+                media_g_container: None,
+                instrumental: true,
+                language: None,
+                audio_source_kind: "original".to_owned(),
+                title: Some("Instrumental".to_owned()),
+                artist: None,
+                album: None,
+                duration_ms: 1_000,
+                cover_art: None,
+                has_cover_art: false,
+                artwork_thumb_path: None,
+                imported_at: 1,
+                original_ext: Some("wav".to_owned()),
+            },
+        )
+        .expect("song");
+        root
+    }
+
+    fn publish_song(
+        root: &LibraryRoot,
+        upload: SongAssetUpload<'_>,
+    ) -> crate::commands::error::CommandResult<()> {
+        let local = cache::open_database(&root.database_path()).expect("local connection");
+        let mut remote = cache::open_database(&root.database_path()).expect("remote connection");
+        upload_one_song_assets(&local, &mut remote, root, root, upload, "song-1", true)
+    }
+
+    fn content_path() -> String {
+        format!(
+            "media/content/{}.wav",
+            crate::hash::hex_lower(Sha256::digest(AUDIO))
+        )
+    }
+
+    #[test]
+    fn webdav_publish_song_uploads_content_addressed_assets_once() {
+        let server = TestWebDavServer::start();
+        let storage = server.storage().clone();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root = working_copy_with_instrumental(dir.path());
+
+        publish_song(&root, SongAssetUpload::Core(&storage)).expect("publish song");
+        publish_song(&root, SongAssetUpload::Core(&storage)).expect("republish song");
+
+        let remote_path = content_path();
+        assert_eq!(server.file(&remote_path).as_deref(), Some(AUDIO));
+        assert_eq!(
+            server.put_request_count(&remote_path),
+            1,
+            "re-publishing does not upload the audio again"
+        );
+        let connection = cache::open_database(&root.database_path()).expect("database");
+        let song = cache::get_song_by_hash(&connection, "song-1")
+            .expect("query")
+            .expect("song");
+        assert_eq!(song.file_path.as_deref(), Some(remote_path.as_str()));
+        assert_eq!(song.audio_source_kind, "original_remote");
+    }
+
+    #[test]
+    fn webdav_publish_song_interrupted_mid_upload_resumes_on_retry() {
+        let server = TestWebDavServer::start();
+        let storage = server.storage().clone();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root = working_copy_with_instrumental(dir.path());
+        let remote_path = content_path();
+        server.script(Fault::PartialWrite {
+            path: remote_path.clone(),
+            stored_bytes: 4,
+        });
+
+        let error =
+            publish_song(&root, SongAssetUpload::Core(&storage)).expect_err("interrupted upload");
+        assert!(
+            error.retryable,
+            "an interrupted upload is retryable: {error:?}"
+        );
+
+        publish_song(&root, SongAssetUpload::Core(&storage)).expect("retry");
+        assert_eq!(server.file(&remote_path).as_deref(), Some(AUDIO));
+        assert_eq!(server.put_request_count(&remote_path), 2);
     }
 }

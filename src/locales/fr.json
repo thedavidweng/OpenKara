@@ -342,6 +342,7 @@
   "settings": {
     "streaming": {
       "title": "Streaming Sources",
+      "notIncluded": "This OpenKara build does not include Streaming Sources.",
       "refresh": "Check for sources and updates",
       "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. You see the declared origins and capabilities before you install. Source Registries are maintained outside OpenKara.",
       "empty": "No sources are available. Check for sources to try again.",
@@ -760,7 +761,9 @@
       "recentOps": "Opérations récentes",
       "refresh": "Actualiser",
       "conflictTitle": "Votre bibliothèque a changé côté distant avant la publication de ces modifications.",
-      "conflictBody": "Conserver vos modifications les republie par-dessus la version distante. Cela est refusé quand les deux côtés ont modifié les mêmes morceaux, car choisir automatiquement pourrait faire perdre du travail.",
+      "conflictBody": "Conserver vos modifications publie votre version de ce que les deux appareils ont modifié et garde toutes les autres modifications distantes. Utiliser la version distante abandonne vos modifications non publiées.",
+      "conflictSongs": "Modifié sur les deux appareils :",
+      "conflictWholeRepository": "Ce conflit comprend des modifications de toute la bibliothèque. Conserver vos modifications remplace toute la bibliothèque distante par la bibliothèque de cet appareil, et les modifications faites sur d'autres appareils peuvent être perdues. Utiliser la version distante abandonne vos modifications non publiées.",
       "conflictKeepLocal": "Conserver mes modifications",
       "conflictUseRemote": "Utiliser la version distante"
     },

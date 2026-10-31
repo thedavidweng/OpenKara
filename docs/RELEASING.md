@@ -183,6 +183,27 @@ payload. The metadata job generates one deterministic `latest.json` and one
 `SHA256SUMS` from `release-evidence.json`. No workflow job merges mutable
 platform manifests or rebuilds a release candidate.
 
+## Builds without Streaming Sources
+
+The Cargo feature `streaming-sources` is on by default, so release builds
+include Streaming Sources. A store build compiles them out, so a store policy
+rejection of downloadable source packages never blocks a release:
+
+```bash
+pnpm tauri build --config src-tauri/tauri.no-streaming-sources.conf.json -- --no-default-features
+```
+
+The config overlay removes the `openkara://` scheme registration. The
+[source host contract](references/contracts/source-host.md#build-feature)
+lists what the build leaves out. Settings states that the build does not
+include Streaming Sources.
+
+- App Store builds (Mac App Store and iOS) always use this build. An iOS build
+  with the feature on fails to compile.
+- Flatpak keeps Streaming Sources unless the Flathub review rejects them. The
+  [Flatpak packaging notes](../packaging/flatpak/README.md#variant-without-streaming-sources)
+  describe the variant without them.
+
 ## Prerelease semantics and the updater
 
 GitHub's `/releases/latest` — the URL the in-app updater polls — resolves only

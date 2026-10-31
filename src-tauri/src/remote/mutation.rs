@@ -243,22 +243,6 @@ mod sync_backend {
                 .unwrap_or(0)
         };
 
-        // Retain the pre-mutation working copy as the merge base when no base
-        // is present (ADR 0040): a working copy that predates base retention,
-        // or whose base a commit cleared, records its next base here, while
-        // the digest above still matches these exact bytes. Best-effort: a
-        // retain failure only means a later rebase fails closed.
-        if let Some(root) = library.working_copy_root() {
-            if let Some(db) = db_path.as_ref() {
-                if let Err(error) = openkara_remote::retain_base_snapshot_if_missing(&root, db) {
-                    tracing::warn!(
-                        "failed to retain merge-base snapshot for library {library_id}: {:?}",
-                        error
-                    );
-                }
-            }
-        }
-
         let operation_id = uuid::Uuid::new_v4().to_string();
         let now = crate::remote::types::current_unix_time_ms();
 

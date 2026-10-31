@@ -1,7 +1,7 @@
 # ADR 0040 — Rebase song-scoped outbox changes on publish
 
 Date: 2026-10-26
-Status: accepted
+Status: accepted, amended by [0045](./0045-verify-the-rebase-base-and-limit-keep-local-to-the-approved-conflict.md)
 
 ## Context
 

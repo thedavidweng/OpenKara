@@ -1,14 +1,13 @@
 pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
+pub(crate) mod base_identity;
 mod bootstrap;
 pub(crate) mod content;
 pub(crate) mod control_db;
 mod dropbox;
 pub(crate) mod errors;
 pub(crate) mod executor;
-#[cfg(test)]
-mod fault_injection;
 mod google_drive;
 pub(crate) mod library_outbox;
 mod lifecycle;

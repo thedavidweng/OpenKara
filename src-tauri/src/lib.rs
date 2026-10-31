@@ -33,13 +33,18 @@ pub mod runtime_bootstrap_regression;
 pub mod separator;
 pub mod services;
 pub mod smoke;
+#[cfg(feature = "streaming-sources")]
 pub mod source_host;
+#[cfg(feature = "streaming-sources")]
 pub mod source_registry_link;
 pub mod state;
 pub mod system_credentials;
 mod window_shell;
 
 pub use state::AppState;
+
+#[cfg(all(target_os = "ios", feature = "streaming-sources"))]
+compile_error!("iOS builds ship without Streaming Sources: build with --no-default-features");
 
 use std::path::{Path, PathBuf};
 
@@ -93,8 +98,6 @@ pub fn derive_startup_model_bootstrap(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .manage(std::sync::Arc::new(catalog::TrackMetadataCache::default()))
-        .manage(commands::catalog::SourceAuthentication::default())
         // First plugin: short-circuit a second launch before any state init
         // (single SQLite writer + remote outbox assume one process).
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -103,8 +106,13 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-        }))
-        .plugin(tauri_plugin_deep_link::init())
+        }));
+    #[cfg(feature = "streaming-sources")]
+    let builder = builder
+        .manage(std::sync::Arc::new(catalog::TrackMetadataCache::default()))
+        .manage(commands::catalog::SourceAuthentication::default())
+        .plugin(tauri_plugin_deep_link::init());
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -209,38 +217,68 @@ pub fn run() {
             commands::settings::set_language,
             commands::settings::list_online_sources,
             commands::settings::set_online_source_enabled,
+            commands::settings::streaming_sources_supported,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::get_streaming_session,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::open_streaming_sign_in,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::sign_out_streaming_source,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::poll_streaming_sign_in,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::cancel_streaming_sign_in,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::list_streaming_sources,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::refresh_streaming_sources,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::install_streaming_source,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::add_source_registry,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::remove_source_registry,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::list_source_registries,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::take_source_registry_links,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::list_source_market,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::install_market_package,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::get_source_replacement_notice,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::dismiss_source_replacement_notice,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::cancel_streaming_source_install,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::set_streaming_source_enabled,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::uninstall_streaming_source,
+            #[cfg(feature = "streaming-sources")]
             commands::source_host::pin_streaming_source,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::list_streaming_liked_tracks,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::list_streaming_playlists,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::get_streaming_playlist,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::get_streaming_tracks,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::search_streaming_source,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::start_streaming_import,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::continue_streaming_import,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::cancel_streaming_import,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::get_streaming_import_status,
-            commands::catalog::resolve_video_source_url,
-            commands::catalog::get_reveal_targets,
-            commands::catalog::reveal_in_folder,
+            commands::video_source::resolve_video_source_url,
+            commands::reveal::get_reveal_targets,
+            commands::reveal::reveal_in_folder,
             commands::settings::set_hide_batch_separate,
             commands::settings::set_cover_art_backdrop,
             commands::settings::set_lyrics_blur_inactive,

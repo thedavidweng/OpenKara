@@ -44,7 +44,7 @@ use crate::remote::manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
-use crate::remote::provider::{ConditionalSource, RepositoryStorage};
+use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, LegacyReadStorage};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
@@ -55,7 +55,6 @@ use uuid::Uuid;
 
 pub(crate) struct PublishContext<'a> {
     pub control_db: &'a Connection,
-    pub provider: &'a dyn RepositoryStorage,
     pub working_copy_root: &'a Path,
     pub library_id: &'a str,
     pub writer_id: &'a str,
@@ -81,7 +80,11 @@ pub(crate) struct PublishOutcome {
 /// The caller is responsible for acquiring the per-library commit lock
 /// (`commit_lock(library_id)`) before calling this, so two concurrent
 /// manifest commits for the same library cannot run.
-pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> CommandResult<()> {
+pub(crate) fn execute_publish(
+    ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
+    operation_id: &str,
+) -> CommandResult<()> {
     let op = get_operation(ctx.control_db, operation_id)?
         .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
 
@@ -96,10 +99,10 @@ pub(crate) fn execute_publish(ctx: &PublishContext<'_>, operation_id: &str) -> C
         return Ok(());
     }
 
-    let result = run_publish_protocol(ctx, &op);
+    let result = run_publish_protocol(ctx, storage, &op);
     match result {
         Ok(outcome) => {
-            record_completed(ctx, &op, &outcome)?;
+            record_completed(ctx, &op, &outcome, GcSchedule::AfterSafetyDelay)?;
             Ok(())
         }
         Err(remote_err) => {
@@ -138,6 +141,27 @@ pub(crate) fn execute_publish_via_core(
     ) {
         return Ok(());
     }
+    let payload = OperationPayload::from_json(&op.payload_json)?;
+    let conflict_policy = payload
+        .keep_local_approval
+        .as_ref()
+        .map_or(openkara_remote::ConflictPolicy::Stop, |approved| {
+            openkara_remote::ConflictPolicy::KeepLocal(approved.into())
+        });
+
+    if let Err(error) = crate::remote::base_identity::ensure_base_identity(
+        ctx.control_db,
+        ctx.library_id,
+        ctx.working_copy_root,
+    ) {
+        tracing::info!(
+            "failed to prove the base snapshot of library {}: {:?}",
+            ctx.library_id,
+            error
+        );
+    }
+    let expected_base_sha256 = get_repository_state(ctx.control_db, ctx.library_id)?
+        .and_then(|state| crate::remote::base_identity::base_identity_for_operation(&op, &state));
 
     let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
     let storage =
@@ -154,19 +178,17 @@ pub(crate) fn execute_publish_via_core(
         "Reading remote manifest",
     )?;
 
-    let payload = OperationPayload::from_json(&op.payload_json)?;
     let request = openkara_remote::PublishRequest {
         repository_id: ctx.repository_id.to_owned(),
         writer_id: ctx.writer_id.to_owned(),
         operation_id: op.operation_id.clone(),
         expected_generation: op.expected_generation.unwrap_or(0),
-        song_ids: payload.song_ids.clone(),
-        whole_repository: payload.whole_repository,
-        // The true merge base (ADR 0040): the base snapshot the working copy
-        // retained at `expected_generation`, verified against the outbox
-        // `source_db_digest` before any rebase merges.
-        base_snapshot_path: Some(openkara_remote::base_snapshot_path(ctx.working_copy_root)),
-        expected_base_digest: op.source_db_digest.clone(),
+        expected_base_sha256,
+        changes: openkara_remote::ChangeSet {
+            song_ids: payload.song_ids.clone(),
+            whole_repository: payload.whole_repository,
+        },
+        conflict_policy,
     };
     let working_database = ctx.working_copy_root.join("openkara.db");
     let mut report_step = |step: openkara_remote::PublishStep| {
@@ -174,6 +196,7 @@ pub(crate) fn execute_publish_via_core(
             openkara_remote::PublishStep::ReadManifest => (5, "Reading remote manifest"),
             openkara_remote::PublishStep::UploadAssets => (15, "Verifying remote assets"),
             openkara_remote::PublishStep::PrepareSnapshot => (50, "Preparing candidate database"),
+            openkara_remote::PublishStep::Rebase => (60, "Rebasing onto the newer remote version"),
             openkara_remote::PublishStep::UploadSnapshot => (70, "Uploading database snapshot"),
             openkara_remote::PublishStep::CommitManifest => (85, "Committing repository manifest"),
             openkara_remote::PublishStep::VerifyManifest => (90, "Verifying manifest"),
@@ -189,15 +212,24 @@ pub(crate) fn execute_publish_via_core(
         &mut report_step,
     );
     match result {
-        Ok(outcome) => {
-            let snapshot = outcome.snapshot();
+        Ok(openkara_remote::PublishOutcome::Conflicted(conflict)) => {
+            record_pre_publish_conflict(ctx, &op, payload, &conflict)?;
+            Err(RemoteError::new(RemoteErrorKind::RemoteConflict, conflict.describe()).into())
+        }
+        Ok(
+            openkara_remote::PublishOutcome::Committed(snapshot)
+            | openkara_remote::PublishOutcome::AlreadyCommitted(snapshot),
+        ) => {
             let completed = PublishOutcome {
                 operation_id: op.operation_id.clone(),
                 target_generation: snapshot.generation,
                 committed_manifest_revision: snapshot.manifest_revision.clone(),
                 candidate_db_digest: snapshot.database_sha256.clone(),
             };
-            record_completed(ctx, &op, &completed)?;
+            record_completed(ctx, &op, &completed, GcSchedule::OncePerGracePeriod)?;
+            // Only now that the new base generation is durably recorded may
+            // the base a retry would have needed go.
+            openkara_remote::prune_base_snapshots(ctx.working_copy_root, snapshot.generation);
             // Keep the stored Remote Revision on the committed manifest so the
             // next refresh recognizes this publication instead of pulling the
             // snapshot we just wrote.
@@ -221,11 +253,64 @@ pub(crate) fn execute_publish_via_core(
     }
 }
 
+/// Resolve a WebDAV Pre-Publish Conflict by keeping this device's changes:
+/// the same operation publishes again against its original base, and the
+/// core rebase lets the local rows win where the recorded conflict covered
+/// them while keeping every other remote change. The approved conflict is
+/// stored with the operation, so a retry after a failure or a restart keeps
+/// it, but only while the remote is still at the conflict's generation; once
+/// the remote moved, the retry records the conflict it finds and asks again.
+/// A conflict recorded without its songs approves nothing: the retry rebases
+/// with the Stop policy and records the conflict it finds.
+pub(crate) fn resolve_conflict_keep_local_via_core(
+    ctx: &PublishContext<'_>,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(ctx.control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
+    if op.state != OperationState::Conflicted {
+        return Err(internal_error(
+            "conflict keep-local requires a conflicted operation",
+        ));
+    }
+    let mut payload = OperationPayload::from_json(&op.payload_json)?;
+    payload.keep_local_approval = payload.pre_publish_conflict.take();
+    let mut updated = op.clone();
+    updated.state = OperationState::Pending;
+    updated.payload_json = payload.to_json()?;
+    updated.error_code = None;
+    updated.error_detail = None;
+    updated.next_attempt_at_ms = None;
+    updated.updated_at_ms = current_unix_time_ms();
+    upsert_operation(ctx.control_db, &updated)?;
+
+    execute_publish_via_core(ctx, app_data_dir, remote_library, operation_id)
+}
+
+/// Persist a Pre-Publish Conflict: the operation and repository become
+/// `Conflicted` exactly like a lost CAS, and the payload names the songs the
+/// user has to decide about.
+fn record_pre_publish_conflict(
+    ctx: &PublishContext<'_>,
+    op: &OperationRow,
+    mut payload: OperationPayload,
+    conflict: &openkara_remote::PrePublishConflict,
+) -> CommandResult<()> {
+    payload.pre_publish_conflict = Some(conflict.into());
+    payload.keep_local_approval = None;
+    let mut conflicted = op.clone();
+    conflicted.payload_json = payload.to_json()?;
+    let error = RemoteError::new(RemoteErrorKind::RemoteConflict, conflict.describe());
+    record_failure(ctx, &conflicted, &error)
+}
 /// Run the 13-step publication protocol. Returns the outcome on success or a
 /// typed `RemoteError` on failure. State transitions are persisted at each
 /// milestone so a crash leaves the operation in a resumable state.
 fn run_publish_protocol(
     ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
     op: &OperationRow,
 ) -> Result<PublishOutcome, RemoteError> {
     let now = current_unix_time_ms();
@@ -239,7 +324,7 @@ fn run_publish_protocol(
         "Reading remote manifest",
     )?;
 
-    let caps = ctx.provider.capabilities();
+    let caps = storage.capabilities();
     if !caps.conditional_replace {
         return Err(RemoteError::new(
             RemoteErrorKind::ProviderCapabilityUnavailable,
@@ -247,11 +332,10 @@ fn run_publish_protocol(
         ));
     }
 
-    let current_manifest = read_manifest(ctx.provider)
+    let current_manifest = read_manifest(storage)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-    let manifest_revision: Option<String> = ctx
-        .provider
+    let manifest_revision: Option<String> = storage
         .stat(crate::remote::manifest::MANIFEST_PATH)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
         .and_then(|m| m.revision);
@@ -320,7 +404,7 @@ fn run_publish_protocol(
             "Verifying remote assets",
         )?;
         Some(verify_referenced_assets(
-            ctx.provider,
+            storage,
             ctx.working_copy_root,
             &working_db_path,
             true,
@@ -347,7 +431,7 @@ fn run_publish_protocol(
         op,
     ) = if let Some(candidate) = persisted_candidate {
         let actual_fingerprint =
-            verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate.path, false)?;
+            verify_referenced_assets(storage, ctx.working_copy_root, &candidate.path, false)?;
         if actual_fingerprint != candidate.asset_fingerprint {
             return Err(RemoteError::new(
                 RemoteErrorKind::RemoteIntegrityFailed,
@@ -481,7 +565,7 @@ fn run_publish_protocol(
         )
     })?;
     upload_candidate_database(
-        ctx.provider,
+        storage,
         ctx.working_copy_root,
         &db_remote_path,
         &candidate_bytes,
@@ -492,7 +576,7 @@ fn run_publish_protocol(
     )?;
     // Digest verify: size-only misses equal-size mixed resumable sessions.
     verify_remote_candidate_digest(
-        ctx.provider,
+        storage,
         &db_remote_path,
         candidate_size,
         &candidate_digest,
@@ -509,8 +593,7 @@ fn run_publish_protocol(
         "candidate_uploaded",
     )?;
 
-    let candidate_meta = ctx
-        .provider
+    let candidate_meta = storage
         .stat(&db_remote_path)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     let candidate_meta = candidate_meta.ok_or_else(|| {
@@ -531,7 +614,7 @@ fn run_publish_protocol(
     }
 
     let pre_cas_asset_fingerprint =
-        verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate_path, false)?;
+        verify_referenced_assets(storage, ctx.working_copy_root, &candidate_path, false)?;
     if pre_cas_asset_fingerprint != candidate_assets_fingerprint {
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
@@ -557,7 +640,7 @@ fn run_publish_protocol(
         .to_json()
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
 
-    let committed_meta = ctx.provider.conditional_replace(
+    let committed_meta = storage.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
         ConditionalSource::Bytes(manifest_json.into_bytes()),
         manifest_revision.as_deref(),
@@ -572,7 +655,7 @@ fn run_publish_protocol(
         "Verifying manifest",
     )?;
 
-    let verified_manifest = read_manifest(ctx.provider)
+    let verified_manifest = read_manifest(storage)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     let verified_manifest = verified_manifest.ok_or_else(|| {
         RemoteError::new(
@@ -850,7 +933,7 @@ fn validate_asset_path(path: &str) -> Result<(), RemoteError> {
 /// Remote path, size, and revision are fingerprinted in both modes, allowing a
 /// retry to detect a missing, truncated, or replaced remote object.
 fn verify_referenced_assets(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     working_copy_root: &Path,
     database_path: &Path,
     compare_local_size: bool,
@@ -977,7 +1060,7 @@ fn verify_referenced_assets(
 /// large enough, progress is bound to `expected_digest` so a restart cannot
 /// append a different candidate's bytes into the same session.
 fn upload_candidate_database(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyPublishStorage,
     working_copy_root: &Path,
     remote_relative_path: &str,
     bytes: &[u8],
@@ -1049,7 +1132,7 @@ fn upload_candidate_database(
 }
 
 fn verify_remote_candidate_digest(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     remote_relative_path: &str,
     expected_size: u64,
     expected_digest: &str,
@@ -1226,6 +1309,7 @@ fn record_completed(
     ctx: &PublishContext<'_>,
     op: &OperationRow,
     outcome: &PublishOutcome,
+    gc: GcSchedule,
 ) -> CommandResult<()> {
     let now = current_unix_time_ms();
     let working_db_path = ctx.working_copy_root.join("openkara.db");
@@ -1298,6 +1382,7 @@ fn record_completed(
             row.committed_manifest_revision = outcome.committed_manifest_revision.clone();
             row.local_base_generation = outcome.target_generation;
             row.local_db_digest = Some(outcome.candidate_db_digest.clone());
+            row.local_base_sha256 = Some(outcome.candidate_db_digest.clone());
             row.local_state = local_state;
             row.active_operation_id = active_operation_id;
             row.last_success_at_ms = Some(now);
@@ -1324,11 +1409,23 @@ fn record_completed(
             updated_at_ms: now,
             repository_id: Some(ctx.repository_id.to_owned()),
             writer_id: Some(ctx.writer_id.to_owned()),
+            local_base_sha256: Some(outcome.candidate_db_digest.clone()),
         },
     };
     upsert_repository_state(&tx, &repo_row)?;
 
-    schedule_gc_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?;
+    match gc {
+        GcSchedule::AfterSafetyDelay => schedule_gc_on_conn(
+            &tx,
+            ctx.library_id,
+            outcome.target_generation,
+            now,
+            GC_SAFETY_DELAY_MS,
+        )?,
+        GcSchedule::OncePerGracePeriod => {
+            schedule_core_cleanup_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?
+        }
+    }
 
     tx.commit()
         .map_err(|e| database_error(format!("failed to commit completion transaction: {e}")))?;
@@ -1404,6 +1501,7 @@ fn record_failure(
             updated_at_ms: now,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         },
     };
     upsert_repository_state(ctx.control_db, &repo_row)?;
@@ -1417,13 +1515,50 @@ fn record_failure(
 /// needs wall-clock time to finish. 5 minutes is the minimum safety window.
 const GC_SAFETY_DELAY_MS: i64 = 300_000;
 
-fn schedule_gc_on_conn(
+/// How a completed publication schedules its deferred `Gc` operation.
+#[derive(Clone, Copy)]
+enum GcSchedule {
+    /// The legacy executor's generation GC: one row per publication, due
+    /// after [`GC_SAFETY_DELAY_MS`].
+    AfterSafetyDelay,
+    /// The core's cleanup of unreferenced uploads: at most one pending row
+    /// per library, due after the cleanup grace period, when everything the
+    /// publication superseded has become collectable.
+    OncePerGracePeriod,
+}
+
+/// Schedule a core cleanup unless one is already pending for the library.
+/// Cleanup inspects the repository as it is when it runs, so one pending
+/// row covers every publication before it.
+fn schedule_core_cleanup_on_conn(
     connection: &Connection,
     library_id: &str,
     committed_generation: i64,
     now: i64,
 ) -> CommandResult<()> {
-    let gc_op_id = format!("gc-{library_id}-{now}");
+    let already_pending = list_operations_for_library(connection, library_id)?
+        .iter()
+        .any(|row| row.operation_kind == OperationKind::Gc && !row.state.is_terminal());
+    if already_pending {
+        return Ok(());
+    }
+    schedule_gc_on_conn(
+        connection,
+        library_id,
+        committed_generation,
+        now,
+        openkara_remote::DEFAULT_CLEANUP_GRACE_PERIOD_MS,
+    )
+}
+
+fn schedule_gc_on_conn(
+    connection: &Connection,
+    library_id: &str,
+    committed_generation: i64,
+    now: i64,
+    delay_ms: i64,
+) -> CommandResult<()> {
+    let gc_op_id = format!("gc-{library_id}-{now}-{}", Uuid::new_v4().simple());
     let payload = OperationPayload {
         song_ids: Vec::new(),
         percent: 0,
@@ -1436,7 +1571,7 @@ fn schedule_gc_on_conn(
         operation_id: gc_op_id,
         library_id: library_id.to_owned(),
         operation_kind: OperationKind::Gc,
-        // Future next_attempt_at_ms: executor skips until the GC safety delay elapses.
+        // A future next_attempt_at_ms makes the executor skip the row until the delay elapses.
         state: OperationState::RetryWait,
         expected_generation: Some(committed_generation),
         target_generation: None,
@@ -1444,7 +1579,7 @@ fn schedule_gc_on_conn(
         candidate_db_digest: None,
         payload_json: payload.to_json()?,
         attempt_count: 0,
-        next_attempt_at_ms: Some(now + GC_SAFETY_DELAY_MS),
+        next_attempt_at_ms: Some(now + delay_ms),
         error_code: None,
         error_detail: None,
         created_at_ms: now,
@@ -1460,13 +1595,12 @@ fn schedule_gc_on_conn(
 /// net so a reader that started a pull just before the manifest advanced can
 /// still complete.
 ///
-/// Staging directories (`.openkara/staging/<operation-id>`) for completed
-/// operations are also removed. Assets in `media/`, `stems/`, and `artwork/`
-/// are NOT deleted — they are referenced by the committed database and
-/// removed only when a future generation's database no longer references them
-/// (a future reference-counting GC pass).
+/// Only Dropbox and Google Drive repositories run this; WebDAV repositories
+/// clean up through [`execute_cleanup_via_core`]. Assets in `media/`,
+/// `stems/`, and `artwork/` are NOT deleted — they are referenced by the
+/// committed database.
 pub(crate) fn execute_gc(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     control_db: &Connection,
     library_id: &str,
     operation_id: &str,
@@ -1587,6 +1721,98 @@ pub(crate) fn execute_gc(
     Ok(())
 }
 
+/// Run a deferred `Gc` operation of a WebDAV repository as the core's
+/// cleanup of unreferenced uploads (the other providers keep [`execute_gc`]).
+///
+/// `scratch_dir` holds temporary snapshot copies while cleanup reads their
+/// references. Completing the row also completes the library's other pending
+/// `Gc` rows, which the cleanup made redundant; when uploads were still too
+/// recent to delete, another cleanup is scheduled one grace period later.
+pub(crate) fn execute_cleanup_via_core(
+    control_db: &Connection,
+    app_data_dir: &Path,
+    remote_library: &RegisteredLibrary,
+    scratch_dir: &Path,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("GC operation {operation_id} not found")))?;
+    if op.operation_kind != OperationKind::Gc {
+        return Err(internal_error(format!(
+            "operation {operation_id} is not a GC operation"
+        )));
+    }
+    if op.state.is_terminal() {
+        return Ok(());
+    }
+
+    let secret = crate::remote::webdav::load_webdav_secret(app_data_dir, remote_library)?;
+    let storage =
+        openkara_remote::WebDavStorage::new(&secret.root_url, secret.username, secret.password)
+            .map_err(CommandError::from)?;
+    let now = current_unix_time_ms();
+    let result = openkara_remote::clean_up_unreferenced_uploads(
+        &storage,
+        scratch_dir,
+        &openkara_remote::CleanupPolicy::default(),
+        now,
+    );
+
+    let mut updated = op.clone();
+    updated.attempt_count += 1;
+    updated.updated_at_ms = now;
+    let report = match result {
+        Ok(report) => report,
+        Err(error) => {
+            let (error_code, error_detail) = error.to_db_columns();
+            updated.error_code = error_code;
+            updated.error_detail = error_detail;
+            if error.retryable {
+                updated.state = OperationState::RetryWait;
+                updated.next_attempt_at_ms = Some(now + GC_RETRY_BACKOFF_MS);
+            } else {
+                updated.state = OperationState::Failed;
+                updated.next_attempt_at_ms = None;
+            }
+            upsert_operation(control_db, &updated)?;
+            return Ok(());
+        }
+    };
+
+    let tx = control_db
+        .unchecked_transaction()
+        .map_err(|e| database_error(format!("failed to begin cleanup transaction: {e}")))?;
+    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    payload.percent = 100;
+    payload.detail = Some(format!(
+        "deleted {} unreferenced object(s); {} too recent to delete; {} without a modification time",
+        report.deleted.len(),
+        report.deferred.len(),
+        report.undated.len()
+    ));
+    updated.payload_json = payload.to_json()?;
+    updated.state = OperationState::Completed;
+    updated.next_attempt_at_ms = None;
+    updated.error_code = None;
+    updated.error_detail = None;
+    upsert_operation(&tx, &updated)?;
+    for mut redundant in list_operations_for_library(&tx, &op.library_id)? {
+        if redundant.operation_kind == OperationKind::Gc && !redundant.state.is_terminal() {
+            redundant.state = OperationState::Completed;
+            redundant.next_attempt_at_ms = None;
+            redundant.updated_at_ms = now;
+            upsert_operation(&tx, &redundant)?;
+        }
+    }
+    if !report.deferred.is_empty() {
+        let generation = report.kept_generations.last().copied().unwrap_or(0);
+        schedule_core_cleanup_on_conn(&tx, &op.library_id, generation, now)?;
+    }
+    tx.commit()
+        .map_err(|e| database_error(format!("failed to commit cleanup transaction: {e}")))?;
+    Ok(())
+}
+
 const RETRY_BACKOFF_MS: i64 = 30_000;
 
 const GC_RETRY_BACKOFF_MS: i64 = 60_000;
@@ -1620,6 +1846,7 @@ pub(crate) fn generate_repository_id() -> String {
 /// attempted.
 pub(crate) fn conflict_keep_local_as_new_generation(
     ctx: &PublishContext<'_>,
+    storage: &dyn LegacyPublishStorage,
     operation_id: &str,
     conflict_candidate_db: &Path,
 ) -> CommandResult<()> {
@@ -1632,7 +1859,7 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         ));
     }
 
-    let remote_manifest = read_manifest(ctx.provider)?
+    let remote_manifest = read_manifest(storage)?
         .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
     let local_db_path = ctx.working_copy_root.join("openkara.db");
@@ -1686,13 +1913,17 @@ pub(crate) fn conflict_keep_local_as_new_generation(
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)?;
 
-    execute_publish(ctx, operation_id)
+    execute_publish(ctx, storage, operation_id)
 }
 
+/// Discard the conflicted operation and install the winning remote database,
+/// pulled earlier to `conflict_candidate_db` at `remote_generation`.
 pub(crate) fn conflict_use_remote(
     ctx: &PublishContext<'_>,
     operation_id: &str,
     conflict_candidate_db: &Path,
+    remote_generation: i64,
+    base_sha256: Option<String>,
 ) -> CommandResult<()> {
     let op = get_operation(ctx.control_db, operation_id)?
         .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
@@ -1715,15 +1946,14 @@ pub(crate) fn conflict_use_remote(
         .map_err(|e| internal_error(format!("failed to activate remote database: {e}")))?;
 
     let new_digest = sha256_file(&working_db)?;
-    let remote_manifest = read_manifest(ctx.provider)?
-        .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
     let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
         Some(mut row) => {
-            row.committed_generation = remote_manifest.generation;
+            row.committed_generation = remote_generation;
             row.committed_manifest_revision = None;
-            row.local_base_generation = remote_manifest.generation;
+            row.local_base_generation = remote_generation;
             row.local_db_digest = Some(new_digest);
+            row.local_base_sha256 = base_sha256;
             row.local_state = LocalState::Clean;
             row.active_operation_id = None;
             row.last_error_code = None;
@@ -1732,9 +1962,9 @@ pub(crate) fn conflict_use_remote(
         }
         None => RepositoryStateRow {
             library_id: ctx.library_id.to_owned(),
-            committed_generation: remote_manifest.generation,
+            committed_generation: remote_generation,
             committed_manifest_revision: None,
-            local_base_generation: remote_manifest.generation,
+            local_base_generation: remote_generation,
             local_db_digest: Some(new_digest),
             local_state: LocalState::Clean,
             active_operation_id: None,
@@ -1743,16 +1973,17 @@ pub(crate) fn conflict_use_remote(
             updated_at_ms: now,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: base_sha256,
         },
     };
     upsert_repository_state(ctx.control_db, &repo_row)?;
     Ok(())
 }
 
-/// Pull the winning remote manifest + database to a conflict candidate path
-/// (NOT the active working DB). Uses the provider's download_file.
+/// Pull the winning remote manifest + database of a Dropbox or Google Drive
+/// repository to a conflict candidate path (NOT the active working DB).
 pub(crate) fn pull_conflict_candidate(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     destination: &Path,
 ) -> CommandResult<RepositoryManifest> {
     let manifest = read_manifest(provider)?
@@ -1764,6 +1995,55 @@ pub(crate) fn pull_conflict_candidate(
     provider.download_file(&manifest.database_path, destination)?;
     verify_sqlite_integrity_pub(destination)?;
     Ok(manifest)
+}
+
+struct ReplaceConflictCandidate;
+
+impl openkara_remote::RefreshPolicy for ReplaceConflictCandidate {
+    fn may_replace_working_copy(&self) -> bool {
+        true
+    }
+}
+
+/// Pull the database the remote manifest commits to a conflict candidate path
+/// (NOT the active working DB) through the Remote Repository core, verified
+/// against the manifest's size and SHA-256 and checked for SQLite integrity.
+/// Returns the generation the candidate belongs to.
+pub(crate) fn pull_conflict_candidate_via_core(
+    storage: &dyn openkara_remote::RepositoryStorage,
+    destination: &Path,
+) -> CommandResult<i64> {
+    let plan = openkara_remote::plan_refresh(storage).map_err(CommandError::from)?;
+    if plan.manifest.is_none() {
+        return Err(internal_error(
+            "no remote manifest found to pull conflict candidate",
+        ));
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| internal_error(format!("failed to create conflict candidate dir: {e}")))?;
+    }
+    // The core keeps a replaced database as last-known-good; a candidate from
+    // an earlier attempt has no value to keep.
+    let _ = std::fs::remove_file(destination);
+    let candidate = openkara_remote::WorkingCopyDatabase::new(destination.to_path_buf());
+    let operation_id = openkara_remote::snapshot_operation_id(plan.remote_revision.as_deref());
+    let pulled = openkara_remote::pull_database_snapshot(
+        storage,
+        &plan,
+        &candidate,
+        &operation_id,
+        &ReplaceConflictCandidate,
+        &mut |_| {},
+    );
+    match pulled {
+        Ok(Some(snapshot)) => Ok(snapshot.generation),
+        Ok(None) => Err(internal_error("conflict candidate pull was skipped")),
+        Err(error) => {
+            let _ = std::fs::remove_file(candidate.part_path(&operation_id));
+            Err(CommandError::from(error))
+        }
+    }
 }
 
 fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<String>> {
@@ -1842,7 +2122,9 @@ mod tests {
         RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
     };
     use crate::remote::manifest::MANIFEST_PATH;
-    use crate::remote::provider::{ConditionalSource, RepositoryStorage};
+    use crate::remote::provider::{
+        ConditionalSource, LegacyPublishStorage, LegacyReadStorage, RepositoryStorage,
+    };
     use rusqlite::Connection;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -1855,6 +2137,8 @@ mod tests {
         no_cas: bool,
         working_copy_root: Option<PathBuf>,
         mutate_asset_on_candidate_upload: Option<(String, Vec<u8>, String)>,
+        upload_failures_remaining: Mutex<usize>,
+        cas_network_failures_remaining: Mutex<usize>,
     }
 
     impl FakeProvider {
@@ -1865,6 +2149,8 @@ mod tests {
                 no_cas: false,
                 working_copy_root: None,
                 mutate_asset_on_candidate_upload: None,
+                upload_failures_remaining: Mutex::new(0),
+                cas_network_failures_remaining: Mutex::new(0),
             }
         }
 
@@ -1875,6 +2161,8 @@ mod tests {
                 no_cas: true,
                 working_copy_root: None,
                 mutate_asset_on_candidate_upload: None,
+                upload_failures_remaining: Mutex::new(0),
+                cas_network_failures_remaining: Mutex::new(0),
             }
         }
 
@@ -1894,6 +2182,23 @@ mod tests {
             self
         }
 
+        fn fail_next_upload(&self) {
+            *self.upload_failures_remaining.lock().unwrap() += 1;
+        }
+
+        fn fail_next_cas_with_network_error(&self) {
+            *self.cas_network_failures_remaining.lock().unwrap() += 1;
+        }
+
+        fn take_failure(counter: &Mutex<usize>) -> bool {
+            let mut remaining = counter.lock().unwrap();
+            if *remaining == 0 {
+                return false;
+            }
+            *remaining -= 1;
+            true
+        }
+
         fn store(&self, path: &str, bytes: Vec<u8>, revision: &str) {
             self.revisions
                 .lock()
@@ -1904,17 +2209,24 @@ mod tests {
     }
 
     impl RepositoryStorage for FakeProvider {
-        fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
-            self
+        fn delete_path(&self, path: &str) -> CommandResult<()> {
+            self.files.lock().unwrap().remove(path);
+            self.revisions.lock().unwrap().remove(path);
+            Ok(())
         }
 
-        fn capabilities(&self) -> RemoteProviderCapabilities {
-            RemoteProviderCapabilities {
-                conditional_replace: !self.no_cas,
-                resumable_upload: false,
-                revision_metadata: true,
-                server_side_move: false,
-            }
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl LegacyReadStorage for FakeProvider {
+        fn media_source(&self) -> &dyn crate::remote::provider::RemoteMediaSource {
+            self
         }
 
         fn stat(&self, path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
@@ -1944,8 +2256,25 @@ mod tests {
                 .ok_or_else(|| internal_error(format!("fake provider: {path} not found")))?;
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
         }
+    }
+
+    impl LegacyPublishStorage for FakeProvider {
+        fn capabilities(&self) -> RemoteProviderCapabilities {
+            RemoteProviderCapabilities {
+                conditional_replace: !self.no_cas,
+                resumable_upload: false,
+                revision_metadata: true,
+                server_side_move: false,
+            }
+        }
 
         fn upload_file(&self, path: &str) -> CommandResult<()> {
+            if Self::take_failure(&self.upload_failures_remaining) {
+                return Err(CommandError::from(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated upload failure",
+                )));
+            }
             if let Some(ref root) = self.working_copy_root {
                 let local_path = root.join(path);
                 if local_path.exists() {
@@ -1977,12 +2306,6 @@ mod tests {
             Ok(())
         }
 
-        fn delete_path(&self, path: &str) -> CommandResult<()> {
-            self.files.lock().unwrap().remove(path);
-            self.revisions.lock().unwrap().remove(path);
-            Ok(())
-        }
-
         fn conditional_replace(
             &self,
             path: &str,
@@ -1992,6 +2315,12 @@ mod tests {
             if self.no_cas {
                 return Err(RemoteError::from_kind(
                     RemoteErrorKind::ProviderCapabilityUnavailable,
+                ));
+            }
+            if Self::take_failure(&self.cas_network_failures_remaining) {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated network failure during manifest CAS",
                 ));
             }
 
@@ -2040,14 +2369,6 @@ mod tests {
                 revision: Some(new_rev),
             })
         }
-
-        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
-
-        fn refresh_existing(&self) -> CommandResult<Option<String>> {
-            Ok(None)
-        }
     }
 
     impl crate::remote::provider::RemoteMediaSource for FakeProvider {
@@ -2095,7 +2416,6 @@ mod tests {
 
     fn make_context<'a>(
         control_db: &'a Connection,
-        provider: &'a dyn RepositoryStorage,
         working_copy_root: &'a Path,
         library_id: &'a str,
         repository_id: &'a str,
@@ -2103,7 +2423,6 @@ mod tests {
     ) -> PublishContext<'a> {
         PublishContext {
             control_db,
-            provider,
             working_copy_root,
             library_id,
             writer_id,
@@ -2112,7 +2431,21 @@ mod tests {
     }
 
     fn make_pending_op(conn: &Connection, library_id: &str, expected_gen: i64) -> String {
-        let op_id = format!("publish-test-{}", expected_gen);
+        make_named_pending_op(
+            conn,
+            &format!("publish-test-{expected_gen}"),
+            library_id,
+            expected_gen,
+        )
+    }
+
+    fn make_named_pending_op(
+        conn: &Connection,
+        op_id: &str,
+        library_id: &str,
+        expected_gen: i64,
+    ) -> String {
+        let op_id = op_id.to_owned();
         let now = crate::remote::types::current_unix_time_ms();
         let payload = OperationPayload {
             song_ids: vec!["song-1".to_owned()],
@@ -2143,7 +2476,7 @@ mod tests {
 
     fn persist_test_candidate(
         conn: &Connection,
-        provider: &dyn RepositoryStorage,
+        provider: &dyn LegacyReadStorage,
         working_root: &Path,
         operation_id: &str,
     ) -> PathBuf {
@@ -2182,14 +2515,13 @@ mod tests {
 
         let ctx = make_context(
             &conn,
-            &provider,
             &working_root,
             "lib-1",
             "repo-uuid-1",
             "writer-uuid-1",
         );
 
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest_bytes.is_some(), "manifest should be written");
@@ -2222,11 +2554,11 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
         let op1 = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op1).expect("first publish");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op1).expect("first publish");
 
         let op2 = make_pending_op(&conn, "lib-1", 1);
-        execute_publish(&ctx, &op2).expect("second publish");
+        execute_publish(&ctx, &provider, &op2).expect("second publish");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2244,8 +2576,8 @@ mod tests {
         let provider = FakeProvider::with_no_cas();
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
 
         assert!(result.is_err());
 
@@ -2286,8 +2618,8 @@ mod tests {
         );
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
 
         assert!(result.is_err());
 
@@ -2303,6 +2635,172 @@ mod tests {
         assert_eq!(state.local_state, LocalState::Conflicted);
     }
 
+    fn seed_clean_repository_state(conn: &Connection, library_id: &str) {
+        upsert_repository_state(
+            conn,
+            &RepositoryStateRow {
+                library_id: library_id.to_owned(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Clean,
+                active_operation_id: None,
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: crate::remote::types::current_unix_time_ms(),
+                repository_id: Some("repo-1".to_owned()),
+                writer_id: Some("w-1".to_owned()),
+                local_base_sha256: None,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn executor_cas_network_failure_keeps_remote_generation_and_retry_converges() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.fail_next_cas_with_network_error();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        execute_publish(&ctx, &provider, &op_id).expect_err("CAS network failure");
+
+        assert!(read_manifest(&provider).unwrap().is_none());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Publishing);
+        assert_eq!(repo.committed_generation, 0);
+
+        let mut op = op;
+        op.state = OperationState::Pending;
+        upsert_operation(&conn, &op).unwrap();
+        execute_publish(&ctx, &provider, &op_id).expect("retry converges");
+
+        let manifest = read_manifest(&provider).unwrap().unwrap();
+        assert_eq!(manifest.generation, 1);
+        assert_eq!(manifest.writer_id, "w-1");
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn executor_completes_its_own_commit_accepted_before_a_crash() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let digest = sha256_file(&working_db).unwrap();
+        let db_bytes = std::fs::read(&working_db).unwrap();
+        let db_size = db_bytes.len() as u64;
+        provider.store(".openkara/databases/1.sqlite", db_bytes, "rev-db-1");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let accepted = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 1,
+            database_path: ".openkara/databases/1.sqlite".to_owned(),
+            database_size_bytes: db_size,
+            database_sha256: digest.clone(),
+            committed_at_ms: 5000,
+            writer_id: "w-1".to_owned(),
+            operation_id: op_id.clone(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            accepted.to_json().unwrap().into_bytes(),
+            "rev-manifest-1",
+        );
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        payload.candidate_sha256 = Some(digest.clone());
+        payload.candidate_size = Some(db_size);
+        payload.protocol_step = Some("candidate_uploaded".to_owned());
+        op.state = OperationState::RetryWait;
+        op.candidate_db_digest = Some(digest.clone());
+        op.payload_json = payload.to_json().unwrap();
+        upsert_operation(&conn, &op).unwrap();
+
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("own accepted commit completes");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(1));
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.committed_generation, 1);
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.local_db_digest.as_deref(), Some(digest.as_str()));
+        assert_eq!(read_manifest(&provider).unwrap().unwrap().generation, 1);
+    }
+
+    #[test]
+    fn executor_candidate_upload_failure_keeps_working_db_and_stays_retryable() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+        let working_digest = sha256_file(&working_db).unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.fail_next_upload();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        execute_publish(&ctx, &provider, &op_id).expect_err("candidate upload failure");
+
+        assert!(read_manifest(&provider).unwrap().is_none());
+        assert_eq!(sha256_file(&working_db).unwrap(), working_digest);
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+    }
+
+    #[test]
+    fn executor_second_writer_conflicts_without_overwriting_the_winner() {
+        let (_db_a, conn_a) = fresh_control_db();
+        let (_db_b, conn_b) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        seed_clean_repository_state(&conn_a, "lib-shared");
+        seed_clean_repository_state(&conn_b, "lib-shared");
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_a = make_named_pending_op(&conn_a, "op-writer-a", "lib-shared", 0);
+        let op_b = make_named_pending_op(&conn_b, "op-writer-b", "lib-shared", 0);
+        let ctx_a = make_context(&conn_a, &working_root, "lib-shared", "repo-1", "writer-a");
+        let ctx_b = make_context(&conn_b, &working_root, "lib-shared", "repo-1", "writer-b");
+
+        execute_publish(&ctx_a, &provider, &op_a).expect("writer A wins");
+        execute_publish(&ctx_b, &provider, &op_b).expect_err("writer B conflicts");
+
+        let op_b_row = get_operation(&conn_b, &op_b).unwrap().unwrap();
+        assert_eq!(op_b_row.state, OperationState::Conflicted);
+        let mut retry = op_b_row;
+        retry.state = OperationState::Pending;
+        retry.error_code = None;
+        upsert_operation(&conn_b, &retry).unwrap();
+        execute_publish(&ctx_b, &provider, &op_b).expect_err("retrying the loser still conflicts");
+
+        let manifest = read_manifest(&provider).unwrap().unwrap();
+        assert_eq!(manifest.generation, 1);
+        assert_eq!(manifest.writer_id, "writer-a");
+    }
+
     #[test]
     fn executor_does_not_reexecute_terminal_operations() {
         let (_db_dir, conn) = fresh_control_db();
@@ -2313,13 +2811,13 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
-        execute_publish(&ctx, &op_id).expect("first publish");
+        execute_publish(&ctx, &provider, &op_id).expect("first publish");
 
         let files_before = provider.files.lock().unwrap().len();
 
-        execute_publish(&ctx, &op_id).expect("second call is no-op");
+        execute_publish(&ctx, &provider, &op_id).expect("second call is no-op");
 
         let files_after = provider.files.lock().unwrap().len();
         assert_eq!(files_before, files_after);
@@ -2335,8 +2833,8 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2372,8 +2870,8 @@ mod tests {
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let all_ops = crate::remote::control_db::list_operations_in_states(
             &conn,
@@ -2411,13 +2909,12 @@ mod tests {
 
         let ctx = make_context(
             &conn,
-            &provider,
             &working_root,
             "lib-1",
             "repo-uuid-x",
             "writer-uuid-y",
         );
-        execute_publish(&ctx, &op_id).expect("publish should succeed");
+        execute_publish(&ctx, &provider, &op_id).expect("publish should succeed");
 
         let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
             .unwrap()
@@ -2505,9 +3002,9 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
-        let result = execute_publish(&ctx, &op_id);
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when an asset is missing"
@@ -2548,8 +3045,8 @@ mod tests {
         provider.store("media/song-1.mp3", b"trunc".to_vec(), "rev-1");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when remote asset size mismatches"
@@ -2588,8 +3085,9 @@ mod tests {
             .expect("fake upload should succeed");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish should succeed when all assets are present");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("publish should succeed when all assets are present");
 
         let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest.is_some(), "manifest should be committed");
@@ -2620,8 +3118,9 @@ mod tests {
             &working_root,
         );
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("retry should publish the immutable candidate");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("retry should publish the immutable candidate");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
@@ -2671,8 +3170,8 @@ mod tests {
 
         provider.store("media/song-1.mp3", b"other-bytes".to_vec(), "rev-replaced");
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2701,8 +3200,8 @@ mod tests {
         provider.upload_file("media/song-1.mp3").unwrap();
         let op_id = make_pending_op(&conn, "lib-1", 0);
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2720,8 +3219,8 @@ mod tests {
         let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
         std::fs::remove_file(&candidate).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         assert!(
             !candidate.exists(),
             "missing candidate must not be regenerated"
@@ -2743,8 +3242,8 @@ mod tests {
         let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
         std::fs::write(&candidate, b"corrupt-candidate").unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         assert_eq!(
             std::fs::read(&candidate).unwrap(),
             b"corrupt-candidate".to_vec()
@@ -2772,8 +3271,8 @@ mod tests {
         op.state = OperationState::RetryWait;
         upsert_operation(&conn, &op).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2794,8 +3293,8 @@ mod tests {
         op.state = OperationState::RetryWait;
         upsert_operation(&conn, &op).unwrap();
 
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        assert!(execute_publish(&ctx, &op_id).is_err());
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &provider, &op_id).is_err());
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Failed);
         assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
@@ -2836,8 +3335,8 @@ mod tests {
         );
 
         let op_id = make_pending_op(&conn, "lib-1", 1);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(result.is_err(), "publish must fail");
 
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
@@ -2870,8 +3369,8 @@ mod tests {
         provider.upload_file(vocals).expect("upload vocals");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when a stem is missing remotely"
@@ -2906,8 +3405,8 @@ mod tests {
         provider.upload_file(thumb).expect("upload thumb");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        let result = execute_publish(&ctx, &op_id);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &provider, &op_id);
         assert!(
             result.is_err(),
             "publish must fail when artwork is missing remotely"
@@ -2928,8 +3427,9 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
-        execute_publish(&ctx, &op_id).expect("publish with no asset paths should succeed");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &provider, &op_id)
+            .expect("publish with no asset paths should succeed");
     }
 
     #[test]
@@ -3251,9 +3751,8 @@ mod tests {
         let app_data = TempDir::new().unwrap();
         webdav_app_data(&app_data, &library);
 
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
         execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
             .expect("core publish should succeed");
@@ -3343,9 +3842,8 @@ mod tests {
             .write_new(MANIFEST_PATH, other_manifest.to_json().unwrap().as_bytes())
             .expect("seed remote manifest");
 
-        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
-        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
 
         let result = execute_publish_via_core(&ctx, app_data.path(), &library, &op_id);
         assert!(result.is_err(), "stale generation must conflict");
@@ -3353,6 +3851,14 @@ mod tests {
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Conflicted);
         assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
+        let conflict = OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .expect("the conflict is recorded");
+        assert!(
+            conflict.whole_repository,
+            "without a base snapshot nothing can be rebased"
+        );
 
         // The losing publish must not have moved the manifest.
         let mut manifest_bytes = Vec::new();
@@ -3364,5 +3870,1076 @@ mod tests {
             RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
         assert_eq!(manifest.generation, 2);
         assert_eq!(manifest.operation_id, "other-operation");
+    }
+
+    #[test]
+    fn executor_via_core_names_the_conflicting_song_and_keep_local_republishes_it() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        let working_db = working_root.join("openkara.db");
+        make_valid_db(&working_db);
+
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_db);
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let first = make_pending_op(&conn, "lib-1", 0);
+        execute_publish_via_core(&ctx, app_data.path(), &library, &first).expect("gen 1");
+
+        // Another device, refreshed to generation 1, adds stems to song-1.
+        let other_dir = TempDir::new().unwrap();
+        let other_db = other_dir.path().join("openkara.db");
+        std::fs::copy(&working_db, &other_db).unwrap();
+        let other_base =
+            openkara_remote::retain_base_snapshot(other_dir.path(), 1, &other_db).unwrap();
+        Connection::open(&other_db)
+            .unwrap()
+            .execute_batch("INSERT INTO stems (song_hash) VALUES ('song-1')")
+            .unwrap();
+        let other_request = openkara_remote::PublishRequest {
+            repository_id: "repo-1".to_owned(),
+            writer_id: "other-writer".to_owned(),
+            operation_id: "op-other".to_owned(),
+            expected_generation: 1,
+            expected_base_sha256: Some(other_base),
+            changes: openkara_remote::ChangeSet {
+                song_ids: vec!["song-1".to_owned()],
+                whole_repository: false,
+            },
+            conflict_policy: openkara_remote::ConflictPolicy::Stop,
+        };
+        openkara_remote::publish_changes(
+            server.storage(),
+            other_dir.path(),
+            &other_db,
+            &other_request,
+            &mut |_| {},
+        )
+        .expect("the other device commits generation 2");
+
+        // This device deletes song-1 and imports song-3.
+        Connection::open(&working_db)
+            .unwrap()
+            .execute_batch(
+                "DELETE FROM songs WHERE hash = 'song-1';
+                 INSERT INTO songs (hash) VALUES ('song-3');",
+            )
+            .unwrap();
+        let op_id = make_pending_op(&conn, "lib-1", 1);
+
+        let result = execute_publish_via_core(&ctx, app_data.path(), &library, &op_id);
+
+        assert!(
+            result.is_err(),
+            "a song both devices changed stops publishing"
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Conflicted);
+        assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
+        let conflict = OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .expect("the conflict names its songs");
+        assert_eq!(conflict.remote_generation, 2);
+        assert_eq!(
+            conflict
+                .songs
+                .iter()
+                .map(|song| song.song_id.as_str())
+                .collect::<Vec<_>>(),
+            ["song-1"]
+        );
+        assert!(!conflict.whole_repository);
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Conflicted);
+        assert_eq!(repo.active_operation_id.as_deref(), Some(op_id.as_str()));
+
+        resolve_conflict_keep_local_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("keeping the local changes republishes them");
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        assert!(OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .is_none());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert_eq!(manifest.generation, 3);
+        assert_eq!(manifest.database_sha256, sha256_file(&working_db).unwrap());
+        let songs: Vec<String> = {
+            let connection = Connection::open(&working_db).unwrap();
+            let mut statement = connection
+                .prepare("SELECT hash FROM songs ORDER BY hash")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .unwrap();
+            rows
+        };
+        assert_eq!(
+            songs,
+            ["song-3"],
+            "the local deletion won where both changed song-1"
+        );
+    }
+
+    /// A WebDAV repository this device published as generation 1 and another
+    /// device then moved to generation 2 by running `other_sql`.
+    struct MovedRepository {
+        db_dir: TempDir,
+        conn: Connection,
+        working_dir: TempDir,
+        server: openkara_remote::testing::TestWebDavServer,
+        library: RegisteredLibrary,
+        app_data: TempDir,
+        generation_one_sha256: String,
+    }
+
+    impl MovedRepository {
+        fn new(other_sql: &str) -> Self {
+            Self::seeded("", other_sql)
+        }
+
+        /// Like [`Self::new`], with `seed_sql` run on the working copy before
+        /// it is published as generation 1.
+        fn seeded(seed_sql: &str, other_sql: &str) -> Self {
+            let (db_dir, conn) = fresh_control_db();
+            let working_dir = TempDir::new().unwrap();
+            let working_db = working_dir.path().join("openkara.db");
+            make_valid_db(&working_db);
+            Connection::open(&working_db)
+                .unwrap()
+                .execute_batch(seed_sql)
+                .unwrap();
+            let server = openkara_remote::testing::TestWebDavServer::start();
+            let library = webdav_remote_library(server.base_url(), &working_db);
+            let app_data = TempDir::new().unwrap();
+            webdav_app_data(&app_data, &library);
+            let first = make_named_pending_op(&conn, "op-generation-1", "lib-1", 0);
+            execute_publish_via_core(
+                &make_context(&conn, working_dir.path(), "lib-1", "repo-1", "w-1"),
+                app_data.path(),
+                &library,
+                &first,
+            )
+            .expect("generation 1");
+            let generation_one_sha256 = get_repository_state(&conn, "lib-1")
+                .unwrap()
+                .unwrap()
+                .local_base_sha256
+                .expect("the committed generation's base identity is recorded");
+
+            let other_dir = TempDir::new().unwrap();
+            let other_db = other_dir.path().join("openkara.db");
+            std::fs::copy(&working_db, &other_db).unwrap();
+            let other_base =
+                openkara_remote::retain_base_snapshot(other_dir.path(), 1, &other_db).unwrap();
+            Connection::open(&other_db)
+                .unwrap()
+                .execute_batch(other_sql)
+                .unwrap();
+            openkara_remote::publish_changes(
+                server.storage(),
+                other_dir.path(),
+                &other_db,
+                &openkara_remote::PublishRequest {
+                    repository_id: "repo-1".to_owned(),
+                    writer_id: "other-writer".to_owned(),
+                    operation_id: "op-other".to_owned(),
+                    expected_generation: 1,
+                    expected_base_sha256: Some(other_base),
+                    changes: openkara_remote::ChangeSet::default(),
+                    conflict_policy: openkara_remote::ConflictPolicy::Stop,
+                },
+                &mut |_| {},
+            )
+            .expect("the other device commits generation 2");
+
+            Self {
+                db_dir,
+                conn,
+                working_dir,
+                server,
+                library,
+                app_data,
+                generation_one_sha256,
+            }
+        }
+
+        fn root(&self) -> &Path {
+            self.working_dir.path()
+        }
+
+        fn working_db(&self) -> PathBuf {
+            self.root().join("openkara.db")
+        }
+
+        fn ctx(&self) -> PublishContext<'_> {
+            make_context(&self.conn, self.root(), "lib-1", "repo-1", "w-1")
+        }
+
+        fn edit(&self, sql: &str) {
+            Connection::open(self.working_db())
+                .unwrap()
+                .execute_batch(sql)
+                .unwrap();
+        }
+
+        fn publish(&self, operation_id: &str) -> CommandResult<()> {
+            execute_publish_via_core(
+                &self.ctx(),
+                self.app_data.path(),
+                &self.library,
+                operation_id,
+            )
+        }
+
+        fn state(&self) -> RepositoryStateRow {
+            get_repository_state(&self.conn, "lib-1").unwrap().unwrap()
+        }
+
+        fn operation(&self, operation_id: &str) -> OperationRow {
+            get_operation(&self.conn, operation_id).unwrap().unwrap()
+        }
+
+        fn manifest(&self) -> RepositoryManifest {
+            use openkara_remote::RepositoryStorage as CoreStorage;
+
+            let mut bytes = Vec::new();
+            self.server
+                .storage()
+                .read(MANIFEST_PATH, &mut bytes)
+                .expect("read manifest");
+            RepositoryManifest::from_json(std::str::from_utf8(&bytes).unwrap()).unwrap()
+        }
+
+        fn songs(&self) -> Vec<String> {
+            let connection = Connection::open(self.working_db()).unwrap();
+            let mut statement = connection
+                .prepare("SELECT hash FROM songs ORDER BY hash")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .unwrap();
+            rows
+        }
+
+        fn base(&self, generation: i64) -> PathBuf {
+            openkara_remote::base_snapshot_path(self.root(), generation)
+        }
+
+        /// Another device, refreshed to the current remote generation, runs
+        /// `sql` and commits it as `operation_id`.
+        fn another_device_commits(&self, operation_id: &str, sql: &str) {
+            use openkara_remote::RepositoryStorage as CoreStorage;
+
+            let manifest = self.manifest();
+            let device = TempDir::new().unwrap();
+            let database = device.path().join("openkara.db");
+            let mut bytes = Vec::new();
+            self.server
+                .storage()
+                .read(&manifest.database_path, &mut bytes)
+                .expect("read the current snapshot");
+            std::fs::write(&database, bytes).unwrap();
+            let base = openkara_remote::retain_base_snapshot(
+                device.path(),
+                manifest.generation,
+                &database,
+            )
+            .unwrap();
+            Connection::open(&database)
+                .unwrap()
+                .execute_batch(sql)
+                .unwrap();
+            openkara_remote::publish_changes(
+                self.server.storage(),
+                device.path(),
+                &database,
+                &openkara_remote::PublishRequest {
+                    repository_id: "repo-1".to_owned(),
+                    writer_id: "other-writer".to_owned(),
+                    operation_id: operation_id.to_owned(),
+                    expected_generation: manifest.generation,
+                    expected_base_sha256: Some(base),
+                    changes: openkara_remote::ChangeSet::default(),
+                    conflict_policy: openkara_remote::ConflictPolicy::Stop,
+                },
+                &mut |_| {},
+            )
+            .expect("the other device commits");
+        }
+
+        /// Resolve the conflict of `operation_id` with Keep Local while the
+        /// server cannot be reached, so the approval waits in RetryWait.
+        fn keep_local_while_offline(&self, operation_id: &str) {
+            let unreachable = webdav_remote_library("http://127.0.0.1:1/", &self.working_db());
+            resolve_conflict_keep_local_via_core(
+                &self.ctx(),
+                self.app_data.path(),
+                &unreachable,
+                operation_id,
+            )
+            .expect_err("the server cannot be reached before the CAS");
+            assert_eq!(
+                self.operation(operation_id).state,
+                OperationState::RetryWait
+            );
+        }
+
+        /// Publish `operation_id` again from a restarted process.
+        fn publish_after_restart(&self, operation_id: &str) -> CommandResult<()> {
+            let restarted = open_control_db(&self.db_dir.path().join("remote-state.db")).unwrap();
+            execute_publish_via_core(
+                &make_context(&restarted, self.root(), "lib-1", "repo-1", "w-1"),
+                self.app_data.path(),
+                &self.library,
+                operation_id,
+            )
+        }
+
+        fn payload(&self, operation_id: &str) -> OperationPayload {
+            OperationPayload::from_json(&self.operation(operation_id).payload_json).unwrap()
+        }
+
+        fn legacy_base(&self) -> PathBuf {
+            self.root().join(".openkara/base-snapshot.sqlite")
+        }
+
+        /// The core commit of `operation_id` that the process ran just
+        /// before it died, without the control database learning about it.
+        fn commit_without_completion(
+            &self,
+            operation_id: &str,
+        ) -> openkara_remote::CommittedSnapshot {
+            let outcome = openkara_remote::publish_changes(
+                self.server.storage(),
+                self.root(),
+                &self.working_db(),
+                &openkara_remote::PublishRequest {
+                    repository_id: "repo-1".to_owned(),
+                    writer_id: "w-1".to_owned(),
+                    operation_id: operation_id.to_owned(),
+                    expected_generation: 1,
+                    expected_base_sha256: Some(self.generation_one_sha256.clone()),
+                    changes: openkara_remote::ChangeSet {
+                        song_ids: vec!["song-1".to_owned()],
+                        whole_repository: false,
+                    },
+                    conflict_policy: openkara_remote::ConflictPolicy::Stop,
+                },
+                &mut |_| {},
+            )
+            .expect("the core commits");
+            outcome.snapshot().expect("committed").clone()
+        }
+    }
+
+    #[test]
+    fn keep_local_survives_a_failure_before_the_cas_and_a_restart() {
+        let repo = MovedRepository::new("INSERT INTO stems (song_hash) VALUES ('song-1')");
+        repo.edit(
+            "DELETE FROM songs WHERE hash = 'song-1';
+             INSERT INTO songs (hash) VALUES ('song-3');",
+        );
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        repo.publish(&op_id)
+            .expect_err("a song both devices changed stops publishing");
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+
+        let unreachable = webdav_remote_library("http://127.0.0.1:1/", &repo.working_db());
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &unreachable,
+            &op_id,
+        )
+        .expect_err("the server cannot be reached before the CAS");
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::RetryWait);
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        let approved = payload
+            .keep_local_approval
+            .expect("the choice is stored with the operation");
+        assert_eq!(approved.remote_generation, 2);
+        assert_eq!(
+            approved
+                .songs
+                .iter()
+                .map(|song| song.song_id.as_str())
+                .collect::<Vec<_>>(),
+            ["song-1"]
+        );
+        assert!(payload.pre_publish_conflict.is_none());
+
+        let restarted = open_control_db(&repo.db_dir.path().join("remote-state.db")).unwrap();
+        execute_publish_via_core(
+            &make_context(&restarted, repo.root(), "lib-1", "repo-1", "w-1"),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("recovery finishes the operation without asking again");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        assert_eq!(repo.songs(), ["song-3"], "the local deletion won");
+    }
+
+    /// This device deletes song-1 and song-2 after another device added
+    /// stems to song-1, so its publication stops with a conflict that names
+    /// only song-1. The user keeps the local changes while offline.
+    fn keep_local_approved_for_song_one() -> (MovedRepository, String) {
+        let repo = MovedRepository::seeded(
+            "INSERT INTO songs (hash) VALUES ('song-2')",
+            "INSERT INTO stems (song_hash) VALUES ('song-1')",
+        );
+        repo.edit("DELETE FROM songs WHERE hash IN ('song-1', 'song-2')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        repo.publish(&op_id)
+            .expect_err("a song both devices changed stops publishing");
+        let conflict = repo
+            .payload(&op_id)
+            .pre_publish_conflict
+            .expect("the conflict names its songs");
+        assert_eq!(conflict.songs.len(), 1);
+        assert_eq!(conflict.songs[0].song_id, "song-1");
+        repo.keep_local_while_offline(&op_id);
+        (repo, op_id)
+    }
+
+    fn conflicted_song_ids(payload: &OperationPayload) -> Vec<&str> {
+        payload
+            .pre_publish_conflict
+            .as_ref()
+            .expect("the new conflict is recorded")
+            .songs
+            .iter()
+            .map(|song| song.song_id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_stored_keep_local_asks_again_when_another_song_now_conflicts() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "INSERT INTO stems (song_hash) VALUES ('song-2')",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("song-2 was never approved");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        assert_eq!(repo.state().local_state, LocalState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert_eq!(conflicted_song_ids(&payload), ["song-1", "song-2"]);
+        assert!(
+            payload.keep_local_approval.is_none(),
+            "the old approval is cleared so the user is asked again"
+        );
+        assert_eq!(repo.manifest().generation, 3);
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+    }
+
+    #[test]
+    fn a_song_scoped_keep_local_never_replaces_a_remote_it_cannot_rebase_onto() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "ALTER TABLE songs ADD COLUMN rating INTEGER;
+             INSERT INTO songs (hash) VALUES ('song-9');
+             INSERT INTO stems (song_hash) VALUES ('song-2');",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("the other device's schema cannot be rebased onto");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert!(
+            payload
+                .pre_publish_conflict
+                .as_ref()
+                .expect("the new conflict is recorded")
+                .whole_repository
+        );
+        assert!(payload.keep_local_approval.is_none());
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("approving the whole-repository conflict publishes the local library");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(4));
+        assert_eq!(
+            repo.manifest().database_sha256,
+            sha256_file(&repo.working_db()).unwrap()
+        );
+        assert!(repo.songs().is_empty());
+    }
+
+    #[test]
+    fn a_stored_keep_local_asks_again_when_the_remote_re_edits_an_approved_song() {
+        let repo = MovedRepository::seeded(
+            "CREATE TABLE song_notes (song_hash TEXT PRIMARY KEY, note TEXT)",
+            "INSERT INTO song_notes VALUES ('song-1', 'from the other device')",
+        );
+        repo.edit("DELETE FROM songs WHERE hash = 'song-1'");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        repo.publish(&op_id)
+            .expect_err("a song both devices changed stops publishing");
+        assert_eq!(conflicted_song_ids(&repo.payload(&op_id)), ["song-1"]);
+        repo.keep_local_while_offline(&op_id);
+        repo.another_device_commits(
+            "op-third",
+            "UPDATE song_notes SET note = 'edited again' WHERE song_hash = 'song-1'",
+        );
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("the approval answered generation 2, not generation 3");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        assert_eq!(repo.state().local_state, LocalState::Conflicted);
+        let payload = repo.payload(&op_id);
+        assert_eq!(conflicted_song_ids(&payload), ["song-1"]);
+        assert_eq!(
+            payload
+                .pre_publish_conflict
+                .as_ref()
+                .expect("the new conflict is recorded")
+                .remote_generation,
+            3
+        );
+        assert!(
+            payload.keep_local_approval.is_none(),
+            "the old approval is cleared so the user is asked again"
+        );
+        assert_eq!(repo.manifest().operation_id, "op-third");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+    }
+
+    #[test]
+    fn a_whole_repository_keep_local_asks_again_once_the_remote_moved() {
+        let (repo, op_id) = keep_local_approved_for_song_one();
+        repo.another_device_commits(
+            "op-third",
+            "ALTER TABLE songs ADD COLUMN rating INTEGER;
+             INSERT INTO songs (hash) VALUES ('song-9');",
+        );
+        repo.publish_after_restart(&op_id)
+            .expect_err("the other device's schema cannot be rebased onto");
+        repo.keep_local_while_offline(&op_id);
+        let approved = repo
+            .payload(&op_id)
+            .keep_local_approval
+            .expect("the whole-repository approval is stored");
+        assert!(approved.whole_repository);
+        assert_eq!(approved.remote_generation, 3);
+        repo.another_device_commits("op-fourth", "INSERT INTO songs (hash) VALUES ('song-10')");
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish_after_restart(&op_id)
+            .expect_err("replacing generation 3 was approved, not generation 4");
+
+        assert_eq!(repo.operation(&op_id).state, OperationState::Conflicted);
+        let payload = repo.payload(&op_id);
+        let conflict = payload
+            .pre_publish_conflict
+            .as_ref()
+            .expect("the new conflict is recorded");
+        assert!(conflict.whole_repository);
+        assert_eq!(conflict.remote_generation, 4);
+        assert!(payload.keep_local_approval.is_none());
+        assert_eq!(repo.manifest().generation, 4);
+        assert_eq!(repo.manifest().operation_id, "op-fourth");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("approving the conflict at generation 4 publishes the local library");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(5));
+        assert!(repo.songs().is_empty());
+    }
+
+    #[test]
+    fn a_conflict_recorded_without_its_songs_is_recomputed_when_resolved() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        let mut op = repo.operation(&op_id);
+        op.state = OperationState::Conflicted;
+        op.error_code = Some("remote_conflict".to_owned());
+        upsert_operation(&repo.conn, &op).unwrap();
+        let mut state = repo.state();
+        state.local_state = LocalState::Conflicted;
+        state.active_operation_id = Some(op_id.clone());
+        upsert_repository_state(&repo.conn, &state).unwrap();
+
+        resolve_conflict_keep_local_via_core(
+            &repo.ctx(),
+            repo.app_data.path(),
+            &repo.library,
+            &op_id,
+        )
+        .expect("keeping the local changes rebases them again");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        assert_eq!(
+            repo.songs(),
+            ["song-1", "song-3", "song-b"],
+            "the other device's song is kept, not overwritten"
+        );
+    }
+
+    #[test]
+    fn a_legacy_base_proven_by_the_recorded_digest_is_adopted_and_removed_after_completion() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        std::fs::rename(repo.base(1), repo.legacy_base()).unwrap();
+        let mut state = repo.state();
+        state.local_base_sha256 = None;
+        upsert_repository_state(&repo.conn, &state).unwrap();
+        assert_eq!(
+            state.local_db_digest.as_deref(),
+            Some(repo.generation_one_sha256.as_str())
+        );
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+
+        repo.publish(&op_id).expect("rebased onto generation 2");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        assert_eq!(repo.songs(), ["song-1", "song-3", "song-b"]);
+        let state = repo.state();
+        assert_eq!(state.local_base_generation, 3);
+        assert_eq!(
+            state.local_base_sha256.as_deref(),
+            Some(repo.manifest().database_sha256.as_str())
+        );
+        assert!(!repo.legacy_base().exists(), "removed after the completion");
+        assert!(!repo.base(1).exists());
+        assert!(repo.base(3).is_file());
+    }
+
+    #[test]
+    fn a_legacy_base_that_is_not_the_recorded_ancestor_keeps_the_local_changes_in_a_conflict() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        std::fs::remove_file(repo.base(1)).unwrap();
+        let mut state = repo.state();
+        state.local_base_sha256 = None;
+        upsert_repository_state(&repo.conn, &state).unwrap();
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        // The older release captured its base after the unpublished edit.
+        std::fs::copy(repo.working_db(), repo.legacy_base()).unwrap();
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+
+        repo.publish(&op_id)
+            .expect_err("an unproven base never rebases");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Conflicted);
+        let conflict = OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .expect("the conflict is recorded");
+        assert!(conflict.whole_repository);
+        assert_eq!(repo.manifest().operation_id, "op-other");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+        assert!(
+            repo.legacy_base().is_file(),
+            "kept until a durable completion"
+        );
+        assert!(!repo.base(1).exists());
+        assert_eq!(repo.state().local_base_sha256, None);
+    }
+
+    #[test]
+    fn an_operation_recorded_without_an_expected_generation_conflicts_instead_of_guessing() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        let mut op = repo.operation(&op_id);
+        op.expected_generation = None;
+        upsert_operation(&repo.conn, &op).unwrap();
+        let working_before = std::fs::read(repo.working_db()).unwrap();
+
+        repo.publish(&op_id)
+            .expect_err("no expected generation, no base");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Conflicted);
+        assert!(
+            OperationPayload::from_json(&op.payload_json)
+                .unwrap()
+                .pre_publish_conflict
+                .expect("the conflict is recorded")
+                .whole_repository
+        );
+        assert_eq!(repo.manifest().operation_id, "op-other");
+        assert_eq!(std::fs::read(repo.working_db()).unwrap(), working_before);
+    }
+
+    #[test]
+    fn a_commit_the_control_database_never_recorded_completes_on_retry() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        let op_id = make_pending_op(&repo.conn, "lib-1", 1);
+        let committed = repo.commit_without_completion(&op_id);
+        assert_eq!(committed.generation, 3);
+        assert_eq!(repo.operation(&op_id).state, OperationState::Pending);
+        assert!(repo.base(1).is_file());
+
+        repo.publish(&op_id)
+            .expect("the retry recognizes its own commit");
+
+        let op = repo.operation(&op_id);
+        assert_eq!(op.state, OperationState::Completed);
+        assert_eq!(op.target_generation, Some(3));
+        let state = repo.state();
+        assert_eq!(state.local_base_generation, 3);
+        assert_eq!(
+            state.local_base_sha256.as_deref(),
+            Some(committed.database_sha256.as_str())
+        );
+        assert!(
+            !repo.base(1).exists(),
+            "pruned once the completion is durable"
+        );
+        assert!(repo.base(3).is_file());
+        assert_eq!(repo.songs(), ["song-1", "song-3", "song-b"]);
+    }
+
+    #[test]
+    fn a_base_left_behind_after_a_durable_completion_is_pruned_by_the_next_publication() {
+        let repo = MovedRepository::new("INSERT INTO songs (hash) VALUES ('song-b')");
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-3')");
+        let first = make_named_pending_op(&repo.conn, "op-first", "lib-1", 1);
+        let committed = repo.commit_without_completion(&first);
+        record_completed(
+            &repo.ctx(),
+            &repo.operation(&first),
+            &PublishOutcome {
+                operation_id: first.clone(),
+                target_generation: committed.generation,
+                committed_manifest_revision: committed.manifest_revision.clone(),
+                candidate_db_digest: committed.database_sha256.clone(),
+            },
+            GcSchedule::OncePerGracePeriod,
+        )
+        .unwrap();
+        assert!(repo.base(1).is_file(), "the process died before pruning");
+        repo.edit("INSERT INTO songs (hash) VALUES ('song-4')");
+        let second = make_named_pending_op(&repo.conn, "op-second", "lib-1", 3);
+
+        repo.publish(&second).expect("publishes on generation 3");
+
+        assert_eq!(repo.operation(&second).target_generation, Some(4));
+        assert!(!repo.base(1).exists());
+        assert!(!repo.base(3).exists());
+        assert!(repo.base(4).is_file());
+    }
+    fn pending_gc_rows(conn: &Connection) -> Vec<OperationRow> {
+        list_operations_for_library(conn, "lib-1")
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.operation_kind == OperationKind::Gc && !row.state.is_terminal())
+            .collect()
+    }
+
+    #[test]
+    fn core_publications_schedule_one_cleanup_a_grace_period_later() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        let before = current_unix_time_ms();
+        for expected_generation in 0..2 {
+            let op_id = make_pending_op(&conn, "lib-1", expected_generation);
+            execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+                .expect("core publish should succeed");
+        }
+
+        let pending = pending_gc_rows(&conn);
+        assert_eq!(pending.len(), 1, "one pending cleanup covers both");
+        assert!(pending[0]
+            .next_attempt_at_ms
+            .is_some_and(|due| due >= before + openkara_remote::DEFAULT_CLEANUP_GRACE_PERIOD_MS));
+    }
+
+    #[test]
+    fn cleanup_via_core_deletes_old_unreferenced_uploads_and_reschedules_for_recent_ones() {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let server = openkara_remote::testing::TestWebDavServer::start();
+        let library = webdav_remote_library(server.base_url(), &working_root.join("openkara.db"));
+        let app_data = TempDir::new().unwrap();
+        webdav_app_data(&app_data, &library);
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+        let scratch = working_root.join(".openkara/cleanup");
+
+        server.set_clock_ms(1_000_000_000_000);
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        execute_publish_via_core(&ctx, app_data.path(), &library, &op_id)
+            .expect("core publish should succeed");
+        let abandoned = format!("media/content/{}.flac", "a".repeat(64));
+        server
+            .storage()
+            .write_new(&abandoned, b"abandoned upload")
+            .expect("abandoned upload");
+
+        let cleanup_id = pending_gc_rows(&conn).remove(0).operation_id;
+        execute_cleanup_via_core(&conn, app_data.path(), &library, &scratch, &cleanup_id)
+            .expect("cleanup runs");
+        let cleanup = get_operation(&conn, &cleanup_id).unwrap().unwrap();
+        assert_eq!(cleanup.state, OperationState::Completed);
+        assert!(server.file(&abandoned).is_none(), "old upload deleted");
+        let mut manifest_bytes = Vec::new();
+        server
+            .storage()
+            .read(MANIFEST_PATH, &mut manifest_bytes)
+            .expect("read manifest");
+        let manifest =
+            RepositoryManifest::from_json(std::str::from_utf8(&manifest_bytes).unwrap()).unwrap();
+        assert!(server.file(&manifest.database_path).is_some());
+        assert!(pending_gc_rows(&conn).is_empty());
+        assert!(
+            !scratch.read_dir().unwrap().any(|_| true),
+            "scratch emptied"
+        );
+
+        server.set_clock_ms(current_unix_time_ms());
+        let recent = format!("media/content/{}.flac", "b".repeat(64));
+        server
+            .storage()
+            .write_new(&recent, b"upload in progress")
+            .expect("recent upload");
+        schedule_core_cleanup_on_conn(&conn, "lib-1", 1, current_unix_time_ms()).unwrap();
+        let cleanup_id = pending_gc_rows(&conn).remove(0).operation_id;
+        execute_cleanup_via_core(&conn, app_data.path(), &library, &scratch, &cleanup_id)
+            .expect("cleanup runs");
+        assert!(server.file(&recent).is_some(), "recent upload kept");
+        let follow_up = pending_gc_rows(&conn);
+        assert_eq!(follow_up.len(), 1, "a later cleanup is scheduled");
+        assert_ne!(follow_up[0].operation_id, cleanup_id);
+    }
+
+    fn publish_to_memory(
+        storage: &openkara_remote::testing::MemoryStorage,
+        generation: i64,
+        snapshot: &Path,
+        recorded_sha256: Option<&str>,
+    ) {
+        use openkara_remote::RepositoryStorage as CoreStorage;
+
+        let bytes = std::fs::read(snapshot).unwrap();
+        let database_path = database_path_for_generation(generation);
+        storage.write_new(&database_path, &bytes).unwrap();
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation,
+            database_path,
+            database_size_bytes: bytes.len() as u64,
+            database_sha256: recorded_sha256
+                .map(str::to_owned)
+                .unwrap_or_else(|| sha256_file(snapshot).unwrap()),
+            committed_at_ms: 1,
+            writer_id: "other-writer".to_owned(),
+            operation_id: format!("op-{generation}"),
+        };
+        storage
+            .write_new(MANIFEST_PATH, manifest.to_json().unwrap().as_bytes())
+            .unwrap();
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_pulls_the_committed_generation_beside_the_working_copy() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        Connection::open(&remote_db)
+            .unwrap()
+            .execute_batch("INSERT INTO songs (hash) VALUES ('remote-song');")
+            .unwrap();
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 4, &remote_db, None);
+
+        let working_dir = TempDir::new().unwrap();
+        let working_db = working_dir.path().join("openkara.db");
+        make_valid_db(&working_db);
+        let working_digest = sha256_file(&working_db).unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+        std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+        std::fs::write(&candidate, b"stale candidate from an earlier attempt").unwrap();
+
+        let generation =
+            pull_conflict_candidate_via_core(&storage, &candidate).expect("candidate pulls");
+
+        assert_eq!(generation, 4);
+        assert_eq!(
+            sha256_file(&candidate).unwrap(),
+            sha256_file(&remote_db).unwrap()
+        );
+        assert_eq!(sha256_file(&working_db).unwrap(), working_digest);
+        let leftovers: Vec<_> = std::fs::read_dir(candidate.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != candidate.file_name().unwrap())
+            .collect();
+        assert!(leftovers.is_empty(), "no part or lkg files: {leftovers:?}");
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_rejects_a_snapshot_the_manifest_does_not_describe() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 2, &remote_db, Some(&"0".repeat(64)));
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+
+        let error = pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("a digest mismatch is never activated");
+
+        assert!(!candidate.exists());
+        assert!(
+            !std::fs::read_dir(candidate.parent().unwrap())
+                .unwrap()
+                .any(|_| true),
+            "the corrupt part is discarded: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn an_interrupted_conflict_candidate_pull_leaves_no_candidate_behind() {
+        let remote_dir = TempDir::new().unwrap();
+        let remote_db = remote_dir.path().join("remote.db");
+        make_valid_db(&remote_db);
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 2, &remote_db, None);
+        storage.script(openkara_remote::testing::Fault::InterruptTransfer {
+            path: database_path_for_generation(2),
+            after_bytes: 16,
+        });
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir
+            .path()
+            .join(".openkara/candidates/op-1.conflict-candidate.sqlite");
+
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("the scripted interruption fails the pull");
+
+        assert!(!candidate.exists());
+        assert!(!std::fs::read_dir(candidate.parent().unwrap())
+            .unwrap()
+            .any(|_| true));
+        let generation = pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect("the next attempt pulls the candidate");
+        assert_eq!(generation, 2);
+    }
+
+    #[test]
+    fn conflict_candidate_via_core_requires_a_committed_manifest() {
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        let working_dir = TempDir::new().unwrap();
+        let candidate = working_dir.path().join("candidate.sqlite");
+
+        pull_conflict_candidate_via_core(&storage, &candidate)
+            .expect_err("a repository without a manifest has no winning generation");
+
+        assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn conflict_use_remote_installs_the_candidate_at_its_generation() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let candidate = working_root.join("candidate.sqlite");
+        make_valid_db(&candidate);
+        Connection::open(&candidate)
+            .unwrap()
+            .execute_batch("INSERT INTO songs (hash) VALUES ('remote-song');")
+            .unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+        let op_id = make_pending_op(&conn, "lib-1", 1);
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        op.state = OperationState::Conflicted;
+        upsert_operation(&conn, &op).unwrap();
+        let ctx = make_context(&conn, &working_root, "lib-1", "repo-1", "w-1");
+
+        conflict_use_remote(&ctx, &op_id, &candidate, 3, Some("base-3".to_owned()))
+            .expect("use remote");
+
+        let working_digest = sha256_file(&working_root.join("openkara.db")).unwrap();
+        assert_eq!(working_digest, sha256_file(&candidate).unwrap());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.committed_generation, 3);
+        assert_eq!(repo.local_base_generation, 3);
+        assert_eq!(
+            repo.local_db_digest.as_deref(),
+            Some(working_digest.as_str())
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Cancelled);
     }
 }

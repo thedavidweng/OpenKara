@@ -23,12 +23,14 @@ struct State {
     revisions_issued: u64,
     faults: Vec<Fault>,
     stale_listings: VecDeque<BTreeMap<String, StoredObject>>,
+    clock_ms: i64,
 }
 
 #[derive(Clone)]
 struct StoredObject {
     bytes: Vec<u8>,
     revision: String,
+    modified_at_ms: i64,
 }
 
 impl StoredObject {
@@ -51,6 +53,7 @@ impl State {
         let object = StoredObject {
             bytes,
             revision: format!("memory-revision-{}", self.revisions_issued),
+            modified_at_ms: self.clock_ms,
         };
         let metadata = object.metadata();
         self.objects.insert(path.to_owned(), object);
@@ -101,6 +104,12 @@ impl MemoryStorage {
         } else {
             state.faults.push(fault);
         }
+    }
+
+    /// Objects written from now on record `now_ms` as their modification
+    /// time. The clock starts at 0.
+    pub fn set_clock_ms(&self, now_ms: i64) {
+        self.state().clock_ms = now_ms;
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -273,6 +282,7 @@ impl RepositoryStorage for MemoryStorage {
             .map(|(path, object)| ListedObject {
                 path: path.clone(),
                 metadata: object.metadata(),
+                modified_at_ms: Some(object.modified_at_ms),
             })
             .collect())
     }
@@ -291,6 +301,10 @@ impl ConformanceFixture for MemoryStorage {
 
     fn script(&self, fault: Fault) {
         MemoryStorage::script(self, fault);
+    }
+
+    fn set_clock_ms(&self, now_ms: i64) {
+        MemoryStorage::set_clock_ms(self, now_ms);
     }
 }
 

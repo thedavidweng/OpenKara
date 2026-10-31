@@ -19,7 +19,7 @@ use super::super::types::{
     current_unix_time_ms, load_app_config, load_remote_root, persist_app_config,
 };
 
-use super::super::provider::{create_repository_storage, RepositoryStorage};
+use super::super::provider::{create_legacy_read_storage, LegacyReadStorage};
 
 pub(crate) fn update_remote_revision_in_config(
     app_data_dir: &Path,
@@ -88,6 +88,16 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
         library.remote_revision(),
         remote_revision.as_deref(),
     ) {
+        if let Err(error) = crate::remote::base_identity::ensure_base_identity(
+            control_db_conn,
+            library.id(),
+            root.root(),
+        ) {
+            tracing::info!(
+                "failed to retain the base snapshot of library {}: {error:?}",
+                library.id()
+            );
+        }
         return Ok(library.clone());
     }
     let plan = openkara_remote::plan_refresh(&storage).map_err(CommandError::from)?;
@@ -127,11 +137,27 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
         Ok(None) => Ok(library.clone()),
         Ok(Some(pulled)) => {
             let _ = delete_transfer_parts(control_db_conn, &operation_id);
+            // The pulled snapshot is the base a later publication rebases from.
+            let base_sha256 = openkara_remote::retain_base_snapshot(
+                root.root(),
+                pulled.generation,
+                &root.database_path(),
+            )
+            .map_err(|error| {
+                tracing::info!(
+                    "failed to retain the base snapshot of library {}: {:?}",
+                    library.id(),
+                    error
+                );
+            })
+            .ok()
+            .filter(|retained| retained.eq_ignore_ascii_case(&pulled.database_sha256));
             if let Err(error) = update_repository_state_after_pull(
                 control_db_conn,
                 library.id(),
                 &pulled.database_sha256,
                 pulled.generation,
+                base_sha256.as_deref(),
             ) {
                 tracing::info!(
                     "failed to persist repository state after refreshing library {}: {:?}",
@@ -139,6 +165,9 @@ pub(in crate::remote) fn refresh_working_copy_via_core(
                     error
                 );
                 return Ok(library.clone());
+            }
+            if base_sha256.is_some() {
+                openkara_remote::prune_base_snapshots(root.root(), pulled.generation);
             }
             let new_revision = if plan.manifest.is_some() {
                 storage
@@ -177,7 +206,7 @@ impl openkara_remote::RefreshPolicy for CleanWorkingCopyPolicy<'_> {
 }
 
 pub(in crate::remote) fn remote_database_revision(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
 ) -> CommandResult<Option<String>> {
     // Manifest revision is the staleness signal; legacy falls back to openkara.db.
     let manifest_rev = provider.get_revision(MANIFEST_PATH)?;
@@ -226,7 +255,7 @@ pub(crate) fn prepare_remote_database_for_mutation(
         return refresh_working_copy_via_core(control_db_conn, app_data_dir, library);
     }
 
-    let provider = create_repository_storage(app_data_dir, library)?;
+    let provider = create_legacy_read_storage(app_data_dir, library)?;
     let provider_revision = remote_database_revision(provider.as_ref())?;
     if remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
         return pull_remote_database_atomically(
@@ -274,7 +303,7 @@ pub(in crate::remote) fn should_allow_automatic_pull(
 /// On failure, falls back to the existing local DB (returns the library
 /// unchanged) so the caller can proceed offline.
 pub(in crate::remote) fn pull_remote_database_atomically(
-    provider: &dyn RepositoryStorage,
+    provider: &dyn LegacyReadStorage,
     control_db_conn: &Connection,
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -370,7 +399,7 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
     let root = load_remote_root(app_data_dir, &library)?;
     let destination = root.resolve(relative_path);
 
-    let provider = create_repository_storage(app_data_dir, &library)?;
+    let provider = create_legacy_read_storage(app_data_dir, &library)?;
 
     // Identity-keyed cache catalog (library_id, path, revision, size) — defect #7.
     let provider_revision = provider.get_revision(relative_path)?;
@@ -546,6 +575,7 @@ mod tests {
             updated_at_ms: 1000,
             repository_id: None,
             writer_id: None,
+            local_base_sha256: None,
         }
     }
 

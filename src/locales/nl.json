@@ -341,6 +341,7 @@
   "settings": {
     "streaming": {
       "title": "Streaming Sources",
+      "notIncluded": "This OpenKara build does not include Streaming Sources.",
       "refresh": "Check for sources and updates",
       "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. You see the declared origins and capabilities before you install. Source Registries are maintained outside OpenKara.",
       "empty": "No sources are available. Check for sources to try again.",
@@ -759,7 +760,9 @@
       "recentOps": "Recente bewerkingen",
       "refresh": "Vernieuwen",
       "conflictTitle": "Je bibliotheek is extern gewijzigd voordat deze bewerkingen werden gepubliceerd.",
-      "conflictBody": "Je wijzigingen behouden publiceert ze opnieuw bovenop de externe versie. Dat wordt geweigerd als beide kanten dezelfde nummers wijzigden, omdat automatisch kiezen werk kan kosten.",
+      "conflictBody": "Je wijzigingen behouden publiceert jouw versie van wat beide apparaten wijzigden en behoudt alle andere externe wijzigingen. De externe versie gebruiken verwijdert je niet-gepubliceerde wijzigingen.",
+      "conflictSongs": "Gewijzigd op beide apparaten:",
+      "conflictWholeRepository": "Dit conflict bevat wijzigingen aan de hele bibliotheek. Je wijzigingen behouden vervangt de hele externe bibliotheek door de bibliotheek op dit apparaat, en wijzigingen van andere apparaten kunnen verloren gaan. De externe versie gebruiken verwijdert je niet-gepubliceerde wijzigingen.",
       "conflictKeepLocal": "Mijn wijzigingen behouden",
       "conflictUseRemote": "Externe versie gebruiken"
     },

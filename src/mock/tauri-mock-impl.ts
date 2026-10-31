@@ -63,6 +63,7 @@ export interface MockData {
   coverArtUrls?: Record<string, string>;
   stemsCompleted?: boolean;
   retiredSources?: RetiredSource[];
+  streamingSourcesSupported?: boolean;
 }
 
 export interface MockSong {
@@ -921,6 +922,7 @@ export function createTauriMock(data: any): TauriMockResult {
       last_success_at_ms: null,
       last_error_code: null,
       recent_operations: [],
+      conflict: null,
     }),
 
     get_cover_art: async (args: any) => {
@@ -1257,6 +1259,7 @@ export function createTauriMock(data: any): TauriMockResult {
         },
       },
     ],
+    streaming_sources_supported: () => data.streamingSourcesSupported ?? true,
     list_streaming_sources: () => clone(sourceSnapshots),
     refresh_streaming_sources: () => clone(sourceSnapshots),
     install_streaming_source: async (args: {

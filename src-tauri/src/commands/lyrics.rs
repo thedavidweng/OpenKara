@@ -19,8 +19,6 @@ use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, State};
 
-use crate::lyrics::fetch::LyricsFetchResult;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LyricsPayload {
     pub song_id: String,
@@ -40,6 +38,7 @@ pub async fn fetch_lyrics(
 ) -> CommandResult<LyricsPayload> {
     let state = state.inner().clone();
     let app_handle = app_handle.clone();
+    #[cfg(feature = "streaming-sources")]
     if let Some((source_id, remote_track_id)) =
         crate::catalog::streaming_preview_reference(&song_id)
     {
@@ -57,6 +56,7 @@ pub async fn fetch_lyrics(
 }
 
 /// Preview lyrics use source-bound metadata without a library row or persistence.
+#[cfg(feature = "streaming-sources")]
 fn fetch_preview_lyrics(
     state: &AppState,
     app_handle: &AppHandle,
@@ -229,9 +229,10 @@ fn payload_from_cached_entry(
     })
 }
 
+#[cfg(feature = "streaming-sources")]
 fn payload_from_fetched(
     song_id: String,
-    fetched: &LyricsFetchResult,
+    fetched: &lyrics::fetch::LyricsFetchResult,
 ) -> Result<LyricsPayload, LyricsError> {
     let mut lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
         .map_err(|error| LyricsError::LyricsNotReady(error.to_string()))?;
@@ -861,6 +862,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "streaming-sources")]
     fn payload_from_fetched_uses_declared_ttml_offset() {
         let raw = r#"<tt itunes:timingOffset="-80" xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span></p></div></body></tt>"#;
         let payload = payload_from_fetched(

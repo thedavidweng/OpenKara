@@ -1364,18 +1364,42 @@ impl<'a> GoogleDriveProvider<'a> {
 }
 
 impl RepositoryStorage for GoogleDriveProvider<'_> {
-    fn media_source(&self) -> &dyn RemoteMediaSource {
-        self
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        if relative_path.is_empty() {
+            return google_drive_delete_entry(self.app_data_dir, &mut secret, root_folder_id);
+        }
+        let Some(entry) = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?
+        else {
+            return Ok(());
+        };
+        google_drive_delete_entry(self.app_data_dir, &mut secret, &entry.id)
     }
 
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        // Drive v3 has no server-enforced CAS (If-Match ignored); block publish.
-        RemoteProviderCapabilities {
-            conditional_replace: false,
-            resumable_upload: true,
-            revision_metadata: true,
-            server_side_move: false,
-        }
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        initialize_or_sync_google_drive_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn refresh_existing(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        refresh_existing_google_drive_library(self.app_data_dir, self.library, &secret)
+    }
+}
+
+impl LegacyReadStorage for GoogleDriveProvider<'_> {
+    fn media_source(&self) -> &dyn RemoteMediaSource {
+        self
     }
 
     fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
@@ -1433,6 +1457,18 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
         })?;
         google_drive_download_file(self.app_data_dir, &mut secret, &entry.id, destination)
     }
+}
+
+impl LegacyPublishStorage for GoogleDriveProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        // Drive v3 has no server-enforced CAS (If-Match ignored); block publish.
+        RemoteProviderCapabilities {
+            conditional_replace: false,
+            resumable_upload: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
 
     fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
         let secret = self.secret.borrow();
@@ -1448,38 +1484,6 @@ impl RepositoryStorage for GoogleDriveProvider<'_> {
             relative_path,
             root_folder_id,
         )
-    }
-
-    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
-        let mut secret = self.secret.borrow_mut();
-        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        if relative_path.is_empty() {
-            return google_drive_delete_entry(self.app_data_dir, &mut secret, root_folder_id);
-        }
-        let Some(entry) = google_drive_find_relative_entry(
-            self.app_data_dir,
-            &mut secret,
-            root_folder_id,
-            relative_path,
-        )?
-        else {
-            return Ok(());
-        };
-        google_drive_delete_entry(self.app_data_dir, &mut secret, &entry.id)
-    }
-
-    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        initialize_or_sync_google_drive_library(self.app_data_dir, self.library, &secret)
-    }
-
-    fn refresh_existing(&self) -> CommandResult<Option<String>> {
-        let secret = self.secret.borrow();
-        refresh_existing_google_drive_library(self.app_data_dir, self.library, &secret)
     }
 
     fn resumable_upload_bytes(
@@ -1781,7 +1785,10 @@ impl RemoteMediaSource for GoogleDriveProvider<'_> {
     }
 }
 
-use super::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage};
+use super::provider::{
+    LegacyPublishStorage, LegacyReadStorage, RemoteMediaSource, RemoteMediaSourceCapabilities,
+    RepositoryStorage,
+};
 
 #[cfg(test)]
 mod tests {

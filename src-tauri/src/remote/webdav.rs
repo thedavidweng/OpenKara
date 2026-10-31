@@ -2,28 +2,15 @@ use crate::{
     commands::error::{CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
-    remote::errors::{
-        remote_error_from_status, RemoteError, RemoteErrorKind, RemoteObjectMetadata,
-        RemoteProviderCapabilities, RemoteResult,
-    },
-    remote::provider::ConditionalSource,
 };
-use base64::Engine;
 use reqwest::{
     blocking::{Client, Response},
     header::ETAG,
     Method, StatusCode, Url,
 };
-use std::{
-    fs::{self, OpenOptions},
-    io::{Seek, SeekFrom},
-    path::Path,
-};
+use std::{fs, path::Path};
 
-fn base64_encode(input: &str) -> String {
-    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
-}
-
+use super::provider::RepositoryStorage;
 use super::types::{
     load_remote_credential, slugify_display_name, store_remote_credential,
     stored_webdav_server_url, RemoteAuthPayloadInput, StoredWebDavSecret, WebDavSecret,
@@ -307,181 +294,6 @@ pub(crate) fn upload_webdav_bytes(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned))
-}
-
-/// Conditionally PUT bytes to a WebDAV URL with compare-and-swap semantics.
-///
-/// - `expected_revision = Some(etag)`: sends `If-Match: <etag>`. A mismatch
-///   yields HTTP 412 → [`RemoteErrorKind::RemoteConflict`].
-/// - `expected_revision = None`: sends `If-None-Match: *` (conditional-create).
-///   A pre-existing object yields HTTP 412 → `RemoteConflict`.
-///
-/// Servers that omit stable ETags or ignore conditional requests remain
-/// readable but are rejected for safe writes (the provider reports
-/// `conditional_replace = false` when no ETag is available, so this function
-/// is only reached when a stable ETag was observed via `stat`).
-pub(crate) fn webdav_conditional_put(
-    client: &Client,
-    url: &str,
-    bytes: Vec<u8>,
-    username: &str,
-    password: &str,
-    expected_revision: Option<&str>,
-) -> RemoteResult<RemoteObjectMetadata> {
-    let mut request = client
-        .request(Method::PUT, url)
-        .basic_auth(username, Some(password));
-    if let Some(etag) = expected_revision {
-        request = request.header("If-Match", etag);
-    } else {
-        request = request.header("If-None-Match", "*");
-    }
-    let response = request.body(bytes).send().map_err(|_e| {
-        RemoteError::new(
-            RemoteErrorKind::NetworkUnavailable,
-            format!("WebDAV conditional PUT to {url} failed"),
-        )
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        if status == StatusCode::PRECONDITION_FAILED {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteConflict,
-                format!("WebDAV conditional PUT conflict at {url}"),
-            ));
-        }
-        return Err(remote_error_from_status(status, "WebDAV conditional PUT"));
-    }
-
-    let etag = response
-        .headers()
-        .get(ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let size = response
-        .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-    Ok(RemoteObjectMetadata {
-        size_bytes: size,
-        revision: etag,
-    })
-}
-
-// Staged upload: PUT to `.openkara/staging/<op-id>/…`, then server-side MOVE.
-// Partial PUT / Content-Range support varies, so `resumable_upload` stays false.
-
-pub(crate) fn webdav_staging_url(
-    root_url: &str,
-    operation_id: &str,
-    relative_path: &str,
-) -> CommandResult<String> {
-    // Flat filename under `.openkara/staging/<op-id>/` (no nested dirs).
-    let flat_name = relative_path.replace('/', "_");
-    join_url(
-        root_url,
-        &format!(".openkara/staging/{operation_id}/{flat_name}.part"),
-    )
-}
-
-pub(crate) fn webdav_staged_upload(
-    client: &Client,
-    root_url: &str,
-    operation_id: &str,
-    relative_path: &str,
-    bytes: Vec<u8>,
-    username: &str,
-    password: &str,
-) -> CommandResult<String> {
-    let staging_url = webdav_staging_url(root_url, operation_id, relative_path)?;
-    let server_url = {
-        let parsed = Url::parse(root_url).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!(
-                "invalid WebDAV root URL: {error}"
-            )))
-        })?;
-        let staging_dir_url = join_url(root_url, &format!(".openkara/staging/{operation_id}/"))?;
-        ensure_webdav_collection_chain(
-            client,
-            parsed.as_str(),
-            &staging_dir_url,
-            username,
-            password,
-        )?;
-        parsed.to_string()
-    };
-    let _ = server_url;
-    upload_webdav_bytes(client, &staging_url, bytes, username, password)?;
-    Ok(staging_url)
-}
-
-pub(crate) fn webdav_move_staged_to_final(
-    client: &Client,
-    staging_url: &str,
-    final_url: &str,
-    username: &str,
-    password: &str,
-) -> CommandResult<Option<String>> {
-    // MOVE needs Destination + Overwrite; webdav_send has no custom headers.
-    let response = client
-        .request(
-            Method::from_bytes(b"MOVE").expect("MOVE should parse"),
-            staging_url,
-        )
-        .basic_auth(username, Some(password))
-        .header("Destination", final_url)
-        .header("Overwrite", "T")
-        .send()
-        .map_err(|_error| {
-            CommandError::from(LibraryError::Internal(
-                "WebDAV MOVE request failed".to_owned(),
-            ))
-        })?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "WebDAV MOVE failed with status {status}"
-        ))));
-    }
-    Ok(response
-        .headers()
-        .get(ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned))
-}
-
-pub(crate) fn webdav_stat(
-    client: &Client,
-    url: &str,
-    username: &str,
-    password: &str,
-) -> CommandResult<Option<RemoteObjectMetadata>> {
-    let response = webdav_send(client, Method::HEAD, url, username, password, None, None)?;
-    if response.status() == StatusCode::NOT_FOUND {
-        return Ok(None);
-    }
-    if !response.status().is_success() {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "WebDAV HEAD {url} failed with status {}",
-            response.status()
-        ))));
-    }
-    let size = response
-        .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-    let revision = response
-        .headers()
-        .get(ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    Ok(Some(RemoteObjectMetadata {
-        size_bytes: size,
-        revision,
-    }))
 }
 
 pub(crate) fn parse_webdav_payload(
@@ -778,50 +590,6 @@ pub(crate) fn refresh_existing_webdav_library(
     )
 }
 
-// Legacy path-relative upload helper. CAS publish hashes local staged bytes
-// and uploads via content-addressed paths instead.
-#[allow(dead_code)]
-pub(crate) fn upload_relative_file_to_remote(
-    library: &RegisteredLibrary,
-    secret: &WebDavSecret,
-    relative_path: &str,
-) -> CommandResult<()> {
-    let local_root = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let source = local_root.join(relative_path);
-    let client = webdav_client()?;
-    let server_url = stored_webdav_server_url(library)?;
-    if let Some(parent) = Path::new(relative_path).parent() {
-        let mut current = String::new();
-        for segment in parent.iter().filter_map(|segment| segment.to_str()) {
-            if !current.is_empty() {
-                current.push('/');
-            }
-            current.push_str(segment);
-            let directory_url = join_url(&secret.root_url, &format!("{current}/"))?;
-            ensure_webdav_collection_chain(
-                &client,
-                &server_url,
-                &directory_url,
-                &secret.username,
-                &secret.password,
-            )?;
-        }
-    }
-    let file_url = join_url(&secret.root_url, relative_path)?;
-    upload_webdav_file(
-        &client,
-        &file_url,
-        &source,
-        &secret.username,
-        &secret.password,
-    )?;
-    Ok(())
-}
-
 pub(crate) fn delete_relative_path_from_remote(
     secret: &WebDavSecret,
     relative_path: &str,
@@ -850,6 +618,9 @@ pub(crate) fn delete_relative_path_from_remote(
     }
 }
 
+/// The app-side WebDAV adapter keeps only Register Repository, the
+/// Reauthorize/Relocate reopen and remote deletion: WebDAV repositories read
+/// and publish through the Remote Repository core.
 pub(crate) struct WebDAVProvider<'a> {
     app_data_dir: &'a Path,
     secret: WebDavSecret,
@@ -871,183 +642,6 @@ impl<'a> WebDAVProvider<'a> {
 }
 
 impl RepositoryStorage for WebDAVProvider<'_> {
-    fn media_source(&self) -> &dyn RemoteMediaSource {
-        self
-    }
-
-    fn capabilities(&self) -> RemoteProviderCapabilities {
-        RemoteProviderCapabilities {
-            conditional_replace: true,
-            // WebDAV servers vary in partial-PUT / Content-Range support, so
-            // do not claim resumable_upload. Large uploads use a safe staging
-            // path and server-side MOVE instead.
-            resumable_upload: false,
-            revision_metadata: true,
-            server_side_move: true,
-        }
-    }
-
-    fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
-        let client = webdav_client()?;
-        let url = join_url(&self.secret.root_url, relative_path)?;
-        webdav_stat(&client, &url, &self.secret.username, &self.secret.password)
-    }
-
-    fn conditional_replace(
-        &self,
-        relative_path: &str,
-        source: ConditionalSource,
-        expected_revision: Option<&str>,
-    ) -> RemoteResult<RemoteObjectMetadata> {
-        let client = webdav_client()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        let url = join_url(&self.secret.root_url, relative_path)
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        let bytes = source
-            .read_bytes()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        if expected_revision.is_none() {
-            if let Some(parent) = Path::new(relative_path).parent() {
-                let parent_path = parent.to_string_lossy().replace('\\', "/");
-                if !parent_path.is_empty() {
-                    let parent_url = join_url(&self.secret.root_url, &format!("{parent_path}/"))
-                        .map_err(|e| {
-                            RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
-                        })?;
-                    let server_url = crate::remote::types::stored_webdav_server_url(self.library)
-                        .map_err(|e| {
-                        RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
-                    })?;
-                    ensure_webdav_collection_chain(
-                        &client,
-                        &server_url,
-                        &parent_url,
-                        &self.secret.username,
-                        &self.secret.password,
-                    )
-                    .map_err(|e| {
-                        RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
-                    })?;
-                }
-            }
-        }
-        webdav_conditional_put(
-            &client,
-            &url,
-            bytes,
-            &self.secret.username,
-            &self.secret.password,
-            expected_revision,
-        )
-    }
-
-    fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
-        let client = webdav_client()?;
-        let url = join_url(&self.secret.root_url, relative_path)?;
-        webdav_get_etag(&client, &url, &self.secret.username, &self.secret.password)
-    }
-
-    fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
-        let client = webdav_client()?;
-        let url = join_url(&self.secret.root_url, relative_path)?;
-        download_webdav_file(
-            &client,
-            &url,
-            destination,
-            &self.secret.username,
-            &self.secret.password,
-        )?
-        .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(format!(
-                "remote file {relative_path} was not found"
-            )))
-        })?;
-        Ok(())
-    }
-
-    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
-        let local_root = self.library.working_copy_root().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a cached working copy".to_string(),
-            ))
-        })?;
-        let source = local_root.join(relative_path);
-        let bytes = fs::read(&source).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!(
-                "failed to read {}: {error}",
-                source.display()
-            )))
-        })?;
-
-        let client = webdav_client()?;
-        let server_url = crate::remote::types::stored_webdav_server_url(self.library)?;
-
-        // Ensure the parent collection of the final path exists so the MOVE
-        // (or fallback PUT) lands in an existing collection.
-        if let Some(parent) = Path::new(relative_path).parent() {
-            let parent_path = parent.to_string_lossy().replace('\\', "/");
-            if !parent_path.is_empty() {
-                let parent_url = join_url(&self.secret.root_url, &format!("{parent_path}/"))?;
-                ensure_webdav_collection_chain(
-                    &client,
-                    &server_url,
-                    &parent_url,
-                    &self.secret.username,
-                    &self.secret.password,
-                )?;
-            }
-        }
-
-        let final_url = join_url(&self.secret.root_url, relative_path)?;
-
-        // Staged upload: PUT to `.openkara/staging/<op-id>/<filename>.part`,
-        // then server-side MOVE to the final path. The operation id is derived
-        // from the final path so concurrent uploads of different files do not
-        // collide.
-        let operation_id = uuid::Uuid::new_v4().to_string();
-        let staging_url = webdav_staged_upload(
-            &client,
-            &self.secret.root_url,
-            &operation_id,
-            relative_path,
-            bytes,
-            &self.secret.username,
-            &self.secret.password,
-        )?;
-
-        match webdav_move_staged_to_final(
-            &client,
-            &staging_url,
-            &final_url,
-            &self.secret.username,
-            &self.secret.password,
-        ) {
-            Ok(_) => Ok(()),
-            Err(move_error) => {
-                // Some WebDAV servers do not support MOVE. Fall back to a
-                // direct PUT of the original file bytes.
-                tracing::trace!(
-                    "WebDAV MOVE failed ({}); falling back to direct PUT for {relative_path}",
-                    move_error.message
-                );
-                let bytes = fs::read(&source).map_err(|error| {
-                    CommandError::from(LibraryError::Internal(format!(
-                        "failed to re-read {}: {error}",
-                        source.display()
-                    )))
-                })?;
-                upload_webdav_bytes(
-                    &client,
-                    &final_url,
-                    bytes,
-                    &self.secret.username,
-                    &self.secret.password,
-                )?;
-                Ok(())
-            }
-        }
-    }
-
     fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
         delete_relative_path_from_remote(&self.secret, relative_path)
     }
@@ -1060,197 +654,6 @@ impl RepositoryStorage for WebDAVProvider<'_> {
         refresh_existing_webdav_library(self.app_data_dir, self.library, &self.secret)
     }
 }
-
-impl RemoteMediaSource for WebDAVProvider<'_> {
-    fn capabilities(&self) -> RemoteMediaSourceCapabilities {
-        RemoteMediaSourceCapabilities {
-            range_download: true,
-        }
-    }
-
-    fn download_range(
-        &self,
-        relative_path: &str,
-        destination: &Path,
-        offset: u64,
-        length: u64,
-    ) -> RemoteResult<u64> {
-        if length == 0 {
-            return Ok(0);
-        }
-
-        let client = webdav_client()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        let url = join_url(&self.secret.root_url, relative_path)
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-
-        let end = offset
-            .checked_add(length)
-            .and_then(|value| value.checked_sub(1))
-            .ok_or_else(|| {
-                RemoteError::new(
-                    RemoteErrorKind::RemoteIntegrityFailed,
-                    format!("download_range offset/length overflow for {relative_path}"),
-                )
-            })?;
-        let range_header = format!("bytes={offset}-{end}");
-
-        let mut response = client
-            .request(Method::GET, &url)
-            .basic_auth(&self.secret.username, Some(&self.secret.password))
-            .header("Range", &range_header)
-            .send()
-            .map_err(|_e| {
-                RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!("WebDAV range GET to {url} failed"),
-                )
-            })?;
-
-        let status = response.status();
-        // 206 Partial Content is the expected success for a Range request.
-        // A 200 OK means the server ignored the Range header — only
-        // acceptable when offset == 0 (full-body fallback). For nonzero
-        // offsets, a 200 OK would write the full body at the wrong position.
-        if status == StatusCode::NOT_FOUND {
-            return Err(RemoteError::new(
-                RemoteErrorKind::PermissionDenied,
-                format!("remote file {relative_path} was not found"),
-            ));
-        }
-        if status == StatusCode::OK && offset > 0 {
-            return Err(RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!(
-                    "WebDAV range download returned 200 OK for nonzero offset {offset} \
-                     — server ignored Range header"
-                ),
-            ));
-        }
-        if !status.is_success() {
-            return Err(remote_error_from_status(status, "WebDAV range GET"));
-        }
-
-        // 206 Partial Content MUST include a matching Content-Range.
-        if status == StatusCode::PARTIAL_CONTENT {
-            let content_range = response.headers().get("content-range").ok_or_else(|| {
-                RemoteError::new(
-                    RemoteErrorKind::RemoteIntegrityFailed,
-                    "206 Partial Content missing Content-Range header",
-                )
-            })?;
-            let cr_str = content_range.to_str().map_err(|e| {
-                RemoteError::new(
-                    RemoteErrorKind::RemoteIntegrityFailed,
-                    format!("invalid Content-Range header: {e}"),
-                )
-            })?;
-            crate::remote::errors::verify_content_range(cr_str, offset, length)?;
-        }
-
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!("failed to create {}: {error}", parent.display()),
-                )
-            })?;
-        }
-
-        // Do not truncate: prior range bytes on the part file must survive.
-        #[allow(clippy::suspicious_open_options)]
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(destination)
-            .map_err(|error| {
-                RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!("failed to open {}: {error}", destination.display()),
-                )
-            })?;
-        file.seek(SeekFrom::Start(offset)).map_err(|error| {
-            RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!("failed to seek {}: {error}", destination.display()),
-            )
-        })?;
-
-        // Stream to disk (idle timeout + durable partials); not full-body buffer (#205).
-        let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
-            .map_err(|error| {
-                RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!("failed to stream WebDAV range response: {error}"),
-                )
-            })?;
-
-        // Truncation is transport failure (retryable); keep partial bytes.
-        if status == StatusCode::PARTIAL_CONTENT {
-            if written != length {
-                return Err(RemoteError::new(
-                    RemoteErrorKind::NetworkUnavailable,
-                    format!(
-                        "WebDAV range download body length mismatch: \
-                         requested {length} bytes at offset {offset}, got {written} bytes"
-                    ),
-                ));
-            }
-        } else if written < length {
-            return Err(RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!(
-                    "WebDAV full-body response shorter than requested range: \
-                     requested {length} bytes, got {written} bytes"
-                ),
-            ));
-        }
-
-        Ok(written)
-    }
-
-    fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
-        let client = webdav_client()?;
-        let url = join_url(&self.secret.root_url, relative_path)?;
-        let response = webdav_send(
-            &client,
-            Method::HEAD,
-            &url,
-            &self.secret.username,
-            &self.secret.password,
-            None,
-            None,
-        )?;
-        if !response.status().is_success() {
-            return Ok(None);
-        }
-        Ok(response
-            .headers()
-            .get(reqwest::header::CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok()))
-    }
-
-    fn create_range_fetcher(
-        &self,
-        relative_path: &str,
-    ) -> CommandResult<Option<Box<dyn crate::audio::remote_source::HttpFetcher>>> {
-        let url = join_url(&self.secret.root_url, relative_path)?;
-        let auth_value = format!(
-            "Basic {}",
-            base64_encode(&format!(
-                "{}:{}",
-                self.secret.username, self.secret.password
-            ))
-        );
-        let headers = vec![("Authorization".to_owned(), auth_value)];
-        Ok(Some(Box::new(
-            crate::audio::remote_source::ProviderFetcher::new(url, headers),
-        )))
-    }
-}
-
-use super::provider::{RemoteMediaSource, RemoteMediaSourceCapabilities, RepositoryStorage};
 
 #[cfg(test)]
 mod tests {
@@ -1479,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn webdav_initializes_uploads_and_reopens_remote_library() {
+    fn webdav_initializes_and_reopens_remote_library() {
         let server = TestWebDavServer::start();
         let app_data_dir = tempdir().unwrap();
         let first_working_copy = tempdir().unwrap();
@@ -1521,10 +924,17 @@ mod tests {
         )
         .unwrap();
 
-        upload_relative_file_to_remote(&first_library, &secret, "media/song-1.wav")
-            .expect("media file should upload");
-        upload_relative_file_to_remote(&first_library, &secret, "openkara.db")
-            .expect("library metadata should upload");
+        let client = webdav_client().unwrap();
+        for relative_path in ["media/song-1.wav", "openkara.db"] {
+            upload_webdav_file(
+                &client,
+                &join_url(&root_url, relative_path).unwrap(),
+                &first_working_copy.path().join(relative_path),
+                &secret.username,
+                &secret.password,
+            )
+            .expect("working copy file should upload");
+        }
 
         assert!(server.directory_exists("/OpenKara/"));
         assert!(server.directory_exists("/OpenKara/media/"));
@@ -1593,48 +1003,6 @@ mod tests {
             std::fs::read(&dest_path).unwrap(),
             body,
             "streamed file matches"
-        );
-    }
-
-    #[test]
-    fn webdav_provider_uses_the_shared_storage_and_media_seam() {
-        use crate::config::{RemoteLibraryConnectionConfig, RemoteLibraryProvider};
-
-        let directory = tempdir().expect("temp directory should create");
-        let library = RegisteredLibrary::remote(
-            "webdav-library".to_owned(),
-            "WebDAV".to_owned(),
-            RemoteLibraryProvider::WebDav,
-            "openkara".to_owned(),
-            "https://example.invalid/OpenKara/".to_owned(),
-            "example.invalid/OpenKara".to_owned(),
-            Some(RemoteLibraryConnectionConfig::WebDav {
-                server_url: "https://example.invalid/".to_owned(),
-            }),
-            None,
-            None,
-        );
-        let provider = WebDAVProvider::new(
-            directory.path(),
-            WebDavSecret {
-                root_url: "https://example.invalid/OpenKara/".to_owned(),
-                username: "openkara".to_owned(),
-                password: test_password(),
-            },
-            &library,
-        );
-
-        crate::remote::provider_conformance::assert_provider_capabilities(
-            &provider,
-            RemoteProviderCapabilities {
-                conditional_replace: true,
-                resumable_upload: false,
-                revision_metadata: true,
-                server_side_move: true,
-            },
-            RemoteMediaSourceCapabilities {
-                range_download: true,
-            },
         );
     }
 }

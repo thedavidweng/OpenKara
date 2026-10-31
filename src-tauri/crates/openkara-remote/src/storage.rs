@@ -26,6 +26,9 @@ pub struct ObjectMetadata {
 pub struct ListedObject {
     pub path: String,
     pub metadata: ObjectMetadata,
+    /// When the object was last written, in Unix milliseconds by the
+    /// storage's clock; `None` when the storage does not report it.
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Byte-level access to the objects of one Remote Repository.
@@ -81,6 +84,77 @@ pub trait RepositoryStorage {
 
     /// Deleting an absent object succeeds.
     fn delete(&self, path: &str) -> RemoteResult<()>;
+}
+
+/// A Remote Repository that can only be read. A phone opens its Read-Only
+/// Local Working Copy through this wrapper, so no code path on a phone,
+/// Publish Changes and cleanup included, creates, replaces or deletes a
+/// remote object: the wrapper reports no conditional replace and refuses
+/// every write.
+#[derive(Debug, Clone)]
+pub struct ReadOnlyStorage<S> {
+    inner: S,
+}
+
+impl<S: RepositoryStorage> ReadOnlyStorage<S> {
+    pub fn new(inner: S) -> Self {
+        Self { inner }
+    }
+}
+
+impl<S: RepositoryStorage> RepositoryStorage for ReadOnlyStorage<S> {
+    fn capabilities(&self) -> StorageCapabilities {
+        StorageCapabilities {
+            conditional_replace: false,
+            ..self.inner.capabilities()
+        }
+    }
+
+    fn stat(&self, path: &str) -> RemoteResult<Option<ObjectMetadata>> {
+        self.inner.stat(path)
+    }
+
+    fn read(&self, path: &str, sink: &mut dyn Write) -> RemoteResult<u64> {
+        self.inner.read(path, sink)
+    }
+
+    fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+        sink: &mut dyn Write,
+    ) -> RemoteResult<u64> {
+        self.inner.read_range(path, offset, length, sink)
+    }
+
+    fn write_new(&self, path: &str, _bytes: &[u8]) -> RemoteResult<ObjectMetadata> {
+        Err(read_only_refusal(path))
+    }
+
+    fn conditional_replace(
+        &self,
+        path: &str,
+        _bytes: &[u8],
+        _expected_revision: &str,
+    ) -> RemoteResult<ObjectMetadata> {
+        Err(read_only_refusal(path))
+    }
+
+    fn list(&self, prefix: &str) -> RemoteResult<Vec<ListedObject>> {
+        self.inner.list(prefix)
+    }
+
+    fn delete(&self, path: &str) -> RemoteResult<()> {
+        Err(read_only_refusal(path))
+    }
+}
+
+fn read_only_refusal(path: &str) -> RemoteError {
+    RemoteError::new(
+        RemoteErrorKind::PermissionDenied,
+        format!("the Remote Repository is open read-only; refusing to modify {path}"),
+    )
 }
 
 /// Rejects paths that could address anything outside the repository root.

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
+import { useCatalogStore } from "@/stores/catalog-store";
 import {
   DEFAULT_APP_SETTINGS,
   useSettingsStore,
@@ -54,6 +55,10 @@ export function useAppStartupRuntime(
       void i18next.changeLanguage(detectSystemLanguage()).catch(() => {});
     });
   }, [backend, hydrateAppSettings, patchAppSettings]);
+
+  useEffect(() => {
+    void useCatalogStore.getState().loadSourcesSupport();
+  }, []);
 
   useEffect(() => {
     backend.librarySetup

@@ -197,6 +197,11 @@ pub fn set_online_source_enabled(
 }
 
 #[tauri::command]
+pub fn streaming_sources_supported() -> bool {
+    cfg!(feature = "streaming-sources")
+}
+
+#[tauri::command]
 pub fn set_hide_batch_separate(app_handle: AppHandle, value: bool) -> CommandResult<AppSettings> {
     let app_data_dir = app_handle
         .path()
@@ -599,6 +604,18 @@ pub fn restart_app(app_handle: AppHandle) {
 mod tests {
     use super::*;
     use crate::config::ExecutionProviderPreference;
+
+    #[cfg(feature = "streaming-sources")]
+    #[test]
+    fn a_build_with_streaming_sources_reports_them_supported() {
+        assert!(streaming_sources_supported());
+    }
+
+    #[cfg(not(feature = "streaming-sources"))]
+    #[test]
+    fn a_build_without_streaming_sources_reports_them_unsupported() {
+        assert!(!streaming_sources_supported());
+    }
 
     #[test]
     fn settings_default_lyrics_font_step_is_zero() {

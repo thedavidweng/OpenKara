@@ -341,6 +341,7 @@
   "settings": {
     "streaming": {
       "title": "Streaming Sources",
+      "notIncluded": "This OpenKara build does not include Streaming Sources.",
       "refresh": "Check for sources and updates",
       "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. You see the declared origins and capabilities before you install. Source Registries are maintained outside OpenKara.",
       "empty": "No sources are available. Check for sources to try again.",
@@ -759,7 +760,9 @@
       "recentOps": "Letzte Vorgänge",
       "refresh": "Aktualisieren",
       "conflictTitle": "Die Mediathek wurde entfernt geändert, bevor diese Bearbeitungen veröffentlicht wurden.",
-      "conflictBody": "Deine Änderungen zu behalten veröffentlicht sie erneut über der Remote-Version. Das wird abgelehnt, wenn beide Seiten dieselben Titel geändert haben — eine automatische Auswahl könnte Arbeit verlieren.",
+      "conflictBody": "Deine Änderungen zu behalten veröffentlicht deine Version dessen, was beide Geräte geändert haben, und behält alle anderen Remote-Änderungen. Die Remote-Version zu verwenden verwirft deine unveröffentlichten Änderungen.",
+      "conflictSongs": "Auf beiden Geräten geändert:",
+      "conflictWholeRepository": "Dieser Konflikt enthält bibliotheksweite Änderungen. Deine Änderungen zu behalten ersetzt die gesamte Remote-Bibliothek durch die Bibliothek auf diesem Gerät, und Änderungen von anderen Geräten können verloren gehen. Die Remote-Version zu verwenden verwirft deine unveröffentlichten Änderungen.",
       "conflictKeepLocal": "Meine Änderungen behalten",
       "conflictUseRemote": "Remote-Version verwenden"
     },

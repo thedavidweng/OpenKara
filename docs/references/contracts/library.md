@@ -277,23 +277,35 @@
 
 远程资料库是 provider-hosted OpenKara repository，不是单纯的登录状态或本地数据库副本。合同术语如下：
 
-| User model                     | Command surface                                                                       | Semantics                                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Refresh Repository             | `refresh_remote_repository`                                                           | 只把远端 `openkara.db` 和需要的文件刷新到本地 working copy；不发布本地修改。                                                                                             |
-| Publish Changes / Publish Song | `mirror_local_library_to_remote`, `publish_song_to_remote`, `publish_songs_to_remote` | 将本地 portable library 数据库和相关媒体文件写入远程资料库。发布前若 remote revision 已变化，必须停止并要求刷新后重试。                                                  |
-| Reauthorize Repository         | `reauthorize_remote_repository`                                                       | 更新 OAuth token 或 WebDAV 凭据。位置必须保持不变。OAuth provider 必须保持同一账号；WebDAV 用户名/密码可变，因为它们属于凭据。                                           |
-| Relocate Repository            | `relocate_remote_repository`                                                          | 用户确认替换已保存的远端位置。UI 必须保留取消路径。后端只接受已有 OpenKara 资料库位置，不能把空目录初始化成新资料库。                                                    |
-| Disconnect Repository          | `remove_library`                                                                      | 只移除本地注册和本机凭据，不删除 provider-hosted 内容。                                                                                                                  |
-| Delete Repository              | `delete_library`                                                                      | 删除 provider-hosted 远程资料库内容和本地 working copy；UI 必须把它表达为永久删除远程资料库。                                                                            |
-| Pre-Publish Conflict 出口      | `resolve_remote_conflict`                                                             | 仓库进入 `conflicted` 后的两条出路。`keep_local` 把本地 pending 变更 rebase 到胜出的远端 generation 之后重新发布；`use_remote` 丢弃 pending operation 并采用远端数据库。 |
+| User model                     | Command surface                                                                       | Semantics                                                                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Refresh Repository             | `refresh_remote_repository`                                                           | 只把远端 `openkara.db` 和需要的文件刷新到本地 working copy；不发布本地修改。                                                                                                                                                                                                             |
+| Publish Changes / Publish Song | `mirror_local_library_to_remote`, `publish_song_to_remote`, `publish_songs_to_remote` | 将本地 portable library 数据库和相关媒体文件写入远程资料库。remote revision 在发布前或发布中变化时，WebDAV 发布会把 outbox 中远端未改动的歌曲 rebase 到新 generation 上再提交；两台设备都改过的歌曲和整库修改形成 Pre-Publish Conflict，不覆盖任何一方。其他 provider 仍停止并要求刷新。 |
+| Reauthorize Repository         | `reauthorize_remote_repository`                                                       | 更新 OAuth token 或 WebDAV 凭据。位置必须保持不变。OAuth provider 必须保持同一账号；WebDAV 用户名/密码可变，因为它们属于凭据。                                                                                                                                                           |
+| Relocate Repository            | `relocate_remote_repository`                                                          | 用户确认替换已保存的远端位置。UI 必须保留取消路径。后端只接受已有 OpenKara 资料库位置，不能把空目录初始化成新资料库。                                                                                                                                                                    |
+| Disconnect Repository          | `remove_library`                                                                      | 只移除本地注册和本机凭据，不删除 provider-hosted 内容。                                                                                                                                                                                                                                  |
+| Delete Repository              | `delete_library`                                                                      | 删除 provider-hosted 远程资料库内容和本地 working copy；UI 必须把它表达为永久删除远程资料库。                                                                                                                                                                                            |
+| Pre-Publish Conflict 出口      | `resolve_remote_conflict`                                                             | 仓库进入 `conflicted` 后的两条出路。`keep_local` 重新发布本地 pending 变更：两边都改过的行以本地为准，远端的其他修改全部保留；`use_remote` 丢弃 pending operation 并采用远端数据库。                                                                                                     |
+
+Publish Song 在 WebDAV 资料库上经 Remote Repository core 执行，只上传远端缺少的内容寻址资产：音频与 stems 位于 `<top>/content/<sha256>.<ext>`，封面派生图以派生图字节的 SHA-256 命名。远端已有同尺寸对象时跳过，因此重复发布不会重复传输，字节相同的资产只存一份；本地字节与其内容寻址名称不符时发布失败且不上传。上传中断后再次发布会删除并重写残缺对象，已完成的资产不再上传。Dropbox 与 Google Drive 仍走旧适配器，每次发布都会上传已暂存的资产。
+
+清理未引用的上传（cleanup of unreferenced uploads）没有命令入口，由桌面端自动发起：
+
+- WebDAV 资料库每次 Publish Changes 成功后，桌面端为该资料库保留至多一个待执行的 `gc` operation，在 24 小时宽限期之后由后台执行器运行 `openkara_remote::clean_up_unreferenced_uploads`。Dropbox 与 Google Drive 仍使用旧执行器的 generation GC。
+- 清理保留当前与上一个 generation 的数据库快照，以及在宽限期内才被取代的更早 generation，确保手机能读完刷新时的 generation。被这些快照引用的资产都保留。
+- 其余 `media/`、`media-g/`、`stems/`、`artwork/` 对象和 `.openkara/databases/` 快照，只有在最后写入时间早于宽限期时才删除，因此其他设备正在进行的发布不受影响；存储未报告修改时间的对象永不删除。
+- manifest、旧版根目录 `openkara.db` 与无法识别的对象永不删除；没有 manifest 的资料库不清理；任一保留快照无法下载或解析时，不删除任何对象；每次删除前都会重新检查 manifest，manifest 一旦改变就停止删除，其余对象留给下一次清理。
+- 手机通过只读存储（`openkara_remote::ReadOnlyStorage`）打开资料库，永不删除、写入或替换远端对象。
 
 新增命令：
 
 0. `resolve_remote_conflict(resolution: "keep_local" | "use_remote") -> ()`
    - 只在活动远程资料库的 `local_state == conflicted` 时可用，否则返回错误。
-   - 两条路径都先把胜出的远端数据库拉到 candidate 路径（不是 working copy）：在用户选择丢弃之前，本地 pending 变更仍是用户唯一的副本。
-   - `keep_local` 仅在本地与远端改动触及**不相交**的歌曲、且仓库级设置未变时才自动 rebase；重叠时后端拒绝并要求显式选择，因为自动挑一方会静默丢失工作。
-   - `use_remote` 把 operation 标记为 cancelled，用 candidate 覆盖 working copy 数据库，并把仓库状态推进到远端 generation 的 `Clean`。
+   - 冲突列出的歌曲由 `get_remote_diagnostics` 的 `conflict` 字段返回（见 [settings contract](settings.md#remote-diagnostics)）。
+   - WebDAV 的 `keep_local` 用同一 operation、同一 base generation 重新执行发布，冲突策略为 keep-local：只有用户看到的那次冲突列出的歌曲以本地为准（冲突为整库时，整个远端资料库换成本地数据库），远端其他歌曲的修改照常 rebase 保留。远端在 rebase 过程中再次变化时重新 rebase；成功后 working copy 换成提交的合并快照。被批准的冲突连同发现它时的远端 generation 一起记录在 pending operation 上，上传失败重试或应用重启后仍然生效，但只适用于 rebase 到该 generation 的情况。远端已经提交了别的 generation（包括本次发布过程中另一台设备抢先提交），或出现批准范围以外的冲突（新的歌曲冲突，或歌曲级批准遇到无法 rebase 的整库冲突）时，按未批准处理：清除批准，operation 回到 `conflicted`，针对最新的远端重新记录冲突并重新询问。没有记录歌曲的旧冲突不批准任何内容，重新 rebase 后记录新的冲突。rebase 只使用 SHA-256 与记录的 base digest 一致的 base snapshot；base 缺失、未记录或被改动时整库进入 Pre-Publish Conflict，本地 pending 变更保留。
+   - 其他 provider 的 `keep_local` 先把胜出的远端数据库拉到 candidate 路径（不是 working copy），仅在本地与远端改动触及**不相交**的歌曲、且仓库级设置未变时才自动 rebase；重叠时后端拒绝并要求显式选择。
+   - `use_remote` 先把胜出的远端数据库拉到 candidate 路径，再把 operation 标记为 cancelled，用 candidate 覆盖 working copy 数据库，保留它为新的 base snapshot，删除未完成 rebase 留下的远端快照，并把仓库状态推进到 candidate 所属的远端 generation 的 `Clean`。
+   - WebDAV 的 candidate 经 Remote Repository core 下载，按 manifest 记录的大小和 SHA-256 校验并做 SQLite 完整性检查；校验失败或下载中断时不留下 candidate，working copy 与仓库状态保持 `conflicted` 不变。
 
 1. `resolve_remote_library_candidate(session_id: String, display_name: String) -> RemoteLibraryCandidate`
    - 用当前授权会话和用户输入解析候选远端位置，不注册、不写配置。
