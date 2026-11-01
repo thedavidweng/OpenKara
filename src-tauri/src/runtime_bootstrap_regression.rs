@@ -533,6 +533,8 @@ mod tests {
         assert!(counted.iter().all(is_byte_progress_event));
         assert!(!not_counted.iter().any(is_byte_progress_event));
         assert!(!has_downloading_without_bytes(&counted));
+        let download_without_bytes = [event(Downloading, None, None)];
+        assert!(has_downloading_without_bytes(&download_without_bytes));
     }
 
     #[test]
