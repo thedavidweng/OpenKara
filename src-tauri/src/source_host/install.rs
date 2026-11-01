@@ -50,9 +50,6 @@ pub(crate) fn choose_package_slot(config: &HostConfig, release: &mut Release) {
     }
 }
 /// Extracts a gzip-compressed tar archive of regular files and directories.
-/// The registry format is tar-only; the guards below (dup/path caps, 4 GiB
-/// expansion bound, create_new, Unix mode) are the 629-side protections,
-/// kept as they were on the source head.
 pub(crate) fn extract_tar_gz(
     archive: &Path,
     output: &Path,
@@ -94,14 +91,7 @@ pub(crate) fn extract_tar_gz(
                 file.write_all(&buffer[..n])?;
                 remaining -= n as u64;
             }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(
-                    &destination,
-                    fs::Permissions::from_mode(if mode & 0o111 != 0 { 0o755 } else { 0o644 }),
-                )?;
-            }
+            apply_archive_mode(&destination, mode)?;
             Ok(())
         };
     let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(fs::File::open(archive)?));
@@ -121,6 +111,18 @@ pub(crate) fn extract_tar_gz(
         let mode = entry.header().mode().map_err(|_| invalid())?;
         member(&name, size, kind.is_dir(), &mut entry, mode)?;
     }
+    Ok(())
+}
+#[cfg(unix)]
+fn apply_archive_mode(path: &Path, mode: u32) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(
+        path,
+        fs::Permissions::from_mode(if mode & 0o111 != 0 { 0o755 } else { 0o644 }),
+    )
+}
+#[cfg(not(unix))]
+fn apply_archive_mode(_path: &Path, _mode: u32) -> std::io::Result<()> {
     Ok(())
 }
 fn file_digest(path: &Path) -> HostResult<String> {

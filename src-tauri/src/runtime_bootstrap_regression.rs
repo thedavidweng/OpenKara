@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     env, fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -26,7 +26,6 @@ use std::{
 use tiny_http::{Response, Server, StatusCode};
 
 const REPORT_FILENAME: &str = "runtime-bootstrap-regression-report.json";
-const REQUEST_COUNT_FILENAME: &str = "runtime-bootstrap-http-request-count.txt";
 
 struct FaultEnvGuard;
 
@@ -97,7 +96,7 @@ struct DownloadFixture {
 }
 
 impl DownloadFixture {
-    fn start(remote_url: &str, count_path: &Path) -> Result<(Self, String)> {
+    fn start(remote_url: &str) -> Result<(Self, String)> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(300))
             .build()
@@ -112,7 +111,6 @@ impl DownloadFixture {
             .context("runtime fixture could not read the catalog runtime")?
             .to_vec();
 
-        fs::write(count_path, "0")?;
         let server = Server::http("127.0.0.1:0")
             .map_err(|error| anyhow::anyhow!("failed to start runtime fixture: {error}"))?;
         let address = server
@@ -124,7 +122,6 @@ impl DownloadFixture {
         let requests = Arc::new(AtomicUsize::new(0));
         let thread_stop = Arc::clone(&stop);
         let thread_requests = Arc::clone(&requests);
-        let thread_count_path = count_path.to_path_buf();
         let thread = thread::spawn(move || {
             while !thread_stop.load(Ordering::Relaxed) {
                 let request = match server.recv_timeout(Duration::from_millis(100)) {
@@ -136,8 +133,7 @@ impl DownloadFixture {
                     let _ = request.respond(Response::empty(StatusCode(404)));
                     continue;
                 }
-                let count = thread_requests.fetch_add(1, Ordering::Relaxed) + 1;
-                let _ = fs::write(&thread_count_path, count.to_string());
+                thread_requests.fetch_add(1, Ordering::Relaxed);
                 let _ = request.respond(Response::from_data(payload.clone()));
             }
         });
@@ -259,8 +255,7 @@ fn run_fault_retry(
         bail!("fault-retry phase requires clean runtime app data");
     }
 
-    let count_path = config.app_data_dir.join(REQUEST_COUNT_FILENAME);
-    let (fixture, fixture_url) = DownloadFixture::start(&runtime.download_url, &count_path)?;
+    let (fixture, fixture_url) = DownloadFixture::start(&runtime.download_url)?;
     let mut catalog = embedded.clone();
     let selected = catalog
         .manifest
@@ -445,13 +440,6 @@ fn run_restart(
     })
 }
 
-fn read_request_count(path: &Path) -> Result<usize> {
-    Ok(fs::read_to_string(path)
-        .with_context(|| format!("missing runtime fixture count {}", path.display()))?
-        .trim()
-        .parse()?)
-}
-
 fn locked_snapshot(
     status: &Arc<Mutex<command::RuntimeBootstrapStatusSnapshot>>,
 ) -> Result<command::RuntimeBootstrapStatusSnapshot> {
@@ -511,6 +499,7 @@ mod tests {
     fn event(
         state: command::RuntimeBootstrapState,
         downloaded_bytes: Option<u64>,
+        total_bytes: Option<u64>,
     ) -> RegressionEvent {
         let mut snapshot = command::snapshot_from_inventory(&runtime_bootstrap::RuntimeInventory {
             active: None,
@@ -520,6 +509,7 @@ mod tests {
         });
         snapshot.state = state;
         snapshot.downloaded_bytes = downloaded_bytes;
+        snapshot.total_bytes = total_bytes;
         RegressionEvent {
             event: command::RUNTIME_BOOTSTRAP_PROGRESS_EVENT.to_owned(),
             snapshot,
@@ -528,26 +518,31 @@ mod tests {
 
     #[test]
     fn byte_progress_requires_a_downloading_state_with_bytes() {
-        let events = vec![
-            event(command::RuntimeBootstrapState::Downloading, Some(4096)),
-            event(command::RuntimeBootstrapState::Installing, None),
+        use command::RuntimeBootstrapState::{Downloading, DownloadingCandidate, Installing};
+        let counted = [
+            event(Downloading, Some(4096), Some(8192)),
+            event(DownloadingCandidate, Some(1), Some(8192)),
         ];
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| is_byte_progress_event(event))
-                .count(),
-            1
-        );
-        assert!(!has_downloading_without_bytes(&events));
+        let not_counted = [
+            event(Downloading, Some(0), Some(8192)),
+            event(Downloading, Some(4096), None),
+            event(Installing, None, None),
+            event(Installing, Some(4096), Some(8192)),
+        ];
+
+        assert!(counted.iter().all(is_byte_progress_event));
+        assert!(!not_counted.iter().any(is_byte_progress_event));
+        assert!(!has_downloading_without_bytes(&counted));
+        let download_without_bytes = [event(Downloading, None, None)];
+        assert!(has_downloading_without_bytes(&download_without_bytes));
     }
 
     #[test]
     fn post_download_phases_are_exact_and_ordered() {
         let events = vec![
-            event(command::RuntimeBootstrapState::Installing, None),
-            event(command::RuntimeBootstrapState::Probing, None),
-            event(command::RuntimeBootstrapState::Activating, None),
+            event(command::RuntimeBootstrapState::Installing, None, None),
+            event(command::RuntimeBootstrapState::Probing, None, None),
+            event(command::RuntimeBootstrapState::Activating, None, None),
         ];
         let states: Vec<_> = events
             .iter()

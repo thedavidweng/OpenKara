@@ -6,7 +6,6 @@ use crate::{
         remote_error_from_status, verify_content_range, RemoteError, RemoteErrorKind,
         RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
     },
-    remote::provider::ConditionalSource,
 };
 use reqwest::{Method, StatusCode, Url};
 use std::{
@@ -1402,7 +1401,7 @@ impl LegacyPublishStorage for DropboxProvider<'_> {
     fn conditional_replace(
         &self,
         relative_path: &str,
-        source: ConditionalSource,
+        bytes: Vec<u8>,
         expected_revision: Option<&str>,
     ) -> RemoteResult<RemoteObjectMetadata> {
         let mut secret = self.secret.borrow_mut();
@@ -1413,9 +1412,6 @@ impl LegacyPublishStorage for DropboxProvider<'_> {
             )
         })?;
         let remote_path = dropbox_join_path(root_path, relative_path);
-        let bytes = source
-            .read_bytes()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
         let metadata = dropbox_conditional_upload(
             self.app_data_dir,
             &mut secret,

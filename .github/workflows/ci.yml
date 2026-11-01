@@ -705,6 +705,15 @@ jobs:
         run: cargo nextest run --no-fail-fast
         shell: bash
 
+      # The default-feature run above never compiles the modules that
+      # src-tauri/src/lib.rs gates behind automation-smoke, so their unit
+      # tests run here. tests/ci/automation-smoke-tests-contract.test.ts
+      # keeps this filter in step with the gated modules.
+      - name: Run automation-smoke module tests
+        working-directory: src-tauri
+        run: cargo nextest run --no-fail-fast --lib --features automation-smoke -E 'test(/^(automation_[a-z_]+|runtime_bootstrap_regression)::/)'
+        shell: bash
+
   rust-test-macos:
     name: Rust tests (macOS)
     needs: [triage, prepare-model]

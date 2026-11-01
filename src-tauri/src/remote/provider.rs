@@ -5,27 +5,7 @@ use crate::library::error::LibraryError;
 use crate::remote::errors::{
     RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
 };
-use std::path::{Path, PathBuf};
-
-pub(crate) enum ConditionalSource {
-    #[allow(dead_code)]
-    TempFile(PathBuf),
-    Bytes(Vec<u8>),
-}
-
-impl ConditionalSource {
-    pub(crate) fn read_bytes(&self) -> CommandResult<Vec<u8>> {
-        match self {
-            ConditionalSource::TempFile(path) => std::fs::read(path).map_err(|e| {
-                crate::commands::error::internal_error(format!(
-                    "failed to read conditional source {}: {e}",
-                    path.display()
-                ))
-            }),
-            ConditionalSource::Bytes(bytes) => Ok(bytes.clone()),
-        }
-    }
-}
+use std::path::Path;
 
 /// Repository-level actions every Remote Provider adapter serves: Register
 /// Repository, the Reauthorize/Relocate reopen, and remote deletion.
@@ -89,7 +69,7 @@ pub(crate) trait LegacyPublishStorage: LegacyReadStorage {
     fn conditional_replace(
         &self,
         _path: &str,
-        _source: ConditionalSource,
+        _bytes: Vec<u8>,
         _expected_revision: Option<&str>,
     ) -> RemoteResult<RemoteObjectMetadata> {
         Err(RemoteError::from_kind(

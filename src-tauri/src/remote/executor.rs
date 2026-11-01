@@ -44,7 +44,7 @@ use crate::remote::manifest::{
     database_directory_for_generation, database_path_for_generation, database_path_for_operation,
     read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
-use crate::remote::provider::{ConditionalSource, LegacyPublishStorage, LegacyReadStorage};
+use crate::remote::provider::{LegacyPublishStorage, LegacyReadStorage};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
@@ -642,7 +642,7 @@ fn run_publish_protocol(
 
     let committed_meta = storage.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
-        ConditionalSource::Bytes(manifest_json.into_bytes()),
+        manifest_json.into_bytes(),
         manifest_revision.as_deref(),
     )?;
 
@@ -2122,9 +2122,7 @@ mod tests {
         RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
     };
     use crate::remote::manifest::MANIFEST_PATH;
-    use crate::remote::provider::{
-        ConditionalSource, LegacyPublishStorage, LegacyReadStorage, RepositoryStorage,
-    };
+    use crate::remote::provider::{LegacyPublishStorage, LegacyReadStorage, RepositoryStorage};
     use rusqlite::Connection;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -2309,7 +2307,7 @@ mod tests {
         fn conditional_replace(
             &self,
             path: &str,
-            source: ConditionalSource,
+            bytes: Vec<u8>,
             expected_revision: Option<&str>,
         ) -> Result<RemoteObjectMetadata, RemoteError> {
             if self.no_cas {
@@ -2323,10 +2321,6 @@ mod tests {
                     "simulated network failure during manifest CAS",
                 ));
             }
-
-            let bytes = source
-                .read_bytes()
-                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
             let mut revisions = self.revisions.lock().unwrap();
             let current_rev = revisions.get(path).cloned();
