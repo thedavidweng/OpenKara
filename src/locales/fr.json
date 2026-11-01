@@ -872,6 +872,8 @@
     "separation_failed": "Échec de la séparation",
     "internal": "Erreur interne",
     "remote_repository_unavailable": "Dépôt distant indisponible",
+    "remote_contention": "Dépôt distant occupé",
+    "remoteContentionMessage": "Le dépôt distant a continué de changer pendant qu’OpenKara publiait vos modifications. Vos modifications restent sur cet appareil et OpenKara réessaiera automatiquement.",
     "somethingWentWrong": "Une erreur s'est produite",
     "online_source_disabled": "Cette source en ligne est désactivée.",
     "streaming_auth_failed": "Échec de la connexion",

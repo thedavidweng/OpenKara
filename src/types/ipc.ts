@@ -1,6 +1,7 @@
 export type ErrorCode =
   | "database_unavailable"
   | "remote_repository_unavailable"
+  | "remote_contention"
   | "media_read_failed"
   | "song_not_found"
   | "model_unavailable"

@@ -872,6 +872,8 @@
     "separation_failed": "Falha na separação",
     "internal": "Erro interno",
     "remote_repository_unavailable": "Repositório remoto indisponível",
+    "remote_contention": "Repositório remoto ocupado",
+    "remoteContentionMessage": "O repositório remoto continuou mudando enquanto o OpenKara publicava suas alterações. Suas alterações continuam neste dispositivo, e o OpenKara tentará de novo automaticamente.",
     "somethingWentWrong": "Algo deu errado",
     "online_source_disabled": "Esta fonte online está desligada.",
     "streaming_auth_failed": "Falha ao entrar",

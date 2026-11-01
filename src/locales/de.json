@@ -871,6 +871,8 @@
     "separation_failed": "Trennung fehlgeschlagen",
     "internal": "Interner Fehler",
     "remote_repository_unavailable": "Remote-Repository nicht verfügbar",
+    "remote_contention": "Remote-Repository ausgelastet",
+    "remoteContentionMessage": "Das Remote-Repository hat sich während der Veröffentlichung deiner Änderungen immer wieder geändert. Deine Änderungen bleiben auf diesem Gerät, und OpenKara versucht es automatisch erneut.",
     "somethingWentWrong": "Etwas ist schiefgelaufen",
     "online_source_disabled": "Diese Online-Quelle ist aus.",
     "streaming_auth_failed": "Anmeldung fehlgeschlagen",

@@ -967,6 +967,8 @@
     "separation_failed": "Separation Failed",
     "internal": "Internal Error",
     "remote_repository_unavailable": "Remote Repository Unavailable",
+    "remote_contention": "Remote Repository Busy",
+    "remoteContentionMessage": "The remote repository kept changing while OpenKara published your changes. Your changes stay on this device, and OpenKara will retry automatically.",
     "somethingWentWrong": "Something went wrong",
     "online_source_disabled": "This Online Source is off.",
     "streaming_auth_failed": "Sign-in Failed",

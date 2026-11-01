@@ -288,8 +288,7 @@ fn publish_with_rebase(
             Some(_) if rebases == MAX_REBASES => {
                 return Err(RemoteError::new(
                     RemoteErrorKind::RemoteContention,
-                    "the remote repository kept moving while this publication rebased; \
-                     publish again",
+                    "the remote repository kept moving while this publication rebased",
                 ));
             }
             Some(remote_manifest) => {

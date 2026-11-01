@@ -1029,6 +1029,7 @@ describe("CommandError shape matches Rust CommandError", () => {
     const validCodes: CommandError["code"][] = [
       "database_unavailable",
       "remote_repository_unavailable",
+      "remote_contention",
       "media_read_failed",
       "song_not_found",
       "model_unavailable",
@@ -1046,7 +1047,7 @@ describe("CommandError shape matches Rust CommandError", () => {
       "video_source_unavailable",
       "internal",
     ];
-    expect(validCodes).toHaveLength(18);
+    expect(validCodes).toHaveLength(19);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }

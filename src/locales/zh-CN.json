@@ -871,6 +871,8 @@
     "separation_failed": "分离失败",
     "internal": "内部错误",
     "remote_repository_unavailable": "远程仓库不可用",
+    "remote_contention": "远程仓库繁忙",
+    "remoteContentionMessage": "OpenKara 发布你的修改时，远程仓库一直在变化。你的修改仍保留在此设备上，OpenKara 会自动重试。",
     "somethingWentWrong": "出了点问题",
     "online_source_disabled": "此在线来源已关闭。",
     "streaming_auth_failed": "登录失败",

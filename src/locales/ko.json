@@ -871,6 +871,8 @@
     "separation_failed": "분리 실패",
     "internal": "내부 오류",
     "remote_repository_unavailable": "원격 저장소를 사용할 수 없습니다",
+    "remote_contention": "원격 저장소 사용 중",
+    "remoteContentionMessage": "OpenKara가 변경을 게시하는 동안 원격 저장소가 계속 바뀌었습니다. 변경 내용은 이 기기에 남아 있으며 OpenKara가 자동으로 다시 시도합니다.",
     "somethingWentWrong": "문제가 발생했어요",
     "online_source_disabled": "이 온라인 소스가 꺼져 있습니다.",
     "streaming_auth_failed": "로그인 실패",

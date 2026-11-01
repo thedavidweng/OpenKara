@@ -871,6 +871,8 @@
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
     "remote_repository_unavailable": "遠端儲存庫無法使用",
+    "remote_contention": "遠端儲存庫忙碌中",
+    "remoteContentionMessage": "OpenKara 發佈你的修改時，遠端儲存庫一直在變動。你的修改仍保留在此裝置上，OpenKara 會自動重試。",
     "somethingWentWrong": "發生錯誤",
     "online_source_disabled": "此線上來源已關閉。",
     "streaming_auth_failed": "登入失敗",

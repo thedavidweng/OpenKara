@@ -228,7 +228,9 @@ unreferenced uploads described in `library.md`), `state` (`prepared` / `pending`
   during each of the three rebases of one publication. No content conflict
   occurred. The error is retryable: the operation goes to `retry_wait` and
   `local_state` stays `publishing`. The next attempt after the retry backoff
-  rebases onto the newest generation. `conflict` is `null`.
+  rebases onto the newest generation. `conflict` is `null`. A command that
+  ran the publication, for example `resolve_remote_conflict`, fails with the
+  `CommandError` code `remote_contention` (see `errors.md`).
 
 `conflict` is set only while `local_state` is `conflicted` and the active
 operation recorded what its publication rebase could not apply. It is `null`

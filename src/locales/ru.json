@@ -873,6 +873,8 @@
     "separation_failed": "Ошибка разделения",
     "internal": "Внутренняя ошибка",
     "remote_repository_unavailable": "Удалённый репозиторий недоступен",
+    "remote_contention": "Удалённый репозиторий занят",
+    "remoteContentionMessage": "Удалённый репозиторий постоянно менялся, пока OpenKara публиковал ваши правки. Ваши правки остаются на этом устройстве, и OpenKara автоматически повторит попытку.",
     "somethingWentWrong": "Что-то пошло не так",
     "online_source_disabled": "Этот онлайн-источник выключен.",
     "streaming_auth_failed": "Ошибка входа",

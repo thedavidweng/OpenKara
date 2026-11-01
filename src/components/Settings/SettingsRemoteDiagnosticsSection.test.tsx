@@ -169,6 +169,59 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     });
   });
 
+  test("leaves the conflict panel when keeping local changes meets remote contention", async () => {
+    const conflicted = {
+      has_active_remote: true,
+      local_state: "conflicted",
+      committed_generation: 10,
+      repository_id: null,
+      writer_id: null,
+      local_base_generation: 9,
+      local_db_digest: null,
+      active_operation_id: "op-1",
+      last_success_at_ms: null,
+      last_error_code: "remote_conflict",
+      recent_operations: [],
+    };
+    const contention = {
+      code: "remote_contention",
+      message: "remote_contention: the remote repository kept moving",
+      retryable: true,
+      fallback: "keep_current_state",
+    };
+    mockGetRemoteDiagnostics
+      .mockResolvedValueOnce(conflicted)
+      .mockResolvedValue({
+        ...conflicted,
+        local_state: "publishing",
+        last_error_code: "remote_contention",
+        conflict: null,
+      });
+    mockResolveRemoteConflict.mockRejectedValue(contention);
+
+    render(<SettingsRemoteDiagnosticsSection />);
+    await waitFor(() => {
+      expect(
+        screen.getByText("settings.remoteDiagnostics.conflictKeepLocal"),
+      ).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByText("settings.remoteDiagnostics.conflictKeepLocal"),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("publishing")).toBeTruthy();
+    });
+    expect(mockNotifyError).toHaveBeenCalledWith(contention);
+    expect(
+      screen.queryByText("settings.remoteDiagnostics.conflictKeepLocal"),
+    ).toBeNull();
+    expect(screen.getByText("remote_contention")).toBeTruthy();
+  });
+
   test("names the songs both devices changed", async () => {
     mockGetRemoteDiagnostics.mockResolvedValue({
       has_active_remote: true,
