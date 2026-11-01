@@ -447,6 +447,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: coverage
+          plugins: noop
           flags: frontend
           fail_ci_if_error: false
 
