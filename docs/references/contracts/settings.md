@@ -245,4 +245,7 @@ for a conflict without that record (for example a non-WebDAV provider).
 - `whole_repository`: `true` when whole-repository changes are part of the
   conflict, or when the snapshots could not be compared row by row (no
   retained base snapshot whose SHA-256 matches the recorded base digest, or
-  different schemas).
+  different schemas). The schemas are different when the tables (columns,
+  column order or `CREATE` statement) differ on one of the three snapshots,
+  or when the indexes, triggers or views differ between the remote and the
+  local snapshot.

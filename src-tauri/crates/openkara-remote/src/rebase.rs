@@ -17,10 +17,11 @@
 //! row order do not count as changes. The machine-local publish outbox and
 //! full-text index tables (derived from `songs`) take no part.
 //!
-//! The three snapshots must have the same schema: the same columns and the
-//! same table, index, trigger and view definitions. Otherwise rows that
-//! compare equal could still break a constraint or fire a trigger on one
-//! side only, so the rebase stops instead.
+//! The three snapshots must have the same tables: the same columns and the
+//! same table definitions. The remote and local snapshots must also have the
+//! same index, trigger and view definitions. Otherwise rows that compare
+//! equal could still break a constraint or fire a trigger on one side only,
+//! so the rebase stops instead.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -271,7 +272,8 @@ pub(crate) enum MergeResult {
         whole_repository: bool,
     },
     /// The snapshots cannot be compared row by row (different columns or
-    /// different table, index, trigger or view definitions), or
+    /// table definitions, or remote and local index, trigger or view
+    /// definitions that differ), or
     /// the local rows break a constraint on the remote snapshot after the
     /// user approved replacing the whole remote library.
     Unmergeable,
@@ -286,7 +288,7 @@ pub(crate) fn merge_onto_remote(
     policy: &ConflictPolicy,
     output: &Path,
 ) -> RemoteResult<MergeResult> {
-    let Some(schema) = common_schema(&[base, remote, local])? else {
+    let Some(schema) = common_schema(base, remote, local)? else {
         return Ok(MergeResult::Unmergeable);
     };
     let base_rows = Fingerprint::read(base, &schema)?;
@@ -381,7 +383,7 @@ pub(crate) fn carries_local_changes(
     committed: &Path,
     local: &Path,
 ) -> RemoteResult<bool> {
-    let Some(schema) = common_schema(&[base, committed, local])? else {
+    let Some(schema) = common_schema(base, committed, local)? else {
         return Ok(false);
     };
     let base_rows = Fingerprint::read(base, &schema)?;
@@ -633,11 +635,14 @@ struct TableShape {
 struct Schema {
     /// Sorted by name, with `songs` first among the song tables.
     tables: Vec<TableShape>,
-    /// The `CREATE` statement of every table, index, trigger and view that
-    /// takes part, sorted by kind and name. Snapshots whose columns match
-    /// can still differ in types, constraints, indexes or triggers, and rows
-    /// valid in one would then not be valid in the other.
-    definitions: Vec<SchemaEntry>,
+    /// The `CREATE` statement of every table that takes part, sorted by
+    /// name. Snapshots whose columns match can still differ in types or
+    /// constraints, and rows valid in one would then not be valid in the
+    /// other.
+    table_definitions: Vec<SchemaEntry>,
+    /// The `CREATE` statement of every index, trigger and view that takes
+    /// part, sorted by kind and name.
+    object_definitions: Vec<SchemaEntry>,
 }
 
 /// One row of `sqlite_schema`.
@@ -659,23 +664,30 @@ impl Schema {
     }
 }
 
-/// The schema all `databases` share, or `None` when their comparable tables
-/// differ in name, columns or column order, or when the exact `CREATE`
-/// statement of any comparable table, index, trigger or view differs.
-fn common_schema(databases: &[&Path]) -> RemoteResult<Option<Schema>> {
-    let mut schemas = Vec::with_capacity(databases.len());
-    for database in databases {
-        let connection = open_readonly(database)?;
-        schemas.push(read_schema(&connection)?);
-    }
-    let first = schemas.remove(0);
-    if first.tables.iter().all(|table| table.name != SONGS_TABLE) {
+/// The schema rows of `base`, `remote` and `local` are compared under, or
+/// `None` when the snapshots differ in a way rows cannot be rebased across.
+///
+/// Tables (names, columns, column order and exact `CREATE` statements) must
+/// match on all three snapshots, because the row fingerprints depend on
+/// them. Indexes, triggers and views must match only between `remote` and
+/// `local`: the merged output is the remote with local rows applied, so
+/// only those two decide whether the rows are valid there. The base can
+/// lack them, because migrations add `IF NOT EXISTS` objects to an opened
+/// working copy but never to its retained base snapshot.
+fn common_schema(base: &Path, remote: &Path, local: &Path) -> RemoteResult<Option<Schema>> {
+    let base = read_schema(&open_readonly(base)?)?;
+    let remote = read_schema(&open_readonly(remote)?)?;
+    let local = read_schema(&open_readonly(local)?)?;
+    if remote.tables.iter().all(|table| table.name != SONGS_TABLE) {
         return Ok(None);
     }
-    Ok(schemas
-        .iter()
-        .all(|schema| *schema == first)
-        .then_some(first))
+    let same_tables = |schema: &Schema| {
+        schema.tables == remote.tables && schema.table_definitions == remote.table_definitions
+    };
+    let mergeable = same_tables(&base)
+        && same_tables(&local)
+        && local.object_definitions == remote.object_definitions;
+    Ok(mergeable.then_some(remote))
 }
 
 fn read_schema(connection: &Connection) -> RemoteResult<Schema> {
@@ -718,18 +730,15 @@ fn read_schema(connection: &Connection) -> RemoteResult<Schema> {
             })
     };
 
-    let definitions: Vec<SchemaEntry> = entries
+    let (table_definitions, object_definitions): (Vec<SchemaEntry>, Vec<SchemaEntry>) = entries
         .iter()
         .filter(|entry| takes_part(&entry.name) && takes_part(&entry.table))
         .cloned()
-        .collect();
+        .partition(|entry| entry.kind == "table");
 
     let mut tables = Vec::new();
-    for entry in &definitions {
+    for entry in &table_definitions {
         let name = &entry.name;
-        if entry.kind != "table" {
-            continue;
-        }
         let columns = table_columns(connection, name)?;
         let song_key = if name == SONGS_TABLE {
             Some(SONGS_KEY.to_owned())
@@ -749,7 +758,8 @@ fn read_schema(connection: &Connection) -> RemoteResult<Schema> {
     });
     Ok(Schema {
         tables,
-        definitions,
+        table_definitions,
+        object_definitions,
     })
 }
 
@@ -1436,7 +1446,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_whose_definitions_differ_under_identical_columns_cannot_be_merged() {
+    fn snapshots_whose_table_definitions_differ_under_identical_columns_cannot_be_merged() {
         let differences = [
             (
                 "a column type",
@@ -1458,11 +1468,6 @@ mod tests {
                  CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT CHECK (value <> ''));
                  INSERT INTO settings VALUES ('theme', 'dark');",
             ),
-            ("an index", "CREATE INDEX songs_by_title ON songs(title)"),
-            (
-                "a trigger",
-                "CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END",
-            ),
         ];
         for (difference, definition) in differences {
             for side in ["base", "remote", "local"] {
@@ -1483,6 +1488,153 @@ mod tests {
                 assert!(!databases.path("merged").exists());
             }
         }
+    }
+
+    #[test]
+    fn remote_and_local_snapshots_whose_indexes_triggers_or_views_differ_cannot_be_merged() {
+        let differences = [
+            ("an index", "CREATE INDEX songs_by_title ON songs(title)"),
+            (
+                "a trigger",
+                "CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END",
+            ),
+            ("a view", "CREATE VIEW titles AS SELECT title FROM songs"),
+        ];
+        for (difference, definition) in differences {
+            for side in ["remote", "local"] {
+                let databases = Databases::new(TWO_SONGS);
+                databases.execute(side, definition);
+                databases.execute(
+                    "local",
+                    "UPDATE songs SET title = 'Local' WHERE hash = 's1'",
+                );
+
+                let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
+
+                assert_eq!(
+                    result,
+                    MergeResult::Unmergeable,
+                    "{difference} only on the {side} snapshot"
+                );
+                assert!(!databases.path("merged").exists());
+            }
+        }
+
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute(
+            "remote",
+            "CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END",
+        );
+        databases.execute(
+            "local",
+            "CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 2; END;
+             UPDATE songs SET title = 'Local' WHERE hash = 's1';",
+        );
+
+        assert_eq!(
+            databases.merge(&songs(&["s1"]), ConflictPolicy::Stop),
+            MergeResult::Unmergeable,
+            "the same trigger with a different body"
+        );
+    }
+
+    #[test]
+    fn indexes_triggers_and_views_the_base_lacks_still_merge_when_remote_and_local_share_them() {
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute("base", "CREATE INDEX songs_by_artist ON songs(artist)");
+        for side in ["remote", "local"] {
+            databases.execute(
+                side,
+                "CREATE INDEX songs_by_title ON songs(title);
+                 CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END;
+                 CREATE VIEW titles AS SELECT title FROM songs;",
+            );
+        }
+        databases.execute(
+            "remote",
+            "UPDATE songs SET title = 'Two (remote)' WHERE hash = 's2'",
+        );
+        databases.execute(
+            "local",
+            "UPDATE songs SET title = 'One (local)' WHERE hash = 's1'",
+        );
+
+        let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
+
+        assert_eq!(result, MergeResult::Merged);
+        assert_eq!(
+            databases.songs("merged"),
+            ["s1:One (local)", "s2:Two (remote)"]
+        );
+    }
+
+    /// The full-text index of migration 010 and the triggers that keep it in
+    /// sync with `songs`.
+    const FULL_TEXT_INDEX: &str =
+        "CREATE VIRTUAL TABLE songs_fts USING fts5(title, artist, content='songs', content_rowid='rowid');
+         INSERT INTO songs_fts(rowid, title, artist) SELECT rowid, title, artist FROM songs;";
+    const FULL_TEXT_TRIGGERS: &str = "CREATE TRIGGER songs_ai AFTER INSERT ON songs BEGIN
+             INSERT INTO songs_fts(rowid, title, artist) VALUES (new.rowid, new.title, new.artist);
+         END;
+         CREATE TRIGGER songs_ad AFTER DELETE ON songs BEGIN
+             INSERT INTO songs_fts(songs_fts, rowid, title, artist)
+             VALUES ('delete', old.rowid, old.title, old.artist);
+         END;
+         CREATE TRIGGER songs_au AFTER UPDATE ON songs BEGIN
+             INSERT INTO songs_fts(songs_fts, rowid, title, artist)
+             VALUES ('delete', old.rowid, old.title, old.artist);
+             INSERT INTO songs_fts(rowid, title, artist) VALUES (new.rowid, new.title, new.artist);
+         END;";
+
+    #[test]
+    fn full_text_triggers_the_base_lacks_do_not_stop_the_rebase() {
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute("base", FULL_TEXT_INDEX);
+        for side in ["remote", "local"] {
+            databases.execute(side, FULL_TEXT_INDEX);
+            databases.execute(side, FULL_TEXT_TRIGGERS);
+        }
+        databases.execute(
+            "remote",
+            "UPDATE songs SET title = 'Remote' WHERE hash = 's2'",
+        );
+        databases.execute(
+            "local",
+            "UPDATE songs SET title = 'Local' WHERE hash = 's1'",
+        );
+
+        let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
+
+        assert_eq!(result, MergeResult::Merged);
+        assert_eq!(databases.songs("merged"), ["s1:Local", "s2:Remote"]);
+        assert_eq!(
+            databases.rows(
+                "merged",
+                "SELECT hash FROM songs WHERE rowid IN \
+                 (SELECT rowid FROM songs_fts WHERE songs_fts MATCH 'Local OR Remote') \
+                 ORDER BY hash"
+            ),
+            ["s1", "s2"],
+            "the remote's triggers keep its full-text index in sync with the rebased rows"
+        );
+    }
+
+    #[test]
+    fn full_text_triggers_on_one_side_only_stop_the_rebase() {
+        let databases = Databases::new(TWO_SONGS);
+        for side in ["base", "remote", "local"] {
+            databases.execute(side, FULL_TEXT_INDEX);
+        }
+        databases.execute("remote", FULL_TEXT_TRIGGERS);
+        databases.execute(
+            "local",
+            "UPDATE songs SET title = 'Local' WHERE hash = 's1'",
+        );
+
+        assert_eq!(
+            databases.merge(&songs(&["s1"]), ConflictPolicy::Stop),
+            MergeResult::Unmergeable
+        );
     }
 
     #[test]
@@ -1536,6 +1688,25 @@ mod tests {
         assert!(!carries("base"));
     }
 
+    #[test]
+    fn a_committed_snapshot_is_recognized_when_only_the_base_lacks_its_triggers() {
+        let databases = Databases::new(TWO_SONGS);
+        databases.execute("base", FULL_TEXT_INDEX);
+        for side in ["remote", "local"] {
+            databases.execute(side, FULL_TEXT_INDEX);
+            databases.execute(side, FULL_TEXT_TRIGGERS);
+            databases.execute(side, "UPDATE songs SET title = 'Local' WHERE hash = 's1'");
+        }
+
+        let carries = carries_local_changes(
+            &databases.path("base"),
+            &databases.path("remote"),
+            &databases.path("local"),
+        )
+        .expect("compare");
+
+        assert!(carries);
+    }
     #[test]
     fn pending_outbox_rows_are_carried_into_a_replacement_database() {
         let databases = Databases::new(TWO_SONGS);
