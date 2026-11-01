@@ -171,6 +171,9 @@ pub fn discard_rebase_state(working_copy_root: &Path, operation_id: &str) {
     remove_remote_snapshot_parts(working_copy_root, operation_id, None);
 }
 
+/// Reads the operation id out of a rebase state file name.
+type FileOwner = fn(&str) -> Option<&str>;
+
 /// Remove the rebase state of every operation `is_active` rejects: remote
 /// snapshots, their partial downloads and rebased candidates that an
 /// interrupted, discarded or forgotten operation left behind. The state of an
@@ -180,7 +183,7 @@ pub fn clean_up_rebase_state(
     working_copy_root: &Path,
     is_active: impl Fn(&str) -> bool,
 ) -> Vec<PathBuf> {
-    let owners: [(PathBuf, fn(&str) -> Option<&str>); 2] = [
+    let owners: [(PathBuf, FileOwner); 2] = [
         (rebase_directory(working_copy_root), remote_snapshot_owner),
         (
             working_copy_root.join(CANDIDATES_DIRECTORY),
