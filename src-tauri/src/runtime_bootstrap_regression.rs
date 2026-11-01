@@ -499,6 +499,7 @@ mod tests {
     fn event(
         state: command::RuntimeBootstrapState,
         downloaded_bytes: Option<u64>,
+        total_bytes: Option<u64>,
     ) -> RegressionEvent {
         let mut snapshot = command::snapshot_from_inventory(&runtime_bootstrap::RuntimeInventory {
             active: None,
@@ -508,6 +509,7 @@ mod tests {
         });
         snapshot.state = state;
         snapshot.downloaded_bytes = downloaded_bytes;
+        snapshot.total_bytes = total_bytes;
         RegressionEvent {
             event: command::RUNTIME_BOOTSTRAP_PROGRESS_EVENT.to_owned(),
             snapshot,
@@ -516,26 +518,29 @@ mod tests {
 
     #[test]
     fn byte_progress_requires_a_downloading_state_with_bytes() {
-        let events = vec![
-            event(command::RuntimeBootstrapState::Downloading, Some(4096)),
-            event(command::RuntimeBootstrapState::Installing, None),
+        use command::RuntimeBootstrapState::{Downloading, DownloadingCandidate, Installing};
+        let counted = [
+            event(Downloading, Some(4096), Some(8192)),
+            event(DownloadingCandidate, Some(1), Some(8192)),
         ];
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| is_byte_progress_event(event))
-                .count(),
-            1
-        );
-        assert!(!has_downloading_without_bytes(&events));
+        let not_counted = [
+            event(Downloading, Some(0), Some(8192)),
+            event(Downloading, Some(4096), None),
+            event(Installing, None, None),
+            event(Installing, Some(4096), Some(8192)),
+        ];
+
+        assert!(counted.iter().all(is_byte_progress_event));
+        assert!(!not_counted.iter().any(is_byte_progress_event));
+        assert!(!has_downloading_without_bytes(&counted));
     }
 
     #[test]
     fn post_download_phases_are_exact_and_ordered() {
         let events = vec![
-            event(command::RuntimeBootstrapState::Installing, None),
-            event(command::RuntimeBootstrapState::Probing, None),
-            event(command::RuntimeBootstrapState::Activating, None),
+            event(command::RuntimeBootstrapState::Installing, None, None),
+            event(command::RuntimeBootstrapState::Probing, None, None),
+            event(command::RuntimeBootstrapState::Activating, None, None),
         ];
         let states: Vec<_> = events
             .iter()
