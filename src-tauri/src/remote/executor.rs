@@ -1458,9 +1458,9 @@ fn record_failure(
         | RemoteErrorKind::RemoteIntegrityFailed
         | RemoteErrorKind::DiskFull
         | RemoteErrorKind::LocalStorageFailed => (OperationState::Failed, LocalState::Dirty),
-        RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
-            (OperationState::RetryWait, LocalState::Publishing)
-        }
+        RemoteErrorKind::NetworkUnavailable
+        | RemoteErrorKind::RateLimited
+        | RemoteErrorKind::RemoteContention => (OperationState::RetryWait, LocalState::Publishing),
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
         // Playback-only abort; treat like cancel (Dirty, not Clean).
         RemoteErrorKind::StaleRequest => (OperationState::Cancelled, LocalState::Dirty),
@@ -2689,6 +2689,34 @@ mod tests {
         assert_eq!(manifest.writer_id, "w-1");
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn a_remote_that_kept_moving_waits_to_retry_instead_of_conflicting() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        let ctx = make_context(&conn, working_dir.path(), "lib-1", "repo-1", "w-1");
+        let contention = RemoteError::new(RemoteErrorKind::RemoteContention, "kept moving");
+
+        let before = crate::remote::types::current_unix_time_ms();
+        record_failure(&ctx, &op, &contention).unwrap();
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+        assert_eq!(op.error_code.as_deref(), Some("remote_contention"));
+        assert!(op
+            .next_attempt_at_ms
+            .is_some_and(|at| at >= before + RETRY_BACKOFF_MS));
+        assert!(OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .is_none());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Publishing);
+        assert_eq!(repo.last_error_code.as_deref(), Some("remote_contention"));
     }
 
     #[test]

@@ -197,27 +197,38 @@ Returns a diagnostic snapshot of the remote repository state for the active
 remote library. When no remote library is active, returns a snapshot with
 `has_active_remote: false` and all other fields zeroed/empty.
 
-| Field                   | Type                               | Notes                                                  |
-| ----------------------- | ---------------------------------- | ------------------------------------------------------ |
-| `has_active_remote`     | `bool`                             | `true` when a remote library is active                 |
-| `repository_id`         | `string \| null`                   | Stable repository UUID (manifest protocol)             |
-| `writer_id`             | `string \| null`                   | Stable installation UUID (diagnostics only)            |
-| `committed_generation`  | `i64`                              | Monotonically increasing remote generation             |
-| `local_base_generation` | `i64`                              | Generation the local working copy was last synced from |
-| `local_state`           | `string`                           | `clean`, `dirty`, or `conflicted`                      |
-| `local_db_digest`       | `string \| null`                   | SHA-256 of the local working database                  |
-| `active_operation_id`   | `string \| null`                   | Active publish/GC operation ID                         |
-| `last_success_at_ms`    | `i64 \| null`                      | Wall-clock ms of last successful publication           |
-| `last_error_code`       | `string \| null`                   | Last error code (e.g. `remote_conflict`)               |
-| `recent_operations`     | `Vec<RemoteOperationDiagnostic>`   | Most recent 20 operations (newest first)               |
-| `conflict`              | `RemoteConflictDiagnostic \| null` | Pre-Publish Conflict of the active operation           |
+| Field                   | Type                               | Notes                                                              |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `has_active_remote`     | `bool`                             | `true` when a remote library is active                             |
+| `repository_id`         | `string \| null`                   | Stable repository UUID (manifest protocol)                         |
+| `writer_id`             | `string \| null`                   | Stable installation UUID (diagnostics only)                        |
+| `committed_generation`  | `i64`                              | Monotonically increasing remote generation                         |
+| `local_base_generation` | `i64`                              | Generation the local working copy was last synced from             |
+| `local_state`           | `string`                           | `clean`, `dirty`, `publishing`, `conflicted`, or `reauth_required` |
+| `local_db_digest`       | `string \| null`                   | SHA-256 of the local working database                              |
+| `active_operation_id`   | `string \| null`                   | Active publish/GC operation ID                                     |
+| `last_success_at_ms`    | `i64 \| null`                      | Wall-clock ms of last successful publication                       |
+| `last_error_code`       | `string \| null`                   | Last error code (e.g. `remote_conflict`, `remote_contention`)      |
+| `recent_operations`     | `Vec<RemoteOperationDiagnostic>`   | Most recent 20 operations (newest first)                           |
+| `conflict`              | `RemoteConflictDiagnostic \| null` | Pre-Publish Conflict of the active operation                       |
 
 `RemoteOperationDiagnostic` fields: `operation_id`, `operation_kind`
 (`publish` / `gc`; a `gc` operation of a WebDAV repository is the cleanup of
-unreferenced uploads described in `library.md`), `state` (`pending` / `running` / `completed` / `failed` /
-`conflicted` / `cancelled`), `expected_generation`, `target_generation`,
+unreferenced uploads described in `library.md`), `state` (`prepared` / `pending` / `running` / `retry_wait` /
+`committing` / `verifying` / `completed` / `failed` / `conflicted` /
+`cancelled`), `expected_generation`, `target_generation`,
 `attempt_count`, `error_code`, `error_detail`, `created_at_ms`,
 `updated_at_ms`.
+
+`remote_conflict` and `remote_contention` are different errors:
+
+- `remote_conflict`: the publication stopped. `local_state` is `conflicted`
+  and the operation is `conflicted`. The user must resolve the conflict.
+- `remote_contention`: the remote repository received a new generation
+  during each of the three rebases of one publication. No content conflict
+  occurred. The error is retryable: the operation goes to `retry_wait` and
+  `local_state` stays `publishing`. The next attempt after the retry backoff
+  rebases onto the newest generation. `conflict` is `null`.
 
 `conflict` is set only while `local_state` is `conflicted` and the active
 operation recorded what its publication rebase could not apply. It is `null`

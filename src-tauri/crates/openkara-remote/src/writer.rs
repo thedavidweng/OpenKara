@@ -70,7 +70,7 @@ use crate::storage::{validate_object_path, RepositoryStorage};
 pub(crate) const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
 
 /// How many times one publication rebases onto a remote that keeps moving
-/// before it gives up with a conflict.
+/// before it gives up with `RemoteContention`.
 const MAX_REBASES: usize = 3;
 
 /// Everything the writer needs from the application for one publication.
@@ -163,9 +163,10 @@ pub enum PublishStep {
 ///
 /// Errors are split the way the recovery contract needs: retryable transfer
 /// failures propagate unchanged, corrupt local or remote bytes are
-/// `RemoteIntegrityFailed`, and a remote that cannot be rebased onto (it went
-/// back in time, or kept moving) is `RemoteConflict`. Rows both devices
-/// changed are not an error but [`PublishOutcome::Conflicted`].
+/// `RemoteIntegrityFailed`, a remote that went back in time is
+/// `RemoteConflict`, and a remote that kept moving through `MAX_REBASES`
+/// rebases is the retryable `RemoteContention`. Rows both devices changed
+/// are not an error but [`PublishOutcome::Conflicted`].
 pub fn publish_changes(
     storage: &dyn RepositoryStorage,
     working_copy_root: &Path,
@@ -286,7 +287,7 @@ fn publish_with_rebase(
             None => None,
             Some(_) if rebases == MAX_REBASES => {
                 return Err(RemoteError::new(
-                    RemoteErrorKind::RemoteConflict,
+                    RemoteErrorKind::RemoteContention,
                     "the remote repository kept moving while this publication rebased; \
                      publish again",
                 ));
@@ -3146,10 +3147,12 @@ mod tests {
         )
         .expect_err("the remote kept moving");
 
-        assert_eq!(error.kind, RemoteErrorKind::RemoteConflict);
+        assert_eq!(error.kind, RemoteErrorKind::RemoteContention);
+        assert!(error.retryable);
         assert_eq!(rebases, MAX_REBASES);
         assert_eq!(remote_manifest(&publication.storage).operation_id, "op-x5");
     }
+
     #[test]
     fn an_interrupted_snapshot_upload_leaves_no_torn_state_and_recovers_on_republish() {
         let storage = MemoryStorage::new();
