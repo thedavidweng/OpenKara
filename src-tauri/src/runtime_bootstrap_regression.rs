@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     env, fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -26,7 +26,6 @@ use std::{
 use tiny_http::{Response, Server, StatusCode};
 
 const REPORT_FILENAME: &str = "runtime-bootstrap-regression-report.json";
-const REQUEST_COUNT_FILENAME: &str = "runtime-bootstrap-http-request-count.txt";
 
 struct FaultEnvGuard;
 
@@ -97,7 +96,7 @@ struct DownloadFixture {
 }
 
 impl DownloadFixture {
-    fn start(remote_url: &str, count_path: &Path) -> Result<(Self, String)> {
+    fn start(remote_url: &str) -> Result<(Self, String)> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(300))
             .build()
@@ -112,7 +111,6 @@ impl DownloadFixture {
             .context("runtime fixture could not read the catalog runtime")?
             .to_vec();
 
-        fs::write(count_path, "0")?;
         let server = Server::http("127.0.0.1:0")
             .map_err(|error| anyhow::anyhow!("failed to start runtime fixture: {error}"))?;
         let address = server
@@ -124,7 +122,6 @@ impl DownloadFixture {
         let requests = Arc::new(AtomicUsize::new(0));
         let thread_stop = Arc::clone(&stop);
         let thread_requests = Arc::clone(&requests);
-        let thread_count_path = count_path.to_path_buf();
         let thread = thread::spawn(move || {
             while !thread_stop.load(Ordering::Relaxed) {
                 let request = match server.recv_timeout(Duration::from_millis(100)) {
@@ -136,8 +133,7 @@ impl DownloadFixture {
                     let _ = request.respond(Response::empty(StatusCode(404)));
                     continue;
                 }
-                let count = thread_requests.fetch_add(1, Ordering::Relaxed) + 1;
-                let _ = fs::write(&thread_count_path, count.to_string());
+                thread_requests.fetch_add(1, Ordering::Relaxed);
                 let _ = request.respond(Response::from_data(payload.clone()));
             }
         });
@@ -259,8 +255,7 @@ fn run_fault_retry(
         bail!("fault-retry phase requires clean runtime app data");
     }
 
-    let count_path = config.app_data_dir.join(REQUEST_COUNT_FILENAME);
-    let (fixture, fixture_url) = DownloadFixture::start(&runtime.download_url, &count_path)?;
+    let (fixture, fixture_url) = DownloadFixture::start(&runtime.download_url)?;
     let mut catalog = embedded.clone();
     let selected = catalog
         .manifest
