@@ -155,6 +155,26 @@ describe("notifyError", () => {
     );
   });
 
+  test("remote contention shows the localized automatic-retry message without a retry action", () => {
+    const retry = vi.fn();
+    const err = commandError({
+      code: "remote_contention",
+      message: "remote_contention: the remote repository kept moving",
+      retryable: true,
+      fallback: "keep_current_state",
+    });
+
+    notifyError(err, retry);
+
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "errors.remote_contention",
+        message: "errors.remoteContentionMessage",
+        retryAction: undefined,
+      }),
+    );
+  });
+
   test("regular Error produces a generic error notification", () => {
     notifyError(new Error("network timeout"));
 

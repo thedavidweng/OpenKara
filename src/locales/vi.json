@@ -871,6 +871,8 @@
     "separation_failed": "Tách thất bại",
     "internal": "Lỗi nội bộ",
     "remote_repository_unavailable": "Kho lưu trữ từ xa không khả dụng",
+    "remote_contention": "Kho lưu trữ từ xa đang bận",
+    "remoteContentionMessage": "Kho lưu trữ từ xa liên tục thay đổi trong khi OpenKara đăng thay đổi của bạn. Thay đổi của bạn vẫn ở trên thiết bị này và OpenKara sẽ tự động thử lại.",
     "somethingWentWrong": "Đã xảy ra lỗi",
     "online_source_disabled": "Nguồn trực tuyến này đang tắt.",
     "streaming_auth_failed": "Đăng nhập thất bại",

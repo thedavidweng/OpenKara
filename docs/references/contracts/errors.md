@@ -33,6 +33,7 @@
 
 - `database_unavailable`
 - `remote_repository_unavailable`
+- `remote_contention`
 - `media_read_failed`
 - `song_not_found`
 - `model_unavailable`
@@ -82,6 +83,15 @@
    - `code = remote_repository_unavailable`
    - `fallback = retry`
    - Local library commands continue to use the local SQLite database.
+4. A publication rebased three times, and the remote repository received a
+   new generation during each rebase:
+   - `code = remote_contention`
+   - `retryable = true`
+   - `fallback = keep_current_state`
+   - The operation waits in `retry_wait` and starts again by itself. The UI
+     shows a localized message that says so and does not offer a manual
+     retry. The user does not have to publish again.
+   - Other retryable remote errors use `network_unavailable`.
 
 ### Playback
 

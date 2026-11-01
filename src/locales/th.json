@@ -871,6 +871,8 @@
     "separation_failed": "การแยกเสียงล้มเหลว",
     "internal": "ข้อผิดพลาดภายใน",
     "remote_repository_unavailable": "ที่เก็บข้อมูลระยะไกลไม่พร้อมใช้งาน",
+    "remote_contention": "ที่เก็บข้อมูลระยะไกลไม่ว่าง",
+    "remoteContentionMessage": "ที่เก็บข้อมูลระยะไกลเปลี่ยนแปลงอยู่ตลอดขณะที่ OpenKara เผยแพร่การแก้ไขของคุณ การแก้ไขของคุณยังอยู่ในอุปกรณ์นี้ และ OpenKara จะลองใหม่โดยอัตโนมัติ",
     "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง",
     "online_source_disabled": "แหล่งออนไลน์นี้ปิดอยู่",
     "streaming_auth_failed": "การลงชื่อเข้าใช้ล้มเหลว",

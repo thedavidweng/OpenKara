@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum ErrorCode {
     DatabaseUnavailable,
     RemoteRepositoryUnavailable,
+    RemoteContention,
     MediaReadFailed,
     SongNotFound,
     ModelUnavailable,

@@ -1458,9 +1458,9 @@ fn record_failure(
         | RemoteErrorKind::RemoteIntegrityFailed
         | RemoteErrorKind::DiskFull
         | RemoteErrorKind::LocalStorageFailed => (OperationState::Failed, LocalState::Dirty),
-        RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
-            (OperationState::RetryWait, LocalState::Publishing)
-        }
+        RemoteErrorKind::NetworkUnavailable
+        | RemoteErrorKind::RateLimited
+        | RemoteErrorKind::RemoteContention => (OperationState::RetryWait, LocalState::Publishing),
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
         // Playback-only abort; treat like cancel (Dirty, not Clean).
         RemoteErrorKind::StaleRequest => (OperationState::Cancelled, LocalState::Dirty),
@@ -2689,6 +2689,34 @@ mod tests {
         assert_eq!(manifest.writer_id, "w-1");
         let op = get_operation(&conn, &op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn a_remote_that_kept_moving_waits_to_retry_instead_of_conflicting() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        seed_clean_repository_state(&conn, "lib-1");
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        let ctx = make_context(&conn, working_dir.path(), "lib-1", "repo-1", "w-1");
+        let contention = RemoteError::new(RemoteErrorKind::RemoteContention, "kept moving");
+
+        let before = crate::remote::types::current_unix_time_ms();
+        record_failure(&ctx, &op, &contention).unwrap();
+
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::RetryWait);
+        assert_eq!(op.error_code.as_deref(), Some("remote_contention"));
+        assert!(op
+            .next_attempt_at_ms
+            .is_some_and(|at| at >= before + RETRY_BACKOFF_MS));
+        assert!(OperationPayload::from_json(&op.payload_json)
+            .unwrap()
+            .pre_publish_conflict
+            .is_none());
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Publishing);
+        assert_eq!(repo.last_error_code.as_deref(), Some("remote_contention"));
     }
 
     #[test]
@@ -4801,6 +4829,114 @@ mod tests {
         storage
             .write_new(MANIFEST_PATH, manifest.to_json().unwrap().as_bytes())
             .unwrap();
+    }
+
+    #[test]
+    fn a_legacy_library_published_in_its_rebuild_session_still_rebases_once_migrations_restore_its_triggers(
+    ) {
+        use openkara_remote::{ChangeSet, ConflictPolicy, PublishOutcome, PublishRequest};
+
+        let fts_trigger_count = |database: &Path| -> i64 {
+            Connection::open(database)
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' \
+                     AND name IN ('songs_ai', 'songs_ad', 'songs_au')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+
+        // The legacy `file_path NOT NULL` shape makes `apply_migrations` rebuild
+        // `songs`, which drops the full-text triggers until the next open.
+        let published_dir = TempDir::new().unwrap();
+        let published = published_dir.path().join("openkara.db");
+        let connection = Connection::open(&published).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE songs (
+                    hash TEXT PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    title TEXT,
+                    artist TEXT,
+                    album TEXT,
+                    duration_ms INTEGER,
+                    cover_art BLOB,
+                    imported_at INTEGER NOT NULL
+                 );
+                 INSERT INTO songs (hash, file_path, title, imported_at) VALUES
+                    ('s1', 'media/s1.mp3', 'One', 1),
+                    ('s2', 'media/s2.mp3', 'Two', 1);",
+            )
+            .unwrap();
+        crate::cache::apply_migrations(&connection).unwrap();
+        drop(connection);
+        assert_eq!(fts_trigger_count(&published), 0);
+        let storage = openkara_remote::testing::MemoryStorage::new();
+        publish_to_memory(&storage, 1, &published, None);
+
+        let pulled_device = |edit: &str| {
+            let dir = TempDir::new().unwrap();
+            let database = dir.path().join("openkara.db");
+            std::fs::copy(&published, &database).unwrap();
+            let base = openkara_remote::retain_base_snapshot(dir.path(), 1, &database).unwrap();
+            for song in ["s1", "s2"] {
+                let media = dir.path().join(format!("media/{song}.mp3"));
+                std::fs::create_dir_all(media.parent().unwrap()).unwrap();
+                std::fs::write(media, b"audio").unwrap();
+            }
+            let connection = Connection::open(&database).unwrap();
+            crate::cache::apply_migrations(&connection).unwrap();
+            connection.execute_batch(edit).unwrap();
+            drop(connection);
+            assert_eq!(fts_trigger_count(&database), 3);
+            (dir, database, base)
+        };
+        let publish = |dir: &TempDir, database: &Path, base: String, song: &str| {
+            let request = PublishRequest {
+                repository_id: "repo-1".to_owned(),
+                writer_id: format!("writer-{song}"),
+                operation_id: format!("op-{song}"),
+                expected_generation: 1,
+                expected_base_sha256: Some(base),
+                changes: ChangeSet {
+                    song_ids: vec![song.to_owned()],
+                    whole_repository: false,
+                },
+                conflict_policy: ConflictPolicy::Stop,
+            };
+            let outcome = openkara_remote::publish_changes(
+                &storage,
+                dir.path(),
+                database,
+                &request,
+                &mut |_| {},
+            )
+            .expect("publish");
+            let PublishOutcome::Committed(snapshot) = outcome else {
+                panic!("publishing {song} did not commit");
+            };
+            snapshot.generation
+        };
+
+        let (other_dir, other_db, other_base) =
+            pulled_device("UPDATE songs SET title = 'Two (remote)' WHERE hash = 's2'");
+        assert_eq!(publish(&other_dir, &other_db, other_base, "s2"), 2);
+
+        let (local_dir, local_db, local_base) =
+            pulled_device("UPDATE songs SET title = 'One (local)' WHERE hash = 's1'");
+        assert_eq!(publish(&local_dir, &local_db, local_base, "s1"), 3);
+
+        let titles: Vec<String> = Connection::open(&local_db)
+            .unwrap()
+            .prepare("SELECT hash || ':' || title FROM songs ORDER BY hash")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(titles, ["s1:One (local)", "s2:Two (remote)"]);
     }
 
     #[test]

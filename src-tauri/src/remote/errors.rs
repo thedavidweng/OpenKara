@@ -14,6 +14,16 @@ pub(crate) use openkara_remote::error::{
 /// Map a core `RemoteError` into the Tauri IPC `CommandError` at the
 /// application boundary.
 pub(crate) fn remote_error_to_command_error(error: &RemoteError) -> CommandError {
+    if error.kind == RemoteErrorKind::RemoteContention {
+        // The operation already waits to retry by itself, so the user has
+        // nothing to do.
+        return CommandError::new(
+            crate::commands::error::ErrorCode::RemoteContention,
+            error.message(),
+            true,
+            crate::commands::error::FallbackAction::KeepCurrentState,
+        );
+    }
     // Map retryable remote errors to NetworkUnavailable so the existing
     // ErrorCode enum carries the retry intent; non-retryable errors use
     // Internal with retryable=false so the caller does not retry.
@@ -55,5 +65,21 @@ mod tests {
         let cmd = CommandError::from(non_retryable);
         assert!(!cmd.retryable);
         assert_eq!(cmd.message, "remote_conflict");
+    }
+
+    #[test]
+    fn remote_contention_has_its_own_code_and_needs_no_user_action() {
+        use crate::commands::error::{ErrorCode, FallbackAction};
+
+        let contention = RemoteError::new(RemoteErrorKind::RemoteContention, "kept moving");
+        let cmd = CommandError::from(contention);
+
+        assert_eq!(cmd.code, ErrorCode::RemoteContention);
+        assert!(cmd.retryable);
+        assert_eq!(cmd.fallback, FallbackAction::KeepCurrentState);
+        assert_eq!(
+            serde_json::to_value(&cmd.code).unwrap(),
+            serde_json::json!("remote_contention")
+        );
     }
 }

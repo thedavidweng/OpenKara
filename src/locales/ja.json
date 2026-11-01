@@ -871,6 +871,8 @@
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
     "remote_repository_unavailable": "リモートリポジトリを利用できません",
+    "remote_contention": "リモートリポジトリが混雑しています",
+    "remoteContentionMessage": "OpenKara が変更を公開している間に、リモートリポジトリが何度も更新されました。変更はこのデバイスに残っています。OpenKara が自動で再試行します。",
     "somethingWentWrong": "問題が発生しました",
     "online_source_disabled": "このオンラインソースはオフです。",
     "streaming_auth_failed": "サインインに失敗しました",

@@ -871,6 +871,8 @@
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
     "remote_repository_unavailable": "Repositori Jarak Jauh Tidak Tersedia",
+    "remote_contention": "Repositori Jarak Jauh Sibuk",
+    "remoteContentionMessage": "Repositori jarak jauh terus berubah saat OpenKara menerbitkan perubahan Anda. Perubahan Anda tetap ada di perangkat ini, dan OpenKara akan mencoba lagi secara otomatis.",
     "somethingWentWrong": "Terjadi kesalahan",
     "online_source_disabled": "Sumber daring ini nonaktif.",
     "streaming_auth_failed": "Gagal masuk",

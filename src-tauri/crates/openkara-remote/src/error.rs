@@ -17,6 +17,9 @@ pub struct RemoteObjectMetadata {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteErrorKind {
     RemoteConflict,
+    /// The Remote Revision kept moving while a publication rebased onto it.
+    /// No content conflicts; publishing again later can succeed.
+    RemoteContention,
     ProviderCapabilityUnavailable,
     RemoteIntegrityFailed,
     ObjectNotFound,
@@ -34,6 +37,7 @@ impl RemoteErrorKind {
     pub fn code(self) -> &'static str {
         match self {
             Self::RemoteConflict => "remote_conflict",
+            Self::RemoteContention => "remote_contention",
             Self::ProviderCapabilityUnavailable => "provider_capability_unavailable",
             Self::RemoteIntegrityFailed => "remote_integrity_failed",
             Self::ObjectNotFound => "remote_object_not_found",
@@ -49,12 +53,16 @@ impl RemoteErrorKind {
     }
 
     pub fn retryable(self) -> bool {
-        matches!(self, Self::NetworkUnavailable | Self::RateLimited)
+        matches!(
+            self,
+            Self::NetworkUnavailable | Self::RateLimited | Self::RemoteContention
+        )
     }
 
     pub fn from_code(value: &str) -> Option<Self> {
         match value {
             "remote_conflict" => Some(Self::RemoteConflict),
+            "remote_contention" => Some(Self::RemoteContention),
             "provider_capability_unavailable" => Some(Self::ProviderCapabilityUnavailable),
             "remote_integrity_failed" => Some(Self::RemoteIntegrityFailed),
             "remote_object_not_found" => Some(Self::ObjectNotFound),
@@ -229,6 +237,7 @@ mod tests {
     fn remote_error_kind_codes_round_trip() {
         let all = [
             RemoteErrorKind::RemoteConflict,
+            RemoteErrorKind::RemoteContention,
             RemoteErrorKind::ProviderCapabilityUnavailable,
             RemoteErrorKind::RemoteIntegrityFailed,
             RemoteErrorKind::ObjectNotFound,
@@ -248,9 +257,10 @@ mod tests {
     }
 
     #[test]
-    fn retryable_classification_matches_recoverable_transport_failures() {
+    fn retryable_classification_matches_recoverable_failures() {
         assert!(RemoteErrorKind::NetworkUnavailable.retryable());
         assert!(RemoteErrorKind::RateLimited.retryable());
+        assert!(RemoteErrorKind::RemoteContention.retryable());
 
         assert!(!RemoteErrorKind::RemoteConflict.retryable());
         assert!(!RemoteErrorKind::ProviderCapabilityUnavailable.retryable());

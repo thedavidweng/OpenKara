@@ -873,6 +873,8 @@
     "separation_failed": "Rozdzielanie nie powiodło się",
     "internal": "Błąd wewnętrzny",
     "remote_repository_unavailable": "Zdalne repozytorium jest niedostępne",
+    "remote_contention": "Zdalne repozytorium jest zajęte",
+    "remoteContentionMessage": "Zdalne repozytorium ciągle się zmieniało podczas publikowania twoich zmian. Twoje zmiany zostają na tym urządzeniu, a OpenKara automatycznie ponowi próbę.",
     "somethingWentWrong": "Coś poszło nie tak",
     "online_source_disabled": "To źródło online jest wyłączone.",
     "streaming_auth_failed": "Nie udało się zalogować",

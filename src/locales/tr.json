@@ -871,6 +871,8 @@
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
     "remote_repository_unavailable": "Uzak depo kullanılamıyor",
+    "remote_contention": "Uzak depo meşgul",
+    "remoteContentionMessage": "OpenKara değişikliklerinizi yayımlarken uzak depo sürekli değişti. Değişiklikleriniz bu cihazda kalır ve OpenKara otomatik olarak yeniden dener.",
     "somethingWentWrong": "Bir şeyler ters gitti",
     "online_source_disabled": "Bu çevrimiçi kaynak kapalı.",
     "streaming_auth_failed": "Oturum açılamadı",

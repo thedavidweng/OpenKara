@@ -32,10 +32,10 @@ export function SettingsRemoteDiagnosticsSection() {
       setResolving(true);
       try {
         await remoteRepository.resolveRemoteConflict(resolution);
-        await refresh();
       } catch (err) {
         notifyError(err);
       } finally {
+        await refresh();
         setResolving(false);
       }
     },

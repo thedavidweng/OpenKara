@@ -871,6 +871,8 @@
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",
     "remote_repository_unavailable": "Externe opslagplaats niet beschikbaar",
+    "remote_contention": "Externe opslagplaats bezet",
+    "remoteContentionMessage": "De externe opslagplaats bleef veranderen terwijl OpenKara je wijzigingen publiceerde. Je wijzigingen blijven op dit apparaat en OpenKara probeert het automatisch opnieuw.",
     "somethingWentWrong": "Er is iets misgegaan",
     "online_source_disabled": "Deze online bron is uit.",
     "streaming_auth_failed": "Aanmelden mislukt",

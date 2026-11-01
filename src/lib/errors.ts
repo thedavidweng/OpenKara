@@ -29,6 +29,9 @@ function getCommandErrorMessage(error: CommandError): string {
   if (error.code === "model_unavailable") {
     return i18next.t("errors.modelUnavailableMessage");
   }
+  if (error.code === "remote_contention") {
+    return i18next.t("errors.remoteContentionMessage");
+  }
   if (error.code === "runtime_post_download_timeout") {
     const base = i18next.t("errors.runtimePostDownloadTimeoutMessage");
     const technical = error.message
@@ -40,6 +43,11 @@ function getCommandErrorMessage(error: CommandError): string {
     return base;
   }
   return error.message;
+}
+
+// A remote contention already waits to retry by itself.
+function offersManualRetry(error: CommandError): boolean {
+  return error.retryable && error.code !== "remote_contention";
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -67,7 +75,7 @@ export function notifyError(error: unknown, retryAction?: () => void) {
       title: getErrorTitle(error.code),
       message: getCommandErrorMessage(error),
       retryable: error.retryable,
-      retryAction: error.retryable ? retryAction : undefined,
+      retryAction: offersManualRetry(error) ? retryAction : undefined,
       dismissAfterMs: null,
     });
     return;
