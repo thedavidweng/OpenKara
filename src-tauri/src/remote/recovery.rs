@@ -569,14 +569,57 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 /// `remote_transfer_parts` are preserved (resumable). Orphaned part files
 /// (no matching transfer row) are deleted.
 ///
+/// The rebase state of a publication (remote snapshots, their partial
+/// downloads and rebased candidates) is kept while its operation is
+/// unfinished, including a conflicted one that waits for a resolution, and
+/// removed once the operation ended or no longer exists.
+///
 /// Returns the list of removed paths so callers/tests can observe the result.
 pub fn recover_stale_part_files(
     working_copy_dir: &std::path::Path,
     control_db: &Connection,
 ) -> CommandResult<Vec<std::path::PathBuf>> {
+    let mut removed = Vec::new();
+    match unfinished_operation_ids(control_db) {
+        Ok(unfinished) => removed.extend(openkara_remote::clean_up_rebase_state(
+            working_copy_dir,
+            |operation_id| unfinished.contains(operation_id),
+        )),
+        Err(error) => tracing::warn!(
+            "failed to list unfinished operations; keeping all rebase state in {}: {:?}",
+            working_copy_dir.display(),
+            error
+        ),
+    }
     // Resumable transfer parts must survive restart.
     let protected = collect_protected_transfer_operation_ids(control_db);
-    crate::remote::atomic_download::remove_stale_part_files(working_copy_dir, &protected)
+    removed.extend(crate::remote::atomic_download::remove_stale_part_files(
+        working_copy_dir,
+        &protected,
+        &[openkara_remote::rebase_directory(working_copy_dir)],
+    )?);
+    Ok(removed)
+}
+
+fn unfinished_operation_ids(
+    control_db: &Connection,
+) -> CommandResult<std::collections::HashSet<String>> {
+    let operations = list_operations_in_states(
+        control_db,
+        &[
+            OperationState::Prepared,
+            OperationState::Pending,
+            OperationState::Running,
+            OperationState::RetryWait,
+            OperationState::Committing,
+            OperationState::Verifying,
+            OperationState::Conflicted,
+        ],
+    )?;
+    Ok(operations
+        .into_iter()
+        .map(|operation| operation.operation_id)
+        .collect())
 }
 
 /// Collect operation IDs that have non-zero transfer progress in the control
@@ -1256,6 +1299,49 @@ mod tests {
     }
 
     // --- Stale partial-file recovery ---
+
+    #[test]
+    fn recover_stale_part_files_keeps_the_rebase_state_of_unfinished_operations_only() {
+        let dir = TempDir::new().expect("temp dir");
+        let control_db = rusqlite::Connection::open_in_memory().expect("control DB");
+        crate::remote::control_db::apply_migrations(&control_db).expect("migrations");
+        for (operation_id, state) in [
+            ("op-retry", OperationState::RetryWait),
+            ("op-conflicted", OperationState::Conflicted),
+            ("op-cancelled", OperationState::Cancelled),
+            ("op-completed", OperationState::Completed),
+        ] {
+            upsert_operation(
+                &control_db,
+                &make_operation(operation_id, "lib-1", state, None, Some(1)),
+            )
+            .expect("operation");
+        }
+        let write = |relative: &str| {
+            let path = dir.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"leftover").unwrap();
+            path
+        };
+        let resumable = write(".openkara/rebase/op-retry.remote.sqlite.part.g2");
+        let awaiting_resolution = write(".openkara/rebase/op-conflicted.remote.sqlite");
+        let mut abandoned = vec![
+            write(".openkara/rebase/op-cancelled.remote.sqlite.part.g2"),
+            write(".openkara/candidates/op-completed.rebased.sqlite"),
+            write(".openkara/rebase/op-unknown.remote.sqlite.part.g3"),
+        ];
+
+        let mut removed = recover_stale_part_files(dir.path(), &control_db).expect("recovery");
+
+        assert!(
+            resumable.is_file(),
+            "the part an unfinished publication resumes survives"
+        );
+        assert!(awaiting_resolution.is_file());
+        removed.sort();
+        abandoned.sort();
+        assert_eq!(removed, abandoned);
+    }
 
     #[test]
     fn recover_stale_part_files_removes_part_files_in_working_copy() {

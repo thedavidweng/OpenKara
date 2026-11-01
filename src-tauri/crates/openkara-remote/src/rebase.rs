@@ -16,6 +16,11 @@
 //! The comparison is by row content, never by bytes, so local migrations or
 //! row order do not count as changes. The machine-local publish outbox and
 //! full-text index tables (derived from `songs`) take no part.
+//!
+//! The three snapshots must have the same schema: the same columns and the
+//! same table, index, trigger and view definitions. Otherwise rows that
+//! compare equal could still break a constraint or fire a trigger on one
+//! side only, so the rebase stops instead.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -33,6 +38,11 @@ const SONGS_TABLE: &str = "songs";
 const SONGS_KEY: &str = "hash";
 const SONG_KEY_COLUMN: &str = "song_hash";
 const OUTBOX_TABLE: &str = "remote_publish_outbox";
+const REBASE_DIRECTORY: &str = ".openkara/rebase";
+const CANDIDATES_DIRECTORY: &str = ".openkara/candidates";
+const REMOTE_SNAPSHOT_SUFFIX: &str = ".remote.sqlite";
+const REBASED_CANDIDATE_SUFFIX: &str = ".rebased.sqlite";
+const PART_MARKER: &str = ".part.";
 
 /// The local changes one publication carries, as recorded by the outbox.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -152,23 +162,99 @@ impl PrePublishConflict {
     }
 }
 
-/// Remove the remote snapshot and rebased candidate an unfinished rebase of
-/// `operation_id` kept, once the user discarded that operation.
+/// Remove the remote snapshot, its partial downloads and the rebased
+/// candidate an unfinished rebase of `operation_id` kept, once that
+/// operation committed or the user discarded it.
 pub fn discard_rebase_state(working_copy_root: &Path, operation_id: &str) {
     let _ = fs::remove_file(remote_snapshot_path(working_copy_root, operation_id));
     let _ = fs::remove_file(rebased_candidate_path(working_copy_root, operation_id));
+    remove_remote_snapshot_parts(working_copy_root, operation_id, None);
+}
+
+/// Remove the rebase state of every operation `is_active` rejects: remote
+/// snapshots, their partial downloads and rebased candidates that an
+/// interrupted, discarded or forgotten operation left behind. The state of an
+/// active operation stays, so its next attempt reuses or resumes it. Files
+/// this module did not name are never touched. Returns the removed paths.
+pub fn clean_up_rebase_state(
+    working_copy_root: &Path,
+    is_active: impl Fn(&str) -> bool,
+) -> Vec<PathBuf> {
+    let owners: [(PathBuf, fn(&str) -> Option<&str>); 2] = [
+        (rebase_directory(working_copy_root), remote_snapshot_owner),
+        (
+            working_copy_root.join(CANDIDATES_DIRECTORY),
+            rebased_candidate_owner,
+        ),
+    ];
+    let mut removed = Vec::new();
+    for (directory, owner) in owners {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let abandoned = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(owner)
+                .is_some_and(|operation_id| !is_active(operation_id));
+            if abandoned && path.is_file() && fs::remove_file(&path).is_ok() {
+                removed.push(path);
+            }
+        }
+    }
+    removed
+}
+
+/// The directory that holds the remote snapshots rebases download, and
+/// their partial downloads.
+pub fn rebase_directory(working_copy_root: &Path) -> PathBuf {
+    working_copy_root.join(REBASE_DIRECTORY)
 }
 
 pub(crate) fn remote_snapshot_path(working_copy_root: &Path, operation_id: &str) -> PathBuf {
-    working_copy_root
-        .join(".openkara/rebase")
-        .join(format!("{operation_id}.remote.sqlite"))
+    rebase_directory(working_copy_root).join(format!("{operation_id}{REMOTE_SNAPSHOT_SUFFIX}"))
 }
 
 pub(crate) fn rebased_candidate_path(working_copy_root: &Path, operation_id: &str) -> PathBuf {
     working_copy_root
-        .join(".openkara/candidates")
-        .join(format!("{operation_id}.rebased.sqlite"))
+        .join(CANDIDATES_DIRECTORY)
+        .join(format!("{operation_id}{REBASED_CANDIDATE_SUFFIX}"))
+}
+
+/// Remove every partial download of `operation_id`'s remote snapshot except
+/// `keep`.
+pub(crate) fn remove_remote_snapshot_parts(
+    working_copy_root: &Path,
+    operation_id: &str,
+    keep: Option<&Path>,
+) {
+    let Ok(entries) = fs::read_dir(rebase_directory(working_copy_root)) else {
+        return;
+    };
+    let prefix = format!("{operation_id}{REMOTE_SNAPSHOT_SUFFIX}{PART_MARKER}");
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_part = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&prefix));
+        if is_part && keep != Some(path.as_path()) {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
+/// The operation a remote snapshot or one of its partial downloads belongs
+/// to.
+fn remote_snapshot_owner(file_name: &str) -> Option<&str> {
+    let (operation_id, rest) = file_name.split_once(REMOTE_SNAPSHOT_SUFFIX)?;
+    (rest.is_empty() || rest.starts_with(PART_MARKER)).then_some(operation_id)
+}
+
+fn rebased_candidate_owner(file_name: &str) -> Option<&str> {
+    file_name.strip_suffix(REBASED_CANDIDATE_SUFFIX)
 }
 
 /// The result of [`merge_onto_remote`].
@@ -181,7 +267,8 @@ pub(crate) enum MergeResult {
         song_ids: Vec<String>,
         whole_repository: bool,
     },
-    /// The snapshots cannot be compared row by row (different schemas), or
+    /// The snapshots cannot be compared row by row (different columns or
+    /// different table, index, trigger or view definitions), or
     /// the local rows break a constraint on the remote snapshot after the
     /// user approved replacing the whole remote library.
     Unmergeable,
@@ -543,6 +630,20 @@ struct TableShape {
 struct Schema {
     /// Sorted by name, with `songs` first among the song tables.
     tables: Vec<TableShape>,
+    /// The `CREATE` statement of every table, index, trigger and view that
+    /// takes part, sorted by kind and name. Snapshots whose columns match
+    /// can still differ in types, constraints, indexes or triggers, and rows
+    /// valid in one would then not be valid in the other.
+    definitions: Vec<SchemaEntry>,
+}
+
+/// One row of `sqlite_schema`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SchemaEntry {
+    kind: String,
+    name: String,
+    table: String,
+    sql: String,
 }
 
 impl Schema {
@@ -556,7 +657,8 @@ impl Schema {
 }
 
 /// The schema all `databases` share, or `None` when their comparable tables
-/// differ in name, columns or column order.
+/// differ in name, columns or column order, or when the exact `CREATE`
+/// statement of any comparable table, index, trigger or view differs.
 fn common_schema(databases: &[&Path]) -> RemoteResult<Option<Schema>> {
     let mut schemas = Vec::with_capacity(databases.len());
     for database in databases {
@@ -574,35 +676,55 @@ fn common_schema(databases: &[&Path]) -> RemoteResult<Option<Schema>> {
 }
 
 fn read_schema(connection: &Connection) -> RemoteResult<Schema> {
-    let entries: Vec<(String, String)> = {
+    let entries: Vec<SchemaEntry> = {
         let mut statement = connection
             .prepare(
-                "SELECT name, COALESCE(sql, '') FROM sqlite_master \
-                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                "SELECT type, name, tbl_name, COALESCE(sql, '') FROM sqlite_master \
+                 WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
             )
             .map_err(sql_error)?;
         let rows = statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([], |row| {
+                Ok(SchemaEntry {
+                    kind: row.get(0)?,
+                    name: row.get(1)?,
+                    table: row.get(2)?,
+                    sql: row.get(3)?,
+                })
+            })
             .map_err(sql_error)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(sql_error)?
     };
     let virtual_tables: Vec<&str> = entries
         .iter()
-        .filter(|(_, sql)| {
-            sql.trim_start()
-                .to_ascii_uppercase()
-                .starts_with("CREATE VIRTUAL TABLE")
+        .filter(|entry| {
+            entry.kind == "table"
+                && entry
+                    .sql
+                    .trim_start()
+                    .to_ascii_uppercase()
+                    .starts_with("CREATE VIRTUAL TABLE")
         })
-        .map(|(name, _)| name.as_str())
+        .map(|entry| entry.name.as_str())
+        .collect();
+    let takes_part = |table: &str| {
+        table != OUTBOX_TABLE
+            && !virtual_tables.iter().any(|virtual_table| {
+                table == *virtual_table || table.starts_with(&format!("{virtual_table}_"))
+            })
+    };
+
+    let definitions: Vec<SchemaEntry> = entries
+        .iter()
+        .filter(|entry| takes_part(&entry.name) && takes_part(&entry.table))
+        .cloned()
         .collect();
 
     let mut tables = Vec::new();
-    for (name, _) in &entries {
-        let derived = virtual_tables.iter().any(|virtual_table| {
-            name == virtual_table || name.starts_with(&format!("{virtual_table}_"))
-        });
-        if derived || name == OUTBOX_TABLE {
+    for entry in &definitions {
+        let name = &entry.name;
+        if entry.kind != "table" {
             continue;
         }
         let columns = table_columns(connection, name)?;
@@ -622,7 +744,10 @@ fn read_schema(connection: &Connection) -> RemoteResult<Schema> {
     tables.sort_by(|left, right| {
         (left.name != SONGS_TABLE, &left.name).cmp(&(right.name != SONGS_TABLE, &right.name))
     });
-    Ok(Schema { tables })
+    Ok(Schema {
+        tables,
+        definitions,
+    })
 }
 
 fn table_columns(connection: &Connection, table: &str) -> RemoteResult<Vec<String>> {
@@ -1211,7 +1336,73 @@ mod tests {
     }
 
     #[test]
-    fn a_child_row_whose_song_the_remote_removed_breaks_the_rebase() {
+    fn a_foreign_key_broken_by_disjoint_song_changes_is_a_whole_repository_conflict() {
+        let databases = Databases::new(TWO_SONGS);
+        for side in ["base", "remote", "local"] {
+            databases.execute(
+                side,
+                "CREATE TABLE song_links (
+                    song_hash TEXT NOT NULL REFERENCES songs(hash),
+                    target_hash TEXT NOT NULL REFERENCES songs(hash)
+                )",
+            );
+        }
+        databases.execute("remote", "DELETE FROM songs WHERE hash = 's1'");
+        databases.execute(
+            "local",
+            "INSERT INTO songs (hash, title) VALUES ('s3', 'Three');
+             INSERT INTO song_links VALUES ('s3', 's1');",
+        );
+        let broken = MergeResult::Conflict {
+            song_ids: vec!["s3".to_owned()],
+            whole_repository: true,
+        };
+
+        assert_eq!(
+            databases.merge(&songs(&["s3"]), ConflictPolicy::Stop),
+            broken,
+            "s3 links to s1, which only the remote removed"
+        );
+        assert!(!databases.path("merged").exists());
+        assert_eq!(
+            databases.merge(&songs(&["s3"]), keep_local(&["s3"], false)),
+            broken
+        );
+        assert_eq!(
+            databases.merge(&songs(&["s3"]), keep_local(&[], true)),
+            MergeResult::Unmergeable
+        );
+    }
+
+    #[test]
+    fn a_unique_collision_between_different_songs_is_a_whole_repository_conflict() {
+        let databases = Databases::new(TWO_SONGS);
+        for side in ["base", "remote", "local"] {
+            databases.execute(side, "CREATE UNIQUE INDEX songs_by_title ON songs(title)");
+        }
+        databases.execute(
+            "remote",
+            "INSERT INTO songs (hash, title) VALUES ('s3', 'Three')",
+        );
+        databases.execute(
+            "local",
+            "INSERT INTO songs (hash, title) VALUES ('s4', 'Three')",
+        );
+
+        let result = databases.merge(&songs(&["s4"]), ConflictPolicy::Stop);
+
+        assert_eq!(
+            result,
+            MergeResult::Conflict {
+                song_ids: vec!["s4".to_owned()],
+                whole_repository: true,
+            }
+        );
+        assert!(!databases.path("merged").exists());
+    }
+
+    #[test]
+    fn a_child_row_added_to_a_song_the_remote_removed_conflicts_on_that_song() {
         let databases = Databases::new(TWO_SONGS);
         databases.execute("remote", "DELETE FROM songs WHERE hash = 's1'");
         databases.execute("local", "INSERT INTO stems VALUES ('s1', 'stems/s1.ogg')");
@@ -1239,6 +1430,82 @@ mod tests {
         let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
 
         assert_eq!(result, MergeResult::Unmergeable);
+    }
+
+    #[test]
+    fn snapshots_whose_definitions_differ_under_identical_columns_cannot_be_merged() {
+        let differences = [
+            (
+                "a column type",
+                "DROP TABLE stems;
+                 CREATE TABLE stems (
+                     song_hash TEXT PRIMARY KEY REFERENCES songs(hash),
+                     vocals_path BLOB
+                 );",
+            ),
+            (
+                "a UNIQUE constraint",
+                "DROP TABLE settings;
+                 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT UNIQUE);
+                 INSERT INTO settings VALUES ('theme', 'dark');",
+            ),
+            (
+                "a CHECK constraint",
+                "DROP TABLE settings;
+                 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT CHECK (value <> ''));
+                 INSERT INTO settings VALUES ('theme', 'dark');",
+            ),
+            ("an index", "CREATE INDEX songs_by_title ON songs(title)"),
+            (
+                "a trigger",
+                "CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END",
+            ),
+        ];
+        for (difference, definition) in differences {
+            for side in ["base", "remote", "local"] {
+                let databases = Databases::new(TWO_SONGS);
+                databases.execute(side, definition);
+                databases.execute(
+                    "local",
+                    "UPDATE songs SET title = 'Local' WHERE hash = 's1'",
+                );
+
+                let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
+
+                assert_eq!(
+                    result,
+                    MergeResult::Unmergeable,
+                    "{difference} differs on the {side} snapshot"
+                );
+                assert!(!databases.path("merged").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn identical_indexes_and_triggers_on_every_snapshot_still_merge() {
+        let databases = Databases::new(TWO_SONGS);
+        for side in ["base", "remote", "local"] {
+            databases.execute(
+                side,
+                "CREATE INDEX songs_by_title ON songs(title);
+                 CREATE TRIGGER songs_touched AFTER UPDATE ON songs BEGIN SELECT 1; END;",
+            );
+        }
+        databases.execute(
+            "local",
+            "UPDATE songs SET title = 'Local' WHERE hash = 's1';
+             CREATE INDEX outbox_by_operation ON remote_publish_outbox(operation_id);",
+        );
+
+        let result = databases.merge(&songs(&["s1"]), ConflictPolicy::Stop);
+
+        assert_eq!(
+            result,
+            MergeResult::Merged,
+            "the machine-local outbox takes no part in the comparison"
+        );
+        assert_eq!(databases.songs("merged"), ["s1:Local", "s2:Two"]);
     }
 
     #[test]
@@ -1280,6 +1547,79 @@ mod tests {
             databases.rows("remote", "SELECT operation_id FROM remote_publish_outbox"),
             ["op-pending"]
         );
+    }
+
+    /// Write an empty file at `relative` under `root` and return its path.
+    fn touch(root: &Path, relative: &str) -> PathBuf {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().expect("parent")).expect("directories");
+        fs::write(&path, b"leftover").expect("write");
+        path
+    }
+
+    #[test]
+    fn discarding_an_operation_removes_its_snapshot_parts_and_candidate_only() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let discarded = [
+            touch(root.path(), ".openkara/rebase/op-x.remote.sqlite"),
+            touch(root.path(), ".openkara/rebase/op-x.remote.sqlite.part.g2"),
+            touch(root.path(), ".openkara/rebase/op-x.remote.sqlite.part.g3"),
+            touch(root.path(), ".openkara/candidates/op-x.rebased.sqlite"),
+        ];
+        let other = touch(root.path(), ".openkara/rebase/op-y.remote.sqlite.part.g2");
+
+        discard_rebase_state(root.path(), "op-x");
+
+        for path in &discarded {
+            assert!(!path.exists(), "{} survived", path.display());
+        }
+        assert!(other.is_file(), "another operation's part is not touched");
+    }
+
+    #[test]
+    fn rebase_state_cleanup_keeps_only_the_state_of_active_operations() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let active = [
+            touch(root.path(), ".openkara/rebase/op-active.remote.sqlite"),
+            touch(
+                root.path(),
+                ".openkara/rebase/op-active.remote.sqlite.part.g4",
+            ),
+            touch(root.path(), ".openkara/candidates/op-active.rebased.sqlite"),
+        ];
+        let abandoned = [
+            touch(root.path(), ".openkara/rebase/op-gone.remote.sqlite"),
+            touch(
+                root.path(),
+                ".openkara/rebase/op-gone.remote.sqlite.part.g2",
+            ),
+            touch(root.path(), ".openkara/candidates/op-gone.rebased.sqlite"),
+        ];
+        let unrelated = [
+            touch(root.path(), ".openkara/rebase/notes.txt"),
+            touch(root.path(), ".openkara/candidates/op-gone.sqlite"),
+            touch(
+                root.path(),
+                ".openkara/candidates/op-gone.conflict-candidate.sqlite",
+            ),
+        ];
+
+        let mut removed = clean_up_rebase_state(root.path(), |id| id == "op-active");
+
+        removed.sort();
+        let mut expected = abandoned.to_vec();
+        expected.sort();
+        assert_eq!(removed, expected);
+        for path in active.iter().chain(&unrelated) {
+            assert!(path.is_file(), "{} was removed", path.display());
+        }
+    }
+
+    #[test]
+    fn rebase_state_cleanup_of_a_working_copy_without_rebases_removes_nothing() {
+        let root = tempfile::tempdir().expect("temp dir");
+
+        assert!(clean_up_rebase_state(root.path(), |_| false).is_empty());
     }
 
     #[test]

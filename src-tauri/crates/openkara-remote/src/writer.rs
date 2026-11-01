@@ -448,11 +448,15 @@ fn fetch_remote_snapshot(
     let expected_digest = Some(manifest.database_sha256.as_str());
     if destination.is_file() {
         if download::verify_file(&destination, expected_size, expected_digest).is_ok() {
+            rebase::remove_remote_snapshot_parts(working_copy_root, operation_id, None);
             return Ok(destination);
         }
         let _ = fs::remove_file(&destination);
     }
     let part = download::part_path_for(&destination, &format!("g{}", manifest.generation));
+    // The remote only moves forward, so a part of an older generation can
+    // never resume.
+    rebase::remove_remote_snapshot_parts(working_copy_root, operation_id, Some(&part));
     download::download_object(
         storage,
         &manifest.database_path,
@@ -1177,7 +1181,7 @@ mod tests {
         refresh_repository, RefreshOutcome, RefreshPolicy, WorkingCopyDatabase,
         LEGACY_DATABASE_PATH,
     };
-    use crate::rebase::ConflictingSong;
+    use crate::rebase::{rebase_directory, ConflictingSong};
     use crate::storage::{ListedObject, ObjectMetadata, StorageCapabilities};
     use crate::testing::{Fault, MemoryStorage};
     use rusqlite::params;
@@ -2637,6 +2641,161 @@ mod tests {
         assert_eq!(snapshot.generation, 3);
         let (_pulled_dir, pulled_db) = refresh_into(&storage);
         assert_eq!(song_hashes(&pulled_db), ["song-1", "song-2", "song-b"]);
+    }
+
+    #[test]
+    fn a_rebase_onto_a_newer_generation_drops_the_superseded_part_and_keeps_the_active_one() {
+        let storage = MemoryStorage::new();
+        let dir = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        committed(publish(&storage, &dir, &request(0, "op-1")).expect("gen 1"));
+        another_device_commits(
+            &storage,
+            "op-b2",
+            "INSERT INTO songs (hash, title) VALUES ('song-b2', 'B2')",
+        );
+        execute(
+            &dir,
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2')",
+        );
+        let request = songs_request(1, "op-2", &["song-2"]);
+        let part_of = |generation: i64| {
+            download::part_path_for(
+                &remote_snapshot_path(dir.path(), "op-2"),
+                &format!("g{generation}"),
+            )
+        };
+        storage.script(Fault::InterruptTransfer {
+            path: database_path_for_operation(2, "op-b2"),
+            after_bytes: 64,
+        });
+        publish(&storage, &dir, &request).expect_err("interrupted at generation 2");
+        assert!(part_of(2).is_file());
+
+        another_device_commits(
+            &storage,
+            "op-b3",
+            "INSERT INTO songs (hash, title) VALUES ('song-b3', 'B3')",
+        );
+        storage.script(Fault::InterruptTransfer {
+            path: database_path_for_operation(3, "op-b3"),
+            after_bytes: 64,
+        });
+        publish(&storage, &dir, &request).expect_err("interrupted at generation 3");
+
+        assert!(
+            !part_of(2).exists(),
+            "a part of a superseded generation can never resume"
+        );
+        assert!(
+            part_of(3).is_file(),
+            "the part the next attempt resumes survives"
+        );
+        let snapshot = committed(publish(&storage, &dir, &request).expect("republish"));
+        assert_eq!(snapshot.generation, 4);
+        assert_eq!(
+            fs::read_dir(rebase_directory(dir.path()))
+                .expect("rebase directory")
+                .count(),
+            0,
+            "a committed rebase leaves no remote snapshot or part behind"
+        );
+        let (_pulled_dir, pulled_db) = refresh_into(&storage);
+        assert_eq!(
+            song_hashes(&pulled_db),
+            ["song-1", "song-2", "song-b2", "song-b3"]
+        );
+    }
+
+    /// Device A at generation 1 shares `schema` with device B; B commits
+    /// `remote_sql` as generation 2 and A runs `local_sql`, recording
+    /// `local_songs` in its outbox. Returns A's publication of those songs.
+    fn disjoint_publication(
+        storage: &MemoryStorage,
+        schema: &str,
+        remote_sql: &str,
+        local_sql: &str,
+        local_songs: &[&str],
+    ) -> (tempfile::TempDir, PublishRequest) {
+        let device_a = create_working_copy(
+            &[SongRow {
+                hash: "song-1",
+                ..Default::default()
+            }],
+            &[],
+        );
+        execute(&device_a, schema);
+        committed(publish(storage, &device_a, &request(0, "op-1")).expect("gen 1"));
+        let device_b = other_device(storage);
+        execute(&device_b, remote_sql);
+        committed(publish(storage, &device_b, &request(1, "op-b")).expect("gen 2"));
+        execute(&device_a, local_sql);
+        execute(
+            &device_a,
+            "INSERT INTO remote_publish_outbox (operation_id) VALUES ('op-2')",
+        );
+        (device_a, songs_request(1, "op-2", local_songs))
+    }
+
+    /// The rows of `request` break a constraint of the newer remote
+    /// snapshot, so publishing them stops before anything moves.
+    fn assert_breaks_a_constraint(
+        storage: &MemoryStorage,
+        device: &tempfile::TempDir,
+        request: &PublishRequest,
+        breaking_songs: &[&str],
+    ) {
+        let working_before = fs::read(working_database(device)).expect("working copy");
+
+        let conflict = conflicted(publish(storage, device, request).expect("publish"));
+
+        assert_eq!(conflict.remote_generation, 2);
+        assert!(conflict.whole_repository);
+        assert_eq!(conflict_song_ids(&conflict), breaking_songs);
+        assert_eq!(remote_manifest(storage).operation_id, "op-b");
+        assert_eq!(
+            fs::read(working_database(device)).expect("working copy"),
+            working_before,
+            "the live working copy is untouched"
+        );
+        assert!(!rebased_candidate_path(device.path(), &request.operation_id).exists());
+    }
+
+    #[test]
+    fn a_foreign_key_broken_by_disjoint_changes_stops_the_publication() {
+        let storage = MemoryStorage::new();
+        let (device_a, request) = disjoint_publication(
+            &storage,
+            "CREATE TABLE song_links (
+                song_hash TEXT NOT NULL REFERENCES songs(hash),
+                target_hash TEXT NOT NULL REFERENCES songs(hash)
+            )",
+            "DELETE FROM songs WHERE hash = 'song-1'",
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Song song-2');
+             INSERT INTO song_links VALUES ('song-2', 'song-1');",
+            &["song-2"],
+        );
+
+        assert_breaks_a_constraint(&storage, &device_a, &request, &["song-2"]);
+    }
+
+    #[test]
+    fn a_unique_collision_between_different_songs_stops_the_publication() {
+        let storage = MemoryStorage::new();
+        let (device_a, request) = disjoint_publication(
+            &storage,
+            "CREATE UNIQUE INDEX songs_by_title ON songs(title)",
+            "INSERT INTO songs (hash, title) VALUES ('song-b', 'Shared title')",
+            "INSERT INTO songs (hash, title) VALUES ('song-2', 'Shared title')",
+            &["song-2"],
+        );
+
+        assert_breaks_a_constraint(&storage, &device_a, &request, &["song-2"]);
     }
 
     /// Device A at generation 1 adds song-2 while device B commits song-b as

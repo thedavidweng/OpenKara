@@ -780,13 +780,22 @@ pub(crate) fn reconcile_database_state_after_restart(
 /// Scans recursively so part files in subdirectories (`media/`, `stems/`,
 /// `artwork/`) are recovered too.
 ///
+/// Directories in `excluded_dirs` are not scanned: their part files use a
+/// different naming scheme and have their own clean-up.
+///
 /// Returns the list of removed paths so callers/tests can observe the result.
 pub(crate) fn remove_stale_part_files(
     working_copy_dir: &Path,
     protected_operation_ids: &std::collections::HashSet<String>,
+    excluded_dirs: &[PathBuf],
 ) -> CommandResult<Vec<PathBuf>> {
     let mut removed = Vec::new();
-    remove_stale_part_files_recursive(working_copy_dir, &mut removed, protected_operation_ids)?;
+    remove_stale_part_files_recursive(
+        working_copy_dir,
+        &mut removed,
+        protected_operation_ids,
+        excluded_dirs,
+    )?;
     Ok(removed)
 }
 
@@ -794,6 +803,7 @@ fn remove_stale_part_files_recursive(
     dir: &Path,
     removed: &mut Vec<PathBuf>,
     protected_operation_ids: &std::collections::HashSet<String>,
+    excluded_dirs: &[PathBuf],
 ) -> CommandResult<()> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -813,7 +823,14 @@ fn remove_stale_part_files_recursive(
             Err(_) => continue,
         };
         if file_type.is_dir() {
-            remove_stale_part_files_recursive(&path, removed, protected_operation_ids)?;
+            if !excluded_dirs.contains(&path) {
+                remove_stale_part_files_recursive(
+                    &path,
+                    removed,
+                    protected_operation_ids,
+                    excluded_dirs,
+                )?;
+            }
             continue;
         }
         if !file_type.is_file() {
@@ -1554,7 +1571,7 @@ mod tests {
         let lkg = dir.path().join("openkara.db.lkg");
         std::fs::write(&lkg, b"lkg").unwrap();
 
-        let removed = remove_stale_part_files(dir.path(), &std::collections::HashSet::new())
+        let removed = remove_stale_part_files(dir.path(), &std::collections::HashSet::new(), &[])
             .expect("recovery");
 
         assert!(!part1.exists());
@@ -1569,6 +1586,7 @@ mod tests {
         let result = remove_stale_part_files(
             Path::new("/nonexistent/dir/xyz"),
             &std::collections::HashSet::new(),
+            &[],
         );
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
@@ -1585,10 +1603,33 @@ mod tests {
         let mut protected_ids = std::collections::HashSet::new();
         protected_ids.insert("op-keep".to_owned());
 
-        let removed = remove_stale_part_files(dir.path(), &protected_ids).expect("recovery");
+        let removed = remove_stale_part_files(dir.path(), &protected_ids, &[]).expect("recovery");
         assert!(protected.exists(), "protected partial must survive");
         assert!(!orphan.exists(), "orphan partial must be deleted");
         assert_eq!(removed.len(), 1);
+    }
+
+    #[test]
+    fn remove_stale_part_files_skips_excluded_directories() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let excluded = dir.path().join("excluded");
+        let skipped = excluded.join("file.part.op-skip");
+        let orphan = dir.path().join("media/file.part.op-drop");
+        std::fs::create_dir_all(&excluded).unwrap();
+        std::fs::create_dir_all(orphan.parent().unwrap()).unwrap();
+        std::fs::write(&skipped, b"skip").unwrap();
+        std::fs::write(&orphan, b"drop").unwrap();
+
+        let removed = remove_stale_part_files(
+            dir.path(),
+            &std::collections::HashSet::new(),
+            std::slice::from_ref(&excluded),
+        )
+        .expect("recovery");
+
+        assert!(skipped.exists(), "excluded directory is not scanned");
+        assert!(!orphan.exists());
+        assert_eq!(removed, vec![orphan]);
     }
 
     #[test]
