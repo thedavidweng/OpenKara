@@ -1707,6 +1707,7 @@ mod tests {
 
         assert!(carries);
     }
+
     #[test]
     fn pending_outbox_rows_are_carried_into_a_replacement_database() {
         let databases = Databases::new(TWO_SONGS);
