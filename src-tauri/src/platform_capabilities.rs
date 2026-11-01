@@ -28,7 +28,7 @@ fn probe_directml_available() -> bool {
         Direct3D::D3D_FEATURE_LEVEL_11_0,
         Direct3D12::{D3D12CreateDevice, ID3D12Device},
         Dxgi::{
-            CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+            CreateDXGIFactory2, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
             DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_NOT_FOUND,
         },
     };
