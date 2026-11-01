@@ -445,13 +445,6 @@ fn run_restart(
     })
 }
 
-fn read_request_count(path: &Path) -> Result<usize> {
-    Ok(fs::read_to_string(path)
-        .with_context(|| format!("missing runtime fixture count {}", path.display()))?
-        .trim()
-        .parse()?)
-}
-
 fn locked_snapshot(
     status: &Arc<Mutex<command::RuntimeBootstrapStatusSnapshot>>,
 ) -> Result<command::RuntimeBootstrapStatusSnapshot> {
