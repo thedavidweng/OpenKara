@@ -1413,9 +1413,7 @@ impl LegacyPublishStorage for DropboxProvider<'_> {
             )
         })?;
         let remote_path = dropbox_join_path(root_path, relative_path);
-        let bytes = source
-            .read_bytes()
-            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let bytes = source.into_bytes();
         let metadata = dropbox_conditional_upload(
             self.app_data_dir,
             &mut secret,

@@ -5,24 +5,16 @@ use crate::library::error::LibraryError;
 use crate::remote::errors::{
     RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub(crate) enum ConditionalSource {
-    #[allow(dead_code)]
-    TempFile(PathBuf),
     Bytes(Vec<u8>),
 }
 
 impl ConditionalSource {
-    pub(crate) fn read_bytes(&self) -> CommandResult<Vec<u8>> {
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
         match self {
-            ConditionalSource::TempFile(path) => std::fs::read(path).map_err(|e| {
-                crate::commands::error::internal_error(format!(
-                    "failed to read conditional source {}: {e}",
-                    path.display()
-                ))
-            }),
-            ConditionalSource::Bytes(bytes) => Ok(bytes.clone()),
+            ConditionalSource::Bytes(bytes) => bytes,
         }
     }
 }

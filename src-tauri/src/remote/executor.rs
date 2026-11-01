@@ -2324,9 +2324,7 @@ mod tests {
                 ));
             }
 
-            let bytes = source
-                .read_bytes()
-                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+            let bytes = source.into_bytes();
 
             let mut revisions = self.revisions.lock().unwrap();
             let current_rev = revisions.get(path).cloned();
