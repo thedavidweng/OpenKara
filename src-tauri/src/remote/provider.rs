@@ -7,18 +7,6 @@ use crate::remote::errors::{
 };
 use std::path::Path;
 
-pub(crate) enum ConditionalSource {
-    Bytes(Vec<u8>),
-}
-
-impl ConditionalSource {
-    pub(crate) fn into_bytes(self) -> Vec<u8> {
-        match self {
-            ConditionalSource::Bytes(bytes) => bytes,
-        }
-    }
-}
-
 /// Repository-level actions every Remote Provider adapter serves: Register
 /// Repository, the Reauthorize/Relocate reopen, and remote deletion.
 pub(crate) trait RepositoryStorage {
@@ -81,7 +69,7 @@ pub(crate) trait LegacyPublishStorage: LegacyReadStorage {
     fn conditional_replace(
         &self,
         _path: &str,
-        _source: ConditionalSource,
+        _bytes: Vec<u8>,
         _expected_revision: Option<&str>,
     ) -> RemoteResult<RemoteObjectMetadata> {
         Err(RemoteError::from_kind(
