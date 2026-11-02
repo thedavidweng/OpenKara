@@ -2,13 +2,13 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src-tauri/**/*.rs"],
   "project": [
-    "src/**/*.{ts,tsx}",
+    "src/**/*.{ts,tsx,css}",
     "tests/**/*.{ts,tsx}",
-    "website/src/**/*.{ts,tsx}"
+    "website/src/**/*.{ts,tsx,css}"
   ],
   "exclude": ["exports", "types"],
   "vite": {
     "config": ["vite.config.ts", "website/vite.config.ts"]
   },
-  "ignoreBinaries": ["xcrun", "hdiutil", "pwsh"]
+  "ignoreBinaries": ["hdiutil", "pwsh"]
 }
