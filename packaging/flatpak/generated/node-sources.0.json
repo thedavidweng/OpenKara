@@ -1001,16 +1001,16 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tanstack/react-virtual/-/react-virtual-3.14.22.tgz",
-    "sha512": "ccd881f48177a6bc924df014ae3f6d3c78c3fe5a2705891fc6b3cfe2fe084d4c7eab01da8c9479718ff18ab8efc1cf8a5a4babd74197dd3a6c6ca87b2640fc2f",
-    "dest-filename": "@tanstack__react-virtual-3.14.22.tgz",
+    "url": "https://registry.npmjs.org/@tanstack/react-virtual/-/react-virtual-3.14.24.tgz",
+    "sha512": "26836c0725d1ebc7cd941d8d66e4f76d293cb98071b8e5a5e98349edd8d3af0ec8330056b9a3ad7dfc63fd372e31af345a62fa6f26fef348b534433ff109a873",
+    "dest-filename": "@tanstack__react-virtual-3.14.24.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tanstack/virtual-core/-/virtual-core-3.19.7.tgz",
-    "sha512": "831cb94af1f4985449d18ba3b6b7e507fd4702ef569f5286bcbd1b8d97d091855532c229422c1c7f5991d3afd588de0d8e59546f81cd0a3a84f451b0813bcc09",
-    "dest-filename": "@tanstack__virtual-core-3.19.7.tgz",
+    "url": "https://registry.npmjs.org/@tanstack/virtual-core/-/virtual-core-3.19.9.tgz",
+    "sha512": "4b289a7f7c3af5d17262fe28da6a89d7fd95b4125336ae47bb97155df9f33ae24a1695288ee910475dd95bee4dbdd30933b1851de34f9af78c361a08b9b885c8",
+    "dest-filename": "@tanstack__virtual-core-3.19.9.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1190,9 +1190,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@types/node/-/node-26.6.5.tgz",
-    "sha512": "b8ccecbfdb2d0dda1f219071e141a1e19f598179c60bdb1e443b1c8a505c4c701e38593aecc660fe4f5b5957cef9b938a99986fa5e768519cbc14887d8b9c94e",
-    "dest-filename": "@types__node-26.6.5.tgz",
+    "url": "https://registry.npmjs.org/@types/node/-/node-26.6.6.tgz",
+    "sha512": "333423fbc2b1dd7238d0e994004e90a21e7c64c36cb4d34cc27da77dddea5ac7deee70cd4aa24dcdeb389e3873e801f0ad21ce7df48bc1753ac9be3be10e1aa2",
+    "dest-filename": "@types__node-26.6.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
