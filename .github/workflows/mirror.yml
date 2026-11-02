@@ -33,4 +33,3 @@ jobs:
           host: https://codeberg.org
           username: thedavidweng
           password: ${{ secrets.CODEBERG_TOKEN }}
-          force_push: true
