@@ -843,6 +843,13 @@ jobs:
         working-directory: src-tauri
         run: cargo test -q --no-run
 
+      - name: Verify integration test binary loads
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
+          cargo test -q --test integration -- --list
+
       # The installed-app CLI is feature-gated out of normal user builds, so
       # compile it explicitly here. This is a cached compile-only check on the
       # existing Windows Rust job, rather than a separate slow runner.

@@ -222,6 +222,34 @@ jobs:
           & "tools/windows-accessibility/OpenKara.AccessibilityProbe/bin/Release/net8.0-windows/OpenKara.AccessibilityProbe.exe" --verify-input-layout
           if ($LASTEXITCODE -ne 0) { throw "UIA probe Win32 INPUT layout regression check failed" }
 
+      - name: Verify embedded Common Controls manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sdkBin = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $mt = Get-ChildItem -Path $sdkBin -Filter mt.exe -File -Recurse |
+            Where-Object { $_.Directory.Name -eq "x64" } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $mt) { throw "Windows SDK manifest tool not found" }
+          [xml]$expected = Get-Content -Raw src-tauri/common-controls.manifest
+          $xpath = "//*[local-name()='assemblyIdentity' and @name='Microsoft.Windows.Common-Controls']"
+          $expectedIdentity = $expected.SelectSingleNode($xpath)
+          if ($null -eq $expectedIdentity) { throw "Expected Common Controls identity not found" }
+          foreach ($name in @("openkara", "openkara_automation_driver", "openkara_release_evidence")) {
+            $exe = Join-Path $env:GITHUB_WORKSPACE "src-tauri/target/release/$name.exe"
+            $manifest = Join-Path $env:RUNNER_TEMP "$name.manifest"
+            & $mt.FullName -nologo "-inputresource:$exe;#1" "-out:$manifest"
+            if ($LASTEXITCODE -ne 0) { throw "Manifest extraction failed for $name" }
+            [xml]$actual = Get-Content -Raw $manifest
+            $identity = $actual.SelectSingleNode($xpath)
+            if ($null -eq $identity) { throw "Common Controls identity missing from $name" }
+            foreach ($attribute in $expectedIdentity.Attributes) {
+              if ($identity.GetAttribute($attribute.Name) -ne $attribute.Value) {
+                throw "Common Controls $($attribute.Name) mismatch in $name"
+              }
+            }
+          }
+
       - name: Measure bundle size
         if: ${{ always() }}
         continue-on-error: true
