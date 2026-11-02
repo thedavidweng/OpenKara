@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,7 +172,7 @@ describe("Flatpak packaging", () => {
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
 
-    expect(manifestTemplate).toContain('runtime-version: "50"');
+    expect(manifestTemplate).toContain('runtime-version: "51"');
     expect(manifestTemplate).toContain("org.freedesktop.Sdk.Extension.node24");
     expect(manifestTemplate).not.toContain("node20");
     expect(
@@ -325,7 +331,7 @@ describe("Flatpak packaging", () => {
     // use the official flatpak-builder action. Do not revert without reading
     // the history in commits touching this file.
     expect(packagingWorkflow).toContain(
-      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:",
     );
     expect(packagingWorkflow).toMatch(/options:\s*>-?[\s\S]*?--privileged/);
     // Free-disk must not bind-mount the entire host root into the privileged
@@ -350,6 +356,59 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "mirror-screenshots-url: https://dl.flathub.org/media",
     );
+    expect(packagingWorkflow).toContain("name: flatpak-install-test");
+    expect(packagingWorkflow).toContain(
+      "flatpak install --user --noninteractive -y ./openkara.flatpak",
+    );
+    const installSmoke = readProjectFile(
+      "scripts/ci/smoke-installed-flatpak.sh",
+    );
+    expect(installSmoke).toContain(
+      "flatpak run --env=WEBKIT_DISABLE_COMPOSITING_MODE=1 io.github.thedavidweng.OpenKara",
+    );
+    expect(packagingWorkflow).toContain(
+      "scripts/ci/smoke-installed-flatpak.sh",
+    );
+    expect(packagingWorkflow).toContain(
+      "FLATPAK_INSTALL: ${{ needs.test-flatpak-install.result }}",
+    );
+    expect(packagingWorkflow).toContain(
+      'if [ "$FLATPAK_INSTALL" != "success" ]',
+    );
+  });
+
+  test("fails the installed Flatpak smoke check when the application exits", () => {
+    if (process.platform === "win32") return;
+
+    const directory = mkdtempSync(join(tmpdir(), "openkara-flatpak-smoke-"));
+    try {
+      for (const [name, script] of Object.entries({
+        flatpak: "echo simulated-startup-failure >&2\nexit 1",
+        xdotool: "exit 1",
+        sleep: "/bin/sleep 0.01",
+      })) {
+        writeFileSync(join(directory, name), `#!/bin/sh\n${script}\n`, {
+          mode: 0o755,
+        });
+      }
+      const result = spawnSync(
+        "bash",
+        [join(projectRoot, "scripts/ci/smoke-installed-flatpak.sh")],
+        {
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            RUNNER_TEMP: directory,
+          },
+          encoding: "utf8",
+          timeout: 5000,
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("simulated-startup-failure");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test("renders WinGet manifests with PowerShell environment syntax on Windows", () => {
