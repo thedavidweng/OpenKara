@@ -97,7 +97,7 @@ export function generateCargoSources(packages) {
     contents:
       '[source.vendored-sources]\ndirectory = "cargo/vendor"\n\n[source.crates-io]\nreplace-with = "vendored-sources"\n',
     dest: "cargo",
-    "dest-filename": "config",
+    "dest-filename": "config.toml",
   });
 
   return sources;

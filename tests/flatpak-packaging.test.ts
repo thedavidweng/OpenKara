@@ -513,6 +513,15 @@ describe("Flatpak packaging", () => {
         ]),
     );
 
+    expect(cargoSources.filter((source) => source.dest === "cargo")).toEqual([
+      {
+        type: "inline",
+        contents:
+          '[source.vendored-sources]\ndirectory = "cargo/vendor"\n\n[source.crates-io]\nreplace-with = "vendored-sources"\n',
+        dest: "cargo",
+        "dest-filename": "config.toml",
+      },
+    ]);
     expect(Array.from(archives.keys()).sort()).toEqual(
       lockfilePackages.map((pkg) => pkg.dest).sort(),
     );
