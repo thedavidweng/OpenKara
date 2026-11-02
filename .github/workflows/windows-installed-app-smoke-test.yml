@@ -11,6 +11,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
     paths:
+      - "src-tauri/build.rs"
+      - "src-tauri/common-controls.manifest"
       - "src-tauri/src/commands/runtime_bootstrap.rs"
       - "src-tauri/src/separator/runtime_bootstrap.rs"
       - "src-tauri/src/separator/artifacts.rs"
@@ -21,6 +23,8 @@ on:
     branches:
       - main
     paths:
+      - "src-tauri/build.rs"
+      - "src-tauri/common-controls.manifest"
       - "src-tauri/src/commands/runtime_bootstrap.rs"
       - "src-tauri/src/separator/runtime_bootstrap.rs"
       - "src-tauri/src/separator/artifacts.rs"
