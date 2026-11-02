@@ -1106,9 +1106,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/plugin-dialog/-/plugin-dialog-2.8.3.tgz",
-    "sha512": "1ddff205f936479bf6305af3ff4540ad25de87cc4a2cb5c6ba7a92893b5c1ca9f5ccd67068aba3b80d154b052f35fc02e210e81753ef792fa004335ede71eca7",
-    "dest-filename": "@tauri-apps__plugin-dialog-2.8.3.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/plugin-dialog/-/plugin-dialog-2.8.4.tgz",
+    "sha512": "fba64e8977a739ac57c1bf2a09b04f753da35f67053da5551c622c92ba6624ba665a3faa2914c3e97ff3f71ee14dd4909fb35e75ca170a45867a3e1aedd0b897",
+    "dest-filename": "@tauri-apps__plugin-dialog-2.8.4.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1127,9 +1127,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/plugin-updater/-/plugin-updater-2.14.0.tgz",
-    "sha512": "81dca527db607abe219323a7db841977a30d38a568d84879de2c39b61d908f5bca4d1ffebb83c8c095ae8a2b39868858be86e7ea23af96700b7eba883d2ce1ed",
-    "dest-filename": "@tauri-apps__plugin-updater-2.14.0.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/plugin-updater/-/plugin-updater-2.14.1.tgz",
+    "sha512": "1ebee79419b5c13eb16f0ce367f4b7e9850b6b3bbc30d963e6fbcec0c978edf5c8ec74dae418e5d4f6c31305476994c02b3135559b14cb7e54aa76eb43199843",
+    "dest-filename": "@tauri-apps__plugin-updater-2.14.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1827,9 +1827,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/i18next/-/i18next-26.5.11.tgz",
-    "sha512": "59cd249413cac6a676b4bdaa7409c5f31bef9d682bd48306498da2913880bda1556f3ef1885011b64a14e1189d043c354b2ce21913a9d2ac6eeaa9c9ee5d96ba",
-    "dest-filename": "i18next-26.5.11.tgz",
+    "url": "https://registry.npmjs.org/i18next/-/i18next-26.5.12.tgz",
+    "sha512": "bd3b7cb5cdf2e5ac6853bc304d883cbe3a482cbc8fdf76b91b218901523b143471d57b9e631655224715792b687edad59c033fa36f212af2b4b2c96e70323d69",
+    "dest-filename": "i18next-26.5.12.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
