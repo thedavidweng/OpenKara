@@ -394,6 +394,59 @@ jobs:
           flatpak-builder-lint --exceptions --debug builddir flatpak_app
           flatpak-builder-lint --exceptions --debug repo repo
 
+      - name: Upload Flatpak for installation test
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-install-test
+          path: openkara.flatpak
+          if-no-files-found: error
+          retention-days: 1
+
+  test-flatpak-install:
+    name: Install and launch Flatpak
+    needs: build-flatpak
+    if: ${{ !cancelled() && needs.build-flatpak.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak scrot xdotool xvfb
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Download Flatpak
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: flatpak-install-test
+
+      - name: Install Flatpak
+        run: flatpak install --user --noninteractive -y ./openkara.flatpak
+
+      - name: Launch installed application
+        run: |
+          XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_RUNTIME_DIR
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 90s xvfb-run -a -s '-screen 0 1280x800x24' \
+            dbus-run-session -- bash scripts/ci/smoke-installed-flatpak.sh
+
+      - name: Upload launch evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-launch-evidence
+          path: |
+            ${{ runner.temp }}/flatpak-startup.png
+            ${{ runner.temp }}/flatpak-launch.log
+          if-no-files-found: warn
+          retention-days: 7
+
   # ── Packaging Gate ───────────────────────────────────────────────────
   # Required packaging gate for branch protection. Always runs on every
   # pull request so the required check is never missing.
@@ -409,6 +462,7 @@ jobs:
       - validate-winget
       - validate-flatpak
       - build-flatpak
+      - test-flatpak-install
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -429,6 +483,7 @@ jobs:
           WINGET: ${{ needs.validate-winget.result }}
           FLATPAK_VAL: ${{ needs.validate-flatpak.result }}
           FLATPAK_BUILD: ${{ needs.build-flatpak.result }}
+          FLATPAK_INSTALL: ${{ needs.test-flatpak-install.result }}
           PKG_INPUTS: ${{ needs.triage.outputs.packaging_inputs }}
           PKG_WORKFLOW: ${{ needs.triage.outputs.packaging_workflow }}
           REL_META: ${{ needs.triage.outputs.release_metadata }}
@@ -441,6 +496,7 @@ jobs:
           echo "WinGet: $WINGET"
           echo "Flatpak Validate: $FLATPAK_VAL"
           echo "Flatpak Build: $FLATPAK_BUILD"
+          echo "Flatpak Install: $FLATPAK_INSTALL"
 
           fail=0
           failed_jobs=()
@@ -468,6 +524,11 @@ jobs:
                 fail=1
                 failed_jobs+=("build-flatpak:$FLATPAK_BUILD")
               fi
+              if [ "$FLATPAK_INSTALL" != "success" ]; then
+                echo "::error::Expected test-flatpak-install to succeed (result: $FLATPAK_INSTALL)"
+                fail=1
+                failed_jobs+=("test-flatpak-install:$FLATPAK_INSTALL")
+              fi
             else
               if [ "$FLATPAK_VAL" != "skipped" ]; then
                 echo "::error::Unexpected validate-flatpak ran when packaging was not expected (result: $FLATPAK_VAL)"
@@ -478,6 +539,11 @@ jobs:
                 echo "::error::Unexpected build-flatpak ran when packaging was not expected (result: $FLATPAK_BUILD)"
                 fail=1
                 failed_jobs+=("build-flatpak:$FLATPAK_BUILD")
+              fi
+              if [ "$FLATPAK_INSTALL" != "skipped" ]; then
+                echo "::error::Unexpected test-flatpak-install ran when packaging was not expected (result: $FLATPAK_INSTALL)"
+                fail=1
+                failed_jobs+=("test-flatpak-install:$FLATPAK_INSTALL")
               fi
             fi
 
