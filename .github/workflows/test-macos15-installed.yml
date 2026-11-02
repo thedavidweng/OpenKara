@@ -1,0 +1,25 @@
+name: Test macOS 15 installed app
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-macos15-installed-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  installed-app:
+    uses: $/.github/workflows/reusable-macos-installed-app-smoke.yml
+    with:
+      openkara_version: "0.0.0-test"
+      artifact_prefix: test-macos15-installed
+      os: macos-15
+      rust_target: aarch64-apple-darwin
+      tauri_target: aarch64-apple-darwin
+      scenario: clean-install
+      previous_version: none
+      retention_days: 1
+      release_build: false
