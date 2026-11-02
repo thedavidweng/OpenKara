@@ -87,7 +87,7 @@ jobs:
             ort_target: aarch64-unknown-linux-gnu
             artifact_prefix: nightly-separation-smoke-aarch64-linux
           - name: Nightly macOS Apple Silicon smoke
-            os: macos-14
+            os: macos-15
             ort_target: aarch64-apple-darwin
             artifact_prefix: nightly-separation-smoke-aarch64-apple
           - name: Nightly macOS Intel smoke
@@ -124,7 +124,7 @@ jobs:
       matrix:
         include:
           - name: Apple Silicon
-            os: macos-14
+            os: macos-15
             rust_target: aarch64-apple-darwin
             tauri_target: aarch64-apple-darwin
             artifact_prefix: nightly-macos-installed-app-aarch64

@@ -237,7 +237,7 @@ jobs:
             ort_target: x86_64-unknown-linux-gnu
             artifact_prefix: release-separation-smoke-x86_64-linux
           - name: macOS Apple Silicon
-            os: macos-14
+            os: macos-15
             ort_target: aarch64-apple-darwin
             artifact_prefix: release-separation-smoke-aarch64-apple
     uses: $/.github/workflows/reusable-separation-smoke.yml
@@ -282,7 +282,7 @@ jobs:
     with:
       openkara_version: ${{ needs.prepare-release.outputs.version }}
       artifact_prefix: release-macos-installed-app-aarch64
-      os: macos-14
+      os: macos-15
       rust_target: aarch64-apple-darwin
       tauri_target: aarch64-apple-darwin
       scenario: clean-install
@@ -508,7 +508,7 @@ jobs:
       matrix:
         include:
           - name: macOS (Apple Silicon)
-            os: macos-14
+            os: macos-15
             artifact_prefix: release-macos-installed-app-aarch64
             ort_target: aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
