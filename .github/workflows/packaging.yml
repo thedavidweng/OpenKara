@@ -248,7 +248,7 @@ jobs:
           #   - appstream for `appstreamcli validate`
           #   - flatpak-builder for `--show-manifest` (pure YAML parse, no build)
           # The actual Flatpak build runs in the separate `build-flatpak` job
-          # inside the ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+          # inside the ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
           # container, which is the supported Flatpak CI environment.
           sudo apt-get update
           sudo apt-get install -y appstream flatpak-builder
@@ -298,7 +298,7 @@ jobs:
     timeout-minutes: 90
     # Run inside the Flathub-maintained container. This image ships a
     # pre-configured flatpak + flatpak-builder + flatpak-builder-lint + flathub
-    # remote + gnome-50 SDK, which is the environment every Flathub-hosted app
+    # remote + gnome-51 SDK, which is the environment every Flathub-hosted app
     # builds in. Earlier attempts to run `flatpak-builder` (from apt) or
     # `flatpak run org.flatpak.Builder` on the Ubuntu host ran into multiple
     # layers of sandbox nesting that Flatpak does not actually support in CI
@@ -314,7 +314,7 @@ jobs:
     # restore/upload (unique-per-SHA keys are cache misses that only waste
     # space). `--privileged` remains required for bubblewrap in this image.
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
       options: >-
         --privileged
         --dns 8.8.8.8

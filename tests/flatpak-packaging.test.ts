@@ -166,7 +166,7 @@ describe("Flatpak packaging", () => {
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
 
-    expect(manifestTemplate).toContain('runtime-version: "50"');
+    expect(manifestTemplate).toContain('runtime-version: "51"');
     expect(manifestTemplate).toContain("org.freedesktop.Sdk.Extension.node24");
     expect(manifestTemplate).not.toContain("node20");
     expect(
@@ -325,7 +325,7 @@ describe("Flatpak packaging", () => {
     // use the official flatpak-builder action. Do not revert without reading
     // the history in commits touching this file.
     expect(packagingWorkflow).toContain(
-      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:",
     );
     expect(packagingWorkflow).toMatch(/options:\s*>-?[\s\S]*?--privileged/);
     // Free-disk must not bind-mount the entire host root into the privileged
