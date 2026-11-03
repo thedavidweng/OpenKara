@@ -19,10 +19,9 @@ adapter. Before a GPU runs a model for the first time, compare both raw output
 tensors for one real audio window against CPU. Require finite values and a
 maximum absolute difference at most 0.001. Save the result against the adapter,
 driver, runtime, plugin, and model identity. Use CPU and report the reason when
-validation fails. A change of identity requires a new comparison. Cache the
-compiled CoreML models using the model cache key.
+validation fails. A change of identity requires a new comparison.
 
-Apple Silicon tries WebGPU, CoreML, then CPU; Intel Macs try CoreML then CPU.
+Apple Silicon tries WebGPU, then CPU; Intel Macs use CPU.
 On the measured Apple Silicon host, cached CoreML took 1973.54 seconds for a
 four-stem song, compared with 29.73 seconds for WebGPU. Windows tries WebGPU
 then CPU, and Linux uses CPU. A numerical validation failure goes directly to CPU.
@@ -32,6 +31,6 @@ OpenKara no longer requires a custom Windows runtime build.
 
 ## Consequences
 
-- DirectML is no longer a selectable provider.
+- DirectML and CoreML are no longer selectable providers.
 - GPU validation adds one CPU and one GPU inference on first use.
 - A failed validation remains in force until the identity changes.

@@ -577,7 +577,7 @@ export interface ImportLyricsResult {
 
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
-export type ExecutionProvider = "cpu" | "xnnpack" | "coreml" | "webgpu";
+export type ExecutionProvider = "cpu" | "xnnpack" | "webgpu";
 export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";

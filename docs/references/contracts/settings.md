@@ -16,7 +16,7 @@ Field or command semantic changes must update this document before changing UI c
 | `lyrics_blur_inactive` | `boolean` | Blur past and upcoming lyric lines. Default `false` so singers can read ahead. |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
-| `execution_provider` | `string` | Preferred ONNX Runtime execution provider. When unset, Apple Silicon and Windows default to WebGPU, Intel Macs to CoreML, and Linux to CPU. A failed provider attempt falls back to the next supported provider. |
+| `execution_provider` | `string` | Preferred ONNX Runtime execution provider. When unset, Apple Silicon and Windows default to WebGPU, Intel Macs and Linux to CPU. WebGPU falls back to CPU if it fails. A saved CoreML preference resets to the platform default. |
 | `available_execution_providers` | `Vec<string>` | Provider choices for the current target. A choice can be present but incompatible with the current host. |
 | `compatible_execution_providers` | `Vec<string>` | Provider choices that the current host can use. CPU is always present. If `execution_provider` is not in this list, the Settings screen marks it and asks the user to switch to CPU. Separation rejects that explicit choice with `execution_provider_unavailable`. |
 | `eq_enabled` | `bool` | Whether the five-band equalizer is enabled |

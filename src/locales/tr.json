@@ -700,8 +700,6 @@
       "cpuDescription": "Yalnızca yazılım — tüm aygıtlarda çalışır, en yavaş",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD hızlandırmalı CPU — Apple Silicon ve modern x86'da daha hızlı",
-      "coreml": "CoreML",
-      "coremlDescription": "macOS için Core ML hızlandırma",
       "webgpuDescription": "WebGPU hızlandırma",
       "incompatible": "Uyumlu değil",
       "incompatibleWarning": "Bu sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",

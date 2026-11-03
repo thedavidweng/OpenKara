@@ -128,7 +128,7 @@ just keep it consistent everywhere it appears.
 | **cache**                          | Locally stored data kept to avoid recomputing or re-downloading — cached stems, cached lyrics, or remote-media byte-range cache. |
 | **runtime (ONNX Runtime)**         | The library that executes the AI separation model. Keep the name "ONNX Runtime".                                                 |
 | **model / model variant**          | The AI separation model and its variants (e.g. htdemucs); keep model names untranslated.                                         |
-| **execution provider**             | The compute backend the model runs on (CPU / GPU / CoreML, etc.).                                                                |
+| **execution provider**             | The compute backend the model runs on (CPU / GPU, etc.).                                                                         |
 
 ## File structure
 

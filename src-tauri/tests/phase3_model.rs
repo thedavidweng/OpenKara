@@ -87,11 +87,7 @@ fn describes_xnnpack_fallback_provider_path() {
 fn describes_webgpu_fallback_provider_path() {
     assert_eq!(
         model::provider_diagnostic_summary(ExecutionProviderPreference::WebGpu),
-        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            "webgpu -> coreml -> cpu"
-        } else {
-            "webgpu -> cpu"
-        }
+        "webgpu -> cpu"
     );
 }
 
