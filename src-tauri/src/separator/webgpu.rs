@@ -27,10 +27,10 @@ fn verify_plugin(dir: &Path, plugin: &CatalogPlugin) -> Result<PathBuf> {
         {
             bail!("invalid plugin file path");
         }
-        if path.file_name().is_some_and(|name| name == library_name()) {
-            if library.replace(dir.join(path)).is_some() {
-                bail!("multiple WebGPU libraries in plugin");
-            }
+        if path.file_name().is_some_and(|name| name == library_name())
+            && library.replace(dir.join(path)).is_some()
+        {
+            bail!("multiple WebGPU libraries in plugin");
         }
         paths.push(path.to_path_buf());
     }

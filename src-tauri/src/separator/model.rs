@@ -359,8 +359,7 @@ fn load_with_ep(
     if matches!(ep_preference, ExecutionProviderPreference::WebGpu) {
         let device = environment
             .devices()
-            .filter(|device| device.ep().ok() == Some("WebGpuExecutionProvider"))
-            .next()
+            .find(|device| device.ep().ok() == Some("WebGpuExecutionProvider"))
             .context("WebGPU device unavailable")?;
         builder = builder
             .with_devices([device], None)
@@ -485,7 +484,8 @@ fn assigned_providers(session: &ort::session::Session) -> Result<Vec<String>> {
     let api = ort::api();
     let mut subgraphs = ptr::null();
     let mut count = 0;
-    // ORT owns the returned arrays and strings for the lifetime of the session.
+    // SAFETY: ORT owns the returned arrays and strings for the session's
+    // lifetime, and the API initializes their pointers and lengths on success.
     unsafe {
         ort::Error::result_from_status((api.Session_GetEpGraphAssignmentInfo)(
             session.ptr(),
