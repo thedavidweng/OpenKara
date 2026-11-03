@@ -700,8 +700,6 @@
       "cpuDescription": "Perangkat lunak saja — bekerja di semua perangkat, paling lambat",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU dipercepat SIMD — lebih cepat di Apple Silicon dan x86 modern",
-      "coreml": "CoreML",
-      "coremlDescription": "Akselerasi Core ML untuk macOS",
       "webgpuDescription": "Akselerasi WebGPU",
       "incompatible": "Tidak kompatibel",
       "incompatibleWarning": "Penyedia ini tidak kompatibel dengan perangkat ini. Ganti ke CPU di Pengaturan.",

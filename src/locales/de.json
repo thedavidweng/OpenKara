@@ -700,8 +700,6 @@
       "cpuDescription": "Nur Software — funktioniert auf allen Geräten, am langsamsten",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD-beschleunigte CPU — schneller auf Apple Silicon und modernem x86",
-      "coreml": "CoreML",
-      "coremlDescription": "Core-ML-Beschleunigung für macOS",
       "webgpuDescription": "WebGPU-Beschleunigung",
       "incompatible": "Nicht kompatibel",
       "incompatibleWarning": "Dieser Anbieter ist mit diesem Gerät nicht kompatibel. Wechseln Sie in den Einstellungen zu CPU.",

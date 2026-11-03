@@ -710,8 +710,6 @@
       "cpuDescription": "纯软件处理 — 兼容所有设备，速度最慢",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD 加速 CPU — 在 Apple Silicon 和现代 x86 上更快",
-      "coreml": "CoreML",
-      "coremlDescription": "适用于 macOS 的 Core ML 加速",
       "webgpuDescription": "WebGPU 加速",
       "incompatible": "不兼容",
       "incompatibleWarning": "所选提供程序与此设备不兼容。请在设置中切换到 CPU。",

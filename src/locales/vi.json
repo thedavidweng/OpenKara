@@ -700,8 +700,6 @@
       "cpuDescription": "Chỉ phần mềm — chạy trên mọi thiết bị, chậm nhất",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU tăng tốc SIMD — nhanh hơn trên Apple Silicon và x86 hiện đại",
-      "coreml": "CoreML",
-      "coremlDescription": "Tăng tốc Core ML cho macOS",
       "webgpuDescription": "Tăng tốc WebGPU",
       "incompatible": "Không tương thích",
       "incompatibleWarning": "Trình thực thi này không tương thích với thiết bị. Hãy chuyển sang CPU trong Cài đặt.",

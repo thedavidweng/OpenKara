@@ -38,7 +38,11 @@ pub struct AppConfig {
     pub model_variant: Option<ModelVariant>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lyrics_font_step: Option<i8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_execution_provider",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub execution_provider: Option<ExecutionProviderPreference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_enabled: Option<bool>,
@@ -62,4 +66,19 @@ pub struct AppConfig {
     pub pending_mirror_restore: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
+}
+
+fn deserialize_execution_provider<'de, D>(
+    deserializer: D,
+) -> Result<Option<ExecutionProviderPreference>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    match value.as_deref() {
+        None | Some("coreml" | "core_ml") => Ok(None),
+        Some(value) => serde_json::from_value(serde_json::Value::String(value.to_owned()))
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
 }

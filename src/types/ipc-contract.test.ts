@@ -1183,11 +1183,10 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     const validProviders: AppSettings["execution_provider"][] = [
       "cpu",
       "xnnpack",
-      "coreml",
       "webgpu",
     ];
     for (const provider of validProviders) {
-      expect(["cpu", "xnnpack", "coreml", "webgpu"]).toContain(provider);
+      expect(["cpu", "xnnpack", "webgpu"]).toContain(provider);
     }
   });
 

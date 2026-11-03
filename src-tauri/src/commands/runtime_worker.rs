@@ -178,10 +178,12 @@ fn run_worker_with(
     {
         if let Err(error) =
             crate::separator::webgpu::install(&installed.dir, plugin, |bytes, total| {
-                let _ = write_progress(
-                    progress_path,
-                    RuntimeWorkerProgress::downloading(bytes, total),
-                );
+                if total != Some(bytes) {
+                    let _ = write_progress(
+                        progress_path,
+                        RuntimeWorkerProgress::downloading(bytes, total),
+                    );
+                }
             })
         {
             eprintln!("WebGPU installation failed; CPU remains available: {error:#}");

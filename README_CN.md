@@ -78,7 +78,7 @@
 | Windows               | `.exe` (NSIS 安装包) |
 | Linux                 | `.AppImage` / `.deb` |
 
-OpenKara 需要 macOS 14.0 或更高版本，不再支持更早的 macOS 版本。
+Apple Silicon 和 Intel Mac 均需使用 macOS 14.0 或更高版本。OpenKara 不再支持更早的 macOS 版本。
 
 **macOS (Homebrew)：**
 

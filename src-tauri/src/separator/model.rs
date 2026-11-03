@@ -342,13 +342,7 @@ pub(crate) fn load_with_ep(
             .with_devices([device], Some(&options))
             .map_err(|e| anyhow::anyhow!("failed to configure WebGPU: {e}"))?;
     }
-    let coreml_cache = if matches!(ep_preference, ExecutionProviderPreference::CoreMl) {
-        Some(coreml_cache_directory(path, &runtime_metadata)?)
-    } else {
-        None
-    };
-    let ep_list =
-        build_execution_provider_list(ep_preference, num_threads, coreml_cache.as_deref());
+    let ep_list = build_execution_provider_list(ep_preference, num_threads);
     if !ep_list.is_empty() {
         builder = builder
             .with_execution_providers(ep_list)
@@ -366,7 +360,6 @@ pub(crate) fn load_with_ep(
         .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
     let assigned_providers = assigned_providers(&session)?;
     let expected_provider = match ep_preference {
-        ExecutionProviderPreference::CoreMl => Some("CoreMLExecutionProvider"),
         ExecutionProviderPreference::WebGpu => Some("WebGpuExecutionProvider"),
         ExecutionProviderPreference::Xnnpack => Some("XnnpackExecutionProvider"),
         ExecutionProviderPreference::Cpu => None,
@@ -492,24 +485,9 @@ fn assigned_providers(session: &ort::session::Session) -> Result<Vec<String>> {
     }
 }
 
-fn coreml_cache_directory(path: &Path, metadata: &ModelRuntimeMetadata) -> Result<PathBuf> {
-    let cache_key = match &metadata.model_cache_key {
-        Some(key) => crate::separator::verified_manifest::sha256_hex(key.as_bytes()),
-        None => crate::separator::artifacts::sha256_file(path)?,
-    };
-    let directory = path
-        .parent()
-        .context("model path has no parent directory")?
-        .join(".coreml-cache")
-        .join(cache_key);
-    fs::create_dir_all(&directory).context("failed to create CoreML model cache")?;
-    Ok(directory)
-}
-
 fn build_execution_provider_list(
     preference: ExecutionProviderPreference,
     num_threads: usize,
-    coreml_cache: Option<&Path>,
 ) -> Vec<ort::ep::ExecutionProviderDispatch> {
     use ort::ep;
     use std::num::NonZeroUsize;
@@ -524,14 +502,6 @@ fn build_execution_provider_list(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
             )
             .build()],
-        ExecutionProviderPreference::CoreMl => {
-            let coreml = ep::CoreML::default();
-            let coreml = match coreml_cache {
-                Some(path) => coreml.with_model_cache_dir(path.to_string_lossy()),
-                None => coreml,
-            };
-            vec![coreml.build().error_on_failure()]
-        }
     }
 }
 
@@ -543,16 +513,8 @@ fn execution_provider_chain(
             ExecutionProviderPreference::Xnnpack,
             ExecutionProviderPreference::Cpu,
         ],
-        ExecutionProviderPreference::WebGpu => {
-            let mut chain = vec![ExecutionProviderPreference::WebGpu];
-            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-                chain.push(ExecutionProviderPreference::CoreMl);
-            }
-            chain.push(ExecutionProviderPreference::Cpu);
-            chain
-        }
-        ExecutionProviderPreference::CoreMl => vec![
-            ExecutionProviderPreference::CoreMl,
+        ExecutionProviderPreference::WebGpu => vec![
+            ExecutionProviderPreference::WebGpu,
             ExecutionProviderPreference::Cpu,
         ],
         resolved => vec![resolved],
@@ -739,24 +701,11 @@ mod tests {
     }
 
     #[test]
-    fn provider_chain_keeps_coreml_cpu_fallback() {
+    fn provider_chain_keeps_webgpu_platform_fallback() {
         let expected = vec![
-            ExecutionProviderPreference::CoreMl,
+            ExecutionProviderPreference::WebGpu,
             ExecutionProviderPreference::Cpu,
         ];
-        assert_eq!(
-            execution_provider_chain(ExecutionProviderPreference::CoreMl),
-            expected
-        );
-    }
-
-    #[test]
-    fn provider_chain_keeps_webgpu_platform_fallback() {
-        let mut expected = vec![ExecutionProviderPreference::WebGpu];
-        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            expected.push(ExecutionProviderPreference::CoreMl);
-        }
-        expected.push(ExecutionProviderPreference::Cpu);
         assert_eq!(
             execution_provider_chain(ExecutionProviderPreference::WebGpu),
             expected
@@ -805,30 +754,6 @@ mod tests {
         assert_eq!(
             graph_optimization_level_for(&metadata),
             GraphOptimizationLevel::Disable
-        );
-    }
-
-    #[test]
-    fn coreml_compiled_cache_tracks_model_metadata() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("model.onnx");
-        let first = ModelRuntimeMetadata {
-            model_cache_key: Some("first".into()),
-            ..Default::default()
-        };
-        let second = ModelRuntimeMetadata {
-            model_cache_key: Some("second".into()),
-            ..Default::default()
-        };
-        let first_directory = coreml_cache_directory(&path, &first).unwrap();
-        assert!(first_directory.is_dir());
-        assert_eq!(
-            first_directory,
-            coreml_cache_directory(&path, &first).unwrap()
-        );
-        assert_ne!(
-            first_directory,
-            coreml_cache_directory(&path, &second).unwrap()
         );
     }
 

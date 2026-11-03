@@ -702,8 +702,6 @@
       "cpuDescription": "Только программно — работает на всех устройствах, самый медленный",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU с ускорением SIMD — быстрее на Apple Silicon и современных x86",
-      "coreml": "CoreML",
-      "coremlDescription": "Ускорение Core ML для macOS",
       "webgpuDescription": "Ускорение WebGPU",
       "incompatible": "Несовместимо",
       "incompatibleWarning": "Этот провайдер несовместим с данным устройством. Переключите CPU в настройках.",

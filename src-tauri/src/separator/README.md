@@ -19,8 +19,7 @@ Current coverage:
   session builder is used
 - read `openkara.model_cache_key` / `openkara.optimized_by` from ONNX
   `metadata_props` so session reuse, session cache key invalidation, and
-  runtime graph optimization stay aligned with the shipped model bytes; the
-  CoreML compiled-model cache is also partitioned by the model cache key
+  runtime graph optimization stay aligned with the shipped model bytes
 - preprocess decoded stereo PCM into the model's fixed input window
 - run ORT inference, including zero-filled auxiliary tensors required by the
   model

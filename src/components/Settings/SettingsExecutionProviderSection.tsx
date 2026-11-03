@@ -69,10 +69,6 @@ function useEpLabels() {
       title: t("settings.executionProvider.xnnpack"),
       description: t("settings.executionProvider.xnnpackDescription"),
     },
-    coreml: {
-      title: t("settings.executionProvider.coreml"),
-      description: t("settings.executionProvider.coremlDescription"),
-    },
     webgpu: {
       title: "WebGPU",
       description: t("settings.executionProvider.webgpuDescription"),

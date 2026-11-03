@@ -8,7 +8,6 @@ use super::{load_config, AppConfig};
 pub enum ExecutionProviderPreference {
     Cpu,
     Xnnpack,
-    CoreMl,
     #[serde(rename = "webgpu", alias = "directml", alias = "direct_ml")]
     WebGpu,
 }
@@ -25,25 +24,18 @@ enum ExecutionProviderPlatform {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ExecutionProviderCapabilities {
-    coreml: bool,
     xnnpack: bool,
 }
 
 impl ExecutionProviderCapabilities {
     fn current() -> Self {
         Self {
-            coreml: crate::platform_capabilities::coreml_available(),
             xnnpack: crate::platform_capabilities::xnnpack_available(),
         }
     }
 
     fn for_platform(platform: ExecutionProviderPlatform) -> Self {
         Self {
-            coreml: matches!(
-                platform,
-                ExecutionProviderPlatform::MacosAppleSilicon
-                    | ExecutionProviderPlatform::MacosIntel
-            ),
             xnnpack: matches!(
                 platform,
                 ExecutionProviderPlatform::MacosIntel | ExecutionProviderPlatform::Linux
@@ -87,16 +79,14 @@ impl ExecutionProviderPreference {
     fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
         match platform {
             ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::WebGpu],
-            ExecutionProviderPlatform::MacosAppleSilicon => {
-                &[Self::Cpu, Self::CoreMl, Self::WebGpu]
-            }
-            ExecutionProviderPlatform::MacosIntel => &[Self::Cpu, Self::CoreMl],
+            ExecutionProviderPlatform::MacosAppleSilicon => &[Self::Cpu, Self::WebGpu],
+            ExecutionProviderPlatform::MacosIntel => &[Self::Cpu],
             ExecutionProviderPlatform::Linux => &[Self::Cpu],
             ExecutionProviderPlatform::Other => &[Self::Cpu],
         }
     }
 
-    /// Try WebGPU on Apple Silicon and Windows, CoreML on Intel Macs, and CPU elsewhere.
+    /// Try WebGPU on Apple Silicon and Windows, and CPU elsewhere.
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
         Self::default_for_capabilities(
             platform,
@@ -106,13 +96,12 @@ impl ExecutionProviderPreference {
 
     fn default_for_capabilities(
         platform: ExecutionProviderPlatform,
-        capabilities: ExecutionProviderCapabilities,
+        _capabilities: ExecutionProviderCapabilities,
     ) -> Self {
         match platform {
             ExecutionProviderPlatform::Windows | ExecutionProviderPlatform::MacosAppleSilicon => {
                 Self::WebGpu
             }
-            ExecutionProviderPlatform::MacosIntel if capabilities.coreml => Self::CoreMl,
             ExecutionProviderPlatform::MacosIntel
             | ExecutionProviderPlatform::Linux
             | ExecutionProviderPlatform::Other => Self::Cpu,
@@ -136,13 +125,6 @@ impl ExecutionProviderPreference {
                     ExecutionProviderPlatform::MacosIntel | ExecutionProviderPlatform::Linux
                 ) && capabilities.xnnpack
             }
-            Self::CoreMl => {
-                matches!(
-                    platform,
-                    ExecutionProviderPlatform::MacosAppleSilicon
-                        | ExecutionProviderPlatform::MacosIntel
-                ) && capabilities.coreml
-            }
             Self::WebGpu => matches!(
                 platform,
                 ExecutionProviderPlatform::MacosAppleSilicon | ExecutionProviderPlatform::Windows
@@ -158,7 +140,6 @@ impl ExecutionProviderPreference {
         match self {
             Self::Cpu => "cpu",
             Self::Xnnpack => "xnnpack",
-            Self::CoreMl => "coreml",
             Self::WebGpu => "webgpu",
         }
     }
@@ -167,7 +148,6 @@ impl ExecutionProviderPreference {
         match s {
             "cpu" => Some(Self::Cpu),
             "xnnpack" => Some(Self::Xnnpack),
-            "coreml" => Some(Self::CoreMl),
             "webgpu" => Some(Self::WebGpu),
             _ => None,
         }
@@ -253,6 +233,27 @@ mod tests {
     }
 
     #[test]
+    fn legacy_coreml_preference_preserves_other_settings() {
+        for value in ["coreml", "core_ml"] {
+            let config: AppConfig = serde_json::from_str(&format!(
+                r#"{{"execution_provider":"{value}","language":"en"}}"#
+            ))
+            .unwrap();
+            assert_eq!(config.execution_provider, None);
+            assert_eq!(config.language.as_deref(), Some("en"));
+            assert_eq!(
+                config
+                    .effective_execution_provider_for(ExecutionProviderPlatform::MacosAppleSilicon),
+                ExecutionProviderPreference::WebGpu
+            );
+            assert_eq!(
+                config.effective_execution_provider_for(ExecutionProviderPlatform::MacosIntel),
+                ExecutionProviderPreference::Cpu
+            );
+        }
+    }
+
+    #[test]
     fn execution_provider_policy_holds_for_every_platform() {
         use ExecutionProviderPlatform as Platform;
         use ExecutionProviderPreference as Ep;
@@ -267,12 +268,10 @@ mod tests {
             assert!(!Ep::Xnnpack.is_available_for(platform));
         }
         assert!(Ep::Cpu.is_available_for(Platform::Other));
-        assert!(Ep::CoreMl.is_available_for(Platform::MacosAppleSilicon));
-        assert!(Ep::CoreMl.is_available_for(Platform::MacosIntel));
 
         assert_eq!(Ep::default_for(Platform::MacosAppleSilicon), Ep::WebGpu);
         assert_eq!(Ep::default_for(Platform::Windows), Ep::WebGpu);
-        assert_eq!(Ep::default_for(Platform::MacosIntel), Ep::CoreMl);
+        assert_eq!(Ep::default_for(Platform::MacosIntel), Ep::Cpu);
         for platform in [Platform::Linux, Platform::Other] {
             assert_eq!(
                 Ep::default_for(platform),
@@ -297,14 +296,8 @@ mod tests {
         use ExecutionProviderPlatform::Windows;
         use ExecutionProviderPreference as Ep;
 
-        let hardware_available = ExecutionProviderCapabilities {
-            coreml: false,
-            xnnpack: false,
-        };
-        let hardware_unavailable = ExecutionProviderCapabilities {
-            coreml: false,
-            xnnpack: false,
-        };
+        let hardware_available = ExecutionProviderCapabilities { xnnpack: false };
+        let hardware_unavailable = ExecutionProviderCapabilities { xnnpack: false };
         assert_eq!(
             Ep::default_for_capabilities(Windows, hardware_available),
             Ep::WebGpu
@@ -399,7 +392,7 @@ mod tests {
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         assert_eq!(
             config.effective_execution_provider(),
-            ExecutionProviderPreference::CoreMl
+            ExecutionProviderPreference::Cpu
         );
 
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -417,16 +410,12 @@ mod tests {
             ExecutionProviderPreference::available_for(MacosAppleSilicon),
             &[
                 ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::CoreMl,
                 ExecutionProviderPreference::WebGpu,
             ]
         );
         assert_eq!(
             ExecutionProviderPreference::available_for(MacosIntel),
-            &[
-                ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::CoreMl
-            ]
+            &[ExecutionProviderPreference::Cpu]
         );
         assert_eq!(
             ExecutionProviderPreference::available_for(Linux),
@@ -459,28 +448,19 @@ mod tests {
         use ExecutionProviderPlatform::*;
         use ExecutionProviderPreference as Ep;
 
-        let available = ExecutionProviderCapabilities {
-            coreml: true,
-            xnnpack: true,
-        };
+        let available = ExecutionProviderCapabilities { xnnpack: true };
         assert_eq!(
             Ep::default_for_capabilities(MacosAppleSilicon, available),
             Ep::WebGpu
         );
-        assert!(Ep::CoreMl.is_compatible_for(MacosAppleSilicon, available));
-        assert!(Ep::CoreMl.is_compatible_for(MacosIntel, available));
         assert!(Ep::Xnnpack.is_compatible_for(Linux, available));
         assert!(!Ep::Xnnpack.is_compatible_for(Windows, available));
 
-        let unavailable = ExecutionProviderCapabilities {
-            coreml: false,
-            xnnpack: false,
-        };
+        let unavailable = ExecutionProviderCapabilities { xnnpack: false };
         assert_eq!(
             Ep::default_for_capabilities(MacosAppleSilicon, unavailable),
             Ep::WebGpu
         );
-        assert!(!Ep::CoreMl.is_compatible_for(MacosAppleSilicon, unavailable));
         assert!(!Ep::Xnnpack.is_compatible_for(Linux, unavailable));
     }
 
@@ -523,7 +503,7 @@ mod tests {
         );
         assert_eq!(
             config.effective_execution_provider_for(MacosIntel),
-            ExecutionProviderPreference::CoreMl
+            ExecutionProviderPreference::Cpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Linux),
@@ -556,7 +536,7 @@ mod tests {
         );
         assert_eq!(
             config.effective_execution_provider_for(MacosIntel),
-            ExecutionProviderPreference::CoreMl
+            ExecutionProviderPreference::Cpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Linux),
