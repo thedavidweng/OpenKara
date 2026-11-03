@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.20.0](https://github.com/thedavidweng/OpenKara/compare/v0.19.2...v0.20.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* OpenKara requires macOS 14.0 or later.
+
+### Features
+
+* **remote:** land the remaining Remote Repository core and Streaming Sources feature tickets ([#656](https://github.com/thedavidweng/OpenKara/issues/656)) ([6e22afe](https://github.com/thedavidweng/OpenKara/commit/6e22afe881254a7a6e5dcd70916462b80cefd48b))
+* validate WebGPU and use official runtimes ([#674](https://github.com/thedavidweng/OpenKara/issues/674)) ([99d7f8a](https://github.com/thedavidweng/OpenKara/commit/99d7f8a3287d377f42814f677741e2851d041d34))
+
+
+### Bug Fixes
+
+* **ci:** avoid unrelated coverage collectors ([#661](https://github.com/thedavidweng/OpenKara/issues/661)) ([6684368](https://github.com/thedavidweng/OpenKara/commit/668436812a7838e889f47a45490dcef09ebb8a65))
+* **ci:** unbreak main and nightly CI pending live registry publication ([#657](https://github.com/thedavidweng/OpenKara/issues/657)) ([255cc46](https://github.com/thedavidweng/OpenKara/commit/255cc46aa56e2b289fa316b6c1e00e02f45797de))
+* **ci:** update macOS runners and mirror action input ([#663](https://github.com/thedavidweng/OpenKara/issues/663)) ([a399889](https://github.com/thedavidweng/OpenKara/commit/a399889ebc7cb4570fad93a8b32575b98d2de43d))
+* **flatpak:** update GNOME runtime to 51 ([#669](https://github.com/thedavidweng/OpenKara/issues/669)) ([f60bf12](https://github.com/thedavidweng/OpenKara/commit/f60bf128f16437c56f57495ae3b7ed957a8d2afb))
+* **flatpak:** use current Cargo config filename ([#668](https://github.com/thedavidweng/OpenKara/issues/668)) ([15ce8c2](https://github.com/thedavidweng/OpenKara/commit/15ce8c2ea4b1fecebcb3d3b0c234324863e69cb0))
+* focus interactive preview after activation ([#653](https://github.com/thedavidweng/OpenKara/issues/653)) ([919923b](https://github.com/thedavidweng/OpenKara/commit/919923b6a09af05fc9b90ca67df848e97952f638))
+* improve website accessibility and performance ([#650](https://github.com/thedavidweng/OpenKara/issues/650)) ([7c75645](https://github.com/thedavidweng/OpenKara/commit/7c75645fc5c5b0e9eca4f2869dbd94d79a2f4710))
+* include stylesheets in unused-file checks ([#666](https://github.com/thedavidweng/OpenKara/issues/666)) ([58bbcd7](https://github.com/thedavidweng/OpenKara/commit/58bbcd77d5e400b5b3ab36f9e33a38b0fa1b966c))
+* **remote:** harden publication rebase ([#658](https://github.com/thedavidweng/OpenKara/issues/658)) ([7935120](https://github.com/thedavidweng/OpenKara/commit/79351200899ea0b5ac4aea86502af59ba413292d))
+* remove CoreML and repair runtime progress ([933eecd](https://github.com/thedavidweng/OpenKara/commit/933eecd6a463457396cd946f26a9ac22b8bc4f5b))
+* remove CoreML execution provider ([23a23f8](https://github.com/thedavidweng/OpenKara/commit/23a23f87f22723975cdbfcb6ab2401a79e997062))
+* **windows:** embed manifest without linker conflicts ([#665](https://github.com/thedavidweng/OpenKara/issues/665)) ([1d4dfd9](https://github.com/thedavidweng/OpenKara/commit/1d4dfd9c1ec0817acac3b3675254b570469df9c2))
+
+
+### Performance Improvements
+
+* load interactive preview on demand ([#652](https://github.com/thedavidweng/OpenKara/issues/652)) ([238660d](https://github.com/thedavidweng/OpenKara/commit/238660dbb70f8a883bd0324a62ed39b00c347139))
+
 ## [0.19.2](https://github.com/thedavidweng/OpenKara/compare/v0.19.1...v0.19.2) (2026-10-29)
 
 
