@@ -16,7 +16,7 @@ Field or command semantic changes must update this document before changing UI c
 | `lyrics_blur_inactive` | `boolean` | Blur past and upcoming lyric lines. Default `false` so singers can read ahead. |
 | `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
-| `execution_provider` | `string` | Preferred ONNX Runtime execution provider. When unset, macOS defaults to CoreML, Windows to WebGPU, and Linux to CPU. A failed provider attempt falls back to the next supported provider. |
+| `execution_provider` | `string` | Preferred ONNX Runtime execution provider. When unset, Apple Silicon and Windows default to WebGPU, Intel Macs to CoreML, and Linux to CPU. A failed provider attempt falls back to the next supported provider. |
 | `available_execution_providers` | `Vec<string>` | Provider choices for the current target. A choice can be present but incompatible with the current host. |
 | `compatible_execution_providers` | `Vec<string>` | Provider choices that the current host can use. CPU is always present. If `execution_provider` is not in this list, the Settings screen marks it and asks the user to switch to CPU. Separation rejects that explicit choice with `execution_provider_unavailable`. |
 | `eq_enabled` | `bool` | Whether the five-band equalizer is enabled |
@@ -122,29 +122,29 @@ Returns a diagnostic snapshot for bug reports. Both the Settings → About
 panel and the macOS Help menu call this command. The frontend owns the
 plain-text formatting.
 
-| Field                     | Type             | Notes                                                                        |
-| ------------------------- | ---------------- | ---------------------------------------------------------------------------- |
-| `app_version`             | `string`         | Application version from the bundle                                          |
-| `build_sha`               | `string`         | Git short SHA, or `"unknown"`                                                |
-| `os`                      | `string`         | Operating system family (`macos` / `windows` / `linux`)                      |
-| `arch`                    | `string`         | CPU architecture (`aarch64` / `x86_64`)                                      |
-| `catalog_generation`      | `u64`            | Embedded catalog generation                                                  |
-| `catalog_release_id`      | `string`         | Embedded catalog release ID                                                  |
-| `model_variant`           | `string`         | Active separation model variant                                              |
-| `model_state`             | `string`         | Bootstrap state of the active model                                          |
-| `model_installed`         | `bool`           | Whether the active model is installed and verified                           |
-| `model_installed_version` | `Option<string>` | Installed model upstream tag, when known                                     |
-| `model_pinned_version`    | `string`         | Upstream tag pinned by the embedded catalog                                  |
-| `model_path`              | `string`         | Expected model file path on disk                                             |
-| `runtime_state`           | `string`         | Bootstrap state of the ONNX Runtime                                          |
-| `runtime_version`         | `string`         | Active runtime upstream version                                              |
-| `runtime_artifact_id`     | `Option<string>` | Active runtime artifact ID                                                   |
-| `runtime_target_triple`   | `string`         | Runtime target triple for this build                                         |
-| `runtime_path`            | `string`         | Active or staged runtime library path, or empty                              |
-| `execution_provider`      | `string`         | Providers assigned to the loaded model, or `unknown` when no model is loaded |
-| `directml_available`      | `bool`           | Host can create a D3D12 device for DirectML                                  |
-| `language`                | `Option<string>` | Persisted UI language, or null for system default                            |
-| `log_file`                | `string`         | Path pattern of the rolling log file                                         |
+| Field                      | Type             | Notes                                                                        |
+| -------------------------- | ---------------- | ---------------------------------------------------------------------------- |
+| `app_version`              | `string`         | Application version from the bundle                                          |
+| `build_sha`                | `string`         | Git short SHA, or `"unknown"`                                                |
+| `os`                       | `string`         | Operating system family (`macos` / `windows` / `linux`)                      |
+| `arch`                     | `string`         | CPU architecture (`aarch64` / `x86_64`)                                      |
+| `catalog_generation`       | `u64`            | Embedded catalog generation                                                  |
+| `catalog_release_id`       | `string`         | Embedded catalog release ID                                                  |
+| `model_variant`            | `string`         | Active separation model variant                                              |
+| `model_state`              | `string`         | Bootstrap state of the active model                                          |
+| `model_installed`          | `bool`           | Whether the active model is installed and verified                           |
+| `model_installed_version`  | `Option<string>` | Installed model upstream tag, when known                                     |
+| `model_pinned_version`     | `string`         | Upstream tag pinned by the embedded catalog                                  |
+| `model_path`               | `string`         | Expected model file path on disk                                             |
+| `runtime_state`            | `string`         | Bootstrap state of the ONNX Runtime                                          |
+| `runtime_version`          | `string`         | Active runtime upstream version                                              |
+| `runtime_artifact_id`      | `Option<string>` | Active runtime artifact ID                                                   |
+| `runtime_target_triple`    | `string`         | Runtime target triple for this build                                         |
+| `runtime_path`             | `string`         | Active or staged runtime library path, or empty                              |
+| `execution_provider`       | `string`         | Providers assigned to the loaded model, or `unknown` when no model is loaded |
+| `provider_fallback_reason` | `Option<String>` | Reason an accelerator was rejected, when available                           |
+| `language`                 | `Option<string>` | Persisted UI language, or null for system default                            |
+| `log_file`                 | `string`         | Path pattern of the rolling log file                                         |
 
 ## Self-update probe
 

@@ -590,10 +590,6 @@
         "loadFailed": "Échec du chargement d'ONNX Runtime : {{error}}",
         "loadFailedHint": "Le runtime est téléchargé mais ne peut pas être chargé. Ce n'est pas un problème de réseau ; consultez les détails de l'erreur.",
         "retryDownload": "Réessayer"
-      },
-      "cpuFallbackToast": {
-        "title": "Utilisation du runtime ONNX CPU uniquement",
-        "message": "OpenKara utilise le runtime ONNX CPU uniquement. Le runtime GPU n’a pas répondu. La séparation des voix fonctionne encore. Elle est plus lente."
       }
     },
     "hideBatchSeparate": {
@@ -705,8 +701,6 @@
       "cpuDescription": "Logiciel uniquement — fonctionne sur tous les appareils, le plus lent",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU accéléré par SIMD — plus rapide sur Apple Silicon et x86 moderne",
-      "directml": "DirectML",
-      "directmlDescription": "Accélération GPU DirectX 12 pour Windows",
       "coreml": "CoreML",
       "coremlDescription": "Accélération Core ML pour macOS",
       "webgpuDescription": "Accélération WebGPU",

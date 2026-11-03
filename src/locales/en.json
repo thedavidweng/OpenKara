@@ -685,10 +685,6 @@
         "loadFailed": "ONNX Runtime failed to load: {{error}}",
         "loadFailedHint": "The runtime is downloaded but cannot be loaded — this is not a network issue. Check the error details.",
         "retryDownload": "Retry"
-      },
-      "cpuFallbackToast": {
-        "title": "Using CPU-only ONNX Runtime",
-        "message": "OpenKara uses the CPU-only ONNX Runtime. The GPU runtime did not respond. Stem separation still works. It runs slower."
       }
     },
     "onlineSources": {
@@ -810,8 +806,6 @@
       "cpuDescription": "Software only — works on all devices, slowest",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD-accelerated CPU — faster on Apple Silicon and modern x86",
-      "directml": "DirectML",
-      "directmlDescription": "DirectX 12 GPU acceleration for Windows",
       "coreml": "CoreML",
       "coremlDescription": "Core ML acceleration for macOS",
       "webgpuDescription": "WebGPU acceleration",

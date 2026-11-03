@@ -1,6 +1,5 @@
 //! Runtime activation: the single owner of "select a runtime, activate its
-//! slot, load the ONNX Runtime library, fall back to CPU on a DirectML
-//! timeout, and report which phase failed".
+//! slot, load the ONNX Runtime library, and report which phase failed".
 //!
 //! Two entries serve every caller:
 //!
@@ -11,10 +10,8 @@
 //!   legacy install).
 //!
 //! Behind them this module owns the artifact directory layout, the Windows
-//! DLL search directory and probe load (ADR-0022, ADR-0024), the DirectML
-//! companion preload (ADR-0019), the load watchdog and its process latches,
-//! the persisted CPU fallback after a DirectML load timeout (ADR-0023), and
-//! the failure phase the UI renders.
+//! DLL search directory and probe load (ADR-0022, ADR-0024), the load
+//! watchdog and its process latches, and the failure phase the UI renders.
 //!
 //! [`RuntimeLoader`] is the seam at the load strategy:
 //! [`InstallDirectoryLoader`] is the production adapter and the tests
@@ -23,7 +20,6 @@
 use crate::commands::runtime_worker::{
     RUNTIME_POST_DOWNLOAD_TIMEOUT_HINT, RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER,
 };
-use crate::separator::catalog;
 use crate::separator::runtime_bootstrap;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -182,10 +178,8 @@ fn describe_win32_load_error(code: u32) -> String {
 
     let hint = match code {
         ERROR_MOD_NOT_FOUND => {
-            "a DLL that onnxruntime.dll depends on is missing. The runtime \
-             links the MSVC CRT statically and depends only on Windows inbox \
-             components plus the DirectML.dll bundled in the runtime \
-             directory, so this usually means an incomplete runtime download"
+            "onnxruntime.dll or one of its dependencies is missing; check the \
+             runtime installation and Windows runtime dependencies"
         }
         ERROR_FILE_NOT_FOUND => "the runtime file was not found at the given path",
         ERROR_BAD_EXE_FORMAT => {
@@ -222,7 +216,7 @@ fn describe_win32_load_error(code: u32) -> String {
 /// The call mirrors the load `ort` performs — `libloading`'s `Library::new`
 /// is `LoadLibraryExW(path, NULL, 0)` — so both loads resolve dependencies
 /// through the same standard search order (application directory first, then
-/// the `SetDllDirectoryW` runtime directory carrying DirectML.dll) and the
+/// the `SetDllDirectoryW` runtime directory) and the
 /// probe fails exactly when the real load would fail.
 ///
 /// Returns `Ok(())` on a successful probe-load or `Err(message)` with a rich
@@ -262,26 +256,6 @@ fn probe_load_windows_runtime(runtime_path: &Path) -> std::result::Result<(), St
             ))
         }
     }
-}
-
-/// Load the bundled DirectML companion only when a DirectML session is
-/// requested. ORT resolves provider libraries by module name, so the exact
-/// artifact path must be preloaded before provider registration.
-#[cfg(target_os = "windows")]
-pub(crate) fn preload_directml_companion() -> Result<()> {
-    let runtime_path =
-        loaded_runtime_path().context("ONNX Runtime path is not available for DirectML setup")?;
-    let runtime_dir = runtime_path
-        .parent()
-        .context("ONNX Runtime path has no parent directory")?;
-    let directml_path = runtime_dir.join("DirectML.dll");
-    ort::util::preload_dylib(&directml_path).with_context(|| {
-        format!(
-            "failed to preload bundled DirectML companion {}",
-            directml_path.display()
-        )
-    })?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -519,11 +493,6 @@ pub struct ActivationTarget<'a> {
     /// legacy (pre-slot) install, which owns no slot and therefore has
     /// nothing to roll back to.
     pub install_key: Option<&'a str>,
-    /// Execution providers the artifact advertises, when the caller already
-    /// resolved them from a catalog newer than the embedded one. `None`
-    /// resolves them from the embedded catalog by the install key's
-    /// artifact id.
-    pub execution_providers: Option<&'a [String]>,
 }
 
 /// How a freshly promoted candidate is proved.
@@ -548,8 +517,7 @@ pub fn resolve_and_load(app_data_dir: &Path, proof: CandidateProof) -> Result<Op
 
 /// Commit an install the caller already resolved.
 ///
-/// Records the persisted DirectML CPU fallback when the load times out,
-/// rolls the active slot back to the previous verified generation when the
+/// Rolls the active slot back to the previous verified generation when the
 /// artifact itself failed, and tags the returned error with its bootstrap
 /// phase. The returned path is the previous generation after a rollback.
 pub fn load_with_watchdog(
@@ -586,7 +554,6 @@ fn resolve_and_load_with(
         &plan.library_path,
         ActivationTarget {
             install_key: plan.install_key.as_deref(),
-            execution_providers: None,
         },
     )
     .map(Some)
@@ -604,7 +571,6 @@ fn load_with_watchdog_using(
             return Ok(library_path.to_path_buf());
         }
         LoadOutcome::ProcessUnavailable(error) => {
-            record_directml_timeout(app_data_dir, target, &error);
             return Err(with_failure_phase(
                 error,
                 RuntimeBootstrapFailurePhase::Probe,
@@ -617,7 +583,6 @@ fn load_with_watchdog_using(
         "failed to load ONNX Runtime from {}: {error:#}",
         library_path.display()
     );
-    record_directml_timeout(app_data_dir, target, &error);
 
     match restore_previous_generation(strategy, app_data_dir, target.install_key, &error) {
         Some(previous) => Ok(previous),
@@ -684,32 +649,6 @@ fn restore_previous_generation(
     }
 }
 
-/// ADR-0023: a DirectML-linked runtime that timed out disables DirectML for
-/// this host so the next selection resolves the CPU-only artifact.
-fn record_directml_timeout(
-    app_data_dir: &Path,
-    target: ActivationTarget<'_>,
-    error: &anyhow::Error,
-) {
-    let from_catalog = target.execution_providers.is_none().then(|| {
-        target.install_key.and_then(|install_key| {
-            let artifact_id = runtime_bootstrap::artifact_id_of_install_key(install_key);
-            catalog::runtime_by_artifact_id(&catalog::embedded_catalog().manifest, artifact_id)
-                .map(|runtime| runtime.runtime.execution_providers.as_slice())
-        })
-    });
-    let Some(execution_providers) = target.execution_providers.or(from_catalog.flatten()) else {
-        return;
-    };
-    if let Err(record_error) = crate::config::record_directml_unavailable_on_timeout(
-        app_data_dir,
-        execution_providers,
-        &format!("{error:#}"),
-    ) {
-        tracing::warn!("failed to record directml timeout disable: {record_error:#}");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,10 +662,6 @@ mod tests {
     use crate::separator::verified_manifest::sha256_hex;
     use std::collections::HashMap;
     use std::fs;
-
-    // record_directml_unavailable_on_timeout flips a process-wide override,
-    // so tests that can reach it run under this lock and reset it.
-    static DIRECTML_TIMEOUT_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     const STALL: Duration = Duration::from_millis(750);
     const WATCHDOG: Duration = Duration::from_millis(60);
@@ -986,7 +921,6 @@ mod tests {
             &fresh,
             ActivationTarget {
                 install_key: Some("rt-fresh"),
-                execution_providers: None,
             },
         )
         .expect_err("a fresh install that cannot load must surface");
@@ -1083,7 +1017,6 @@ mod tests {
             &active,
             ActivationTarget {
                 install_key: Some("rt-active"),
-                execution_providers: None,
             },
         )
         .expect_err("a poisoned process cannot load another runtime");
@@ -1099,63 +1032,6 @@ mod tests {
             "a poisoned process implicates no artifact, so nothing rolls back"
         );
         assert!(runtime_artifact_dir(tmp.path(), "rt-active").exists());
-    }
-
-    #[test]
-    fn a_directml_runtime_timeout_records_the_cpu_fallback() {
-        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let tmp = tempfile::tempdir().unwrap();
-        let stalled = install(tmp.path(), "rt-directml");
-        let loader = ScriptedLoader::new().script(&stalled, Behaviour::Stall);
-        let providers = vec!["cpu".to_owned(), "directml".to_owned()];
-
-        load_with_watchdog_using(
-            &strategy(&loader),
-            tmp.path(),
-            &stalled,
-            ActivationTarget {
-                install_key: Some("rt-directml"),
-                execution_providers: Some(&providers),
-            },
-        )
-        .expect_err("a stalled load must time out");
-
-        let config = crate::config::load_config(tmp.path())
-            .expect("config should load")
-            .expect("the fallback must be persisted");
-        assert_eq!(
-            config.directml_disabled_by_runtime_timeout.as_deref(),
-            Some("directml-runtime-load-timeout")
-        );
-        assert!(crate::platform_capabilities::directml_disabled_by_timeout());
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-    }
-
-    #[test]
-    fn a_cpu_only_runtime_timeout_leaves_directml_enabled() {
-        let _guard = DIRECTML_TIMEOUT_TEST_LOCK.lock().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let tmp = tempfile::tempdir().unwrap();
-        let stalled = install(tmp.path(), "rt-cpu");
-        let loader = ScriptedLoader::new().script(&stalled, Behaviour::Stall);
-        let providers = vec!["cpu".to_owned()];
-
-        load_with_watchdog_using(
-            &strategy(&loader),
-            tmp.path(),
-            &stalled,
-            ActivationTarget {
-                install_key: Some("rt-cpu"),
-                execution_providers: Some(&providers),
-            },
-        )
-        .expect_err("a stalled load must time out");
-
-        assert!(crate::config::load_config(tmp.path())
-            .expect("config should load")
-            .is_none());
-        assert!(!crate::platform_capabilities::directml_disabled_by_timeout());
     }
 
     #[test]
@@ -1180,7 +1056,6 @@ mod tests {
             &pending,
             ActivationTarget {
                 install_key: Some("rt-pending"),
-                execution_providers: None,
             },
         )
         .expect("the load should succeed");
@@ -1234,13 +1109,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn describe_win32_load_error_includes_code_and_known_hint() {
-        // Catalog generation 13 runtimes link the MSVC CRT statically, so
-        // error 126 no longer points at the VC++ Redistributable; the hint
-        // must steer triage toward the runtime's own dependency set.
         let missing = describe_win32_load_error(126);
         assert!(
-            missing.contains("statically") && missing.contains("incomplete runtime download"),
-            "missing-dep hint should reflect the static-CRT runtime: {missing}"
+            missing.contains("dependencies") && missing.contains("runtime installation"),
+            "missing-dep hint should identify both causes: {missing}"
         );
         assert!(
             missing.contains("126") && missing.contains("0x0000007E"),

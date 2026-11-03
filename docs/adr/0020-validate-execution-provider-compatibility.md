@@ -1,7 +1,7 @@
 # ADR 0020 — Validate execution provider compatibility before separation
 
 Date: 2026-08-01
-Status: accepted
+Status: superseded by 0046
 
 ## Context
 

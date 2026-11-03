@@ -589,10 +589,6 @@
         "loadFailed": "ONNX 运行时加载失败：{{error}}",
         "loadFailedHint": "运行时已下载但无法加载，这不是网络问题。请查看错误详情。",
         "retryDownload": "重试"
-      },
-      "cpuFallbackToast": {
-        "title": "正在使用 CPU 版 ONNX Runtime",
-        "message": "GPU 运行时在本机无响应，OpenKara 已切换到 CPU 运行时。人声分离功能可用，但速度较慢。"
       }
     },
     "onlineSources": {
@@ -714,8 +710,6 @@
       "cpuDescription": "纯软件处理 — 兼容所有设备，速度最慢",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD 加速 CPU — 在 Apple Silicon 和现代 x86 上更快",
-      "directml": "DirectML",
-      "directmlDescription": "DirectX 12 GPU 加速 — 适用于 Windows",
       "coreml": "CoreML",
       "coremlDescription": "适用于 macOS 的 Core ML 加速",
       "webgpuDescription": "WebGPU 加速",

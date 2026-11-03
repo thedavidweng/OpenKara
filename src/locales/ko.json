@@ -589,10 +589,6 @@
         "loadFailed": "ONNX Runtime 불러오기 실패: {{error}}",
         "loadFailedHint": "런타임은 다운로드됐지만 불러올 수 없어요. 네트워크 문제가 아니에요. 오류 세부 정보를 확인하세요.",
         "retryDownload": "다시 시도"
-      },
-      "cpuFallbackToast": {
-        "title": "CPU 전용 ONNX 런타임 사용 중",
-        "message": "OpenKara가 CPU 전용 ONNX 런타임을 사용합니다. GPU 런타임이 응답하지 않았습니다. 보컬 분리는 계속 작동합니다. 속도가 더 느립니다."
       }
     },
     "hideBatchSeparate": {
@@ -704,8 +700,6 @@
       "cpuDescription": "소프트웨어 전용 — 모든 기기에서 작동, 가장 느림",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD 가속 CPU — Apple Silicon과 최신 x86에서 더 빠름",
-      "directml": "DirectML",
-      "directmlDescription": "Windows용 DirectX 12 GPU 가속",
       "coreml": "CoreML",
       "coremlDescription": "macOS용 Core ML 가속",
       "webgpuDescription": "WebGPU 가속",

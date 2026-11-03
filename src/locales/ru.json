@@ -591,10 +591,6 @@
         "loadFailed": "Не удалось загрузить библиотеку ONNX Runtime: {{error}}",
         "loadFailedHint": "ONNX Runtime скачан, но не загружается — это не проблема сети. Проверьте сведения об ошибке.",
         "retryDownload": "Повторить"
-      },
-      "cpuFallbackToast": {
-        "title": "Используется ONNX Runtime только для CPU",
-        "message": "OpenKara использует ONNX Runtime только для CPU. Среда GPU не ответила. Разделение вокала по-прежнему работает. Оно медленнее."
       }
     },
     "hideBatchSeparate": {
@@ -706,8 +702,6 @@
       "cpuDescription": "Только программно — работает на всех устройствах, самый медленный",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU с ускорением SIMD — быстрее на Apple Silicon и современных x86",
-      "directml": "DirectML",
-      "directmlDescription": "Ускорение GPU через DirectX 12 для Windows",
       "coreml": "CoreML",
       "coremlDescription": "Ускорение Core ML для macOS",
       "webgpuDescription": "Ускорение WebGPU",

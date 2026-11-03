@@ -577,12 +577,7 @@ export interface ImportLyricsResult {
 
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
-export type ExecutionProvider =
-  | "cpu"
-  | "xnnpack"
-  | "coreml"
-  | "webgpu"
-  | "directml";
+export type ExecutionProvider = "cpu" | "xnnpack" | "coreml" | "webgpu";
 export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -629,7 +624,7 @@ export interface DebugInfo {
   runtime_target_triple: string;
   runtime_path: string;
   execution_provider: string;
-  directml_available: boolean;
+  provider_fallback_reason: string | null;
   language: string | null;
   log_file: string;
 }
@@ -981,7 +976,6 @@ export interface RuntimeBootstrapStatusSnapshot {
   restart_required: boolean;
   error: CommandError | null;
   failure_phase?: RuntimeBootstrapFailurePhase | null;
-  cpu_fallback_notice?: string | null;
 }
 
 export interface RuntimeUpdateReport {

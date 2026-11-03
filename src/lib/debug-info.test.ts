@@ -21,7 +21,7 @@ const sample: DebugInfo = {
   runtime_target_triple: "aarch64-apple-darwin",
   runtime_path: "/tmp/runtimes/rt/libonnxruntime.dylib",
   execution_provider: "xnnpack",
-  directml_available: false,
+  provider_fallback_reason: null,
   language: "en",
   log_file: "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log",
 };
@@ -45,7 +45,6 @@ describe("formatDebugInfo", () => {
       "aarch64-apple-darwin",
       "/tmp/runtimes/rt/libonnxruntime.dylib",
       "xnnpack",
-      "DirectML available: false",
       "UI language: en",
       "openkara.<date>.log",
     ]) {
@@ -70,7 +69,16 @@ describe("formatDebugInfo", () => {
   test("is stable, newline-delimited plain text", () => {
     const lines = formatDebugInfo(sample).split("\n");
     expect(lines[0]).toBe("OpenKara · About");
-    expect(lines).toHaveLength(11);
+    expect(lines).toHaveLength(10);
+  });
+
+  test("includes the accelerator fallback reason", () => {
+    expect(
+      formatDebugInfo({
+        ...sample,
+        provider_fallback_reason: "WebGPU validation failed",
+      }),
+    ).toContain("Provider fallback: WebGPU validation failed");
   });
 
   test("appends the surfaced error title and message when provided", () => {
@@ -79,9 +87,9 @@ describe("formatDebugInfo", () => {
       message: "password sign-in did not return Streaming Credentials",
     });
     const lines = text.split("\n");
-    expect(lines).toHaveLength(13);
-    expect(lines[11]).toBe("Error: Internal Error");
-    expect(lines[12]).toBe(
+    expect(lines).toHaveLength(12);
+    expect(lines[10]).toBe("Error: Internal Error");
+    expect(lines[11]).toBe(
       "password sign-in did not return Streaming Credentials",
     );
   });
@@ -91,8 +99,8 @@ describe("formatDebugInfo", () => {
       title: "Sign-in Failed",
       message: "",
     }).split("\n");
-    expect(lines).toHaveLength(12);
-    expect(lines[11]).toBe("Error: Sign-in Failed");
+    expect(lines).toHaveLength(11);
+    expect(lines[10]).toBe("Error: Sign-in Failed");
   });
 });
 

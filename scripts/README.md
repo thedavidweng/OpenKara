@@ -283,11 +283,9 @@ Regenerates Flatpak offline Cargo dependency sources from `src-tauri/Cargo.lock`
 `src-tauri/catalog/release-manifest.json` and mirror the Rust `resolve_runtime`
 rule: skip deprecated runtimes, then select the active delivery for the target.
 
-- **`prepare-onnx-runtime.mjs`** stages the ONNX Runtime for dev/CI/release.
-  A target may now carry more than one active runtime (Windows ships DirectML
-  and CPU-only builds). Pass `--provider <cpu|directml>` to disambiguate; the
-  default follows the production automatic default (DirectML on Windows, CPU
-  elsewhere). `OPENKARA_ORT_PROVIDER` overrides the default.
+- **`prepare-onnx-runtime.mjs`** stages the catalog runtime for dev, CI and
+  release builds. It prefers a CPU-only archive when a target has more than
+  one compatible runtime.
 - **`render-flatpak-manifest.mjs`** only resolves Linux targets, which still
   carry a single active runtime, so it keeps its single-match assertion.
 

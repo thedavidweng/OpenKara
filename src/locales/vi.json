@@ -589,10 +589,6 @@
         "loadFailed": "Nạp ONNX Runtime thất bại: {{error}}",
         "loadFailedHint": "Runtime đã được tải nhưng không thể nạp; đây không phải lỗi mạng. Hãy xem chi tiết lỗi.",
         "retryDownload": "Thử lại"
-      },
-      "cpuFallbackToast": {
-        "title": "Đang dùng ONNX Runtime chỉ CPU",
-        "message": "OpenKara dùng ONNX Runtime chỉ CPU. Runtime GPU không phản hồi. Tách giọng hát vẫn hoạt động. Nó chạy chậm hơn."
       }
     },
     "hideBatchSeparate": {
@@ -704,8 +700,6 @@
       "cpuDescription": "Chỉ phần mềm — chạy trên mọi thiết bị, chậm nhất",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU tăng tốc SIMD — nhanh hơn trên Apple Silicon và x86 hiện đại",
-      "directml": "DirectML",
-      "directmlDescription": "Tăng tốc GPU DirectX 12 cho Windows",
       "coreml": "CoreML",
       "coremlDescription": "Tăng tốc Core ML cho macOS",
       "webgpuDescription": "Tăng tốc WebGPU",

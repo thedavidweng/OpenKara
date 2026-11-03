@@ -1,7 +1,7 @@
 # ADR 0023 — Windows runtime falls back to CPU on load timeout
 
 Date: 2026-08-07
-Status: accepted
+Status: superseded by 0046
 
 ## Context
 

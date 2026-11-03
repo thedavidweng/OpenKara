@@ -775,6 +775,11 @@ pub fn resolve_runtime<'a>(
         .filter(|runtime| {
             runtime.target_triple.as_deref() == Some(target_triple)
                 && !runtime.deprecation.deprecated
+                && runtime
+                    .runtime
+                    .execution_providers
+                    .iter()
+                    .all(|provider| matches!(provider.as_str(), "cpu" | "coreml" | "xnnpack"))
         })
         .collect();
 
@@ -800,45 +805,16 @@ pub fn runtime_by_artifact_id<'a>(
         .find(|runtime| runtime.artifact_id == artifact_id)
 }
 
-/// Pick the runtime that declares the preferred execution provider.
-///
-/// DirectML preference selects a runtime advertising `directml`; any other
-/// preference selects the runtime whose provider list is exactly `["cpu"]`,
-/// falling back to one that does not advertise `directml`.
+/// Prefer the official CPU runtime when several compatible archives are listed.
 fn runtime_supporting_ep<'a>(
     runtimes: &[&'a CatalogRuntime],
-    preferred_ep: ExecutionProviderPreference,
+    _preferred_ep: ExecutionProviderPreference,
 ) -> Option<&'a CatalogRuntime> {
-    let advertises = |rt: &CatalogRuntime, ep: &str| {
-        rt.runtime
-            .execution_providers
-            .iter()
-            .any(|provider| provider == ep)
-    };
-
-    if matches!(preferred_ep, ExecutionProviderPreference::DirectMl) {
-        return runtimes
-            .iter()
-            .copied()
-            .find(|rt| advertises(rt, "directml"))
-            .or_else(|| {
-                runtimes
-                    .iter()
-                    .copied()
-                    .find(|rt| rt.runtime.execution_providers == ["cpu"])
-            });
-    }
-
     runtimes
         .iter()
         .copied()
-        .find(|rt| rt.runtime.execution_providers == ["cpu"])
-        .or_else(|| {
-            runtimes
-                .iter()
-                .copied()
-                .find(|rt| !advertises(rt, "directml"))
-        })
+        .find(|runtime| runtime.runtime.execution_providers == ["cpu"])
+        .or_else(|| runtimes.first().copied())
 }
 
 /// The only tensor interface this build can load (the spectral session is
@@ -1063,10 +1039,7 @@ mod tests {
         // older consumers, compressed preferred); both variants must resolve.
         assert!(catalog.manifest.artifacts.models.len() >= 2);
         // Superseded runtimes stay listed but deprecated; at least one active
-        // runtime per supported target must remain resolvable. Windows may
-        // publish more than one active runtime (CPU + DirectML) once issue
-        // OpenKara/OpenKara#284's CPU artifact lands; the count assertion is a
-        // floor, not an exact match.
+        // runtime per supported target must remain resolvable.
         let active: Vec<_> = catalog
             .manifest
             .artifacts
@@ -1088,8 +1061,8 @@ mod tests {
         for target in &targets {
             resolve_runtime(&catalog.manifest, target, Ep::Cpu)
                 .expect("active target must resolve for CPU preference");
-            resolve_runtime(&catalog.manifest, target, Ep::DirectMl)
-                .expect("active target must resolve for DirectML preference");
+            resolve_runtime(&catalog.manifest, target, Ep::WebGpu)
+                .expect("active target must resolve for WebGPU preference");
         }
         assert!(!catalog.manifest.compatibility.is_empty());
     }
@@ -1179,52 +1152,22 @@ mod tests {
     }
 
     #[test]
-    fn resolve_runtime_picks_single_active_runtime_regardless_of_ep() {
+    fn resolve_runtime_rejects_unsupported_legacy_provider() {
         use crate::config::ExecutionProviderPreference as Ep;
-
-        let manifest = manifest_with_runtimes(vec![runtime_fixture(
-            "rt-windows-dml",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        )]);
-
-        let cpu =
-            resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu).expect("cpu resolves");
-        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
-            .expect("dml resolves");
-        assert_eq!(cpu.artifact_id, "rt-windows-dml");
-        assert_eq!(dml.artifact_id, "rt-windows-dml");
-    }
-
-    #[test]
-    fn resolve_runtime_disambiguates_windows_cpu_and_directml_by_ep() {
-        use crate::config::ExecutionProviderPreference as Ep;
-
-        // A CPU-only runtime ships alongside the DirectML runtime on the same
-        // Windows target.
         let manifest = manifest_with_runtimes(vec![
-            runtime_fixture("rt-windows-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
             runtime_fixture(
-                "rt-windows-dml",
+                "rt-legacy",
                 "x86_64-pc-windows-msvc",
-                &["cpu", "directml"],
+                &["cpu", "legacy-gpu"],
             ),
+            runtime_fixture("rt-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
         ]);
-
-        // CPU preference must pick the CPU-only runtime.
-        let cpu = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
-            .expect("cpu preference resolves the cpu-only runtime");
-        assert_eq!(cpu.artifact_id, "rt-windows-cpu");
-        assert_eq!(cpu.runtime.execution_providers, vec!["cpu".to_owned()]);
-
-        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
-            .expect("directml preference resolves the dml runtime");
-        assert_eq!(dml.artifact_id, "rt-windows-dml");
-        assert!(dml
-            .runtime
-            .execution_providers
-            .iter()
-            .any(|provider| provider == "directml"));
+        assert_eq!(
+            resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::WebGpu)
+                .unwrap()
+                .artifact_id,
+            "rt-cpu"
+        );
     }
 
     #[test]
@@ -1241,20 +1184,13 @@ mod tests {
     fn resolve_runtime_skips_deprecated_runtimes() {
         use crate::config::ExecutionProviderPreference as Ep;
 
-        let mut deprecated_full = runtime_fixture(
-            "rt-windows-full",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        );
+        let mut deprecated_full =
+            runtime_fixture("rt-windows-full", "x86_64-pc-windows-msvc", &["cpu"]);
         deprecated_full.deprecation = CatalogDeprecation {
             deprecated: true,
             replacement_artifact_id: Some("rt-windows-reduced".to_owned()),
         };
-        let reduced = runtime_fixture(
-            "rt-windows-reduced",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        );
+        let reduced = runtime_fixture("rt-windows-reduced", "x86_64-pc-windows-msvc", &["cpu"]);
         let manifest = manifest_with_runtimes(vec![deprecated_full, reduced]);
 
         let resolved = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)

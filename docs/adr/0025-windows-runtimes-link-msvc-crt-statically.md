@@ -1,7 +1,7 @@
 # ADR 0025 — Windows runtimes link the MSVC CRT statically
 
 Date: 2026-08-13
-Status: accepted
+Status: superseded by 0046
 
 ## Context
 

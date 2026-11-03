@@ -589,10 +589,6 @@
         "loadFailed": "ONNX Runtime yüklenemedi: {{error}}",
         "loadFailedHint": "Runtime indirildi ancak bu sistemde yüklenemiyor; bu bir ağ sorunu değil. Hata ayrıntılarına bakın.",
         "retryDownload": "Yeniden Dene"
-      },
-      "cpuFallbackToast": {
-        "title": "Yalnızca CPU ONNX Runtime kullanılıyor",
-        "message": "OpenKara yalnızca CPU ONNX Runtime kullanıyor. GPU runtime yanıtlamadı. Vokal ayırma hâlâ çalışıyor. Daha yavaş çalışır."
       }
     },
     "hideBatchSeparate": {
@@ -704,8 +700,6 @@
       "cpuDescription": "Yalnızca yazılım — tüm aygıtlarda çalışır, en yavaş",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD hızlandırmalı CPU — Apple Silicon ve modern x86'da daha hızlı",
-      "directml": "DirectML",
-      "directmlDescription": "Windows için DirectX 12 GPU hızlandırma",
       "coreml": "CoreML",
       "coremlDescription": "macOS için Core ML hızlandırma",
       "webgpuDescription": "WebGPU hızlandırma",

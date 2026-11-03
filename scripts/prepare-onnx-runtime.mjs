@@ -58,10 +58,6 @@ function parseArgs(argv) {
       parsed.target = argv[index + 1];
       index += 1;
     }
-    if (argv[index] === "--provider") {
-      parsed.provider = argv[index + 1];
-      index += 1;
-    }
   }
   return parsed;
 }
@@ -83,10 +79,6 @@ function defaultTargetForHost() {
   throw new Error(`unsupported host platform '${process.platform}'`);
 }
 
-function defaultProviderForTarget(targetTriple) {
-  return targetTriple.endsWith("windows-msvc") ? "directml" : "cpu";
-}
-
 function libraryNameForTarget(targetTriple) {
   for (const [suffix, library] of Object.entries(LIBRARY_BY_PLATFORM_SUFFIX)) {
     if (targetTriple.endsWith(suffix)) {
@@ -96,7 +88,7 @@ function libraryNameForTarget(targetTriple) {
   throw new Error(`unsupported target '${targetTriple}'`);
 }
 
-function resolveCatalogRuntime(targetTriple, preferredProvider) {
+function resolveCatalogRuntime(targetTriple) {
   const catalog = JSON.parse(readFileSync(CATALOG_MANIFEST_PATH, "utf8"));
   if (
     !["openkara.catalog/release-v1", "openkara.catalog/release-v2"].includes(
@@ -107,12 +99,14 @@ function resolveCatalogRuntime(targetTriple, preferredProvider) {
       `unsupported release manifest schema: ${catalog.schema_version}`,
     );
   }
-  // Skip deprecated runtimes; when more than one active runtime matches the
-  // target, disambiguate by the preferred execution provider.
+  // Skip deprecated and unsupported runtimes.
   const matches = catalog.artifacts.runtimes.filter(
     (runtime) =>
       runtime.target_triple === targetTriple &&
-      !runtime.deprecation?.deprecated,
+      !runtime.deprecation?.deprecated &&
+      runtime.runtime.execution_providers.every((provider) =>
+        ["cpu", "coreml", "xnnpack"].includes(provider),
+      ),
   );
   if (matches.length === 0) {
     throw new Error(
@@ -122,30 +116,12 @@ function resolveCatalogRuntime(targetTriple, preferredProvider) {
   if (matches.length === 1) {
     return { catalog, runtime: matches[0] };
   }
-  const advertises = (runtime, provider) =>
-    runtime.runtime.execution_providers.some((ep) => ep === provider);
-  let selected;
-  if (preferredProvider === "directml") {
-    selected =
-      matches.find((runtime) => advertises(runtime, "directml")) ??
-      matches.find(
-        (runtime) =>
-          runtime.runtime.execution_providers.length === 1 &&
-          runtime.runtime.execution_providers[0] === "cpu",
-      );
-  } else {
-    selected =
-      matches.find(
-        (runtime) =>
-          runtime.runtime.execution_providers.length === 1 &&
-          runtime.runtime.execution_providers[0] === "cpu",
-      ) ?? matches.find((runtime) => !advertises(runtime, "directml"));
-  }
-  if (!selected) {
-    throw new Error(
-      `catalog snapshot lists ${matches.length} active runtimes for target ${targetTriple} and none matches preferred provider ${preferredProvider}`,
-    );
-  }
+  const selected =
+    matches.find(
+      (runtime) =>
+        runtime.runtime.execution_providers.length === 1 &&
+        runtime.runtime.execution_providers[0] === "cpu",
+    ) ?? matches[0];
   return { catalog, runtime: selected };
 }
 
@@ -256,12 +232,8 @@ function verifyArchiveLinks(destDir) {
 const args = parseArgs(process.argv.slice(2));
 const targetTriple =
   args.target ?? process.env.OPENKARA_ORT_TARGET ?? defaultTargetForHost();
-const preferredProvider =
-  args.provider ??
-  process.env.OPENKARA_ORT_PROVIDER ??
-  defaultProviderForTarget(targetTriple);
 const libraryName = libraryNameForTarget(targetTriple);
-const { runtime } = resolveCatalogRuntime(targetTriple, preferredProvider);
+const { runtime } = resolveCatalogRuntime(targetTriple);
 
 const declaredFiles = runtime.extracted_file_digests;
 const declaredNames = Object.keys(declaredFiles);

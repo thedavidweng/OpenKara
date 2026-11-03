@@ -46,12 +46,8 @@ fn separate_four_stem_to_dir(
     output_dir: &Path,
 ) -> openkara_lib::audio::decode::DecodedAudio {
     let _runtime = support::acquire_test_runtime();
-    let loaded_model = model::load_from_path(
-        &model_path(),
-        ExecutionProviderPreference::Cpu,
-        model::SessionOptions::default(),
-    )
-    .expect("demucs model should load");
+    let loaded_model = model::load_from_path(&model_path(), ExecutionProviderPreference::Cpu)
+        .expect("demucs model should load");
 
     let normalized =
         preprocess::normalize_audio_for_model(decoded).expect("audio should normalize for model");
@@ -123,12 +119,8 @@ fn run_streaming_with_cancel(
     on_chunk: impl FnMut(usize, usize),
 ) -> anyhow::Result<()> {
     let _runtime = support::acquire_test_runtime();
-    let loaded_model = model::load_from_path(
-        &model_path(),
-        ExecutionProviderPreference::Cpu,
-        model::SessionOptions::default(),
-    )
-    .expect("demucs model should load");
+    let loaded_model = model::load_from_path(&model_path(), ExecutionProviderPreference::Cpu)
+        .expect("demucs model should load");
 
     let normalized =
         preprocess::normalize_audio_for_model(decoded).expect("audio should normalize for model");

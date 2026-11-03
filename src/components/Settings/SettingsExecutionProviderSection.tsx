@@ -77,10 +77,6 @@ function useEpLabels() {
       title: "WebGPU",
       description: t("settings.executionProvider.webgpuDescription"),
     },
-    directml: {
-      title: t("settings.executionProvider.directml"),
-      description: t("settings.executionProvider.directmlDescription"),
-    },
   } satisfies Record<ExecutionProvider, { title: string; description: string }>;
 }
 

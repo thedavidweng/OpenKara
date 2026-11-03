@@ -3,14 +3,12 @@ mod library_registry;
 mod persistence;
 mod preferences;
 
-pub use execution_provider::{
-    effective_execution_provider_from_dir, record_directml_unavailable_on_timeout,
-    restore_directml_timeout_state, ExecutionProviderPreference,
-};
+pub use execution_provider::{effective_execution_provider_from_dir, ExecutionProviderPreference};
 pub use library_registry::{
     library_display_name, library_id_for_path, LibraryKind, RegisteredLibrary,
     RemoteLibraryConnectionConfig, RemoteLibraryProvider,
 };
+pub(crate) use persistence::write_atomically;
 pub use persistence::{load_config, save_config};
 pub use preferences::{LibrarySortMode, ModelVariant, StemMode, ThemePreference, UpdatePolicy};
 
@@ -64,14 +62,4 @@ pub struct AppConfig {
     pub pending_mirror_restore: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
-    /// Records that this host failed to load a DirectML-linked ONNX Runtime.
-    /// Presence is the gate: when set, the platform default avoids DirectML so
-    /// the next bootstrap selects a CPU-only runtime. An explicit user choice in
-    /// Settings still wins and overrides this default.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub directml_disabled_by_runtime_timeout: Option<String>,
-    /// Opt-in workaround for hosts where DirectML graph fusion produces wrong
-    /// separation output. Only affects DirectML sessions. Default: off.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub disable_directml_graph_fusion: Option<bool>,
 }

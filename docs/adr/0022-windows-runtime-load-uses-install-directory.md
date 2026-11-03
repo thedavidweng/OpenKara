@@ -1,7 +1,7 @@
 # ADR 0022 — Windows runtime load uses the install directory
 
 Date: 2026-08-06
-Status: accepted
+Status: accepted; DirectML-specific details superseded by 0046
 
 ## Context
 

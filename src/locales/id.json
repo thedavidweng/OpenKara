@@ -589,10 +589,6 @@
         "loadFailed": "Gagal memuat ONNX Runtime: {{error}}",
         "loadFailedHint": "Runtime sudah diunduh tetapi tidak dapat dimuat; ini bukan masalah jaringan. Periksa detail kesalahan.",
         "retryDownload": "Coba Lagi"
-      },
-      "cpuFallbackToast": {
-        "title": "Menggunakan ONNX Runtime khusus CPU",
-        "message": "OpenKara memakai ONNX Runtime khusus CPU. Runtime GPU tidak merespons. Pemisahan vokal masih berfungsi. Prosesnya lebih lambat."
       }
     },
     "hideBatchSeparate": {
@@ -704,8 +700,6 @@
       "cpuDescription": "Perangkat lunak saja — bekerja di semua perangkat, paling lambat",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU dipercepat SIMD — lebih cepat di Apple Silicon dan x86 modern",
-      "directml": "DirectML",
-      "directmlDescription": "Akselerasi GPU DirectX 12 untuk Windows",
       "coreml": "CoreML",
       "coremlDescription": "Akselerasi Core ML untuk macOS",
       "webgpuDescription": "Akselerasi WebGPU",

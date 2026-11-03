@@ -408,6 +408,90 @@ pub(crate) fn process_spectral_chunk(
     Ok(())
 }
 
+/// Compare both raw model outputs for the same real audio window before using WebGPU.
+pub(crate) fn compare_webgpu_window(
+    cpu: &LoadedModel,
+    gpu: &LoadedModel,
+    samples: &[f32],
+    channels: usize,
+) -> Result<f32> {
+    anyhow::ensure!(
+        channels == CHANNELS,
+        "WebGPU validation requires stereo audio"
+    );
+    anyhow::ensure!(
+        cpu.spectral == gpu.spectral,
+        "WebGPU and CPU interfaces differ"
+    );
+    let iface = &cpu.spectral;
+    let segment = iface.segment_frames;
+    let frames = samples.len() / channels;
+    anyhow::ensure!(frames > 0, "WebGPU validation requires audio");
+    let count = frames.min(segment);
+    let start = (0..frames)
+        .step_by(segment)
+        .max_by(|&a, &b| {
+            let energy = |start: usize| {
+                let end = (start + segment).min(frames);
+                samples[start * channels..end * channels]
+                    .iter()
+                    .map(|sample| (*sample as f64).powi(2))
+                    .sum::<f64>()
+            };
+            energy(a).total_cmp(&energy(b))
+        })
+        .context("WebGPU validation requires audio")?;
+    let count = (frames - start).min(count);
+    let mut mix = vec![0.0_f32; channels * segment];
+    for frame in 0..count {
+        for channel in 0..channels {
+            mix[channel * segment + frame] = samples[(start + frame) * channels + channel];
+        }
+    }
+    let mut spectral = Vec::new();
+    SpectralPlans::new().spec_into(&mix, channels, segment, &mut spectral);
+    let spectral_shape = [
+        1,
+        channels as i64,
+        2,
+        CONTRACT_FREQS as i64,
+        iface.spectral_frames as i64,
+    ];
+    let mix_shape = [1, channels as i64, segment as i64];
+    let run = |model: &LoadedModel| -> Result<[Vec<f32>; 2]> {
+        let spectral_tensor =
+            TensorRef::from_array_view((spectral_shape.as_slice(), spectral.as_slice()))?;
+        let mix_tensor = TensorRef::from_array_view((mix_shape.as_slice(), mix.as_slice()))?;
+        let inputs: Vec<(&str, SessionInputValue<'_>)> = vec![
+            (SPECTRAL_INPUT_NAME, spectral_tensor.into()),
+            (MIX_INPUT_NAME, mix_tensor.into()),
+        ];
+        let mut session = model
+            .session
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+        let outputs = session
+            .run(inputs)
+            .context("WebGPU validation inference failed")?;
+        let (_, spectral_output) = outputs
+            .get(SPECTRAL_OUTPUT_NAME)
+            .context("spectral output missing")?
+            .try_extract_tensor::<f32>()?;
+        let (_, time_output) = outputs
+            .get(TIME_OUTPUT_NAME)
+            .context("time output missing")?
+            .try_extract_tensor::<f32>()?;
+        Ok([spectral_output.to_vec(), time_output.to_vec()])
+    };
+    let reference = run(cpu)?;
+    let candidate = run(gpu)?;
+    let mut max_error = 0.0_f32;
+    for (cpu, gpu) in reference.iter().zip(&candidate) {
+        max_error = max_error.max(crate::separator::webgpu_validation::compare(cpu, gpu)?);
+    }
+    Ok(max_error)
+}
+
 /// Copy a planar `[C, frames]` stem into an interleaved workspace buffer,
 /// truncated to `chunk_frame_count` frames.
 fn planar_to_buffer(

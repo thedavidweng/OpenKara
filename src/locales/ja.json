@@ -589,10 +589,6 @@
         "loadFailed": "ONNX Runtime の読み込みに失敗しました: {{error}}",
         "loadFailedHint": "ONNX Runtime はダウンロード済みですが読み込めません。ネットワークの問題ではありません。エラー詳細を確認してください。",
         "retryDownload": "再試行"
-      },
-      "cpuFallbackToast": {
-        "title": "CPU 専用の ONNX Runtime を使用中",
-        "message": "このマシンでは GPU ランタイムが応答しなかったため、CPU ランタイムに切り替えました。ボーカル分離は機能しますが、速度が遅くなります。"
       }
     },
     "hideBatchSeparate": {
@@ -704,8 +700,6 @@
       "cpuDescription": "ソフトウェアのみ — すべてのデバイスで動作、最も低速",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD で高速化された CPU — Apple Silicon や最新の x86 で高速",
-      "directml": "DirectML",
-      "directmlDescription": "Windows 向けの DirectX 12 GPU アクセラレーション",
       "coreml": "CoreML",
       "coremlDescription": "macOS 向けの Core ML アクセラレーション",
       "webgpuDescription": "WebGPU アクセラレーション",

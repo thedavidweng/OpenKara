@@ -63,7 +63,7 @@ const sample: DebugInfo = {
   runtime_target_triple: "aarch64-apple-darwin",
   runtime_path: "/tmp/runtimes/rt/libonnxruntime.dylib",
   execution_provider: "xnnpack",
-  directml_available: false,
+  provider_fallback_reason: null,
   language: "en",
   log_file: "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log",
 };
@@ -101,6 +101,18 @@ describe("SettingsAboutSection", () => {
     expect(container.textContent).toContain("2026-07-25-006");
     expect(container.textContent).toContain("xnnpack");
     expect(container.textContent).toContain("openkara.<date>.log");
+  });
+
+  test("shows the actual provider and fallback reason", async () => {
+    mockGetDebugInfo.mockResolvedValue({
+      ...sample,
+      execution_provider: "CPUExecutionProvider",
+      provider_fallback_reason: "WebGPU validation failed: non-finite values",
+    });
+    render(<SettingsAboutSection />);
+    expect(
+      await screen.findByText(/CPUExecutionProvider.*WebGPU validation failed/),
+    ).toBeTruthy();
   });
 
   test("copies formatted debug info to the clipboard", async () => {

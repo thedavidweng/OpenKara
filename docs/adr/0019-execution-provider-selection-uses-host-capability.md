@@ -1,7 +1,7 @@
 # ADR 0019 — Execution provider selection uses host capability
 
 Date: 2026-08-01
-Status: accepted
+Status: superseded by 0046
 
 ## Context
 

@@ -273,7 +273,6 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
                             StemMode::TwoStem,
                             "htdemucs",
                             ep_preference,
-                            model::SessionOptions::default(),
                             &std::sync::atomic::AtomicBool::new(false),
                             |_| {},
                         ) {

@@ -2,14 +2,11 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
-import { useNotificationStore } from "@/stores/notification-store";
+import { beforeEach, describe, expect, test } from "vite-plus/test";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { createRecordingRuntimeEventSource } from "@/runtime/event-source";
 import type { RuntimeBootstrapStatusSnapshot } from "@/types/ipc";
 import { useBootstrapEvents } from "./bootstrap-events";
-
-const NOTICE_STORAGE_KEY = "openkara.cpuFallbackNoticeShown";
 
 function makeSnapshot(
   overrides: Partial<RuntimeBootstrapStatusSnapshot> = {},
@@ -29,15 +26,6 @@ function makeSnapshot(
   };
 }
 
-function withCpuFallbackNotice(
-  snapshot: RuntimeBootstrapStatusSnapshot,
-): RuntimeBootstrapStatusSnapshot {
-  return {
-    ...snapshot,
-    cpu_fallback_notice: "cpu-runtime-fallback-after-directml-timeout",
-  };
-}
-
 async function renderHook(fn: () => void) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -53,108 +41,12 @@ async function renderHook(fn: () => void) {
   return { root, container };
 }
 
-function noticeStorage(): Storage {
-  const existing = globalThis.localStorage;
-  if (existing) {
-    return existing;
-  }
-  const memory = new Map<string, string>();
-  const storage = {
-    get length() {
-      return memory.size;
-    },
-    clear() {
-      memory.clear();
-    },
-    getItem(key: string) {
-      return memory.get(key) ?? null;
-    },
-    key(index: number) {
-      return [...memory.keys()][index] ?? null;
-    },
-    removeItem(key: string) {
-      memory.delete(key);
-    },
-    setItem(key: string, value: string) {
-      memory.set(key, value);
-    },
-  } satisfies Storage;
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: storage,
-  });
-  return storage;
-}
-
-function clearNoticeStorage() {
-  noticeStorage().removeItem(NOTICE_STORAGE_KEY);
-}
-
-describe("useBootstrapEvents cpu fallback notice", () => {
+describe("useBootstrapEvents", () => {
   let source: ReturnType<typeof createRecordingRuntimeEventSource>;
 
   beforeEach(() => {
-    clearNoticeStorage();
-    useNotificationStore.setState({ notifications: [] });
     useRuntimeBootstrapStore.setState({ status: null });
     source = createRecordingRuntimeEventSource();
-  });
-
-  afterEach(() => {
-    clearNoticeStorage();
-  });
-
-  test("fires a notification once when cpu_fallback_notice is present", async () => {
-    await renderHook(() => useBootstrapEvents(true, source));
-
-    await act(async () => {
-      source.emit(
-        "runtime-bootstrap-ready",
-        withCpuFallbackNotice(makeSnapshot()),
-      );
-      await Promise.resolve();
-    });
-
-    expect(useNotificationStore.getState().notifications).toHaveLength(1);
-    expect(useNotificationStore.getState().notifications[0].type).toBe("info");
-    expect(localStorage.getItem(NOTICE_STORAGE_KEY)).toBe("1");
-
-    await act(async () => {
-      source.emit(
-        "runtime-bootstrap-progress",
-        withCpuFallbackNotice(makeSnapshot()),
-      );
-      await Promise.resolve();
-    });
-
-    expect(useNotificationStore.getState().notifications).toHaveLength(1);
-  });
-
-  test("does not fire when cpu_fallback_notice is absent", async () => {
-    await renderHook(() => useBootstrapEvents(true, source));
-
-    await act(async () => {
-      source.emit("runtime-bootstrap-ready", makeSnapshot());
-      await Promise.resolve();
-    });
-
-    expect(useNotificationStore.getState().notifications).toHaveLength(0);
-    expect(localStorage.getItem(NOTICE_STORAGE_KEY)).toBeNull();
-  });
-
-  test("does not fire again when already shown", async () => {
-    localStorage.setItem(NOTICE_STORAGE_KEY, "1");
-    await renderHook(() => useBootstrapEvents(true, source));
-
-    await act(async () => {
-      source.emit(
-        "runtime-bootstrap-ready",
-        withCpuFallbackNotice(makeSnapshot()),
-      );
-      await Promise.resolve();
-    });
-
-    expect(useNotificationStore.getState().notifications).toHaveLength(0);
   });
 
   test("updates the runtime bootstrap store", async () => {

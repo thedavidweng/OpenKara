@@ -235,8 +235,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         None
     };
 
-    config::restore_directml_timeout_state(app_config.as_ref());
-
     let runtime_bootstrap_status = Arc::new(Mutex::new(
         commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
     ));

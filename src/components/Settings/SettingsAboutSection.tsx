@@ -65,7 +65,11 @@ export function SettingsAboutSection() {
   const runtime = info
     ? `${info.runtime_state} · ${info.runtime_version}`
     : emptyValue;
-  const executionProvider = info ? info.execution_provider : emptyValue;
+  const executionProvider = info
+    ? [info.execution_provider, info.provider_fallback_reason]
+        .filter(Boolean)
+        .join(" · ")
+    : emptyValue;
   const modelPath = info ? info.model_path : emptyValue;
   const logFile = info ? info.log_file : emptyValue;
 
