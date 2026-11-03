@@ -28,10 +28,12 @@ export function formatDebugInfo(
     `${t("settings.about.runtime")}: ${info.runtime_state} · ${info.runtime_version} · ${runtimeArtifact} · ${info.runtime_target_triple}`,
     `Runtime path: ${runtimePath}`,
     `${t("settings.about.executionProvider")}: ${info.execution_provider}`,
-    `DirectML available: ${info.directml_available}`,
     `UI language: ${language}`,
     `${t("settings.about.logFile")}: ${info.log_file}`,
   ];
+  if (info.provider_fallback_reason) {
+    lines.push(`Provider fallback: ${info.provider_fallback_reason}`);
+  }
   if (error) {
     lines.push(`Error: ${error.title}`);
     if (error.message.trim() !== "") {

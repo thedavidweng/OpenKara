@@ -89,3 +89,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0043 — One license declaration for every product surface](./0043-one-license-declaration-for-every-product-surface.md)
 - [0044 — Compile Streaming Sources out with a default-on Cargo feature](./0044-compile-streaming-sources-out-with-a-default-on-cargo-feature.md)
 - [0045 — Verify the rebase base and limit Keep Local to the approved conflict](./0045-verify-the-rebase-base-and-limit-keep-local-to-the-approved-conflict.md)
+- [0046 — Validate WebGPU output before separation](./0046-validate-webgpu-output-before-separation.md)

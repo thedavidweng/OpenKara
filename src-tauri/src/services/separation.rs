@@ -10,12 +10,8 @@ use crate::{
     library_root::LibraryRoot,
     remote,
     separator::{
-        self,
-        catalog::VerifiedCatalog,
-        error::SeparationError,
-        job::SeparationArtifacts,
-        model::{LoadedModel, SessionOptions},
-        model_cache::ModelCache,
+        self, catalog::VerifiedCatalog, error::SeparationError, job::SeparationArtifacts,
+        model::LoadedModel, model_cache::ModelCache,
     },
     AppState,
 };
@@ -199,7 +195,6 @@ pub struct SeparationExecutionContext {
     pub library_root: LibraryRoot,
     pub model_variant: String,
     pub ep_preference: ExecutionProviderPreference,
-    pub session_options: SessionOptions,
     pub stem_mode: StemMode,
     pub app_data_dir: PathBuf,
     pub model_bootstrap_status: Arc<Mutex<ModelBootstrapStatusSnapshot>>,
@@ -232,17 +227,11 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
         .as_ref()
         .map(|c| c.effective_stem_mode())
         .unwrap_or_default();
-    let session_options = SessionOptions {
-        disable_directml_graph_fusion: app_config
-            .as_ref()
-            .is_some_and(|c| c.effective_disable_directml_graph_fusion()),
-    };
 
     Ok(SeparationExecutionContext {
         library_root: state.library_root()?,
         model_variant,
         ep_preference,
-        session_options,
         stem_mode,
         app_data_dir: state.shell.app_data_dir.clone(),
         model_bootstrap_status: Arc::clone(&state.shell.model_bootstrap_status),
@@ -523,7 +512,6 @@ pub fn run_job_blocking(
     stem_mode: StemMode,
     model_variant: &str,
     ep_preference: ExecutionProviderPreference,
-    session_options: SessionOptions,
     cancel: &AtomicBool,
     report_progress: impl FnMut(u8),
 ) -> CommandResult<SeparationArtifacts> {
@@ -538,7 +526,6 @@ pub fn run_job_blocking(
         stem_mode,
         model_variant,
         ep_preference,
-        session_options,
         cancel,
         report_progress,
     )
@@ -557,7 +544,6 @@ pub fn start_job<R: Runtime>(
         library_root,
         model_variant,
         ep_preference,
-        session_options,
         app_data_dir,
         model_bootstrap_status,
         runtime_bootstrap_status,
@@ -608,7 +594,6 @@ pub fn start_job<R: Runtime>(
                 stem_mode,
                 &model_variant,
                 ep_preference,
-                session_options,
                 &worker_cancel,
                 |percent| {
                     report_progress_to_status_and_events(
@@ -718,7 +703,6 @@ pub fn start_batch_job<R: Runtime>(
         library_root,
         model_variant,
         ep_preference,
-        session_options,
         stem_mode,
         app_data_dir,
         model_bootstrap_status,
@@ -881,7 +865,6 @@ pub fn start_batch_job<R: Runtime>(
                     stem_mode,
                     &worker_model_variant,
                     ep_preference,
-                    session_options,
                     &worker_cancel,
                     |percent| {
                         report_progress_to_status_and_events(

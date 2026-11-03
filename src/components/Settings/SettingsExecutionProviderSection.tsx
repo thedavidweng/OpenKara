@@ -73,9 +73,9 @@ function useEpLabels() {
       title: t("settings.executionProvider.coreml"),
       description: t("settings.executionProvider.coremlDescription"),
     },
-    directml: {
-      title: t("settings.executionProvider.directml"),
-      description: t("settings.executionProvider.directmlDescription"),
+    webgpu: {
+      title: "WebGPU",
+      description: t("settings.executionProvider.webgpuDescription"),
     },
   } satisfies Record<ExecutionProvider, { title: string; description: string }>;
 }

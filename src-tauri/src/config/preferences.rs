@@ -115,10 +115,6 @@ impl AppConfig {
         self.stem_mode.unwrap_or_default()
     }
 
-    pub fn effective_disable_directml_graph_fusion(&self) -> bool {
-        self.disable_directml_graph_fusion.unwrap_or(false)
-    }
-
     pub fn effective_model_variant(&self) -> ModelVariant {
         self.model_variant.unwrap_or_default()
     }
@@ -206,8 +202,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            directml_disabled_by_runtime_timeout: None,
-            disable_directml_graph_fusion: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("stem_mode"));
@@ -245,8 +239,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            directml_disabled_by_runtime_timeout: None,
-            disable_directml_graph_fusion: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));

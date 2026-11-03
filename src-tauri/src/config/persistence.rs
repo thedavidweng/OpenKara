@@ -60,7 +60,7 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
 }
 
 /// Write-temp + fsync + atomic rename; cleans up the temp on any failure.
-fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
+pub(crate) fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
     let tmp_path = temp_path_for(path);
 
     let _ = fs::remove_file(&tmp_path);
@@ -182,8 +182,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            directml_disabled_by_runtime_timeout: None,
-            disable_directml_graph_fusion: None,
         };
 
         save_config(tmp.path(), &config).unwrap();

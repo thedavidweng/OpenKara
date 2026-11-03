@@ -57,7 +57,11 @@ function parseArgs(argv) {
  * resolver. Exported for tests.
  */
 export function selectModel(manifest, variant, tensorInterface) {
-  if (manifest.schema_version !== "openkara.catalog/release-v1") {
+  if (
+    !["openkara.catalog/release-v1", "openkara.catalog/release-v2"].includes(
+      manifest.schema_version,
+    )
+  ) {
     throw new Error(
       `unsupported release manifest schema: ${manifest.schema_version}`,
     );
@@ -80,7 +84,11 @@ export function selectModel(manifest, variant, tensorInterface) {
 
 /** Verify manifest bytes against the channel pointer before parsing. */
 export function verifyManifestBytes(pointer, bytes) {
-  if (pointer.schema_version !== "openkara.catalog/channel-v1") {
+  if (
+    !["openkara.catalog/channel-v1", "openkara.catalog/channel-v2"].includes(
+      pointer.schema_version,
+    )
+  ) {
     throw new Error(`unsupported channel schema: ${pointer.schema_version}`);
   }
   if (bytes.byteLength !== pointer.release_manifest_size) {
@@ -94,7 +102,14 @@ export function verifyManifestBytes(pointer, bytes) {
       `manifest sha256 ${digest} does not match the pointer's ${pointer.release_manifest_sha256}`,
     );
   }
-  return JSON.parse(new TextDecoder().decode(bytes));
+  const manifest = JSON.parse(new TextDecoder().decode(bytes));
+  const expected = pointer.schema_version.replace("channel-", "release-");
+  if (manifest.schema_version !== expected) {
+    throw new Error(
+      `manifest schema ${manifest.schema_version} does not match ${pointer.schema_version}`,
+    );
+  }
+  return manifest;
 }
 
 async function fetchBytes(url) {
@@ -108,7 +123,8 @@ async function fetchBytes(url) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const pointerBytes = await fetchBytes(`${POINTER_BASE}/${args.channel}.json`);
+  const pointerName = args.channel === "stable" ? "stable-v2" : args.channel;
+  const pointerBytes = await fetchBytes(`${POINTER_BASE}/${pointerName}.json`);
   const pointer = JSON.parse(new TextDecoder().decode(pointerBytes));
   const manifest = verifyManifestBytes(
     pointer,

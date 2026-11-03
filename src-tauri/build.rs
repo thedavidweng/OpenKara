@@ -13,6 +13,9 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     {
+        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+        }
         // The AirPlay bridge is compiled by the build script, so Cargo must rerun it
         // whenever the Objective-C source changes instead of reusing a stale bridge.
         println!("cargo:rerun-if-changed=src/macos/airplay_bridge.m");
@@ -23,7 +26,7 @@ fn main() {
             .file("src/macos/airplay_bridge.m")
             .file("src/macos/import_picker.m")
             .file("src/macos/window_shell.m")
-            .flag("-mmacosx-version-min=11.0")
+            .flag("-mmacosx-version-min=14.0")
             .flag("-fobjc-arc")
             .compile("openkara-airplay-bridge");
 

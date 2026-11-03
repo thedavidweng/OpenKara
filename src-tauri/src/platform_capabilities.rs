@@ -1,93 +1,9 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static DIRECTML_DISABLED_BY_TIMEOUT: AtomicBool = AtomicBool::new(false);
-
-pub fn set_directml_disabled_by_timeout(disabled: bool) {
-    DIRECTML_DISABLED_BY_TIMEOUT.store(disabled, Ordering::SeqCst);
-}
-
-pub fn directml_disabled_by_timeout() -> bool {
-    DIRECTML_DISABLED_BY_TIMEOUT.load(Ordering::SeqCst)
-}
-
-/// Serializes tests that write `DIRECTML_DISABLED_BY_TIMEOUT` against tests
-/// that read `directml_available()` more than once in a single assertion.
-/// Without it a writer can flip the process-wide flag between two reads and
-/// the reader compares a DirectML answer against a CPU answer. The guard
-/// ignores poisoning so one failing test does not cascade into the rest.
-#[cfg(test)]
-pub(crate) fn directml_timeout_test_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-#[cfg(target_os = "windows")]
-fn probe_directml_available() -> bool {
-    use windows::Win32::Graphics::{
-        Direct3D::D3D_FEATURE_LEVEL_11_0,
-        Direct3D12::{D3D12CreateDevice, ID3D12Device},
-        Dxgi::{
-            CreateDXGIFactory2, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
-            DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_NOT_FOUND,
-        },
-    };
-
-    // SAFETY: DXGI creates and owns the COM interface returned through the
-    // typed Windows binding.
-    let factory = match unsafe {
-        CreateDXGIFactory2::<IDXGIFactory1>(DXGI_CREATE_FACTORY_FLAGS::default())
-    } {
-        Ok(factory) => factory,
-        Err(_) => return false,
-    };
-
-    let mut index = 0;
-    loop {
-        // SAFETY: `factory` is a live IDXGIFactory1 and `index` is an adapter
-        // enumeration index owned by this loop.
-        let adapter = match unsafe { factory.EnumAdapters1(index) } {
-            Ok(adapter) => adapter,
-            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => return false,
-            Err(_) => return false,
-        };
-        index += 1;
-
-        // SAFETY: `adapter` is a live IDXGIAdapter1 returned by DXGI.
-        let description = match unsafe { adapter.GetDesc1() } {
-            Ok(description) => description,
-            Err(_) => continue,
-        };
-        if description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 {
-            continue;
-        }
-
-        let mut device = None::<ID3D12Device>;
-        // SAFETY: `adapter` is a live hardware adapter and `device` points to
-        // storage for the interface requested by the Windows API.
-        if unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }.is_ok()
-            && device.is_some()
-        {
-            return true;
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn probe_directml_available() -> bool {
-    false
-}
-
-pub fn directml_available() -> bool {
-    !directml_disabled_by_timeout() && probe_directml_available()
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(target_os = "macos")]
 pub const fn coreml_available() -> bool {
     true
 }
 
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+#[cfg(not(target_os = "macos"))]
 pub const fn coreml_available() -> bool {
     false
 }

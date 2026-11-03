@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::{load_config, save_config, AppConfig};
+use super::{load_config, AppConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -10,8 +9,8 @@ pub enum ExecutionProviderPreference {
     Cpu,
     Xnnpack,
     CoreMl,
-    #[serde(alias = "directml")]
-    DirectMl,
+    #[serde(rename = "webgpu", alias = "directml", alias = "direct_ml")]
+    WebGpu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +25,6 @@ enum ExecutionProviderPlatform {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ExecutionProviderCapabilities {
-    directml: bool,
     coreml: bool,
     xnnpack: bool,
 }
@@ -34,19 +32,18 @@ struct ExecutionProviderCapabilities {
 impl ExecutionProviderCapabilities {
     fn current() -> Self {
         Self {
-            directml: crate::platform_capabilities::directml_available(),
             coreml: crate::platform_capabilities::coreml_available(),
             xnnpack: crate::platform_capabilities::xnnpack_available(),
         }
     }
 
     fn for_platform(platform: ExecutionProviderPlatform) -> Self {
-        let current_platform = ExecutionProviderPlatform::current();
         Self {
-            directml: platform == ExecutionProviderPlatform::Windows
-                && current_platform == ExecutionProviderPlatform::Windows
-                && crate::platform_capabilities::directml_available(),
-            coreml: platform == ExecutionProviderPlatform::MacosAppleSilicon,
+            coreml: matches!(
+                platform,
+                ExecutionProviderPlatform::MacosAppleSilicon
+                    | ExecutionProviderPlatform::MacosIntel
+            ),
             xnnpack: matches!(
                 platform,
                 ExecutionProviderPlatform::MacosIntel | ExecutionProviderPlatform::Linux
@@ -89,20 +86,17 @@ impl Default for ExecutionProviderPreference {
 impl ExecutionProviderPreference {
     fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
         match platform {
-            ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::Xnnpack, Self::DirectMl],
+            ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::WebGpu],
             ExecutionProviderPlatform::MacosAppleSilicon => {
-                &[Self::Cpu, Self::CoreMl, Self::Xnnpack]
+                &[Self::Cpu, Self::CoreMl, Self::WebGpu]
             }
-            ExecutionProviderPlatform::MacosIntel | ExecutionProviderPlatform::Linux => {
-                &[Self::Cpu, Self::Xnnpack]
-            }
+            ExecutionProviderPlatform::MacosIntel => &[Self::Cpu, Self::CoreMl],
+            ExecutionProviderPlatform::Linux => &[Self::Cpu],
             ExecutionProviderPlatform::Other => &[Self::Cpu],
         }
     }
 
-    /// Platform default EP: CoreML on Apple Silicon when `capabilities.coreml`
-    /// is available (else CPU); DirectML on Windows with D3D12 hardware;
-    /// otherwise CPU (XNNPACK loses to ORT CPU on Intel/Linux).
+    /// Try WebGPU on Apple Silicon and Windows, CoreML on Intel Macs, and CPU elsewhere.
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
         Self::default_for_capabilities(
             platform,
@@ -115,13 +109,13 @@ impl ExecutionProviderPreference {
         capabilities: ExecutionProviderCapabilities,
     ) -> Self {
         match platform {
-            ExecutionProviderPlatform::Windows if capabilities.directml => Self::DirectMl,
-            ExecutionProviderPlatform::Windows => Self::Cpu,
-            ExecutionProviderPlatform::MacosAppleSilicon if capabilities.coreml => Self::CoreMl,
+            ExecutionProviderPlatform::Windows | ExecutionProviderPlatform::MacosAppleSilicon => {
+                Self::WebGpu
+            }
+            ExecutionProviderPlatform::MacosIntel if capabilities.coreml => Self::CoreMl,
             ExecutionProviderPlatform::MacosIntel
             | ExecutionProviderPlatform::Linux
             | ExecutionProviderPlatform::Other => Self::Cpu,
-            ExecutionProviderPlatform::MacosAppleSilicon => Self::Cpu,
         }
     }
 
@@ -143,11 +137,16 @@ impl ExecutionProviderPreference {
                 ) && capabilities.xnnpack
             }
             Self::CoreMl => {
-                platform == ExecutionProviderPlatform::MacosAppleSilicon && capabilities.coreml
+                matches!(
+                    platform,
+                    ExecutionProviderPlatform::MacosAppleSilicon
+                        | ExecutionProviderPlatform::MacosIntel
+                ) && capabilities.coreml
             }
-            Self::DirectMl => {
-                platform == ExecutionProviderPlatform::Windows && capabilities.directml
-            }
+            Self::WebGpu => matches!(
+                platform,
+                ExecutionProviderPlatform::MacosAppleSilicon | ExecutionProviderPlatform::Windows
+            ),
         }
     }
 
@@ -160,7 +159,7 @@ impl ExecutionProviderPreference {
             Self::Cpu => "cpu",
             Self::Xnnpack => "xnnpack",
             Self::CoreMl => "coreml",
-            Self::DirectMl => "directml",
+            Self::WebGpu => "webgpu",
         }
     }
 
@@ -169,7 +168,7 @@ impl ExecutionProviderPreference {
             "cpu" => Some(Self::Cpu),
             "xnnpack" => Some(Self::Xnnpack),
             "coreml" => Some(Self::CoreMl),
-            "directml" => Some(Self::DirectMl),
+            "webgpu" => Some(Self::WebGpu),
             _ => None,
         }
     }
@@ -211,25 +210,7 @@ impl AppConfig {
     ) -> ExecutionProviderPreference {
         match self.execution_provider {
             Some(ep) if ep.is_available_for(platform) => ep,
-            _ => self.default_execution_provider_for(platform),
-        }
-    }
-
-    /// Platform default with the DirectML-timeout disable honored. When the
-    /// host recorded a DirectML load timeout, the Windows default downgrades
-    /// from DirectML to CPU so the next bootstrap selects a CPU-only runtime.
-    fn default_execution_provider_for(
-        &self,
-        platform: ExecutionProviderPlatform,
-    ) -> ExecutionProviderPreference {
-        if self.directml_disabled_by_runtime_timeout.is_some()
-            && platform == ExecutionProviderPlatform::Windows
-            && ExecutionProviderPreference::default_for(platform)
-                == ExecutionProviderPreference::DirectMl
-        {
-            ExecutionProviderPreference::Cpu
-        } else {
-            ExecutionProviderPreference::default_for(platform)
+            _ => ExecutionProviderPreference::default_for(platform),
         }
     }
 
@@ -238,12 +219,7 @@ impl AppConfig {
     }
 }
 
-/// Resolve the execution provider a runtime selection should target, reading
-/// the persisted config from `app_data_dir`. Falls back to the platform
-/// default when the config is missing or unreadable. Runtime catalog
-/// resolution (which picks a CPU-only vs DirectML Windows runtime) calls this
-/// so a host that recorded a DirectML load timeout resolves the CPU runtime
-/// even before the OS capability probe is consulted.
+/// Resolve the preferred provider using the saved configuration.
 pub fn effective_execution_provider_from_dir(app_data_dir: &Path) -> ExecutionProviderPreference {
     match load_config(app_data_dir) {
         Ok(Some(config)) => config.effective_execution_provider(),
@@ -251,75 +227,35 @@ pub fn effective_execution_provider_from_dir(app_data_dir: &Path) -> ExecutionPr
     }
 }
 
-const DIRECTML_RUNTIME_TIMEOUT_REASON: &str = "directml-runtime-load-timeout";
-
-pub fn record_directml_unavailable_on_timeout(
-    app_data_dir: &Path,
-    runtime_execution_providers: &[String],
-    error_message: &str,
-) -> Result<bool> {
-    if !error_message
-        .contains(crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER)
-    {
-        return Ok(false);
-    }
-    let runtime_advertises_directml = runtime_execution_providers
-        .iter()
-        .any(|provider| provider.eq_ignore_ascii_case("directml"));
-    if !runtime_advertises_directml {
-        return Ok(false);
-    }
-
-    crate::platform_capabilities::set_directml_disabled_by_timeout(true);
-
-    let mut config = load_config(app_data_dir)
-        .with_context(|| format!("failed to load config from {}", app_data_dir.display()))?
-        .unwrap_or_default();
-    if config.directml_disabled_by_runtime_timeout.as_deref()
-        == Some(DIRECTML_RUNTIME_TIMEOUT_REASON)
-    {
-        return Ok(true);
-    }
-    config.directml_disabled_by_runtime_timeout = Some(DIRECTML_RUNTIME_TIMEOUT_REASON.to_owned());
-    save_config(app_data_dir, &config)
-        .with_context(|| format!("failed to save config to {}", app_data_dir.display()))?;
-    Ok(true)
-}
-
-/// Restore the process-level DirectML timeout override from the persisted
-/// config so startup snapshots (`directml_available`, `cpu_fallback_notice_for`)
-/// observe the recorded state without waiting for a fresh timeout to fire.
-pub fn restore_directml_timeout_state(app_config: Option<&AppConfig>) {
-    let disabled = app_config
-        .and_then(|config| config.directml_disabled_by_runtime_timeout.as_ref())
-        .is_some();
-    crate::platform_capabilities::set_directml_disabled_by_timeout(disabled);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform_capabilities::directml_timeout_test_guard;
+
+    #[test]
+    fn webgpu_uses_the_same_name_in_settings_and_config() {
+        let provider = ExecutionProviderPreference::WebGpu;
+        assert_eq!(serde_json::to_string(&provider).unwrap(), "\"webgpu\"");
+        assert_eq!(
+            serde_json::from_str::<ExecutionProviderPreference>("\"webgpu\"").unwrap(),
+            provider
+        );
+        assert_eq!(provider.as_str(), "webgpu");
+    }
+    #[test]
+    fn legacy_directml_preference_migrates_without_losing_config() {
+        let config: AppConfig =
+            serde_json::from_str(r#"{"execution_provider":"directml","language":"en"}"#).unwrap();
+        assert_eq!(
+            config.execution_provider,
+            Some(ExecutionProviderPreference::WebGpu)
+        );
+        assert_eq!(config.language.as_deref(), Some("en"));
+    }
 
     #[test]
     fn execution_provider_policy_holds_for_every_platform() {
         use ExecutionProviderPlatform as Platform;
         use ExecutionProviderPreference as Ep;
-
-        let _guard = directml_timeout_test_guard();
-
-        assert!(Ep::DirectMl.is_available_for(Platform::Windows));
-        for platform in [
-            Platform::MacosAppleSilicon,
-            Platform::MacosIntel,
-            Platform::Linux,
-            Platform::Other,
-        ] {
-            assert!(
-                !Ep::DirectMl.is_available_for(platform),
-                "DirectML must not be offered on {platform:?}"
-            );
-        }
 
         for platform in [
             Platform::Windows,
@@ -328,22 +264,16 @@ mod tests {
             Platform::Linux,
         ] {
             assert!(Ep::Cpu.is_available_for(platform));
-            assert!(Ep::Xnnpack.is_available_for(platform));
+            assert!(!Ep::Xnnpack.is_available_for(platform));
         }
         assert!(Ep::Cpu.is_available_for(Platform::Other));
         assert!(Ep::CoreMl.is_available_for(Platform::MacosAppleSilicon));
-        assert!(!Ep::CoreMl.is_available_for(Platform::MacosIntel));
+        assert!(Ep::CoreMl.is_available_for(Platform::MacosIntel));
 
-        assert_eq!(Ep::default_for(Platform::MacosAppleSilicon), Ep::CoreMl);
-        assert_eq!(
-            Ep::default_for(Platform::Windows),
-            if crate::platform_capabilities::directml_available() {
-                Ep::DirectMl
-            } else {
-                Ep::Cpu
-            }
-        );
-        for platform in [Platform::MacosIntel, Platform::Linux, Platform::Other] {
+        assert_eq!(Ep::default_for(Platform::MacosAppleSilicon), Ep::WebGpu);
+        assert_eq!(Ep::default_for(Platform::Windows), Ep::WebGpu);
+        assert_eq!(Ep::default_for(Platform::MacosIntel), Ep::CoreMl);
+        for platform in [Platform::Linux, Platform::Other] {
             assert_eq!(
                 Ep::default_for(platform),
                 Ep::Cpu,
@@ -363,27 +293,25 @@ mod tests {
     }
 
     #[test]
-    fn windows_auto_selection_requires_a_hardware_capability() {
+    fn windows_auto_selection_attempts_webgpu_before_fallback() {
         use ExecutionProviderPlatform::Windows;
         use ExecutionProviderPreference as Ep;
 
         let hardware_available = ExecutionProviderCapabilities {
-            directml: true,
             coreml: false,
             xnnpack: false,
         };
         let hardware_unavailable = ExecutionProviderCapabilities {
-            directml: false,
             coreml: false,
             xnnpack: false,
         };
         assert_eq!(
             Ep::default_for_capabilities(Windows, hardware_available),
-            Ep::DirectMl
+            Ep::WebGpu
         );
         assert_eq!(
             Ep::default_for_capabilities(Windows, hardware_unavailable),
-            Ep::Cpu
+            Ep::WebGpu
         );
         assert_eq!(
             Ep::default_for_capabilities(ExecutionProviderPlatform::Linux, hardware_available),
@@ -417,8 +345,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            directml_disabled_by_runtime_timeout: None,
-            disable_directml_graph_fusion: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("execution_provider"));
@@ -447,20 +373,17 @@ mod tests {
         let providers = ExecutionProviderPreference::available_for_current_platform();
         assert!(!providers.contains(&"auto"));
         assert!(providers.contains(&"cpu"));
-        assert!(providers.contains(&"xnnpack"));
+        assert!(!providers.contains(&"xnnpack"));
 
         #[cfg(target_os = "windows")]
-        assert!(providers.contains(&"directml"));
+        assert!(providers.contains(&"webgpu"));
     }
 
     #[test]
     fn effective_execution_provider_defaults_to_platform_default() {
-        let _guard = directml_timeout_test_guard();
         let config = AppConfig::default();
 
-        // Host-conditional expectations mirror the runtime artifact matrix:
-        // Windows selects DirectML only with a D3D12 hardware adapter, Apple
-        // Silicon selects CoreML, and other hosts use CPU.
+        // Host-conditional expectations mirror the runtime artifact matrix.
         #[cfg(target_os = "windows")]
         assert_eq!(
             config.effective_execution_provider(),
@@ -470,13 +393,16 @@ mod tests {
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         assert_eq!(
             config.effective_execution_provider(),
+            ExecutionProviderPreference::WebGpu
+        );
+
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        assert_eq!(
+            config.effective_execution_provider(),
             ExecutionProviderPreference::CoreMl
         );
 
-        #[cfg(not(any(
-            target_os = "windows",
-            all(target_os = "macos", target_arch = "aarch64")
-        )))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         assert_eq!(
             config.effective_execution_provider(),
             ExecutionProviderPreference::Cpu
@@ -492,22 +418,19 @@ mod tests {
             &[
                 ExecutionProviderPreference::Cpu,
                 ExecutionProviderPreference::CoreMl,
-                ExecutionProviderPreference::Xnnpack,
+                ExecutionProviderPreference::WebGpu,
             ]
         );
         assert_eq!(
             ExecutionProviderPreference::available_for(MacosIntel),
             &[
                 ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::Xnnpack
+                ExecutionProviderPreference::CoreMl
             ]
         );
         assert_eq!(
             ExecutionProviderPreference::available_for(Linux),
-            &[
-                ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::Xnnpack
-            ]
+            &[ExecutionProviderPreference::Cpu]
         );
         assert_eq!(
             ExecutionProviderPreference::available_for(Other),
@@ -517,21 +440,9 @@ mod tests {
             ExecutionProviderPreference::available_for(Windows),
             &[
                 ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::Xnnpack,
-                ExecutionProviderPreference::DirectMl,
+                ExecutionProviderPreference::WebGpu,
             ]
         );
-    }
-
-    #[test]
-    fn directml_is_present_only_for_windows() {
-        use ExecutionProviderPlatform::*;
-        for &platform in &[MacosAppleSilicon, MacosIntel, Linux, Other] {
-            assert!(!ExecutionProviderPreference::available_for(platform)
-                .contains(&ExecutionProviderPreference::DirectMl));
-        }
-        assert!(ExecutionProviderPreference::available_for(Windows)
-            .contains(&ExecutionProviderPreference::DirectMl));
     }
 
     #[test]
@@ -549,33 +460,28 @@ mod tests {
         use ExecutionProviderPreference as Ep;
 
         let available = ExecutionProviderCapabilities {
-            directml: true,
             coreml: true,
             xnnpack: true,
         };
         assert_eq!(
             Ep::default_for_capabilities(MacosAppleSilicon, available),
-            Ep::CoreMl
+            Ep::WebGpu
         );
         assert!(Ep::CoreMl.is_compatible_for(MacosAppleSilicon, available));
-        assert!(!Ep::CoreMl.is_compatible_for(MacosIntel, available));
+        assert!(Ep::CoreMl.is_compatible_for(MacosIntel, available));
         assert!(Ep::Xnnpack.is_compatible_for(Linux, available));
         assert!(!Ep::Xnnpack.is_compatible_for(Windows, available));
-        assert!(Ep::DirectMl.is_compatible_for(Windows, available));
-        assert!(!Ep::DirectMl.is_compatible_for(Linux, available));
 
         let unavailable = ExecutionProviderCapabilities {
-            directml: false,
             coreml: false,
             xnnpack: false,
         };
         assert_eq!(
             Ep::default_for_capabilities(MacosAppleSilicon, unavailable),
-            Ep::Cpu
+            Ep::WebGpu
         );
         assert!(!Ep::CoreMl.is_compatible_for(MacosAppleSilicon, unavailable));
         assert!(!Ep::Xnnpack.is_compatible_for(Linux, unavailable));
-        assert!(!Ep::DirectMl.is_compatible_for(Windows, unavailable));
     }
 
     #[test]
@@ -608,16 +514,16 @@ mod tests {
     fn effective_execution_provider_for_falls_back_for_stale_cross_platform_value() {
         use ExecutionProviderPlatform::*;
         let config = AppConfig {
-            execution_provider: Some(ExecutionProviderPreference::DirectMl),
+            execution_provider: Some(ExecutionProviderPreference::WebGpu),
             ..AppConfig::default()
         };
         assert_eq!(
             config.effective_execution_provider_for(MacosAppleSilicon),
-            ExecutionProviderPreference::CoreMl
+            ExecutionProviderPreference::WebGpu
         );
         assert_eq!(
             config.effective_execution_provider_for(MacosIntel),
-            ExecutionProviderPreference::Cpu
+            ExecutionProviderPreference::CoreMl
         );
         assert_eq!(
             config.effective_execution_provider_for(Linux),
@@ -629,21 +535,20 @@ mod tests {
         );
         assert_eq!(
             config.effective_execution_provider_for(Windows),
-            ExecutionProviderPreference::DirectMl
+            ExecutionProviderPreference::WebGpu
         );
     }
 
     #[test]
     fn effective_execution_provider_for_falls_back_when_unset() {
         use ExecutionProviderPlatform::*;
-        let _guard = directml_timeout_test_guard();
         let config = AppConfig {
             execution_provider: None,
             ..AppConfig::default()
         };
         assert_eq!(
             config.effective_execution_provider_for(MacosAppleSilicon),
-            ExecutionProviderPreference::CoreMl
+            ExecutionProviderPreference::WebGpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Windows),
@@ -651,7 +556,7 @@ mod tests {
         );
         assert_eq!(
             config.effective_execution_provider_for(MacosIntel),
-            ExecutionProviderPreference::Cpu
+            ExecutionProviderPreference::CoreMl
         );
         assert_eq!(
             config.effective_execution_provider_for(Linux),
@@ -673,84 +578,5 @@ mod tests {
         assert_eq!(current, Linux);
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         assert_eq!(current, Other);
-    }
-
-    #[test]
-    fn directml_timeout_disable_downgrades_windows_default_to_cpu() {
-        let _guard = directml_timeout_test_guard();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let config = AppConfig {
-            directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
-            ..AppConfig::default()
-        };
-        let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
-        assert_eq!(resolved, ExecutionProviderPreference::Cpu);
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-    }
-
-    #[test]
-    fn explicit_user_execution_provider_overrides_timeout_disable() {
-        let _guard = directml_timeout_test_guard();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let config = AppConfig {
-            execution_provider: Some(ExecutionProviderPreference::DirectMl),
-            directml_disabled_by_runtime_timeout: Some("directml-runtime-load-timeout".to_owned()),
-            ..AppConfig::default()
-        };
-        let resolved = config.effective_execution_provider_for(ExecutionProviderPlatform::Windows);
-        assert_eq!(resolved, ExecutionProviderPreference::DirectMl);
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-    }
-
-    #[test]
-    fn record_directml_unavailable_ignores_non_timeout_errors() {
-        let tmp = tempfile::tempdir().unwrap();
-        let providers = vec!["directml".to_owned()];
-        let recorded = record_directml_unavailable_on_timeout(
-            tmp.path(),
-            &providers,
-            "some unrelated load error",
-        )
-        .unwrap();
-        assert!(!recorded);
-        let loaded = load_config(tmp.path()).unwrap();
-        assert!(loaded.is_none());
-    }
-
-    #[test]
-    fn record_directml_unavailable_ignores_cpu_only_runtime_timeouts() {
-        let tmp = tempfile::tempdir().unwrap();
-        let providers = vec!["cpu".to_owned()];
-        let marker = crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER;
-        let recorded = record_directml_unavailable_on_timeout(
-            tmp.path(),
-            &providers,
-            &format!("{marker}: timed out"),
-        )
-        .unwrap();
-        assert!(!recorded);
-    }
-
-    #[test]
-    fn record_directml_unavailable_persists_flag_and_flips_process_override() {
-        let _guard = directml_timeout_test_guard();
-        let tmp = tempfile::tempdir().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let providers = vec!["directml".to_owned(), "cpu".to_owned()];
-        let marker = crate::commands::runtime_worker::RUNTIME_POST_DOWNLOAD_TIMEOUT_MARKER;
-        let recorded = record_directml_unavailable_on_timeout(
-            tmp.path(),
-            &providers,
-            &format!("{marker}: timed out"),
-        )
-        .unwrap();
-        assert!(recorded);
-        assert!(crate::platform_capabilities::directml_disabled_by_timeout());
-        let loaded = load_config(tmp.path()).unwrap().unwrap();
-        assert_eq!(
-            loaded.directml_disabled_by_runtime_timeout.as_deref(),
-            Some("directml-runtime-load-timeout"),
-        );
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
     }
 }

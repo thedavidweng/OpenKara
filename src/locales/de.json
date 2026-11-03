@@ -589,10 +589,6 @@
         "loadFailed": "Laden der ONNX Runtime fehlgeschlagen: {{error}}",
         "loadFailedHint": "Die Runtime ist heruntergeladen, kann aber nicht geladen werden. Dies ist kein Netzwerkproblem; prüfen Sie die Fehlerdetails.",
         "retryDownload": "Wiederholen"
-      },
-      "cpuFallbackToast": {
-        "title": "Nur-CPU-ONNX-Runtime wird verwendet",
-        "message": "OpenKara verwendet die Nur-CPU-ONNX-Runtime. Die GPU-Runtime hat nicht reagiert. Die Stimmentrennung funktioniert weiterhin. Sie ist langsamer."
       }
     },
     "hideBatchSeparate": {
@@ -704,10 +700,9 @@
       "cpuDescription": "Nur Software — funktioniert auf allen Geräten, am langsamsten",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD-beschleunigte CPU — schneller auf Apple Silicon und modernem x86",
-      "directml": "DirectML",
-      "directmlDescription": "DirectX-12-GPU-Beschleunigung für Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Beschleunigung durch Neural Engine und GPU auf Apple Silicon",
+      "coremlDescription": "Core-ML-Beschleunigung für macOS",
+      "webgpuDescription": "WebGPU-Beschleunigung",
       "incompatible": "Nicht kompatibel",
       "incompatibleWarning": "Dieser Anbieter ist mit diesem Gerät nicht kompatibel. Wechseln Sie in den Einstellungen zu CPU.",
       "note": "Änderungen werden bei der nächsten Trennung wirksam."
@@ -886,7 +881,8 @@
     "installing": "Update wird abgeschlossen…",
     "restartToApply": "Update bereit — zum Anwenden neu starten",
     "restart": "Neu starten",
-    "failed": "Update fehlgeschlagen — laden Sie die neueste Version manuell herunter"
+    "failed": "Update fehlgeschlagen — laden Sie die neueste Version manuell herunter",
+    "catalogUpgradeRequired": "Dieser Katalog erfordert eine neuere OpenKara-Version. Aktualisiere OpenKara, um fortzufahren."
   },
   "catalog": {
     "streaming": {

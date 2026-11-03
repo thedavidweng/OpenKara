@@ -48,12 +48,12 @@ fn reuses_runtime_environment_after_model_session_is_dropped() {
         let loaded = model::load_from_path(
             &model::default_model_path(),
             ExecutionProviderPreference::Cpu,
-            model::SessionOptions::default(),
         )
         .expect("demucs model should load after the previous session was dropped");
 
         assert!(!loaded.inputs.is_empty());
         assert!(!loaded.outputs.is_empty());
+        assert_eq!(loaded.assigned_providers, ["CPUExecutionProvider"]);
     }
 }
 
@@ -61,12 +61,8 @@ fn reuses_runtime_environment_after_model_session_is_dropped() {
 fn fails_with_clear_error_for_missing_model_file() {
     let _runtime = support::acquire_test_runtime();
     let missing_path = repo_root().join("models").join("missing-model.onnx");
-    let error = model::load_from_path(
-        &missing_path,
-        ExecutionProviderPreference::Cpu,
-        model::SessionOptions::default(),
-    )
-    .expect_err("missing model should fail");
+    let error = model::load_from_path(&missing_path, ExecutionProviderPreference::Cpu)
+        .expect_err("missing model should fail");
 
     assert!(error.to_string().contains("missing-model.onnx"));
 }
@@ -88,10 +84,14 @@ fn describes_xnnpack_fallback_provider_path() {
 }
 
 #[test]
-fn describes_directml_full_fallback_provider_path() {
+fn describes_webgpu_fallback_provider_path() {
     assert_eq!(
-        model::provider_diagnostic_summary(ExecutionProviderPreference::DirectMl),
-        "directml -> cpu"
+        model::provider_diagnostic_summary(ExecutionProviderPreference::WebGpu),
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            "webgpu -> coreml -> cpu"
+        } else {
+            "webgpu -> cpu"
+        }
     );
 }
 
@@ -103,7 +103,6 @@ fn loads_embedded_demucs_model_with_xnnpack_preference() {
     let loaded = model::load_from_path(
         &model::default_model_path(),
         ExecutionProviderPreference::Xnnpack,
-        model::SessionOptions::default(),
     )
     .expect("demucs model should load with XNNPACK preference");
 

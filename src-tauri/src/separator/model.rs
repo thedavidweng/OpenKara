@@ -18,13 +18,6 @@ const TENSOR_INTERFACE_METADATA: &str = "openkara.tensor_interface";
 const SPECTRAL_CONTRACT_METADATA: &str = "openkara.spectral_contract";
 const ONNXRUNTIME_OPTIMIZED_BY_VALUE: &str = "onnxruntime";
 
-/// Opt-in ONNX session tuning read from the app config. The default leaves
-/// every provider at its stock behavior.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SessionOptions {
-    pub disable_directml_graph_fusion: bool,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ModelRuntimeMetadata {
     pub model_cache_key: Option<String>,
@@ -70,10 +63,11 @@ pub struct LoadedModel {
     pub model_path: PathBuf,
     /// Provider that successfully created this session. When
     /// [`load_from_path`] walks a fallback chain, this is the provider that
-    /// actually committed — not the original preference. DirectML must
-    /// register for its attempt to succeed; XNNPACK and CoreML keep ort's
-    /// default of falling back to CPU inside the same session.
+    /// actually committed, rather than the original preference. Accelerated
+    /// attempts must receive model nodes before they are accepted.
     pub execution_provider: ExecutionProviderPreference,
+    pub assigned_providers: Vec<String>,
+    pub provider_fallback_reason: Option<String>,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
     pub input_shape: Vec<i64>,
@@ -123,7 +117,6 @@ pub(crate) fn read_model_runtime_metadata(path: &Path) -> Result<ModelRuntimeMet
 pub(crate) fn session_cache_key(
     model_path: &Path,
     provider: ExecutionProviderPreference,
-    options: SessionOptions,
     metadata: &ModelRuntimeMetadata,
 ) -> String {
     let mut key = match metadata.model_cache_key.as_deref() {
@@ -142,19 +135,12 @@ pub(crate) fn session_cache_key(
             key.push_str(contract);
         }
     }
-    for (entry_key, entry_value) in session_config_entries(provider, options) {
-        key.push_str("::");
-        key.push_str(entry_key);
-        key.push('=');
-        key.push_str(entry_value);
-    }
     key
 }
 
 pub fn load_from_path(
     path: &Path,
     ep_preference: ExecutionProviderPreference,
-    options: SessionOptions,
 ) -> Result<LoadedModel> {
     tracing::info!(
         "attempting ONNX session load for {} via {}",
@@ -166,9 +152,12 @@ pub fn load_from_path(
     let mut last_error = None;
 
     for (index, provider) in provider_chain.iter().copied().enumerate() {
-        match load_with_ep(path, provider, options) {
-            Ok(model) => {
+        match load_with_ep(path, provider) {
+            Ok(mut model) => {
                 if index > 0 {
+                    model.provider_fallback_reason = last_error
+                        .as_ref()
+                        .map(|error: &anyhow::Error| format!("{error:#}"));
                     tracing::warn!(
                         "recovered ONNX session load by falling back to {} for {}",
                         provider.as_str(),
@@ -287,10 +276,9 @@ fn intra_thread_count(
         .max(1)
 }
 
-fn load_with_ep(
+pub(crate) fn load_with_ep(
     path: &Path,
     ep_preference: ExecutionProviderPreference,
-    options: SessionOptions,
 ) -> Result<LoadedModel> {
     let environment = activation::ensure_activated()?;
     let runtime_metadata = read_model_runtime_metadata(path)?;
@@ -313,6 +301,10 @@ fn load_with_ep(
         .context("failed to create ONNX session builder")?;
 
     builder = builder
+        .with_auto_device(ort::session::builder::AutoDevicePolicy::PreferCPU)
+        .map_err(|e| anyhow::anyhow!("failed to set execution provider selection policy: {e}"))?;
+
+    builder = builder
         .with_intra_threads(num_threads)
         .map_err(|e| anyhow::anyhow!("failed to set intra-op thread count: {e}"))?;
 
@@ -327,19 +319,36 @@ fn load_with_ep(
         .with_optimization_level(graph_optimization_level_for(&runtime_metadata))
         .map_err(|e| anyhow::anyhow!("failed to set graph optimization level: {e}"))?;
 
-    #[cfg(target_os = "windows")]
-    if matches!(ep_preference, ExecutionProviderPreference::DirectMl) {
-        activation::preload_directml_companion()?;
-    }
+    builder = builder
+        .with_config_entry("session.record_ep_graph_assignment_info", "1")
+        .map_err(|e| anyhow::anyhow!("failed to enable provider diagnostics: {e}"))?;
 
-    for (key, value) in session_config_entries(ep_preference, options) {
-        tracing::info!("setting ONNX session config entry {key}={value}");
+    if matches!(ep_preference, ExecutionProviderPreference::WebGpu) {
+        let device = environment
+            .devices()
+            .find(|device| device.ep().ok() == Some("WebGpuExecutionProvider"))
+            .context("WebGPU device unavailable")?;
+        let mut options = vec![(
+            "WebGpuExecutionProvider.powerPreference".to_owned(),
+            "high-performance".to_owned(),
+        )];
+        if cfg!(target_os = "windows") {
+            options.push((
+                "WebGpuExecutionProvider.dawnBackendType".to_owned(),
+                "D3D12".to_owned(),
+            ));
+        }
         builder = builder
-            .with_config_entry(key, value)
-            .map_err(|e| anyhow::anyhow!("failed to set session config entry {key}: {e}"))?;
+            .with_devices([device], Some(&options))
+            .map_err(|e| anyhow::anyhow!("failed to configure WebGPU: {e}"))?;
     }
-
-    let ep_list = build_execution_provider_list(ep_preference, num_threads);
+    let coreml_cache = if matches!(ep_preference, ExecutionProviderPreference::CoreMl) {
+        Some(coreml_cache_directory(path, &runtime_metadata)?)
+    } else {
+        None
+    };
+    let ep_list =
+        build_execution_provider_list(ep_preference, num_threads, coreml_cache.as_deref());
     if !ep_list.is_empty() {
         builder = builder
             .with_execution_providers(ep_list)
@@ -355,6 +364,21 @@ fn load_with_ep(
     let session = builder
         .commit_from_file(path)
         .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
+    let assigned_providers = assigned_providers(&session)?;
+    let expected_provider = match ep_preference {
+        ExecutionProviderPreference::CoreMl => Some("CoreMLExecutionProvider"),
+        ExecutionProviderPreference::WebGpu => Some("WebGpuExecutionProvider"),
+        ExecutionProviderPreference::Xnnpack => Some("XnnpackExecutionProvider"),
+        ExecutionProviderPreference::Cpu => None,
+    };
+    if let Some(expected) = expected_provider {
+        anyhow::ensure!(
+            assigned_providers
+                .iter()
+                .any(|provider| provider == expected),
+            "{expected} did not receive any model nodes"
+        );
+    }
     tracing::info!(
         "committed ONNX session for {} in {:?}",
         path.display(),
@@ -425,6 +449,8 @@ fn load_with_ep(
     Ok(LoadedModel {
         model_path,
         execution_provider: ep_preference,
+        assigned_providers,
+        provider_fallback_reason: None,
         inputs,
         outputs,
         input_shape,
@@ -434,9 +460,56 @@ fn load_with_ep(
     })
 }
 
+fn assigned_providers(session: &ort::session::Session) -> Result<Vec<String>> {
+    use ort::AsPointer;
+    use std::{ffi::CStr, ptr, slice};
+
+    let api = ort::api();
+    let mut subgraphs = ptr::null();
+    let mut count = 0;
+    // SAFETY: ORT owns the returned arrays and strings for the session's
+    // lifetime, and the API initializes their pointers and lengths on success.
+    unsafe {
+        ort::Error::result_from_status((api.Session_GetEpGraphAssignmentInfo)(
+            session.ptr(),
+            &mut subgraphs,
+            &mut count,
+        ))?;
+        let mut providers = Vec::new();
+        if count > 0 {
+            for subgraph in slice::from_raw_parts(subgraphs, count) {
+                let mut name = ptr::null();
+                ort::Error::result_from_status((api.EpAssignedSubgraph_GetEpName)(
+                    *subgraph, &mut name,
+                ))?;
+                let name = CStr::from_ptr(name).to_str()?.to_owned();
+                if !providers.contains(&name) {
+                    providers.push(name);
+                }
+            }
+        }
+        Ok(providers)
+    }
+}
+
+fn coreml_cache_directory(path: &Path, metadata: &ModelRuntimeMetadata) -> Result<PathBuf> {
+    let cache_key = match &metadata.model_cache_key {
+        Some(key) => crate::separator::verified_manifest::sha256_hex(key.as_bytes()),
+        None => crate::separator::artifacts::sha256_file(path)?,
+    };
+    let directory = path
+        .parent()
+        .context("model path has no parent directory")?
+        .join(".coreml-cache")
+        .join(cache_key);
+    fs::create_dir_all(&directory).context("failed to create CoreML model cache")?;
+    Ok(directory)
+}
+
 fn build_execution_provider_list(
     preference: ExecutionProviderPreference,
     num_threads: usize,
+    coreml_cache: Option<&Path>,
 ) -> Vec<ort::ep::ExecutionProviderDispatch> {
     use ort::ep;
     use std::num::NonZeroUsize;
@@ -444,36 +517,21 @@ fn build_execution_provider_list(
     match preference {
         // Empty list means ORT uses the built-in CPU EP.
         ExecutionProviderPreference::Cpu => vec![],
+        ExecutionProviderPreference::WebGpu => vec![],
         // Align XNNPACK workers with ORT intra-op threads.
         ExecutionProviderPreference::Xnnpack => vec![ep::XNNPACK::default()
             .with_intra_op_num_threads(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
             )
             .build()],
-        ExecutionProviderPreference::CoreMl => vec![ep::CoreML::default().build()],
-        // Require DirectML registration: ort otherwise falls back to CPU
-        // silently, and the session would be reported as DirectML. A failure
-        // here lets `load_from_path` take its explicit CPU fallback instead.
-        ExecutionProviderPreference::DirectMl => {
-            vec![ep::DirectML::default().build().error_on_failure()]
+        ExecutionProviderPreference::CoreMl => {
+            let coreml = ep::CoreML::default();
+            let coreml = match coreml_cache {
+                Some(path) => coreml.with_model_cache_dir(path.to_string_lossy()),
+                None => coreml,
+            };
+            vec![coreml.build().error_on_failure()]
         }
-    }
-}
-
-/// Workaround for a DirectML graph-fusion miscompile of the spectral-core
-/// htdemucs graph seen on an RTX 3070 Ti: the fused output is thousands of
-/// times too loud. Unfused DirectML matches the CPU provider (ADR 0031).
-const DISABLE_DML_GRAPH_FUSION: (&str, &str) = ("ep.dml.disable_graph_fusion", "1");
-
-fn session_config_entries(
-    preference: ExecutionProviderPreference,
-    options: SessionOptions,
-) -> &'static [(&'static str, &'static str)] {
-    match preference {
-        ExecutionProviderPreference::DirectMl if options.disable_directml_graph_fusion => {
-            &[DISABLE_DML_GRAPH_FUSION]
-        }
-        _ => &[],
     }
 }
 
@@ -485,10 +543,14 @@ fn execution_provider_chain(
             ExecutionProviderPreference::Xnnpack,
             ExecutionProviderPreference::Cpu,
         ],
-        ExecutionProviderPreference::DirectMl => vec![
-            ExecutionProviderPreference::DirectMl,
-            ExecutionProviderPreference::Cpu,
-        ],
+        ExecutionProviderPreference::WebGpu => {
+            let mut chain = vec![ExecutionProviderPreference::WebGpu];
+            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                chain.push(ExecutionProviderPreference::CoreMl);
+            }
+            chain.push(ExecutionProviderPreference::Cpu);
+            chain
+        }
         ExecutionProviderPreference::CoreMl => vec![
             ExecutionProviderPreference::CoreMl,
             ExecutionProviderPreference::Cpu,
@@ -677,116 +739,27 @@ mod tests {
     }
 
     #[test]
-    fn provider_chain_keeps_directml_cpu_fallback() {
-        assert_eq!(
-            execution_provider_chain(ExecutionProviderPreference::DirectMl),
-            vec![
-                ExecutionProviderPreference::DirectMl,
-                ExecutionProviderPreference::Cpu,
-            ]
-        );
-    }
-
-    #[test]
     fn provider_chain_keeps_coreml_cpu_fallback() {
+        let expected = vec![
+            ExecutionProviderPreference::CoreMl,
+            ExecutionProviderPreference::Cpu,
+        ];
         assert_eq!(
             execution_provider_chain(ExecutionProviderPreference::CoreMl),
-            vec![
-                ExecutionProviderPreference::CoreMl,
-                ExecutionProviderPreference::Cpu,
-            ]
+            expected
         );
     }
 
     #[test]
-    fn directml_graph_fusion_stays_enabled_by_default() {
-        for preference in [
-            ExecutionProviderPreference::Cpu,
-            ExecutionProviderPreference::Xnnpack,
-            ExecutionProviderPreference::CoreMl,
-            ExecutionProviderPreference::DirectMl,
-        ] {
-            assert!(session_config_entries(preference, SessionOptions::default()).is_empty());
+    fn provider_chain_keeps_webgpu_platform_fallback() {
+        let mut expected = vec![ExecutionProviderPreference::WebGpu];
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            expected.push(ExecutionProviderPreference::CoreMl);
         }
-    }
-
-    #[test]
-    fn opt_in_disables_graph_fusion_only_for_directml() {
-        let options = SessionOptions {
-            disable_directml_graph_fusion: true,
-        };
+        expected.push(ExecutionProviderPreference::Cpu);
         assert_eq!(
-            session_config_entries(ExecutionProviderPreference::DirectMl, options),
-            &[("ep.dml.disable_graph_fusion", "1")]
-        );
-        for preference in [
-            ExecutionProviderPreference::Cpu,
-            ExecutionProviderPreference::Xnnpack,
-            ExecutionProviderPreference::CoreMl,
-        ] {
-            assert!(session_config_entries(preference, options).is_empty());
-        }
-    }
-
-    #[test]
-    fn session_cache_key_separates_unfused_directml_sessions() {
-        let model_path = Path::new("/tmp/models/htdemucs.spectral.onnx");
-        let metadata = ModelRuntimeMetadata::default();
-        let fused = session_cache_key(
-            model_path,
-            ExecutionProviderPreference::DirectMl,
-            SessionOptions::default(),
-            &metadata,
-        );
-        let unfused = session_cache_key(
-            model_path,
-            ExecutionProviderPreference::DirectMl,
-            SessionOptions {
-                disable_directml_graph_fusion: true,
-            },
-            &metadata,
-        );
-        assert_ne!(fused, unfused);
-        assert!(
-            unfused.ends_with("::ep.dml.disable_graph_fusion=1"),
-            "unfused DirectML cache key should derive its suffix from session config entries, got {unfused}"
-        );
-        assert!(
-            !fused.contains("ep.dml.disable_graph_fusion"),
-            "default DirectML cache key should omit unused session config entries, got {fused}"
-        );
-        assert_eq!(
-            session_cache_key(
-                model_path,
-                ExecutionProviderPreference::Cpu,
-                SessionOptions {
-                    disable_directml_graph_fusion: true,
-                },
-                &metadata,
-            ),
-            session_cache_key(
-                model_path,
-                ExecutionProviderPreference::Cpu,
-                SessionOptions::default(),
-                &metadata,
-            )
-        );
-    }
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn directml_registration_failure_is_an_error() {
-        let runtime_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("generated/onnxruntime")
-            .join(ORT_RUNTIME_FILENAME);
-        ensure_runtime_loaded_from_path(&runtime_path).expect("test runtime should initialize");
-        let providers = build_execution_provider_list(ExecutionProviderPreference::DirectMl, 1);
-        assert_eq!(providers.len(), 1);
-        let builder =
-            ort::session::Session::builder(activation::ensure_activated().unwrap()).unwrap();
-        assert!(
-            builder.with_execution_providers(providers).is_err(),
-            "DirectML registration must fail on a platform without DirectML"
+            execution_provider_chain(ExecutionProviderPreference::WebGpu),
+            expected
         );
     }
 
@@ -836,6 +809,30 @@ mod tests {
     }
 
     #[test]
+    fn coreml_compiled_cache_tracks_model_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("model.onnx");
+        let first = ModelRuntimeMetadata {
+            model_cache_key: Some("first".into()),
+            ..Default::default()
+        };
+        let second = ModelRuntimeMetadata {
+            model_cache_key: Some("second".into()),
+            ..Default::default()
+        };
+        let first_directory = coreml_cache_directory(&path, &first).unwrap();
+        assert!(first_directory.is_dir());
+        assert_eq!(
+            first_directory,
+            coreml_cache_directory(&path, &first).unwrap()
+        );
+        assert_ne!(
+            first_directory,
+            coreml_cache_directory(&path, &second).unwrap()
+        );
+    }
+
+    #[test]
     fn session_cache_key_includes_model_cache_key_when_present() {
         let model_path = Path::new("/tmp/models/htdemucs.onnx");
         let metadata = ModelRuntimeMetadata {
@@ -845,12 +842,7 @@ mod tests {
         };
 
         assert_eq!(
-            session_cache_key(
-                model_path,
-                ExecutionProviderPreference::Xnnpack,
-                SessionOptions::default(),
-                &metadata
-            ),
+            session_cache_key(model_path, ExecutionProviderPreference::Xnnpack, &metadata),
             "/tmp/models/htdemucs.onnx::xnnpack::cache-key-123"
         );
     }
@@ -935,12 +927,7 @@ mod tests {
         };
 
         assert_eq!(
-            session_cache_key(
-                model_path,
-                ExecutionProviderPreference::Cpu,
-                SessionOptions::default(),
-                &metadata
-            ),
+            session_cache_key(model_path, ExecutionProviderPreference::Cpu, &metadata),
             "/tmp/models/htdemucs.spectral.onnx::cpu::cache-key-123::openkara.spectral-contract/v1"
         );
     }

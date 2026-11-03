@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::commands::bootstrap::ModelBootstrapState;
 use crate::commands::error::{internal_error, CommandResult};
 use crate::commands::runtime_bootstrap::RuntimeBootstrapState;
-use crate::config::{self, ExecutionProviderPreference, ModelVariant};
+use crate::config::{self, ModelVariant};
 use crate::{separator, AppState};
 
 const BUILD_SHA: &str = match option_env!("GIT_BUILD_HASH") {
@@ -35,7 +35,7 @@ pub struct DebugInfo {
     pub runtime_target_triple: String,
     pub runtime_path: String,
     pub execution_provider: String,
-    pub directml_available: bool,
+    pub provider_fallback_reason: Option<String>,
     pub language: Option<String>,
     pub log_file: String,
 }
@@ -88,7 +88,7 @@ pub fn assemble_debug_info(
     runtime_target_triple: String,
     runtime_path: String,
     execution_provider: &str,
-    directml_available: bool,
+    provider_fallback_reason: Option<String>,
     language: Option<String>,
     log_file: String,
 ) -> DebugInfo {
@@ -111,7 +111,7 @@ pub fn assemble_debug_info(
         runtime_target_triple,
         runtime_path,
         execution_provider: execution_provider.to_owned(),
-        directml_available,
+        provider_fallback_reason,
         language,
         log_file,
     }
@@ -135,7 +135,18 @@ pub fn get_debug_info(
         .flatten()
         .unwrap_or_default();
     let variant: ModelVariant = config.effective_model_variant();
-    let execution_provider: ExecutionProviderPreference = config.effective_execution_provider();
+    let model_cache = state
+        .separation
+        .separator_model_cache
+        .lock()
+        .map_err(|_| internal_error("separator model cache lock was poisoned"))?;
+    let loaded = model_cache.cached();
+    let execution_provider = loaded
+        .map(|model| model.assigned_providers.join(", "))
+        .filter(|providers| !providers.is_empty())
+        .unwrap_or_else(|| "unknown".to_owned());
+    let provider_fallback_reason = loaded.and_then(|model| model.provider_fallback_reason.clone());
+    drop(model_cache);
 
     let catalog = separator::catalog::embedded_catalog();
 
@@ -182,8 +193,8 @@ pub fn get_debug_info(
         runtime_snapshot.active_artifact_id.clone(),
         runtime_snapshot.target_triple.clone(),
         runtime_snapshot.runtime_path.clone(),
-        execution_provider.as_str(),
-        crate::platform_capabilities::directml_available(),
+        &execution_provider,
+        provider_fallback_reason,
         config.language.clone(),
         log_file,
     ))
@@ -215,7 +226,7 @@ mod tests {
             "/Users/me/Library/Application Support/com.openkara.desktop/runtimes/rt/libonnxruntime.dylib"
                 .to_owned(),
             "xnnpack",
-            false,
+            None,
             Some("en".to_owned()),
             "/Users/me/Library/Logs/com.openkara.desktop/openkara.<date>.log".to_owned(),
         )
@@ -251,7 +262,6 @@ mod tests {
         assert_eq!(info.runtime_target_triple, "aarch64-apple-darwin");
         assert!(info.runtime_path.contains("libonnxruntime.dylib"));
         assert_eq!(info.execution_provider, "xnnpack");
-        assert!(!info.directml_available);
         assert_eq!(info.language.as_deref(), Some("en"));
         assert!(info.log_file.ends_with("openkara.<date>.log"));
     }
@@ -267,7 +277,7 @@ mod tests {
             "catalog_generation",
             "catalog_release_id",
             "runtime_path",
-            "directml_available",
+            "provider_fallback_reason",
             "language",
             "model_variant",
             "model_state",
@@ -326,7 +336,7 @@ mod tests {
             "x86_64-unknown-linux-gnu".to_owned(),
             String::new(),
             "cpu",
-            false,
+            None,
             None,
             "/home/me/.local/share/com.openkara.desktop/logs/openkara.<date>.log".to_owned(),
         );

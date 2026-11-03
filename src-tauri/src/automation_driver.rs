@@ -975,11 +975,8 @@ fn record_oka284_assertions(
         "",
     );
 
-    let library_name = active
-        .library_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("<unknown>");
+    let library_record = runtime_library_record(active)?;
+    let library_path = library_record.path.as_str();
     let actual_library_digest = sha256_file(&active.library_path).with_context(|| {
         format!(
             "failed to hash runtime library {}",
@@ -997,15 +994,10 @@ fn record_oka284_assertions(
 
     let catalog_library_digest = catalog_runtime
         .extracted_file_digests
-        .get(library_name)
+        .get(library_path)
         .map(|d| d.sha256.as_str())
         .unwrap_or("<missing in catalog>");
-    let record_library_digest = record
-        .files
-        .iter()
-        .find(|f| f.path == library_name)
-        .map(|f| f.sha256.as_str())
-        .unwrap_or("<missing in record>");
+    let record_library_digest = library_record.sha256.as_str();
 
     // actual vs catalog
     builder.add_assertion(
@@ -1032,9 +1024,8 @@ fn record_oka284_assertions(
         &active.library_path.display().to_string(),
     );
 
-    let active_library_name = library_name.to_owned();
     for file in &record.files {
-        if file.path == active_library_name {
+        if file.path == library_path {
             continue;
         }
         let file_path = active.dir.join(&file.path);
@@ -1190,8 +1181,18 @@ fn record_oka284_assertions(
     Ok(())
 }
 
+fn runtime_library_record(
+    runtime: &crate::separator::runtime_bootstrap::InstalledRuntime,
+) -> Result<&crate::separator::catalog::InstalledFileRecord> {
+    runtime
+        .record
+        .files
+        .iter()
+        .find(|file| runtime.dir.join(&file.path) == runtime.library_path)
+        .context("runtime record does not list the active library file")
+}
+
 fn compute_runtime_identity(app_data_dir: &Path) -> Result<RuntimeIdentity> {
-    use crate::separator::catalog::read_artifact_record;
     use crate::separator::runtime_bootstrap::runtime_inventory;
 
     let inventory = runtime_inventory(app_data_dir);
@@ -1200,24 +1201,8 @@ fn compute_runtime_identity(app_data_dir: &Path) -> Result<RuntimeIdentity> {
         .as_ref()
         .context("no managed runtime is installed")?;
 
-    let record_path = active
-        .library_path
-        .parent()
-        .context("runtime has no parent directory")?
-        .join("record.json");
-    let record =
-        read_artifact_record(&record_path).context("runtime record.json is missing or invalid")?;
-
-    let active_library_name = active
-        .library_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
-    let library_record = record
-        .files
-        .iter()
-        .find(|f| f.path == active_library_name)
-        .context("runtime record does not list the active library file")?;
+    let record = &active.record;
+    let library_record = runtime_library_record(active)?;
 
     let library_digest = crate::separator::artifacts::sha256_file(&active.library_path)
         .with_context(|| {
@@ -1230,23 +1215,16 @@ fn compute_runtime_identity(app_data_dir: &Path) -> Result<RuntimeIdentity> {
     let companion_digests: Vec<String> = record
         .files
         .iter()
-        .filter(|f| f.path != library_record.path)
+        .filter(|f| f.path != library_record.path && f.path.to_ascii_lowercase().ends_with(".dll"))
         .map(|f| {
-            let path = active
-                .library_path
-                .parent()
-                .unwrap_or(active.library_path.as_ref())
-                .join(&f.path);
-            if path.exists() {
-                crate::separator::artifacts::sha256_file(&path).unwrap_or_default()
-            } else {
-                String::new()
-            }
+            let path = active.dir.join(&f.path);
+            crate::separator::artifacts::sha256_file(&path)
+                .with_context(|| format!("failed to hash runtime companion {}", path.display()))
         })
-        .collect();
+        .collect::<Result<_>>()?;
 
     Ok(RuntimeIdentity {
-        archive_sha256: record.archive_sha256,
+        archive_sha256: record.archive_sha256.clone(),
         extracted_library_sha256: library_digest,
         companion_dll_sha256s: companion_digests,
     })
@@ -1689,4 +1667,72 @@ fn webview2_version() -> String {
     }
 
     "n/a".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::separator::{
+        catalog::{self, InstalledFileRecord},
+        runtime_bootstrap::{self, RuntimeSlots, ORT_RUNTIME_FILENAME},
+        verified_manifest::sha256_hex,
+    };
+
+    #[test]
+    fn runtime_identity_uses_nested_official_archive_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let catalog = catalog::embedded_catalog();
+        let runtime = catalog::resolve_runtime(
+            &catalog.manifest,
+            catalog::current_target_triple(),
+            crate::config::ExecutionProviderPreference::Cpu,
+        )
+        .unwrap();
+        let dir = runtime_bootstrap::runtime_artifact_dir(temp.path(), &runtime.artifact_id);
+        let lib_dir = dir.join("official/lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+        std::fs::write(lib_dir.join(ORT_RUNTIME_FILENAME), b"runtime").unwrap();
+        std::fs::write(lib_dir.join("companion.dll"), b"companion").unwrap();
+        std::fs::write(dir.join("official/LICENSE"), b"license").unwrap();
+        let mut record = catalog::record_from_catalog_runtime(runtime, catalog);
+        record.files = [
+            (
+                format!("official/lib/{ORT_RUNTIME_FILENAME}"),
+                b"runtime".as_slice(),
+            ),
+            (
+                "official/lib/companion.dll".to_owned(),
+                b"companion".as_slice(),
+            ),
+            ("official/LICENSE".to_owned(), b"license".as_slice()),
+        ]
+        .into_iter()
+        .map(|(path, bytes)| InstalledFileRecord {
+            path,
+            size: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+        })
+        .collect();
+        catalog::write_artifact_record(
+            &dir.join(runtime_bootstrap::RUNTIME_RECORD_FILENAME),
+            &record,
+        )
+        .unwrap();
+        runtime_bootstrap::write_slots(
+            temp.path(),
+            &RuntimeSlots {
+                active: Some(runtime.artifact_id.clone()),
+                ..RuntimeSlots::default()
+            },
+        )
+        .unwrap();
+
+        let identity = compute_runtime_identity(temp.path()).unwrap();
+        assert_eq!(identity.archive_sha256, record.archive_sha256);
+        assert_eq!(identity.extracted_library_sha256, sha256_hex(b"runtime"));
+        assert_eq!(
+            identity.companion_dll_sha256s,
+            vec![sha256_hex(b"companion")]
+        );
+    }
 }

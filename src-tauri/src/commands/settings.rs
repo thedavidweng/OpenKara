@@ -656,7 +656,6 @@ mod tests {
 
     #[test]
     fn settings_snapshot_uses_platform_default_execution_provider_when_unset() {
-        let _guard = crate::platform_capabilities::directml_timeout_test_guard();
         let settings = settings_from_config(&AppConfig {
             execution_provider: None,
             libraries: vec![],
@@ -675,7 +674,7 @@ mod tests {
         // A stale provider is normalized to the platform default and must
         // still be a member of the available list.
         let settings = settings_from_config(&AppConfig {
-            execution_provider: Some(ExecutionProviderPreference::DirectMl),
+            execution_provider: Some(ExecutionProviderPreference::Xnnpack),
             ..AppConfig::default()
         });
         assert!(
@@ -690,7 +689,6 @@ mod tests {
 
     #[test]
     fn settings_reports_compatible_execution_providers() {
-        let _guard = crate::platform_capabilities::directml_timeout_test_guard();
         let settings = settings_from_config(&AppConfig::default());
 
         assert!(settings.compatible_execution_providers.contains(&"cpu"));
@@ -719,27 +717,9 @@ mod tests {
 
     #[test]
     fn parse_and_validate_rejects_known_unavailable_provider() {
-        // directml is known but Windows-only. On non-Windows hosts it must be
-        // rejected with the platform-availability message. On Windows it is
-        // valid, so we skip the rejection assertion there.
-        #[cfg(not(target_os = "windows"))]
-        {
-            let error = parse_and_validate_execution_provider("directml")
-                .expect_err("directml should be rejected off Windows");
-            assert!(
-                error
-                    .message
-                    .contains("execution provider 'directml' is unavailable on this platform"),
-                "unexpected message: {}",
-                error.message,
-            );
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let ep = parse_and_validate_execution_provider("directml")
-                .expect("directml should be accepted on Windows");
-            assert_eq!(ep.as_str(), "directml");
-        }
+        let error = parse_and_validate_execution_provider("xnnpack")
+            .expect_err("xnnpack is not offered by the official runtimes");
+        assert!(error.message.contains("unavailable on this platform"));
     }
 
     #[test]

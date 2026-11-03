@@ -309,11 +309,11 @@ describe("SettingsExecutionProviderSection rendering", () => {
     expect(markup).not.toContain("settings.executionProvider.auto");
   });
 
-  test("Windows provider list renders DirectML once and can mark it selected", async () => {
+  test("Windows provider list renders WebGPU once and can mark it selected", async () => {
     const harness = await createInitializedSettingsHarness({
       settings: {
-        execution_provider: "directml",
-        available_execution_providers: ["cpu", "xnnpack", "directml"],
+        execution_provider: "webgpu",
+        available_execution_providers: ["cpu", "xnnpack", "webgpu"],
         compatible_execution_providers: ["cpu", "xnnpack"],
       },
     });
@@ -323,10 +323,8 @@ describe("SettingsExecutionProviderSection rendering", () => {
       harness.controller,
     );
 
-    expect(markup).toContain("settings.executionProvider.directml");
-    expect(
-      (markup.match(/settings\.executionProvider\.directml</g) ?? []).length,
-    ).toBe(1);
+    expect(markup).toContain("WebGPU");
+    expect((markup.match(/WebGPU</g) ?? []).length).toBe(1);
     expect(markup).toContain("settings.executionProvider.cpu");
     expect(markup).toContain("settings.executionProvider.xnnpack");
     expect(markup).toContain("settings.executionProvider.incompatibleWarning");

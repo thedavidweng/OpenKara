@@ -18,6 +18,10 @@ impl<T> Default for ModelCache<T> {
 }
 
 impl<T> ModelCache<T> {
+    pub fn cached(&self) -> Option<&T> {
+        self.cached_model.as_deref()
+    }
+
     pub fn get_or_load_with(
         &mut self,
         path: &Path,

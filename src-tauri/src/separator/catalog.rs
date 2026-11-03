@@ -2,7 +2,7 @@
 //!
 //! The catalog has two layers:
 //!
-//! 1. A mutable **stable pointer** (`catalog/channels/stable.json` on the
+//! 1. A mutable **stable pointer** (`catalog/channels/stable-v2.json` on the
 //!    `openkara-models` default branch) naming the current generation and the
 //!    immutable release manifest's URL, byte size, and SHA-256.
 //! 2. An immutable **release manifest** (a content-addressed release asset)
@@ -32,11 +32,38 @@ use std::sync::OnceLock;
 /// Where the stable channel pointer lives. The repository is the trust root;
 /// manifest bytes fetched through it are still digest-verified.
 pub const STABLE_POINTER_URL: &str =
-    "https://raw.githubusercontent.com/thedavidweng/openkara-models/main/catalog/channels/stable.json";
+    "https://raw.githubusercontent.com/thedavidweng/openkara-models/main/catalog/channels/stable-v2.json";
 
 pub const POINTER_SCHEMA_VERSION: &str = "openkara.catalog/channel-v1";
 pub const RELEASE_SCHEMA_VERSION: &str = "openkara.catalog/release-v1";
+pub const POINTER_SCHEMA_VERSION_V2: &str = "openkara.catalog/channel-v2";
+pub const RELEASE_SCHEMA_VERSION_V2: &str = "openkara.catalog/release-v2";
 pub const INSTALLED_IDENTITY_SCHEMA_VERSION: &str = "openkara.app/installed-artifact-v1";
+
+#[derive(Debug)]
+pub struct UnsupportedCatalogFormat(pub String);
+
+impl std::fmt::Display for UnsupportedCatalogFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unsupported catalog format {}; update OpenKara to continue",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedCatalogFormat {}
+
+pub fn notify_unsupported_catalog<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    error: &anyhow::Error,
+) {
+    use tauri::Emitter;
+    if let Some(unsupported) = error.downcast_ref::<UnsupportedCatalogFormat>() {
+        let _ = app.emit("catalog-upgrade-required", &unsupported.0);
+    }
+}
 
 /// The target triple this build installs runtime artifacts for. The catalog
 /// keys runtimes by target triple, so this is the single remaining
@@ -101,6 +128,21 @@ pub struct ReleaseManifest {
 pub struct CatalogArtifacts {
     pub models: Vec<CatalogModel>,
     pub runtimes: Vec<CatalogRuntime>,
+    #[serde(default)]
+    pub plugins: Vec<CatalogPlugin>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogPlugin {
+    pub artifact_id: String,
+    pub target_triple: String,
+    pub provider: String,
+    pub version: String,
+    pub filename: String,
+    pub byte_size: u64,
+    pub archive_digest: String,
+    pub download_url: String,
+    pub extracted_file_digests: std::collections::BTreeMap<String, CatalogFileDigest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,17 +491,22 @@ fn is_trusted_https_url(value: &str) -> bool {
     value.starts_with("https://")
 }
 
+#[derive(Deserialize)]
+struct CatalogSchema {
+    schema_version: String,
+}
+
 pub fn parse_stable_pointer(bytes: &[u8]) -> Result<StablePointer> {
+    let schema: CatalogSchema =
+        serde_json::from_slice(bytes).context("failed to parse stable catalog pointer")?;
+    if !matches!(
+        schema.schema_version.as_str(),
+        POINTER_SCHEMA_VERSION | POINTER_SCHEMA_VERSION_V2
+    ) {
+        return Err(UnsupportedCatalogFormat(schema.schema_version).into());
+    }
     let pointer: StablePointer =
         serde_json::from_slice(bytes).context("failed to parse stable catalog pointer")?;
-
-    if pointer.schema_version != POINTER_SCHEMA_VERSION {
-        bail!(
-            "unsupported catalog pointer schema {} (expected {})",
-            pointer.schema_version,
-            POINTER_SCHEMA_VERSION
-        );
-    }
     if pointer.channel != "stable" {
         bail!("unexpected catalog channel {}", pointer.channel);
     }
@@ -511,16 +558,18 @@ pub fn verify_and_parse_manifest(bytes: &[u8], pointer: &StablePointer) -> Resul
         );
     }
 
+    let expected_schema = match pointer.schema_version.as_str() {
+        POINTER_SCHEMA_VERSION => RELEASE_SCHEMA_VERSION,
+        POINTER_SCHEMA_VERSION_V2 => RELEASE_SCHEMA_VERSION_V2,
+        _ => return Err(UnsupportedCatalogFormat(pointer.schema_version.clone()).into()),
+    };
+    let schema: CatalogSchema =
+        serde_json::from_slice(bytes).context("failed to parse release manifest")?;
+    if schema.schema_version != expected_schema {
+        return Err(UnsupportedCatalogFormat(schema.schema_version).into());
+    }
     let manifest: ReleaseManifest =
         serde_json::from_slice(bytes).context("failed to parse release manifest")?;
-
-    if manifest.schema_version != RELEASE_SCHEMA_VERSION {
-        bail!(
-            "unsupported release manifest schema {} (expected {})",
-            manifest.schema_version,
-            RELEASE_SCHEMA_VERSION
-        );
-    }
     if manifest.generation != pointer.generation {
         bail!(
             "release manifest generation {} does not match pointer generation {}",
@@ -553,6 +602,19 @@ fn validate_manifest(manifest: &ReleaseManifest) -> Result<()> {
 
     let mut artifact_ids = HashSet::new();
     let mut runtime_ids = HashSet::new();
+
+    for plugin in &manifest.artifacts.plugins {
+        if !artifact_ids.insert(plugin.artifact_id.as_str()) {
+            bail!("duplicate artifact id {}", plugin.artifact_id);
+        }
+        if plugin.provider != "webgpu"
+            || plugin.byte_size == 0
+            || !is_sha256_hex(&plugin.archive_digest)
+            || !is_trusted_https_url(&plugin.download_url)
+        {
+            bail!("invalid plugin artifact {}", plugin.artifact_id);
+        }
+    }
 
     for runtime in &manifest.artifacts.runtimes {
         if !artifact_ids.insert(runtime.artifact_id.as_str()) {
@@ -713,6 +775,11 @@ pub fn resolve_runtime<'a>(
         .filter(|runtime| {
             runtime.target_triple.as_deref() == Some(target_triple)
                 && !runtime.deprecation.deprecated
+                && runtime
+                    .runtime
+                    .execution_providers
+                    .iter()
+                    .all(|provider| matches!(provider.as_str(), "cpu" | "coreml" | "xnnpack"))
         })
         .collect();
 
@@ -738,45 +805,16 @@ pub fn runtime_by_artifact_id<'a>(
         .find(|runtime| runtime.artifact_id == artifact_id)
 }
 
-/// Pick the runtime that declares the preferred execution provider.
-///
-/// DirectML preference selects a runtime advertising `directml`; any other
-/// preference selects the runtime whose provider list is exactly `["cpu"]`,
-/// falling back to one that does not advertise `directml`.
+/// Prefer the official CPU runtime when several compatible archives are listed.
 fn runtime_supporting_ep<'a>(
     runtimes: &[&'a CatalogRuntime],
-    preferred_ep: ExecutionProviderPreference,
+    _preferred_ep: ExecutionProviderPreference,
 ) -> Option<&'a CatalogRuntime> {
-    let advertises = |rt: &CatalogRuntime, ep: &str| {
-        rt.runtime
-            .execution_providers
-            .iter()
-            .any(|provider| provider == ep)
-    };
-
-    if matches!(preferred_ep, ExecutionProviderPreference::DirectMl) {
-        return runtimes
-            .iter()
-            .copied()
-            .find(|rt| advertises(rt, "directml"))
-            .or_else(|| {
-                runtimes
-                    .iter()
-                    .copied()
-                    .find(|rt| rt.runtime.execution_providers == ["cpu"])
-            });
-    }
-
     runtimes
         .iter()
         .copied()
-        .find(|rt| rt.runtime.execution_providers == ["cpu"])
-        .or_else(|| {
-            runtimes
-                .iter()
-                .copied()
-                .find(|rt| !advertises(rt, "directml"))
-        })
+        .find(|runtime| runtime.runtime.execution_providers == ["cpu"])
+        .or_else(|| runtimes.first().copied())
 }
 
 /// The only tensor interface this build can load (the spectral session is
@@ -1001,10 +1039,7 @@ mod tests {
         // older consumers, compressed preferred); both variants must resolve.
         assert!(catalog.manifest.artifacts.models.len() >= 2);
         // Superseded runtimes stay listed but deprecated; at least one active
-        // runtime per supported target must remain resolvable. Windows may
-        // publish more than one active runtime (CPU + DirectML) once issue
-        // OpenKara/OpenKara#284's CPU artifact lands; the count assertion is a
-        // floor, not an exact match.
+        // runtime per supported target must remain resolvable.
         let active: Vec<_> = catalog
             .manifest
             .artifacts
@@ -1026,8 +1061,8 @@ mod tests {
         for target in &targets {
             resolve_runtime(&catalog.manifest, target, Ep::Cpu)
                 .expect("active target must resolve for CPU preference");
-            resolve_runtime(&catalog.manifest, target, Ep::DirectMl)
-                .expect("active target must resolve for DirectML preference");
+            resolve_runtime(&catalog.manifest, target, Ep::WebGpu)
+                .expect("active target must resolve for WebGPU preference");
         }
         assert!(!catalog.manifest.compatibility.is_empty());
     }
@@ -1063,11 +1098,11 @@ mod tests {
     }
 
     #[test]
-    fn every_runtime_in_embedded_snapshot_records_api_level_27() {
+    fn every_runtime_in_embedded_snapshot_records_api_level_31() {
         for runtime in &embedded_catalog().manifest.artifacts.runtimes {
             assert_eq!(
-                runtime.runtime.ort_c_api_level, "27",
-                "runtime {} must record ORT C API level 27",
+                runtime.runtime.ort_c_api_level, "31",
+                "runtime {} must record ORT C API level 31",
                 runtime.artifact_id
             );
         }
@@ -1110,58 +1145,29 @@ mod tests {
             artifacts: CatalogArtifacts {
                 models: vec![],
                 runtimes,
+                plugins: vec![],
             },
             compatibility: vec![],
         }
     }
 
     #[test]
-    fn resolve_runtime_picks_single_active_runtime_regardless_of_ep() {
+    fn resolve_runtime_rejects_unsupported_legacy_provider() {
         use crate::config::ExecutionProviderPreference as Ep;
-
-        let manifest = manifest_with_runtimes(vec![runtime_fixture(
-            "rt-windows-dml",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        )]);
-
-        let cpu =
-            resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu).expect("cpu resolves");
-        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
-            .expect("dml resolves");
-        assert_eq!(cpu.artifact_id, "rt-windows-dml");
-        assert_eq!(dml.artifact_id, "rt-windows-dml");
-    }
-
-    #[test]
-    fn resolve_runtime_disambiguates_windows_cpu_and_directml_by_ep() {
-        use crate::config::ExecutionProviderPreference as Ep;
-
-        // A CPU-only runtime ships alongside the DirectML runtime on the same
-        // Windows target.
         let manifest = manifest_with_runtimes(vec![
-            runtime_fixture("rt-windows-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
             runtime_fixture(
-                "rt-windows-dml",
+                "rt-legacy",
                 "x86_64-pc-windows-msvc",
-                &["cpu", "directml"],
+                &["cpu", "legacy-gpu"],
             ),
+            runtime_fixture("rt-cpu", "x86_64-pc-windows-msvc", &["cpu"]),
         ]);
-
-        // CPU preference must pick the CPU-only runtime.
-        let cpu = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
-            .expect("cpu preference resolves the cpu-only runtime");
-        assert_eq!(cpu.artifact_id, "rt-windows-cpu");
-        assert_eq!(cpu.runtime.execution_providers, vec!["cpu".to_owned()]);
-
-        let dml = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::DirectMl)
-            .expect("directml preference resolves the dml runtime");
-        assert_eq!(dml.artifact_id, "rt-windows-dml");
-        assert!(dml
-            .runtime
-            .execution_providers
-            .iter()
-            .any(|provider| provider == "directml"));
+        assert_eq!(
+            resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::WebGpu)
+                .unwrap()
+                .artifact_id,
+            "rt-cpu"
+        );
     }
 
     #[test]
@@ -1178,20 +1184,13 @@ mod tests {
     fn resolve_runtime_skips_deprecated_runtimes() {
         use crate::config::ExecutionProviderPreference as Ep;
 
-        let mut deprecated_full = runtime_fixture(
-            "rt-windows-full",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        );
+        let mut deprecated_full =
+            runtime_fixture("rt-windows-full", "x86_64-pc-windows-msvc", &["cpu"]);
         deprecated_full.deprecation = CatalogDeprecation {
             deprecated: true,
             replacement_artifact_id: Some("rt-windows-reduced".to_owned()),
         };
-        let reduced = runtime_fixture(
-            "rt-windows-reduced",
-            "x86_64-pc-windows-msvc",
-            &["cpu", "directml"],
-        );
+        let reduced = runtime_fixture("rt-windows-reduced", "x86_64-pc-windows-msvc", &["cpu"]);
         let manifest = manifest_with_runtimes(vec![deprecated_full, reduced]);
 
         let resolved = resolve_runtime(&manifest, "x86_64-pc-windows-msvc", Ep::Cpu)
@@ -1226,9 +1225,32 @@ mod tests {
         let bytes = serde_json::to_vec(&pointer_json).expect("serialize pointer");
         let error =
             parse_stable_pointer(&bytes).expect_err("unsupported pointer schema must be rejected");
-        assert!(error
-            .to_string()
-            .contains("unsupported catalog pointer schema"));
+        assert!(error.downcast_ref::<UnsupportedCatalogFormat>().is_some());
+        assert!(error.to_string().contains("update OpenKara"));
+    }
+
+    #[test]
+    fn accepts_v2_catalog_and_plugin_metadata() {
+        let mut manifest = manifest_json();
+        manifest["schema_version"] = RELEASE_SCHEMA_VERSION_V2.into();
+        manifest["artifacts"]["plugins"] = serde_json::json!([{
+            "artifact_id": "webgpu-macos",
+            "target_triple": "aarch64-apple-darwin",
+            "provider": "webgpu",
+            "version": "0.5.0",
+            "filename": "webgpu.whl",
+            "byte_size": 1,
+            "archive_digest": "a".repeat(64),
+            "download_url": "https://example.invalid/webgpu.whl",
+            "extracted_file_digests": {}
+        }]);
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let mut pointer = pointer_for(&bytes);
+        pointer.schema_version = POINTER_SCHEMA_VERSION_V2.into();
+        let parsed = verify_and_parse_manifest(&bytes, &pointer).unwrap();
+        assert_eq!(parsed.artifacts.plugins[0].provider, "webgpu");
+        pointer.schema_version = POINTER_SCHEMA_VERSION.into();
+        assert!(verify_and_parse_manifest(&bytes, &pointer).is_err());
     }
 
     #[test]
@@ -1237,9 +1259,20 @@ mod tests {
             manifest["schema_version"] = "openkara.catalog/release-v999".into();
         })
         .expect_err("unsupported release schema must be rejected");
-        assert!(error
-            .to_string()
-            .contains("unsupported release manifest schema"));
+        assert!(error.downcast_ref::<UnsupportedCatalogFormat>().is_some());
+        assert!(error.to_string().contains("update OpenKara"));
+    }
+
+    #[test]
+    fn unsupported_schema_is_reported_before_new_fields_are_parsed() {
+        let pointer = br#"{"schema_version":"openkara.catalog/channel-v999"}"#;
+        let error = parse_stable_pointer(pointer).expect_err("unsupported pointer");
+        assert!(error.downcast_ref::<UnsupportedCatalogFormat>().is_some());
+
+        let manifest = br#"{"schema_version":"openkara.catalog/release-v999"}"#;
+        let error = verify_and_parse_manifest(manifest, &pointer_for(manifest))
+            .expect_err("unsupported manifest");
+        assert!(error.downcast_ref::<UnsupportedCatalogFormat>().is_some());
     }
 
     #[test]

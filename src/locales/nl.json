@@ -589,10 +589,6 @@
         "loadFailed": "Laden van ONNX Runtime mislukt: {{error}}",
         "loadFailedHint": "De runtime is gedownload, maar kan niet worden geladen; dit is geen netwerkprobleem. Bekijk de foutdetails.",
         "retryDownload": "Opnieuw"
-      },
-      "cpuFallbackToast": {
-        "title": "Alleen-CPU ONNX-runtime wordt gebruikt",
-        "message": "OpenKara gebruikt de alleen-CPU ONNX-runtime. De GPU-runtime reageerde niet. Vocaalscheiding werkt nog steeds. Het is langzamer."
       }
     },
     "hideBatchSeparate": {
@@ -704,10 +700,9 @@
       "cpuDescription": "Alleen software — werkt op alle apparaten, langzaamst",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD-versnelde CPU — sneller op Apple Silicon en moderne x86",
-      "directml": "DirectML",
-      "directmlDescription": "DirectX 12 GPU-versnelling voor Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Neural Engine- en GPU-versnelling voor Apple Silicon",
+      "coremlDescription": "Core ML-versnelling voor macOS",
+      "webgpuDescription": "WebGPU-versnelling",
       "incompatible": "Niet compatibel",
       "incompatibleWarning": "Deze provider is niet compatibel met dit apparaat. Schakel in Instellingen over naar CPU.",
       "note": "Wijzigingen worden van kracht bij de volgende scheiding."
@@ -886,7 +881,8 @@
     "installing": "Update afronden…",
     "restartToApply": "Update klaar — start opnieuw op om toe te passen",
     "restart": "Opnieuw opstarten",
-    "failed": "Update mislukt — download de nieuwste release handmatig"
+    "failed": "Update mislukt — download de nieuwste release handmatig",
+    "catalogUpgradeRequired": "Deze catalogus vereist een nieuwere versie van OpenKara. Werk OpenKara bij om door te gaan."
   },
   "catalog": {
     "streaming": {

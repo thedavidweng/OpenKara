@@ -589,10 +589,6 @@
         "loadFailed": "ONNX Runtime の読み込みに失敗しました: {{error}}",
         "loadFailedHint": "ONNX Runtime はダウンロード済みですが読み込めません。ネットワークの問題ではありません。エラー詳細を確認してください。",
         "retryDownload": "再試行"
-      },
-      "cpuFallbackToast": {
-        "title": "CPU 専用の ONNX Runtime を使用中",
-        "message": "このマシンでは GPU ランタイムが応答しなかったため、CPU ランタイムに切り替えました。ボーカル分離は機能しますが、速度が遅くなります。"
       }
     },
     "hideBatchSeparate": {
@@ -704,10 +700,9 @@
       "cpuDescription": "ソフトウェアのみ — すべてのデバイスで動作、最も低速",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "SIMD で高速化された CPU — Apple Silicon や最新の x86 で高速",
-      "directml": "DirectML",
-      "directmlDescription": "Windows 向けの DirectX 12 GPU アクセラレーション",
       "coreml": "CoreML",
-      "coremlDescription": "Apple Silicon の Neural Engine と GPU によるアクセラレーション",
+      "coremlDescription": "macOS 向けの Core ML アクセラレーション",
+      "webgpuDescription": "WebGPU アクセラレーション",
       "incompatible": "互換性なし",
       "incompatibleWarning": "このプロバイダーはこのデバイスと互換性がありません。設定で CPU に切り替えてください。",
       "note": "変更は次回の分離から有効になります。"
@@ -886,7 +881,8 @@
     "installing": "更新をインストール中…",
     "restartToApply": "更新の準備ができました — 再起動して適用してください",
     "restart": "再起動",
-    "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください"
+    "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください",
+    "catalogUpgradeRequired": "このカタログには新しいバージョンの OpenKara が必要です。OpenKara を更新してください。"
   },
   "catalog": {
     "streaming": {

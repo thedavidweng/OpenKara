@@ -151,7 +151,7 @@ fn bench_preference(
     preference: ExecutionProviderPreference,
 ) -> serde_json::Value {
     let cold_start = Instant::now();
-    let model = model::load_from_path(model_path, preference, model::SessionOptions::default())
+    let model = model::load_from_path(model_path, preference)
         .expect("spectral model should load via the preference's fallback chain");
     let cold_load_s = cold_start.elapsed().as_secs_f64();
     // A loaded model always carries a verified spectral interface.
@@ -210,7 +210,7 @@ fn spectral_candidate_bench() {
     let artifact_bytes = fs::metadata(&model_path).expect("model metadata").len();
 
     // Baseline (CPU EP) plus the product's platform default (XNNPACK on
-    // Apple Silicon, DirectML on capable Windows hosts) — measured side by
+    // Apple Silicon, WebGPU on Windows hosts) — measured side by
     // side so per-target
     // provider selection (#170) is data-driven from every dispatch of the
     // cross-target workflow, with no manual experiments. On machines

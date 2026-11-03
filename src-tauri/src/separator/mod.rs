@@ -13,4 +13,6 @@ pub mod runtime_bootstrap;
 pub mod spectral;
 pub mod spectral_session;
 pub mod verified_manifest;
+pub mod webgpu;
+mod webgpu_validation;
 pub mod workspace;

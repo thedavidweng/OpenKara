@@ -7,8 +7,8 @@
 1. 应用启动时优先检查 `<app_data_dir>/models/htdemucs.onnx`
 2. 若运行时安装目录缺失模型，则回退检查开发目录 `src-tauri/models/htdemucs.onnx`
 3. 若两处都没有可验证的模型，应用启动后会在后台下载模型到 `<app_data_dir>/models/`
-4. 应用启动时会先显式加载 `src-tauri/generated/onnxruntime/` 或已打包资源中的
-   ONNX Runtime 动态库
+4. 应用使用 `<app_data_dir>/runtimes/` 中已验证的 ONNX Runtime；缺失时按
+   catalog 下载并安装，开发和测试可使用 `src-tauri/generated/onnxruntime/`
 5. 分离会复用同一份动态库初始化，不再依赖 `ort`/pyke 自动下载预编译运行时
 6. `get_model_bootstrap_status() -> ModelBootstrapStatusSnapshot`
 7. `separate(song_id)` 在模型未 ready 时立即返回 `CommandError`
@@ -24,8 +24,8 @@
 2. `scripts/setup.sh` 只用于本地开发、离线验证或需要稳定模型输入的测试
 3. `scripts/prepare-onnx-runtime.mjs` 负责把目标平台对应的 ONNX Runtime
    动态库下载并规整到 `src-tauri/generated/onnxruntime/`
-4. 面向终端用户时，默认安装位置是 `<app_data_dir>/models/`，不是仓库目录；
-   但打包产物会随应用一起分发 ONNX Runtime 动态库
+4. 面向终端用户时，模型和 runtime 分别安装在 `<app_data_dir>/models/` 和
+   `<app_data_dir>/runtimes/`，不是仓库目录
 5. 模型的 URL、SHA-256、文件名和版本 **只** 来自 pinned catalog 快照
    `src-tauri/catalog/release-manifest.json`（见下节）。应用（Rust catalog
    客户端）、`scripts/resolve-model.mjs`、`scripts/setup.sh` 与 CI 全部消费同
@@ -41,12 +41,12 @@
 模型基础设施的权威来源是 `thedavidweng/openkara-models` 发布的两层 catalog：
 
 1. **稳定指针**（可变，位于该仓库 `main` 分支
-   `catalog/channels/stable.json`）：声明当前 generation、release ID，以及
+   `catalog/channels/stable-v2.json`）：声明当前 generation、release ID，以及
    不可变清单的 URL、字节数与 SHA-256。schema 为
-   `openkara.catalog/channel-v1`。
+   `openkara.catalog/channel-v2`。
 2. **不可变发布清单**（内容寻址的 release 资产）：列出模型与 runtime 工件
    （artifact ID、digest、byte size、下载 URL、兼容性边）。schema 为
-   `openkara.catalog/release-v1`。
+   `openkara.catalog/release-v2`。
 
 应用侧规则（`src-tauri/src/separator/catalog.rs`）：
 
@@ -54,6 +54,9 @@
   锚：模型解析永不依赖网络；catalog 刷新失败绝不使已验证的安装失效。
 - 网络刷新时：先按指针声明的字节数与 SHA-256 验证清单原始字节，**验证通过
   后才解析**；拒绝 generation 低于内嵌快照的指针（stable 通道单调递增）。
+- 应用支持 `channel-v1` / `release-v1` 和 `channel-v2` / `release-v2` 配对。
+  遇到不支持的格式时，后端发送 `catalog-upgrade-required` 事件，payload 为格式
+  字符串；更新横幅提示升级并使用现有应用更新流程。
 - 清单结构校验：artifact ID 唯一、digest 为 64 位十六进制、URL 必须 HTTPS、
   `tensor_interface` 必须为 `waveform` 或 `spectral-core`、每个模型的
   `compatible_runtime_ids` 非空且指向已知 runtime、兼容性边非空、每个模型
@@ -238,8 +241,8 @@ installation. They are separate from the model bootstrap flow.
   "runtime_path": "/path/to/onnxruntime/lib",
   "downloaded_bytes": null,
   "total_bytes": null,
-  "version": "v1.27.1",
-  "active_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
+  "version": "v1.31.1",
+  "active_artifact_id": "onnxruntime-1.31.1-aarch64-apple-darwin",
   "target_triple": "aarch64-apple-darwin",
   "candidate_version": null,
   "restart_required": false,
@@ -249,20 +252,19 @@ installation. They are separate from the model bootstrap flow.
 
 ### Shared type: `RuntimeBootstrapStatusSnapshot`
 
-| Field                 | Type                                                                                                                                                                                                                                          | Notes                                                                                                                                                                                                                                                   |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `state`               | `"missing" \| "downloading" \| "installing" \| "probing" \| "activating" \| "ready" \| "update_available" \| "downloading_candidate" \| "candidate_ready_restart_required" \| "activation_failed_previous_restored" \| "corrupt" \| "failed"` | Runtime lifecycle state                                                                                                                                                                                                                                 |
-| `runtime_path`        | `String`                                                                                                                                                                                                                                      | Active runtime library path, or target install path                                                                                                                                                                                                     |
-| `downloaded_bytes`    | `Option<u64>`                                                                                                                                                                                                                                 | Present during `downloading` / `downloading_candidate`                                                                                                                                                                                                  |
-| `total_bytes`         | `Option<u64>`                                                                                                                                                                                                                                 | Present when the download endpoint returns `Content-Length`                                                                                                                                                                                             |
-| `version`             | `String`                                                                                                                                                                                                                                      | Active runtime upstream version; `legacy` for pre-slot installs; pinned catalog version when nothing is installed                                                                                                                                       |
-| `active_artifact_id`  | `Option<String>`                                                                                                                                                                                                                              | Active runtime artifact ID, when a slot install is active                                                                                                                                                                                               |
-| `target_triple`       | `String`                                                                                                                                                                                                                                      | Runtime target triple for this build                                                                                                                                                                                                                    |
-| `candidate_version`   | `Option<String>`                                                                                                                                                                                                                              | Upstream version of the staged candidate, when one exists                                                                                                                                                                                               |
-| `restart_required`    | `bool`                                                                                                                                                                                                                                        | `true` when a candidate is staged and activation requires restart                                                                                                                                                                                       |
-| `error`               | `Option<CommandError>`                                                                                                                                                                                                                        | Present when `state = failed`                                                                                                                                                                                                                           |
-| `failure_phase`       | `Option<"download" \| "install" \| "probe" \| "activate">`                                                                                                                                                                                    | Bootstrap step where a `failed` state's error originated. `None` when the failure cannot be classified (including payloads from older backends); consumers fall back to download-failure copy. The serializer omits the field when the value is `None`. |
-| `cpu_fallback_notice` | `Option<String>`                                                                                                                                                                                                                              | Set when the active runtime is the CPU-only Windows artifact and a DirectML load timeout was recorded (see ADR 0023). The serializer omits the field when the value is `None`.                                                                          |
+| Field                | Type                                                                                                                                                                                                                                          | Notes                                                                                                                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`              | `"missing" \| "downloading" \| "installing" \| "probing" \| "activating" \| "ready" \| "update_available" \| "downloading_candidate" \| "candidate_ready_restart_required" \| "activation_failed_previous_restored" \| "corrupt" \| "failed"` | Runtime lifecycle state                                                                                                                                                                                                                                 |
+| `runtime_path`       | `String`                                                                                                                                                                                                                                      | Active runtime library path, or target install path                                                                                                                                                                                                     |
+| `downloaded_bytes`   | `Option<u64>`                                                                                                                                                                                                                                 | Present during `downloading` / `downloading_candidate`                                                                                                                                                                                                  |
+| `total_bytes`        | `Option<u64>`                                                                                                                                                                                                                                 | Present when the download endpoint returns `Content-Length`                                                                                                                                                                                             |
+| `version`            | `String`                                                                                                                                                                                                                                      | Active runtime upstream version; `legacy` for pre-slot installs; pinned catalog version when nothing is installed                                                                                                                                       |
+| `active_artifact_id` | `Option<String>`                                                                                                                                                                                                                              | Active runtime artifact ID, when a slot install is active                                                                                                                                                                                               |
+| `target_triple`      | `String`                                                                                                                                                                                                                                      | Runtime target triple for this build                                                                                                                                                                                                                    |
+| `candidate_version`  | `Option<String>`                                                                                                                                                                                                                              | Upstream version of the staged candidate, when one exists                                                                                                                                                                                               |
+| `restart_required`   | `bool`                                                                                                                                                                                                                                        | `true` when a candidate is staged and activation requires restart                                                                                                                                                                                       |
+| `error`              | `Option<CommandError>`                                                                                                                                                                                                                        | Present when `state = failed`                                                                                                                                                                                                                           |
+| `failure_phase`      | `Option<"download" \| "install" \| "probe" \| "activate">`                                                                                                                                                                                    | Bootstrap step where a `failed` state's error originated. `None` when the failure cannot be classified (including payloads from older backends); consumers fall back to download-failure copy. The serializer omits the field when the value is `None`. |
 
 ### Command: `download_runtime`
 

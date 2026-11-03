@@ -1,7 +1,7 @@
 # ADR 0024 — Windows runtime load strategy
 
 Date: 2026-08-11
-Status: accepted; decision 1 (app-local VC++ CRT DLLs) superseded by 0025
+Status: accepted; decision 1 superseded by 0025, DirectML-specific details superseded by 0046
 
 ## Context
 

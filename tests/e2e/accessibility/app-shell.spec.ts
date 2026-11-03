@@ -27,6 +27,28 @@ test.describe("App shell accessibility", () => {
     await a11y.axeForThemes();
   });
 
+  test("unsupported catalog guidance is accessible by keyboard", async ({
+    page,
+    a11y,
+  }) => {
+    await page.setViewportSize({ width: 400, height: 700 });
+    await page.addInitScript(() => Object.assign(window, { isTauri: true }));
+    await page.reload();
+    await expect(page.getByText("Earfquake")).toBeVisible();
+    await page.evaluate(() =>
+      window.__OPENKARA_E2E__.emitEvent(
+        "catalog-upgrade-required",
+        "openkara.catalog/channel-v999",
+      ),
+    );
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("requires a newer OpenKara version");
+    const button = alert.getByRole("button");
+    await button.focus();
+    await expect(button).toBeFocused();
+    await a11y.axeForThemes();
+  });
+
   test("window chrome and drag region do not trap keyboard focus", async ({
     page,
   }) => {

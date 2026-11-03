@@ -78,6 +78,25 @@ describe("model resolver parity", () => {
     },
   );
 
+  test("candidate resolver verifies the v2 snapshot and rejects mismatched schemas", () => {
+    const program = `
+      import { readFileSync } from "node:fs";
+      import { selectModel, verifyManifestBytes } from "./scripts/fetch-candidate-model.mjs";
+      const pointer = JSON.parse(readFileSync("src-tauri/catalog/stable-pointer.json"));
+      const bytes = readFileSync("src-tauri/catalog/release-manifest.json");
+      const verified = verifyManifestBytes(pointer, bytes);
+      if (!selectModel(verified, "htdemucs", "spectral-core")) throw Error("missing model");
+      pointer.schema_version = "openkara.catalog/channel-v1";
+      try { verifyManifestBytes(pointer, bytes); } catch { process.exit(0); }
+      process.exit(1);
+    `;
+    expect(() =>
+      execFileSync("node", ["--input-type=module", "-e", program], {
+        cwd: projectRoot,
+      }),
+    ).not.toThrow();
+  });
+
   test("single-field output prints the raw value for shell consumers", () => {
     const sha = execFileSync(
       "node",

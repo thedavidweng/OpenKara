@@ -589,10 +589,6 @@
         "loadFailed": "การโหลด ONNX Runtime ล้มเหลว: {{error}}",
         "loadFailedHint": "ดาวน์โหลดรันไทม์แล้วแต่โหลดไม่ได้ ไม่ใช่ปัญหาเครือข่าย โปรดดูรายละเอียดข้อผิดพลาด",
         "retryDownload": "ลองใหม่"
-      },
-      "cpuFallbackToast": {
-        "title": "กำลังใช้ ONNX Runtime แบบ CPU เท่านั้น",
-        "message": "OpenKara ใช้ ONNX Runtime แบบ CPU เท่านั้น Runtime แบบ GPU ไม่ตอบสนอง การแยกเสียงร้องยังทำงานได้ แต่ช้ากว่า"
       }
     },
     "hideBatchSeparate": {
@@ -704,10 +700,9 @@
       "cpuDescription": "ซอฟต์แวร์เท่านั้น — ใช้ได้กับทุกอุปกรณ์ ช้าที่สุด",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU ที่เร่งด้วย SIMD — เร็วกว่าบน Apple Silicon และ x86 รุ่นใหม่",
-      "directml": "DirectML",
-      "directmlDescription": "การเร่ง GPU ด้วย DirectX 12 สำหรับ Windows",
       "coreml": "CoreML",
-      "coremlDescription": "การเร่ง Neural Engine และ GPU สำหรับ Apple Silicon",
+      "coremlDescription": "การเร่งด้วย Core ML สำหรับ macOS",
+      "webgpuDescription": "การเร่งด้วย WebGPU",
       "incompatible": "ไม่รองรับ",
       "incompatibleWarning": "ตัวประมวลผลนี้ไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
       "note": "การเปลี่ยนแปลงจะมีผลในการแยกเสียงครั้งถัดไป"
@@ -886,7 +881,8 @@
     "installing": "กำลังทำการอัปเดตให้เสร็จ…",
     "restartToApply": "การอัปเดตพร้อมแล้ว — รีสตาร์ทเพื่อใช้งาน",
     "restart": "รีสตาร์ท",
-    "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง"
+    "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง",
+    "catalogUpgradeRequired": "แค็ตตาล็อกนี้ต้องใช้ OpenKara เวอร์ชันใหม่กว่า โปรดอัปเดต OpenKara เพื่อดำเนินการต่อ"
   },
   "catalog": {
     "streaming": {

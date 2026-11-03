@@ -591,10 +591,6 @@
         "loadFailed": "Ładowanie ONNX Runtime nie powiodło się: {{error}}",
         "loadFailedHint": "ONNX Runtime jest pobrane, ale nie można go załadować; to nie jest problem z siecią. Sprawdź szczegóły błędu.",
         "retryDownload": "Ponów"
-      },
-      "cpuFallbackToast": {
-        "title": "Używanie środowiska ONNX Runtime tylko na CPU",
-        "message": "OpenKara używa środowiska ONNX Runtime tylko na CPU. Środowisko GPU nie odpowiedziało. Separacja wokali nadal działa. Jest wolniejsza."
       }
     },
     "hideBatchSeparate": {
@@ -706,10 +702,9 @@
       "cpuDescription": "Tylko programowo — działa na wszystkich urządzeniach, najwolniejsze",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU z akceleracją SIMD — szybsze na Apple Silicon i nowoczesnych x86",
-      "directml": "DirectML",
-      "directmlDescription": "Akceleracja GPU DirectX 12 dla systemu Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Akceleracja Neural Engine i GPU na urządzeniach Apple Silicon",
+      "coremlDescription": "Akceleracja Core ML w systemie macOS",
+      "webgpuDescription": "Akceleracja WebGPU",
       "incompatible": "Niezgodne",
       "incompatibleWarning": "Ten dostawca nie jest zgodny z tym urządzeniem. Przełącz na CPU w Ustawieniach.",
       "note": "Zmiany zaczną obowiązywać przy następnym rozdzielaniu."
@@ -888,7 +883,8 @@
     "installing": "Kończenie aktualizacji…",
     "restartToApply": "Aktualizacja gotowa — uruchom ponownie, aby zastosować",
     "restart": "Uruchom ponownie",
-    "failed": "Aktualizacja nie powiodła się — pobierz ręcznie najnowsze wydanie"
+    "failed": "Aktualizacja nie powiodła się — pobierz ręcznie najnowsze wydanie",
+    "catalogUpgradeRequired": "Ten katalog wymaga nowszej wersji OpenKara. Zaktualizuj OpenKara, aby kontynuować."
   },
   "catalog": {
     "streaming": {

@@ -1,7 +1,7 @@
 # ADR 0031 — DirectML graph fusion opt-out
 
 Date: 2026-09-28
-Status: accepted
+Status: superseded by 0046
 
 ## Context
 

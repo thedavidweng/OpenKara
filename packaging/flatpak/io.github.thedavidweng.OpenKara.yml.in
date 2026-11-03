@@ -46,7 +46,7 @@ modules:
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --no-bundle
       - install -Dm0755 src-tauri/target/release/openkara ${FLATPAK_DEST}/bin/openkara
       - install -Dm0644 src-tauri/generated/onnxruntime/libonnxruntime.so ${FLATPAK_DEST}/lib/openkara/onnxruntime/libonnxruntime.so
-      - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE.onnxruntime ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
+      - install -Dm0644 src-tauri/generated/onnxruntime-source/*/LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
       - install -Dm0644 LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/LICENSE
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.desktop ${FLATPAK_DEST}/share/applications/io.github.thedavidweng.OpenKara.desktop
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.thedavidweng.OpenKara.metainfo.xml
@@ -79,7 +79,7 @@ modules:
           - aarch64
       # ONNX Runtime archives come from the openkara-models catalog snapshot;
       # the renderer injects the URL and digest so no version is hand-pinned
-      # here. The catalog archives are flat (no directory prefix).
+      # here. Official archives contain a single top-level directory.
       - type: archive
         url: @@ORT_X64_URL@@
         sha256: @@ORT_X64_SHA256@@

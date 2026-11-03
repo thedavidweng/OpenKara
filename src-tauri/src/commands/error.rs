@@ -333,12 +333,12 @@ mod tests {
     #[test]
     fn incompatible_execution_provider_error_points_to_cpu() {
         let error =
-            execution_provider_unavailable(crate::config::ExecutionProviderPreference::DirectMl);
+            execution_provider_unavailable(crate::config::ExecutionProviderPreference::WebGpu);
 
         assert_eq!(error.code, ErrorCode::ExecutionProviderUnavailable);
         assert!(!error.retryable);
         assert_eq!(error.fallback, FallbackAction::KeepCurrentState);
-        assert!(error.message.contains("directml"));
+        assert!(error.message.contains("webgpu"));
         assert!(error.message.contains("switch to CPU in Settings"));
     }
 }

@@ -28,7 +28,6 @@ pub const RUNTIME_BOOTSTRAP_READY_EVENT: &str = "runtime-bootstrap-ready";
 pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
-const CPU_FALLBACK_NOTICE: &str = "cpu-runtime-fallback-after-directml-timeout";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,8 +60,6 @@ pub struct RuntimeBootstrapStatusSnapshot {
     pub error: Option<CommandError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_phase: Option<RuntimeBootstrapFailurePhase>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cpu_fallback_notice: Option<String>,
 }
 
 fn pinned_runtime_version() -> String {
@@ -138,8 +135,6 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         state
     };
 
-    let cpu_fallback_notice =
-        cpu_fallback_notice_for(&catalog::embedded_catalog().manifest, &active_artifact_id);
     RuntimeBootstrapStatusSnapshot {
         state,
         runtime_path,
@@ -152,28 +147,6 @@ pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrap
         restart_required,
         error,
         failure_phase,
-        cpu_fallback_notice,
-    }
-}
-
-fn cpu_fallback_notice_for(
-    manifest: &catalog::ReleaseManifest,
-    active_artifact_id: &Option<String>,
-) -> Option<String> {
-    if !crate::platform_capabilities::directml_disabled_by_timeout() {
-        return None;
-    }
-    let artifact_id = active_artifact_id.as_ref()?;
-    let runtime = catalog::runtime_by_artifact_id(manifest, artifact_id)?;
-    let is_cpu_only = runtime
-        .runtime
-        .execution_providers
-        .iter()
-        .all(|provider| provider.eq_ignore_ascii_case("cpu"));
-    if is_cpu_only {
-        Some(CPU_FALLBACK_NOTICE.to_owned())
-    } else {
-        None
     }
 }
 
@@ -427,7 +400,6 @@ pub fn install_and_load_runtime_blocking(
         &installed.library_path,
         ActivationTarget {
             install_key: Some(&install_key),
-            execution_providers: Some(&runtime.runtime.execution_providers),
         },
     )?;
     runtime_bootstrap::activate_first_install(app_data_dir, &install_key)
@@ -479,7 +451,6 @@ fn try_activate_staged_runtime(
         &installed.library_path,
         ActivationTarget {
             install_key: Some(&install_key),
-            execution_providers: None,
         },
     )?;
     report_post_download_progress(status, emit, &base, RuntimeBootstrapState::Activating);
@@ -594,7 +565,6 @@ pub fn ensure_runtime_ready_or_install_blocking(
         let install_key = active.install_key();
         let target = ActivationTarget {
             install_key: Some(&install_key),
-            execution_providers: None,
         };
         return match activation::load_with_watchdog(app_data_dir, &active.library_path, target) {
             Ok(library_path) => Ok(publish_ready(app_data_dir, status, emit, library_path)),
@@ -793,6 +763,7 @@ pub struct RuntimeUpdateReport {
 
 #[tauri::command]
 pub async fn check_runtime_updates(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> CommandResult<RuntimeUpdateReport> {
     let app_data_dir = state.shell.app_data_dir.clone();
@@ -801,8 +772,10 @@ pub async fn check_runtime_updates(
 
     let report =
         tauri::async_runtime::spawn_blocking(move || -> CommandResult<RuntimeUpdateReport> {
-            let catalog = catalog::fetch_stable_catalog()
-                .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
+            let catalog = catalog::fetch_stable_catalog().map_err(|error| {
+                catalog::notify_unsupported_catalog(&app_handle, &error);
+                model_bootstrap_error(format!("update check failed: {error}"))
+            })?;
             let runtime = catalog::resolve_runtime(
                 &catalog.manifest,
                 catalog::current_target_triple(),
@@ -963,7 +936,7 @@ mod tests {
         let snapshot = snapshot_from_inventory(&empty_inventory());
         assert_eq!(snapshot.state, RuntimeBootstrapState::Missing);
         assert!(!snapshot.restart_required);
-        assert_eq!(snapshot.version, "v1.27.1");
+        assert_eq!(snapshot.version, "v1.31.1");
         assert_eq!(
             snapshot.target_triple,
             catalog::current_target_triple().to_owned()
@@ -1098,7 +1071,6 @@ mod tests {
                 restart_required: false,
                 error: None,
                 failure_phase: None,
-                cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
             assert!(ensure_runtime_ready(&status).is_ok());
@@ -1222,7 +1194,6 @@ mod tests {
                 restart_required: false,
                 error: None,
                 failure_phase: None,
-                cpu_fallback_notice: None,
             };
             let status = Arc::new(Mutex::new(snapshot));
             assert!(ensure_runtime_ready(&status).is_err());
@@ -1254,88 +1225,5 @@ mod tests {
             error.to_string().contains("does not support model"),
             "unexpected error: {error}"
         );
-    }
-
-    // cpu_fallback_notice_for touches the process-wide DirectML flag, so these
-    // tests run under a shared lock and reset the flag at the end of each.
-    static DIRECTML_FLAG_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn cpu_only_manifest() -> catalog::ReleaseManifest {
-        let cpu_runtime = catalog::CatalogRuntime {
-            artifact_id: "rt-windows-cpu".to_owned(),
-            target_triple: Some("x86_64-pc-windows-msvc".to_owned()),
-            filename: "cpu.zip".to_owned(),
-            byte_size: 0,
-            archive_digest: String::new(),
-            download_url: String::new(),
-            extracted_file_digests: Default::default(),
-            runtime: catalog::CatalogRuntimeMetadata {
-                version: "v1".to_owned(),
-                ort_c_api_level: "27".to_owned(),
-                execution_providers: vec!["cpu".to_owned()],
-                supported_model_artifact_ids: vec![],
-                companion_files: vec![],
-            },
-            deprecation: Default::default(),
-        };
-        let directml_runtime = catalog::CatalogRuntime {
-            artifact_id: "rt-windows-dml".to_owned(),
-            target_triple: Some("x86_64-pc-windows-msvc".to_owned()),
-            filename: "dml.zip".to_owned(),
-            byte_size: 0,
-            archive_digest: String::new(),
-            download_url: String::new(),
-            extracted_file_digests: Default::default(),
-            runtime: catalog::CatalogRuntimeMetadata {
-                version: "v1".to_owned(),
-                ort_c_api_level: "27".to_owned(),
-                execution_providers: vec!["cpu".to_owned(), "directml".to_owned()],
-                supported_model_artifact_ids: vec![],
-                companion_files: vec![],
-            },
-            deprecation: Default::default(),
-        };
-        catalog::ReleaseManifest {
-            schema_version: "openkara.catalog/release-v1".to_owned(),
-            generation: 1,
-            release_id: "test".to_owned(),
-            artifacts: catalog::CatalogArtifacts {
-                models: vec![],
-                runtimes: vec![cpu_runtime, directml_runtime],
-            },
-            compatibility: vec![],
-        }
-    }
-
-    #[test]
-    fn cpu_fallback_notice_is_absent_when_directml_timeout_flag_is_clear() {
-        let _guard = DIRECTML_FLAG_TEST_LOCK.lock().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-        let manifest = cpu_only_manifest();
-        let artifact_id = Some("rt-windows-cpu".to_owned());
-        assert_eq!(cpu_fallback_notice_for(&manifest, &artifact_id), None);
-    }
-
-    #[test]
-    fn cpu_fallback_notice_is_absent_for_a_directml_runtime() {
-        let _guard = DIRECTML_FLAG_TEST_LOCK.lock().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(true);
-        let manifest = cpu_only_manifest();
-        let artifact_id = Some("rt-windows-dml".to_owned());
-        assert_eq!(cpu_fallback_notice_for(&manifest, &artifact_id), None);
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
-    }
-
-    #[test]
-    fn cpu_fallback_notice_is_present_for_a_cpu_only_runtime_when_flagged() {
-        let _guard = DIRECTML_FLAG_TEST_LOCK.lock().unwrap();
-        crate::platform_capabilities::set_directml_disabled_by_timeout(true);
-        let manifest = cpu_only_manifest();
-        let artifact_id = Some("rt-windows-cpu".to_owned());
-        assert_eq!(
-            cpu_fallback_notice_for(&manifest, &artifact_id),
-            Some(CPU_FALLBACK_NOTICE.to_owned())
-        );
-        crate::platform_capabilities::set_directml_disabled_by_timeout(false);
     }
 }

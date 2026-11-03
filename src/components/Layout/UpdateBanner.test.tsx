@@ -9,6 +9,7 @@ import {
   vi,
 } from "vite-plus/test";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,20 +19,30 @@ import {
 import type { DownloadEvent } from "@tauri-apps/plugin-updater";
 import { UpdateBanner } from "./UpdateBanner";
 
-const { mockInvoke, mockCheck, mockRelaunch, mockDownloadAndInstall } =
-  vi.hoisted(() => ({
-    mockInvoke: vi.fn().mockResolvedValue(true),
-    mockCheck: vi.fn(),
-    mockRelaunch: vi.fn().mockResolvedValue(undefined),
-    mockDownloadAndInstall: vi.fn().mockResolvedValue(undefined),
-  }));
+const {
+  mockInvoke,
+  mockCheck,
+  mockRelaunch,
+  mockDownloadAndInstall,
+  mockListen,
+} = vi.hoisted(() => ({
+  mockInvoke: vi.fn().mockResolvedValue(true),
+  mockCheck: vi.fn(),
+  mockRelaunch: vi.fn().mockResolvedValue(undefined),
+  mockDownloadAndInstall: vi.fn().mockResolvedValue(undefined),
+  mockListen: vi.fn().mockResolvedValue(() => {}),
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mockInvoke,
+  isTauri: () => true,
+}));
+vi.mock("@tauri-apps/api/event", () => ({ listen: mockListen }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
 
@@ -60,6 +71,46 @@ describe("UpdateBanner", () => {
 
     expect(await screen.findByText("updater.available")).toBeTruthy();
     expect(screen.getByRole("button", { name: "updater.update" })).toBeTruthy();
+  });
+
+  test("guides an unsupported catalog to the app updater", async () => {
+    mockCheck.mockResolvedValue(updateAvailable());
+    render(<UpdateBanner />);
+    await screen.findByText("updater.available");
+    const listener = mockListen.mock.calls.find(
+      ([event]) => event === "catalog-upgrade-required",
+    )?.[1];
+    expect(listener).toBeDefined();
+    await act(async () =>
+      listener({ payload: "openkara.catalog/channel-v999" }),
+    );
+    expect(screen.getByText("updater.catalogUpgradeRequired")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "updater.update" }));
+    expect(mockDownloadAndInstall).toHaveBeenCalledOnce();
+  });
+
+  test("shows manual update guidance when a required update cannot be checked", async () => {
+    mockInvoke.mockResolvedValue(false);
+    render(<UpdateBanner />);
+    await waitFor(() => expect(mockListen).toHaveBeenCalled());
+    const listener = mockListen.mock.calls.find(
+      ([event]) => event === "catalog-upgrade-required",
+    )?.[1];
+    await act(async () =>
+      listener({ payload: "openkara.catalog/channel-v999" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "settings.runtime.checkButton" }),
+    );
+    expect(await screen.findByText("updater.failed")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText("updater.catalogUpgradeRequired")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "settings.runtime.checkButton" }),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "updater.catalogUpgradeRequired",
+    );
   });
 
   test("renders nothing when there is no update", async () => {

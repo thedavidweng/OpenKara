@@ -277,7 +277,6 @@ fn run_fault_retry(
     )));
     let mut events = Vec::new();
     env::set_var("OPENKARA_RUNTIME_WORKER_HANG_DURING_PROBE", "1");
-    env::set_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS", "1500");
     let _env_guard = FaultEnvGuard;
     let started = Instant::now();
     let is_update =
@@ -293,6 +292,9 @@ fn run_fault_retry(
         is_update,
         &status,
         &mut |event, snapshot| {
+            if snapshot.state == command::RuntimeBootstrapState::Probing {
+                env::set_var("OPENKARA_RUNTIME_POST_DOWNLOAD_TIMEOUT_MS", "1500");
+            }
             events.push(RegressionEvent {
                 event: event.to_owned(),
                 snapshot,

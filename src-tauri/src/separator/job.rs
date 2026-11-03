@@ -50,7 +50,6 @@ pub fn separate_song_into_cache(
     stem_mode: StemMode,
     model_variant: &str,
     ep_preference: ExecutionProviderPreference,
-    session_options: model::SessionOptions,
     cancel: &AtomicBool,
     mut report_progress: impl FnMut(u8),
 ) -> Result<SeparationArtifacts> {
@@ -90,6 +89,9 @@ pub fn separate_song_into_cache(
         .map_err(|e| anyhow::anyhow!("failed to decode audio for {}: {}", song_path, e))?;
     drop(_decode_guard);
 
+    let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)
+        .context("failed to normalize audio for model")?;
+
     report_progress(MODEL_LOAD_PROGRESS);
     // Mutex covers metadata inspect, cache-key build, and get_or_load_with_key.
     let loaded_model = {
@@ -103,22 +105,43 @@ pub fn separate_song_into_cache(
                     model_path.display()
                 )
             })?;
-        let cache_key = model::session_cache_key(
-            model_path,
-            ep_preference,
-            session_options,
-            &runtime_metadata,
-        );
+        let mut cache_key = model::session_cache_key(model_path, ep_preference, &runtime_metadata);
+        if ep_preference == ExecutionProviderPreference::WebGpu {
+            match crate::separator::webgpu_validation::device_key(model_path) {
+                Ok(key) => cache_key.push_str(&format!("::{:?}", key)),
+                Err(error) => cache_key.push_str(&format!("::unidentified:{error:#}")),
+            }
+        }
         model_cache.get_or_load_with_key(cache_key, || {
-            model::load_from_path(model_path, ep_preference, session_options).with_context(|| {
+            if ep_preference == ExecutionProviderPreference::WebGpu {
+                let failure = match crate::separator::webgpu_validation::cached_failure(model_path)
+                {
+                    Ok(failure) => failure,
+                    Err(error) => Some(format!(
+                        "Unable to identify or read WebGPU validation: {error:#}"
+                    )),
+                };
+                if let Some(reason) = failure {
+                    let mut cpu =
+                        model::load_with_ep(model_path, ExecutionProviderPreference::Cpu)?;
+                    cpu.provider_fallback_reason = Some(reason);
+                    return Ok(cpu);
+                }
+            }
+            let loaded = model::load_from_path(model_path, ep_preference).with_context(|| {
                 format!("failed to load Demucs model from {}", model_path.display())
-            })
+            })?;
+            if loaded.execution_provider == ExecutionProviderPreference::WebGpu {
+                crate::separator::webgpu_validation::verify_or_cpu(
+                    loaded,
+                    &normalized_audio.samples,
+                    normalized_audio.channels,
+                )
+            } else {
+                Ok(loaded)
+            }
         })?
     };
-
-    // Takes ownership to avoid two full-song PCM copies.
-    let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)
-        .context("failed to normalize audio for model")?;
 
     let channels = normalized_audio.channels;
     let input_frame_count = normalized_audio.samples.len() / channels;

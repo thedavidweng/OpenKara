@@ -589,10 +589,6 @@
         "loadFailed": "Nạp ONNX Runtime thất bại: {{error}}",
         "loadFailedHint": "Runtime đã được tải nhưng không thể nạp; đây không phải lỗi mạng. Hãy xem chi tiết lỗi.",
         "retryDownload": "Thử lại"
-      },
-      "cpuFallbackToast": {
-        "title": "Đang dùng ONNX Runtime chỉ CPU",
-        "message": "OpenKara dùng ONNX Runtime chỉ CPU. Runtime GPU không phản hồi. Tách giọng hát vẫn hoạt động. Nó chạy chậm hơn."
       }
     },
     "hideBatchSeparate": {
@@ -704,10 +700,9 @@
       "cpuDescription": "Chỉ phần mềm — chạy trên mọi thiết bị, chậm nhất",
       "xnnpack": "XNNPACK",
       "xnnpackDescription": "CPU tăng tốc SIMD — nhanh hơn trên Apple Silicon và x86 hiện đại",
-      "directml": "DirectML",
-      "directmlDescription": "Tăng tốc GPU DirectX 12 cho Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Tăng tốc Neural Engine và GPU cho Apple Silicon",
+      "coremlDescription": "Tăng tốc Core ML cho macOS",
+      "webgpuDescription": "Tăng tốc WebGPU",
       "incompatible": "Không tương thích",
       "incompatibleWarning": "Trình thực thi này không tương thích với thiết bị. Hãy chuyển sang CPU trong Cài đặt.",
       "note": "Thay đổi có hiệu lực ở lần tách tiếp theo."
@@ -886,7 +881,8 @@
     "installing": "Đang hoàn tất cập nhật…",
     "restartToApply": "Bản cập nhật đã sẵn sàng — khởi động lại để áp dụng",
     "restart": "Khởi động lại",
-    "failed": "Cập nhật thất bại — hãy tải bản phát hành mới nhất theo cách thủ công"
+    "failed": "Cập nhật thất bại — hãy tải bản phát hành mới nhất theo cách thủ công",
+    "catalogUpgradeRequired": "Danh mục này cần phiên bản OpenKara mới hơn. Hãy cập nhật OpenKara để tiếp tục."
   },
   "catalog": {
     "streaming": {
