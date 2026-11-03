@@ -619,7 +619,6 @@ pub fn install_runtime_with_worker(
         .context("failed to start runtime bootstrap worker")?;
     guard.attach(child);
 
-    let timeout = post_download_timeout();
     let mut progress_offset = 0;
     let mut last_phase: Option<RuntimeWorkerPhase> = None;
     let mut post_download_started: Option<Instant> = None;
@@ -645,6 +644,7 @@ pub fn install_runtime_with_worker(
             break status;
         }
 
+        let timeout = post_download_timeout();
         if post_download_started.is_some_and(|started| started.elapsed() > timeout) {
             if let Some(child) = guard.child() {
                 let _ = child.kill();

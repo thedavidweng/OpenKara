@@ -198,6 +198,35 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("build_shared_lib");
   });
 
+  test("installs the license from each official runtime archive", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const catalog = JSON.parse(
+      readProjectFile("src-tauri/catalog/release-manifest.json"),
+    );
+    for (const target of [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+    ]) {
+      const runtime = catalog.artifacts.runtimes.find(
+        (entry: {
+          target_triple: string;
+          deprecation?: { deprecated: boolean };
+        }) => entry.target_triple === target && !entry.deprecation?.deprecated,
+      );
+      expect(runtime).toBeDefined();
+      expect(
+        Object.keys(runtime.extracted_file_digests).filter((path) =>
+          /^[^/]+\/LICENSE$/.test(path),
+        ),
+      ).toHaveLength(1);
+    }
+    expect(manifestTemplate).toContain(
+      "src-tauri/generated/onnxruntime-source/*/LICENSE",
+    );
+  });
+
   test("builds the Flatpak app binary without asking Tauri to create Linux bundles", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
