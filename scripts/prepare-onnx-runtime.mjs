@@ -9,15 +9,28 @@
 
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  win32,
+} from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -85,7 +98,11 @@ function libraryNameForTarget(targetTriple) {
 
 function resolveCatalogRuntime(targetTriple, preferredProvider) {
   const catalog = JSON.parse(readFileSync(CATALOG_MANIFEST_PATH, "utf8"));
-  if (catalog.schema_version !== "openkara.catalog/release-v1") {
+  if (
+    !["openkara.catalog/release-v1", "openkara.catalog/release-v2"].includes(
+      catalog.schema_version,
+    )
+  ) {
     throw new Error(
       `unsupported release manifest schema: ${catalog.schema_version}`,
     );
@@ -196,6 +213,46 @@ function extractArchive(archivePath, destDir) {
   });
 }
 
+function verifyArchiveLinks(destDir) {
+  const root = realpathSync(destDir);
+  const withinRoot = (path) => {
+    const remainder = relative(root, path);
+    return (
+      remainder !== ".." &&
+      !remainder.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) &&
+      !isAbsolute(remainder)
+    );
+  };
+  const visit = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(path);
+      } else if (entry.isSymbolicLink()) {
+        const target = readlinkSync(path);
+        if (
+          isAbsolute(target) ||
+          win32.isAbsolute(target) ||
+          target.includes("\\")
+        ) {
+          throw new Error(`archive link target must be relative: ${path}`);
+        }
+        const parent = resolve(root, relative(destDir, dirname(path)));
+        if (
+          !withinRoot(resolve(parent, target)) ||
+          !withinRoot(realpathSync(path)) ||
+          !statSync(path).isFile()
+        ) {
+          throw new Error(
+            `archive link escapes or does not target a file: ${path}`,
+          );
+        }
+      }
+    }
+  };
+  visit(destDir);
+}
+
 const args = parseArgs(process.argv.slice(2));
 const targetTriple =
   args.target ?? process.env.OPENKARA_ORT_TARGET ?? defaultTargetForHost();
@@ -207,12 +264,46 @@ const libraryName = libraryNameForTarget(targetTriple);
 const { runtime } = resolveCatalogRuntime(targetTriple, preferredProvider);
 
 const declaredFiles = runtime.extracted_file_digests;
-if (!declaredFiles[libraryName]) {
+const declaredNames = Object.keys(declaredFiles);
+const libraryCandidates = declaredNames.filter((name) => {
+  const parts = name.split("/");
+  if (parts.length === 1) return name === libraryName;
+  if (parts.length !== 3 || parts[1] !== "lib") return false;
+  const file = parts[2];
+  return (
+    file === libraryName ||
+    (libraryName === "libonnxruntime.dylib" &&
+      /^libonnxruntime\.\d.*\.dylib$/.test(file)) ||
+    (libraryName === "libonnxruntime.so" &&
+      /^libonnxruntime\.so\.\d/.test(file))
+  );
+});
+const librarySource =
+  libraryCandidates.find((name) => basename(name) === libraryName) ??
+  libraryCandidates[0];
+if (!librarySource) {
   throw new Error(
     `catalog runtime ${runtime.artifact_id} does not declare ${libraryName}`,
   );
 }
-const stagedFileNames = Object.keys(declaredFiles);
+const companionNames = declaredNames.filter((name) => {
+  const parts = name.split("/");
+  return (
+    parts.length === 3 &&
+    parts[1] === "lib" &&
+    /^onnxruntime_providers_shared\.dll$|^libonnxruntime_providers_shared\.so$/.test(
+      parts[2],
+    )
+  );
+});
+const stagedFileDigests = {
+  ...declaredFiles,
+  [libraryName]: declaredFiles[librarySource],
+  ...Object.fromEntries(
+    companionNames.map((name) => [basename(name), declaredFiles[name]]),
+  ),
+};
+const stagedFileNames = Object.keys(stagedFileDigests);
 
 // Fast path: everything already staged from this exact artifact.
 const stagedRuntimePath = join(STAGING_DIR, libraryName);
@@ -220,7 +311,12 @@ if (existsSync(MANIFEST_PATH)) {
   const staged = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   if (
     staged.artifact_id === runtime.artifact_id &&
-    stagedFileNames.every((name) => existsSync(join(STAGING_DIR, name)))
+    Object.entries(stagedFileDigests).every(([name, digest]) => {
+      const path = join(STAGING_DIR, name);
+      if (!existsSync(path)) return false;
+      const bytes = readFileSync(path);
+      return bytes.length === digest.size && sha256Hex(bytes) === digest.sha256;
+    })
   ) {
     console.log(`ONNX Runtime already prepared at ${stagedRuntimePath}`);
     process.exit(0);
@@ -264,6 +360,7 @@ try {
 
   writeFileSync(archivePath, archiveBytes);
   extractArchive(archivePath, extractedDir);
+  verifyArchiveLinks(extractedDir);
 
   rmSync(STAGING_DIR, { force: true, recursive: true });
   mkdirSync(STAGING_DIR, { recursive: true });
@@ -285,7 +382,16 @@ try {
     if (fileDigest !== digest.sha256) {
       throw new Error(`extracted file ${fileName} digest mismatch`);
     }
-    cpSync(extractedPath, join(STAGING_DIR, fileName));
+    const stagedPath = join(STAGING_DIR, fileName);
+    mkdirSync(dirname(stagedPath), { recursive: true });
+    copyFileSync(extractedPath, stagedPath);
+  }
+
+  if (librarySource !== libraryName) {
+    copyFileSync(join(extractedDir, librarySource), stagedRuntimePath);
+  }
+  for (const name of companionNames) {
+    copyFileSync(join(extractedDir, name), join(STAGING_DIR, basename(name)));
   }
 
   writeFileSync(

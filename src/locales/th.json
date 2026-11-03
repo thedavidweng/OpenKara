@@ -707,7 +707,8 @@
       "directml": "DirectML",
       "directmlDescription": "การเร่ง GPU ด้วย DirectX 12 สำหรับ Windows",
       "coreml": "CoreML",
-      "coremlDescription": "การเร่ง Neural Engine และ GPU สำหรับ Apple Silicon",
+      "coremlDescription": "การเร่งด้วย Core ML สำหรับ macOS",
+      "webgpuDescription": "การเร่งด้วย WebGPU",
       "incompatible": "ไม่รองรับ",
       "incompatibleWarning": "ตัวประมวลผลนี้ไม่รองรับอุปกรณ์นี้ โปรดเปลี่ยนเป็น CPU ในการตั้งค่า",
       "note": "การเปลี่ยนแปลงจะมีผลในการแยกเสียงครั้งถัดไป"
@@ -886,7 +887,8 @@
     "installing": "กำลังทำการอัปเดตให้เสร็จ…",
     "restartToApply": "การอัปเดตพร้อมแล้ว — รีสตาร์ทเพื่อใช้งาน",
     "restart": "รีสตาร์ท",
-    "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง"
+    "failed": "การอัปเดตล้มเหลว — ดาวน์โหลดรุ่นล่าสุดด้วยตนเอง",
+    "catalogUpgradeRequired": "แค็ตตาล็อกนี้ต้องใช้ OpenKara เวอร์ชันใหม่กว่า โปรดอัปเดต OpenKara เพื่อดำเนินการต่อ"
   },
   "catalog": {
     "streaming": {

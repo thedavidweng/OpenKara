@@ -402,14 +402,19 @@ fn download_descriptor_for(
 }
 
 #[tauri::command]
-pub async fn check_model_updates(state: State<'_, AppState>) -> CommandResult<ModelUpdateReport> {
+pub async fn check_model_updates(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<ModelUpdateReport> {
     let app_data_dir = state.shell.app_data_dir.clone();
     let catalog_cache = Arc::clone(&state.shell.catalog_cache);
 
     let report =
         tauri::async_runtime::spawn_blocking(move || -> CommandResult<ModelUpdateReport> {
-            let catalog = separator::catalog::fetch_stable_catalog()
-                .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
+            let catalog = separator::catalog::fetch_stable_catalog().map_err(|error| {
+                separator::catalog::notify_unsupported_catalog(&app_handle, &error);
+                model_bootstrap_error(format!("update check failed: {error}"))
+            })?;
 
             let mut models = Vec::new();
             for variant in [ModelVariant::Htdemucs, ModelVariant::HtdemucsFt] {

@@ -707,7 +707,8 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU-versnelling voor Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Neural Engine- en GPU-versnelling voor Apple Silicon",
+      "coremlDescription": "Core ML-versnelling voor macOS",
+      "webgpuDescription": "WebGPU-versnelling",
       "incompatible": "Niet compatibel",
       "incompatibleWarning": "Deze provider is niet compatibel met dit apparaat. Schakel in Instellingen over naar CPU.",
       "note": "Wijzigingen worden van kracht bij de volgende scheiding."
@@ -886,7 +887,8 @@
     "installing": "Update afronden…",
     "restartToApply": "Update klaar — start opnieuw op om toe te passen",
     "restart": "Opnieuw opstarten",
-    "failed": "Update mislukt — download de nieuwste release handmatig"
+    "failed": "Update mislukt — download de nieuwste release handmatig",
+    "catalogUpgradeRequired": "Deze catalogus vereist een nieuwere versie van OpenKara. Werk OpenKara bij om door te gaan."
   },
   "catalog": {
     "streaming": {

@@ -123,6 +123,10 @@ fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
             )
         })?;
 
+    if let Err(error) = crate::separator::webgpu::register(&environment, runtime_path) {
+        tracing::warn!("WebGPU registration failed: {error:#}");
+    }
+
     let _ = ORT_RUNTIME.set((runtime_path.to_path_buf(), environment));
     Ok(())
 }

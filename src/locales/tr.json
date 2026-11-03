@@ -707,7 +707,8 @@
       "directml": "DirectML",
       "directmlDescription": "Windows için DirectX 12 GPU hızlandırma",
       "coreml": "CoreML",
-      "coremlDescription": "Apple Silicon için Neural Engine ve GPU hızlandırma",
+      "coremlDescription": "macOS için Core ML hızlandırma",
+      "webgpuDescription": "WebGPU hızlandırma",
       "incompatible": "Uyumlu değil",
       "incompatibleWarning": "Bu sağlayıcı bu cihazla uyumlu değil. Ayarlar'dan CPU'ya geçin.",
       "note": "Değişiklikler bir sonraki ayırmada geçerli olur."
@@ -886,7 +887,8 @@
     "installing": "Güncelleme tamamlanıyor…",
     "restartToApply": "Güncelleme hazır — uygulamak için yeniden başlatın",
     "restart": "Yeniden Başlat",
-    "failed": "Güncelleme başarısız — en son sürümü elle indirin"
+    "failed": "Güncelleme başarısız — en son sürümü elle indirin",
+    "catalogUpgradeRequired": "Bu katalog daha yeni bir OpenKara sürümü gerektiriyor. Devam etmek için OpenKara’yı güncelleyin."
   },
   "catalog": {
     "streaming": {

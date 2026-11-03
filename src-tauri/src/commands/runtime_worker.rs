@@ -166,6 +166,28 @@ fn run_worker_with(
         },
     )?;
 
+    if let Some(plugin) = request
+        .catalog
+        .manifest
+        .artifacts
+        .plugins
+        .iter()
+        .find(|plugin| {
+            plugin.target_triple == catalog::current_target_triple() && plugin.provider == "webgpu"
+        })
+    {
+        if let Err(error) =
+            crate::separator::webgpu::install(&installed.dir, plugin, |bytes, total| {
+                let _ = write_progress(
+                    progress_path,
+                    RuntimeWorkerProgress::downloading(bytes, total),
+                );
+            })
+        {
+            eprintln!("WebGPU installation failed; CPU remains available: {error:#}");
+        }
+    }
+
     #[cfg(feature = "automation-smoke")]
     if std::env::var_os("OPENKARA_RUNTIME_WORKER_HANG_AFTER_INSTALLING").is_some() {
         thread::sleep(Duration::from_secs(10 * 60));
@@ -354,9 +376,10 @@ fn install_runtime_with_verified_archive_cache(
         .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
     let staging = artifacts::unique_temp_path(&root, "staging");
     let result = (|| -> Result<runtime_bootstrap::InstalledRuntime> {
-        if !runtime
-            .extracted_file_digests
-            .contains_key(runtime_bootstrap::ORT_RUNTIME_FILENAME)
+        if runtime_bootstrap::runtime_library_path(
+            runtime.extracted_file_digests.keys().map(String::as_str),
+        )
+        .is_none()
         {
             bail!(
                 "runtime artifact {} does not declare the platform library {}",
@@ -369,7 +392,11 @@ fn install_runtime_with_verified_archive_cache(
         fs::create_dir_all(&staging)
             .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
         let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
-        let extracted = artifacts::extract_archive_safely(&archive, kind, &staging)?;
+        let extracted = if catalog.manifest.schema_version == "openkara.catalog/release-v2" {
+            artifacts::extract_archive_preserving_root(&archive, kind, &staging)?
+        } else {
+            artifacts::extract_archive_safely(&archive, kind, &staging)?
+        };
         artifacts::verify_extracted_files(&staging, &runtime.extracted_file_digests, &extracted)?;
 
         let record = record_from_catalog_runtime(runtime, catalog);

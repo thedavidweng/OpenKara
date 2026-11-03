@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::commands::bootstrap::ModelBootstrapState;
 use crate::commands::error::{internal_error, CommandResult};
 use crate::commands::runtime_bootstrap::RuntimeBootstrapState;
-use crate::config::{self, ExecutionProviderPreference, ModelVariant};
+use crate::config::{self, ModelVariant};
 use crate::{separator, AppState};
 
 const BUILD_SHA: &str = match option_env!("GIT_BUILD_HASH") {
@@ -135,7 +135,15 @@ pub fn get_debug_info(
         .flatten()
         .unwrap_or_default();
     let variant: ModelVariant = config.effective_model_variant();
-    let execution_provider: ExecutionProviderPreference = config.effective_execution_provider();
+    let execution_provider = state
+        .separation
+        .separator_model_cache
+        .lock()
+        .map_err(|_| internal_error("separator model cache lock was poisoned"))?
+        .cached()
+        .map(|model| model.assigned_providers.join(", "))
+        .filter(|providers| !providers.is_empty())
+        .unwrap_or_else(|| "unknown".to_owned());
 
     let catalog = separator::catalog::embedded_catalog();
 
@@ -182,7 +190,7 @@ pub fn get_debug_info(
         runtime_snapshot.active_artifact_id.clone(),
         runtime_snapshot.target_triple.clone(),
         runtime_snapshot.runtime_path.clone(),
-        execution_provider.as_str(),
+        &execution_provider,
         crate::platform_capabilities::directml_available(),
         config.language.clone(),
         log_file,

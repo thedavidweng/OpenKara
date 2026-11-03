@@ -471,6 +471,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
             let catalog = match separator::catalog::fetch_stable_catalog() {
                 Ok(catalog) => catalog,
                 Err(error) => {
+                    separator::catalog::notify_unsupported_catalog(&app_handle, &error);
                     tracing::warn!("runtime update check skipped: {error:#}");
                     return;
                 }

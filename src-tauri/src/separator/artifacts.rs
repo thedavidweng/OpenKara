@@ -8,7 +8,7 @@
 //!   stream to a unique temporary file and are hashed during transfer.
 //! - Expected byte size and SHA-256 verify before extraction or activation.
 //! - Archives extract through one safe implementation that rejects absolute
-//!   paths, traversal, links, duplicate normalized paths, excessive member
+//!   paths, traversal, escaping links, duplicate normalized paths, excessive member
 //!   counts, and excessive expanded size.
 //! - Every extracted file declared by the catalog verifies by size and
 //!   SHA-256 before the artifact can be activated.
@@ -307,7 +307,10 @@ pub enum ArchiveKind {
 pub fn archive_kind_for_filename(filename: &str) -> Result<ArchiveKind> {
     if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") {
         Ok(ArchiveKind::TarGz)
-    } else if filename.ends_with(".zip") || filename.ends_with(".nupkg") {
+    } else if filename.ends_with(".zip")
+        || filename.ends_with(".nupkg")
+        || filename.ends_with(".whl")
+    {
         Ok(ArchiveKind::Zip)
     } else {
         bail!("unsupported archive format for {filename}")
@@ -352,7 +355,7 @@ fn sanitize_member_path(raw: &Path) -> Result<PathBuf> {
 
 /// Extract an archive into `dest_dir` through one safe implementation.
 ///
-/// Rejected: absolute paths, drive prefixes, `..` traversal, symlinks and
+/// Rejected: absolute paths, drive prefixes, `..` traversal, escaping links,
 /// hardlinks, duplicate normalized paths, more than `MAX_ARCHIVE_MEMBERS`
 /// members, and more than `MAX_ARCHIVE_EXPANDED_BYTES` of expanded content.
 /// If every member shares a single top-level directory, that directory is
@@ -362,12 +365,34 @@ pub fn extract_archive_safely(
     kind: ArchiveKind,
     dest_dir: &Path,
 ) -> Result<Vec<PathBuf>> {
+    extract_archive(archive_path, kind, dest_dir, true)
+}
+
+pub fn extract_archive_preserving_root(
+    archive_path: &Path,
+    kind: ArchiveKind,
+    dest_dir: &Path,
+) -> Result<Vec<PathBuf>> {
+    extract_archive(archive_path, kind, dest_dir, false)
+}
+
+fn extract_archive(
+    archive_path: &Path,
+    kind: ArchiveKind,
+    dest_dir: &Path,
+    strip_root: bool,
+) -> Result<Vec<PathBuf>> {
     fs::create_dir_all(dest_dir).with_context(|| {
         format!(
             "failed to create extraction directory {}",
             dest_dir.display()
         )
     })?;
+    if fs::symlink_metadata(dest_dir)?.file_type().is_symlink()
+        || fs::read_dir(dest_dir)?.next().is_some()
+    {
+        bail!("archive extraction directory must be an empty directory");
+    }
 
     let members = match kind {
         ArchiveKind::TarGz => collect_tar_members(archive_path)?,
@@ -385,7 +410,13 @@ pub fn extract_archive_safely(
         );
     }
 
-    let total: u64 = members.iter().map(|(_, bytes)| bytes.len() as u64).sum();
+    let total: u64 = members
+        .iter()
+        .map(|(_, member)| match member {
+            ArchiveMember::File(bytes) => bytes.len() as u64,
+            ArchiveMember::Symlink(_) => 0,
+        })
+        .sum();
     if total > MAX_ARCHIVE_EXPANDED_BYTES {
         bail!(
             "archive {} expands to {total} bytes, more than the {MAX_ARCHIVE_EXPANDED_BYTES} allowed",
@@ -395,31 +426,107 @@ pub fn extract_archive_safely(
 
     // Strip a single shared top-level directory (common tar convention) so
     // the on-disk layout matches the catalog's relative file paths.
-    let stripped = strip_shared_top_level(members)?;
+    let stripped = if strip_root {
+        strip_shared_top_level(members)?
+    } else {
+        members
+    };
 
-    let mut seen = std::collections::HashSet::new();
-    let mut written = Vec::new();
-    for (relative, bytes) in &stripped {
-        if !seen.insert(relative.clone()) {
+    let mut seen = std::collections::HashMap::new();
+    for (relative, member) in &stripped {
+        if seen.insert(relative.clone(), member).is_some() {
             bail!(
                 "archive contains duplicate normalized path {}",
                 relative.display()
             );
         }
+    }
+    for (relative, member) in &stripped {
+        for parent in relative
+            .ancestors()
+            .skip(1)
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            if seen.contains_key(parent) {
+                bail!(
+                    "archive member has a file or link as a parent: {}",
+                    parent.display()
+                );
+            }
+        }
+        if let ArchiveMember::Symlink(target) = member {
+            let mut resolved = resolve_link(relative, target)?;
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(relative.clone());
+            loop {
+                if !visited.insert(resolved.clone()) {
+                    bail!("archive contains a link cycle");
+                }
+                match seen.get(&resolved) {
+                    Some(ArchiveMember::File(_)) => break,
+                    Some(ArchiveMember::Symlink(next)) => resolved = resolve_link(&resolved, next)?,
+                    None => bail!("archive link target is not a file in the archive"),
+                }
+            }
+        }
+    }
+    let mut written = Vec::new();
+    for (relative, member) in &stripped {
         let destination = dest_dir.join(relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create directory {}", parent.display()))?;
         }
-        fs::write(&destination, bytes)
-            .with_context(|| format!("failed to write {}", destination.display()))?;
+        match member {
+            ArchiveMember::File(bytes) => fs::write(&destination, bytes)
+                .with_context(|| format!("failed to write {}", destination.display()))?,
+            ArchiveMember::Symlink(target) => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(target, &destination)
+                    .with_context(|| format!("failed to create {}", destination.display()))?;
+                #[cfg(windows)]
+                std::os::windows::fs::symlink_file(target, &destination)
+                    .with_context(|| format!("failed to create {}", destination.display()))?;
+            }
+        }
         written.push(relative.clone());
     }
 
     Ok(written)
 }
 
-type ArchiveMembers = Vec<(PathBuf, Vec<u8>)>;
+enum ArchiveMember {
+    File(Vec<u8>),
+    Symlink(PathBuf),
+}
+
+type ArchiveMembers = Vec<(PathBuf, ArchiveMember)>;
+
+fn resolve_link(link: &Path, target: &Path) -> Result<PathBuf> {
+    let mut resolved = link.parent().context("link has no parent")?.to_path_buf();
+    for component in target.components() {
+        match component {
+            Component::Normal(part) => {
+                let part = part.to_str().context("link target is not UTF-8")?;
+                if part.contains('\\') || part.contains(':') {
+                    bail!("invalid archive link target");
+                }
+                resolved.push(part);
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !resolved.pop() {
+                    bail!("archive link escapes extraction directory");
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => bail!("archive link target is absolute"),
+        }
+    }
+    if resolved.as_os_str().is_empty() {
+        bail!("archive link target is empty");
+    }
+    Ok(resolved)
+}
 
 /// Read one archive member with the expanded-size budget enforced on the
 /// ACTUAL decompressed bytes. Archive headers can lie about sizes; trusting
@@ -492,11 +599,9 @@ fn collect_tar_members(archive_path: &Path) -> Result<ArchiveMembers> {
         let mut entry = entry.context("failed to read archive entry")?;
         let entry_type = entry.header().entry_type();
         match entry_type {
-            tar::EntryType::Regular => {}
+            tar::EntryType::Regular | tar::EntryType::Symlink => {}
             tar::EntryType::Directory => continue,
-            tar::EntryType::Symlink | tar::EntryType::Link => {
-                bail!("archive contains a link entry, which is not allowed")
-            }
+            tar::EntryType::Link => bail!("archive contains a hard link entry"),
             other => bail!("archive contains unsupported entry type {other:?}"),
         }
 
@@ -509,6 +614,14 @@ fn collect_tar_members(archive_path: &Path) -> Result<ArchiveMembers> {
         if members.len() + 1 > MAX_ARCHIVE_MEMBERS {
             bail!("archive exceeds the member count limit while reading");
         }
+        if entry_type == tar::EntryType::Symlink {
+            let target = entry
+                .link_name()?
+                .context("archive link has no target")?
+                .into_owned();
+            members.push((relative, ArchiveMember::Symlink(target)));
+            continue;
+        }
         let declared = entry.size();
         let bytes = read_member_bounded(
             &mut entry,
@@ -516,7 +629,7 @@ fn collect_tar_members(archive_path: &Path) -> Result<ArchiveMembers> {
             MAX_ARCHIVE_EXPANDED_BYTES.saturating_sub(expanded),
         )?;
         expanded = expanded.saturating_add(bytes.len() as u64);
-        members.push((relative, bytes));
+        members.push((relative, ArchiveMember::File(bytes)));
     }
     Ok(members)
 }
@@ -536,9 +649,7 @@ fn collect_zip_members(archive_path: &Path) -> Result<ArchiveMembers> {
         if entry.is_dir() {
             continue;
         }
-        if entry.is_symlink() {
-            bail!("archive contains a link entry, which is not allowed");
-        }
+        let is_symlink = entry.is_symlink();
 
         let entry_name = entry.name().context("failed to decode ZIP entry name")?;
         let raw_path = PathBuf::from(entry_name.as_ref());
@@ -554,7 +665,12 @@ fn collect_zip_members(archive_path: &Path) -> Result<ArchiveMembers> {
             MAX_ARCHIVE_EXPANDED_BYTES.saturating_sub(expanded),
         )?;
         expanded = expanded.saturating_add(bytes.len() as u64);
-        members.push((relative, bytes));
+        let member = if is_symlink {
+            ArchiveMember::Symlink(PathBuf::from(String::from_utf8(bytes)?))
+        } else {
+            ArchiveMember::File(bytes)
+        };
+        members.push((relative, member));
     }
     Ok(members)
 }
@@ -692,6 +808,32 @@ mod tests {
     }
 
     #[test]
+    fn preserves_catalog_paths_for_official_runtime() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("runtime.tar.gz");
+        let path = "onnxruntime-package/lib/libonnxruntime.dylib";
+        write_tgz(&archive, &[(path, b"runtime")]);
+        let dest = dir.path().join("out");
+        let written =
+            extract_archive_preserving_root(&archive, ArchiveKind::TarGz, &dest).expect("extract");
+        let declared = [(
+            path.to_owned(),
+            CatalogFileDigest {
+                size: 7,
+                sha256: sha256_hex(b"runtime"),
+            },
+        )]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            verify_extracted_files(&dest, &declared, &written)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn rejects_traversal_member_paths() {
         let dir = tempfile::tempdir().expect("tempdir");
         let archive = dir.path().join("evil.zip");
@@ -714,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_link_entries() {
+    fn rejects_absolute_link_targets() {
         let dir = tempfile::tempdir().expect("tempdir");
         let archive = dir.path().join("evil.tar.gz");
         let file = fs::File::create(&archive).expect("create archive");
@@ -735,7 +877,111 @@ mod tests {
 
         let error = extract_archive_safely(&archive, ArchiveKind::TarGz, &dir.path().join("out"))
             .expect_err("links must be rejected");
-        assert!(error.to_string().contains("link entry"));
+        assert!(error.to_string().contains("absolute"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracts_safe_link_chains_and_rejects_escapes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("runtime.tar.gz");
+        let file = fs::File::create(&archive).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, target) in [
+            ("pkg/lib/lib.so", "lib.so.1"),
+            ("pkg/lib/lib.so.1", "lib.so.1.2"),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_size(0);
+            header.set_cksum();
+            builder
+                .append_link(&mut header, name, target)
+                .expect("link");
+        }
+        let mut header = tar::Header::new_gnu();
+        header.set_size(3);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "pkg/lib/lib.so.1.2", &b"lib"[..])
+            .expect("file");
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip");
+
+        let dest = dir.path().join("out");
+        extract_archive_safely(&archive, ArchiveKind::TarGz, &dest).expect("extract");
+        assert_eq!(
+            fs::read(dest.join("lib/lib.so")).expect("read link chain"),
+            b"lib"
+        );
+        let preserved = dir.path().join("preserved");
+        extract_archive_preserving_root(&archive, ArchiveKind::TarGz, &preserved)
+            .expect("extract with root");
+        assert_eq!(
+            fs::read(preserved.join("pkg/lib/lib.so")).expect("read preserved link chain"),
+            b"lib"
+        );
+        assert!(resolve_link(Path::new("lib/link"), Path::new("../../escape")).is_err());
+        assert!(resolve_link(Path::new("lib/link"), Path::new("/escape")).is_err());
+    }
+
+    #[test]
+    fn rejects_link_cycles_and_link_parents() {
+        for links in [
+            vec![("pkg/lib/a", "b"), ("pkg/lib/b", "a")],
+            vec![("pkg/lib", "target"), ("pkg/lib/a", "../target")],
+        ] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let archive = dir.path().join("runtime.tar.gz");
+            let file = fs::File::create(&archive).expect("create archive");
+            let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+            let mut builder = tar::Builder::new(encoder);
+            for (name, target) in links {
+                let mut header = tar::Header::new_gnu();
+                header.set_entry_type(tar::EntryType::Symlink);
+                header.set_size(0);
+                header.set_cksum();
+                builder
+                    .append_link(&mut header, name, target)
+                    .expect("link");
+            }
+            let mut header = tar::Header::new_gnu();
+            header.set_size(3);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "pkg/target", &b"lib"[..])
+                .expect("file");
+            builder
+                .into_inner()
+                .expect("finish tar")
+                .finish()
+                .expect("finish gzip");
+
+            assert!(
+                extract_archive_safely(&archive, ArchiveKind::TarGz, &dir.path().join("out"))
+                    .is_err()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_or_nonempty_extraction_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).expect("outside directory");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&outside, &link).expect("symlink");
+        let archive = dir.path().join("unused.tar.gz");
+        assert!(extract_archive_safely(&archive, ArchiveKind::TarGz, &link).is_err());
+        fs::write(outside.join("existing"), b"existing").expect("existing file");
+        assert!(extract_archive_safely(&archive, ArchiveKind::TarGz, &outside).is_err());
     }
 
     #[test]
@@ -849,6 +1095,10 @@ mod tests {
         );
         assert_eq!(
             archive_kind_for_filename("x.zip").expect("kind"),
+            ArchiveKind::Zip
+        );
+        assert_eq!(
+            archive_kind_for_filename("x.whl").expect("kind"),
             ArchiveKind::Zip
         );
         assert!(archive_kind_for_filename("x.rar").is_err());

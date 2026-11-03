@@ -43,7 +43,11 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
-if (manifest.schema_version !== "openkara.catalog/release-v1") {
+if (
+  !["openkara.catalog/release-v1", "openkara.catalog/release-v2"].includes(
+    manifest.schema_version,
+  )
+) {
   throw new Error(
     `unsupported release manifest schema: ${manifest.schema_version}`,
   );

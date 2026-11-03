@@ -192,6 +192,31 @@ fn install_key_matches_record(install_key: &str, record: &InstalledArtifactRecor
         || install_key == runtime_install_key(&record.artifact_id, &record.archive_sha256)
 }
 
+pub(crate) fn runtime_library_path<'a>(paths: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let mut versioned = None;
+    for path in paths {
+        let components: Vec<_> = path.split('/').collect();
+        let filename = *components.last()?;
+        let valid_location = components.len() == 1
+            || (components.len() == 2 && components[0] == "lib")
+            || (components.len() == 3 && components[1] == "lib");
+        if !valid_location {
+            continue;
+        }
+        if filename == ORT_RUNTIME_FILENAME {
+            return Some(path);
+        }
+        if (cfg!(target_os = "linux") && filename.starts_with("libonnxruntime.so."))
+            || (cfg!(target_os = "macos")
+                && filename.starts_with("libonnxruntime.")
+                && filename.ends_with(".dylib"))
+        {
+            versioned = Some(path);
+        }
+    }
+    versioned
+}
+
 /// Read the installed runtime for an install key (a slot value: the artifact
 /// id, or its digest-qualified form), when its record is valid and the main
 /// library file exists. File digests are NOT re-verified here — call
@@ -202,7 +227,9 @@ pub fn installed_runtime(app_data_dir: &Path, install_key: &str) -> Option<Insta
     if record.kind != "runtime" || !install_key_matches_record(install_key, &record) {
         return None;
     }
-    let library_path = dir.join(ORT_RUNTIME_FILENAME);
+    let library_path = dir.join(runtime_library_path(
+        record.files.iter().map(|file| file.path.as_str()),
+    )?);
     library_path.is_file().then_some(InstalledRuntime {
         record,
         dir,
@@ -628,6 +655,55 @@ mod tests {
     }
 
     #[test]
+    fn installed_runtime_uses_verified_library_in_lib_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-official", b"runtime");
+        let dir = runtime_artifact_dir(tmp.path(), "rt-official");
+        fs::create_dir(dir.join("lib")).expect("lib directory");
+        fs::rename(
+            dir.join(ORT_RUNTIME_FILENAME),
+            dir.join("lib").join(ORT_RUNTIME_FILENAME),
+        )
+        .expect("move library");
+        let mut record = read_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME)).expect("record");
+        record.files[0].path = format!("lib/{ORT_RUNTIME_FILENAME}");
+        write_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME), &record).expect("record");
+
+        let runtime = installed_runtime(tmp.path(), "rt-official").expect("official runtime");
+        assert_eq!(
+            runtime.library_path,
+            dir.join("lib").join(ORT_RUNTIME_FILENAME)
+        );
+        assert!(verify_runtime_files(&runtime).expect("verify"));
+        fs::write(&runtime.library_path, b"tampered").expect("tamper");
+        assert!(!verify_runtime_files(&runtime).expect("verify tampered"));
+    }
+
+    #[test]
+    fn installed_runtime_uses_official_archive_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-official", b"runtime");
+        let dir = runtime_artifact_dir(tmp.path(), "rt-official");
+        let relative = format!("onnxruntime-package/lib/{ORT_RUNTIME_FILENAME}");
+        fs::create_dir_all(dir.join("onnxruntime-package/lib")).expect("lib directory");
+        fs::rename(dir.join(ORT_RUNTIME_FILENAME), dir.join(&relative)).expect("move library");
+        let mut record = read_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME)).expect("record");
+        record.files[0].path = relative.clone();
+        write_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME), &record).expect("record");
+
+        let runtime = installed_runtime(tmp.path(), "rt-official").expect("official runtime");
+        assert_eq!(runtime.library_path, dir.join(relative));
+        assert!(verify_runtime_files(&runtime).expect("verify"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn official_linux_library_can_be_versioned() {
+        let path = "onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so.1.31.1";
+        assert_eq!(runtime_library_path([path].into_iter()), Some(path));
+    }
+
+    #[test]
     fn an_install_key_strips_only_a_digest_qualifier() {
         let digest = sha256_hex(b"generation-13-archive");
         let key = runtime_install_key("rt-cpu-reduced", &digest);
@@ -1048,9 +1124,10 @@ mod tests {
     #[test]
     fn embedded_catalog_resolves_a_runtime_for_this_target() {
         let (_, runtime) = catalog_runtime();
-        assert!(runtime
-            .extracted_file_digests
-            .contains_key(ORT_RUNTIME_FILENAME));
-        assert_eq!(runtime.runtime.ort_c_api_level, "27");
+        assert!(
+            runtime_library_path(runtime.extracted_file_digests.keys().map(String::as_str))
+                .is_some()
+        );
+        assert_eq!(runtime.runtime.ort_c_api_level, "31");
     }
 }

@@ -70,10 +70,10 @@ pub struct LoadedModel {
     pub model_path: PathBuf,
     /// Provider that successfully created this session. When
     /// [`load_from_path`] walks a fallback chain, this is the provider that
-    /// actually committed — not the original preference. DirectML must
-    /// register for its attempt to succeed; XNNPACK and CoreML keep ort's
-    /// default of falling back to CPU inside the same session.
+    /// actually committed, rather than the original preference. Accelerated
+    /// attempts must receive model nodes before they are accepted.
     pub execution_provider: ExecutionProviderPreference,
+    pub assigned_providers: Vec<String>,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
     pub input_shape: Vec<i64>,
@@ -313,6 +313,10 @@ fn load_with_ep(
         .context("failed to create ONNX session builder")?;
 
     builder = builder
+        .with_auto_device(ort::session::builder::AutoDevicePolicy::PreferCPU)
+        .map_err(|e| anyhow::anyhow!("failed to set execution provider selection policy: {e}"))?;
+
+    builder = builder
         .with_intra_threads(num_threads)
         .map_err(|e| anyhow::anyhow!("failed to set intra-op thread count: {e}"))?;
 
@@ -327,9 +331,22 @@ fn load_with_ep(
         .with_optimization_level(graph_optimization_level_for(&runtime_metadata))
         .map_err(|e| anyhow::anyhow!("failed to set graph optimization level: {e}"))?;
 
+    builder = builder
+        .with_config_entry("session.record_ep_graph_assignment_info", "1")
+        .map_err(|e| anyhow::anyhow!("failed to enable provider diagnostics: {e}"))?;
+
     #[cfg(target_os = "windows")]
     if matches!(ep_preference, ExecutionProviderPreference::DirectMl) {
+        anyhow::ensure!(
+            crate::platform_capabilities::directml_available(),
+            "DirectML is unavailable"
+        );
         activation::preload_directml_companion()?;
+        builder = builder
+            .with_memory_pattern(false)
+            .map_err(|e| anyhow::anyhow!("failed to disable DirectML memory patterns: {e}"))?
+            .with_parallel_execution(false)
+            .map_err(|e| anyhow::anyhow!("failed to set DirectML sequential execution: {e}"))?;
     }
 
     for (key, value) in session_config_entries(ep_preference, options) {
@@ -339,6 +356,16 @@ fn load_with_ep(
             .map_err(|e| anyhow::anyhow!("failed to set session config entry {key}: {e}"))?;
     }
 
+    if matches!(ep_preference, ExecutionProviderPreference::WebGpu) {
+        let device = environment
+            .devices()
+            .filter(|device| device.ep().ok() == Some("WebGpuExecutionProvider"))
+            .next()
+            .context("WebGPU device unavailable")?;
+        builder = builder
+            .with_devices([device], None)
+            .map_err(|e| anyhow::anyhow!("failed to configure WebGPU: {e}"))?;
+    }
     let ep_list = build_execution_provider_list(ep_preference, num_threads);
     if !ep_list.is_empty() {
         builder = builder
@@ -355,6 +382,22 @@ fn load_with_ep(
     let session = builder
         .commit_from_file(path)
         .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
+    let assigned_providers = assigned_providers(&session)?;
+    let expected_provider = match ep_preference {
+        ExecutionProviderPreference::CoreMl => Some("CoreMLExecutionProvider"),
+        ExecutionProviderPreference::WebGpu => Some("WebGpuExecutionProvider"),
+        ExecutionProviderPreference::DirectMl => Some("DmlExecutionProvider"),
+        ExecutionProviderPreference::Xnnpack => Some("XnnpackExecutionProvider"),
+        ExecutionProviderPreference::Cpu => None,
+    };
+    if let Some(expected) = expected_provider {
+        anyhow::ensure!(
+            assigned_providers
+                .iter()
+                .any(|provider| provider == expected),
+            "{expected} did not receive any model nodes"
+        );
+    }
     tracing::info!(
         "committed ONNX session for {} in {:?}",
         path.display(),
@@ -425,6 +468,7 @@ fn load_with_ep(
     Ok(LoadedModel {
         model_path,
         execution_provider: ep_preference,
+        assigned_providers,
         inputs,
         outputs,
         input_shape,
@@ -432,6 +476,37 @@ fn load_with_ep(
         spectral,
         session: std::sync::Mutex::new(session),
     })
+}
+
+fn assigned_providers(session: &ort::session::Session) -> Result<Vec<String>> {
+    use ort::AsPointer;
+    use std::{ffi::CStr, ptr, slice};
+
+    let api = ort::api();
+    let mut subgraphs = ptr::null();
+    let mut count = 0;
+    // ORT owns the returned arrays and strings for the lifetime of the session.
+    unsafe {
+        ort::Error::result_from_status((api.Session_GetEpGraphAssignmentInfo)(
+            session.ptr(),
+            &mut subgraphs,
+            &mut count,
+        ))?;
+        let mut providers = Vec::new();
+        if count > 0 {
+            for subgraph in slice::from_raw_parts(subgraphs, count) {
+                let mut name = ptr::null();
+                ort::Error::result_from_status((api.EpAssignedSubgraph_GetEpName)(
+                    *subgraph, &mut name,
+                ))?;
+                let name = CStr::from_ptr(name).to_str()?.to_owned();
+                if !providers.contains(&name) {
+                    providers.push(name);
+                }
+            }
+        }
+        Ok(providers)
+    }
 }
 
 fn build_execution_provider_list(
@@ -444,13 +519,16 @@ fn build_execution_provider_list(
     match preference {
         // Empty list means ORT uses the built-in CPU EP.
         ExecutionProviderPreference::Cpu => vec![],
+        ExecutionProviderPreference::WebGpu => vec![],
         // Align XNNPACK workers with ORT intra-op threads.
         ExecutionProviderPreference::Xnnpack => vec![ep::XNNPACK::default()
             .with_intra_op_num_threads(
                 NonZeroUsize::new(num_threads).expect("num_threads is non-zero"),
             )
             .build()],
-        ExecutionProviderPreference::CoreMl => vec![ep::CoreML::default().build()],
+        ExecutionProviderPreference::CoreMl => {
+            vec![ep::CoreML::default().build().error_on_failure()]
+        }
         // Require DirectML registration: ort otherwise falls back to CPU
         // silently, and the session would be reported as DirectML. A failure
         // here lets `load_from_path` take its explicit CPU fallback instead.
@@ -489,10 +567,22 @@ fn execution_provider_chain(
             ExecutionProviderPreference::DirectMl,
             ExecutionProviderPreference::Cpu,
         ],
-        ExecutionProviderPreference::CoreMl => vec![
-            ExecutionProviderPreference::CoreMl,
-            ExecutionProviderPreference::Cpu,
-        ],
+        ExecutionProviderPreference::WebGpu => {
+            let mut chain = vec![ExecutionProviderPreference::WebGpu];
+            if cfg!(target_os = "windows") {
+                chain.push(ExecutionProviderPreference::DirectMl);
+            }
+            chain.push(ExecutionProviderPreference::Cpu);
+            chain
+        }
+        ExecutionProviderPreference::CoreMl => {
+            let mut chain = vec![ExecutionProviderPreference::CoreMl];
+            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                chain.push(ExecutionProviderPreference::WebGpu);
+            }
+            chain.push(ExecutionProviderPreference::Cpu);
+            chain
+        }
         resolved => vec![resolved],
     }
 }
@@ -689,12 +779,14 @@ mod tests {
 
     #[test]
     fn provider_chain_keeps_coreml_cpu_fallback() {
+        let mut expected = vec![ExecutionProviderPreference::CoreMl];
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            expected.push(ExecutionProviderPreference::WebGpu);
+        }
+        expected.push(ExecutionProviderPreference::Cpu);
         assert_eq!(
             execution_provider_chain(ExecutionProviderPreference::CoreMl),
-            vec![
-                ExecutionProviderPreference::CoreMl,
-                ExecutionProviderPreference::Cpu,
-            ]
+            expected
         );
     }
 

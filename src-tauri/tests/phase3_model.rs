@@ -54,6 +54,7 @@ fn reuses_runtime_environment_after_model_session_is_dropped() {
 
         assert!(!loaded.inputs.is_empty());
         assert!(!loaded.outputs.is_empty());
+        assert_eq!(loaded.assigned_providers, ["CPUExecutionProvider"]);
     }
 }
 

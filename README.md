@@ -91,6 +91,8 @@ Download the latest build for your platform from [GitHub Releases](https://githu
 | Windows               | `.exe` (NSIS installer) |
 | Linux                 | `.AppImage` / `.deb`    |
 
+OpenKara requires macOS 14.0 or later. Earlier macOS versions are no longer supported.
+
 Linux AppImages also embed stable-release AppImageUpdate information. The matching
 `.AppImage.zsync` release asset enables external delta updates without replacing
 OpenKara's existing signed Tauri updater. Update metadata is embedded before Tauri

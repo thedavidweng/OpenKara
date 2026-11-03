@@ -82,12 +82,12 @@ pub fn directml_available() -> bool {
     !directml_disabled_by_timeout() && probe_directml_available()
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(target_os = "macos")]
 pub const fn coreml_available() -> bool {
     true
 }
 
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+#[cfg(not(target_os = "macos"))]
 pub const fn coreml_available() -> bool {
     false
 }

@@ -793,6 +793,7 @@ pub struct RuntimeUpdateReport {
 
 #[tauri::command]
 pub async fn check_runtime_updates(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> CommandResult<RuntimeUpdateReport> {
     let app_data_dir = state.shell.app_data_dir.clone();
@@ -801,8 +802,10 @@ pub async fn check_runtime_updates(
 
     let report =
         tauri::async_runtime::spawn_blocking(move || -> CommandResult<RuntimeUpdateReport> {
-            let catalog = catalog::fetch_stable_catalog()
-                .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
+            let catalog = catalog::fetch_stable_catalog().map_err(|error| {
+                catalog::notify_unsupported_catalog(&app_handle, &error);
+                model_bootstrap_error(format!("update check failed: {error}"))
+            })?;
             let runtime = catalog::resolve_runtime(
                 &catalog.manifest,
                 catalog::current_target_triple(),
@@ -963,7 +966,7 @@ mod tests {
         let snapshot = snapshot_from_inventory(&empty_inventory());
         assert_eq!(snapshot.state, RuntimeBootstrapState::Missing);
         assert!(!snapshot.restart_required);
-        assert_eq!(snapshot.version, "v1.27.1");
+        assert_eq!(snapshot.version, "v1.31.1");
         assert_eq!(
             snapshot.target_triple,
             catalog::current_target_triple().to_owned()
@@ -1302,6 +1305,7 @@ mod tests {
             artifacts: catalog::CatalogArtifacts {
                 models: vec![],
                 runtimes: vec![cpu_runtime, directml_runtime],
+                plugins: vec![],
             },
             compatibility: vec![],
         }

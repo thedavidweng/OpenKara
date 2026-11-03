@@ -717,7 +717,8 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU 加速 — 适用于 Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Apple Silicon 神经引擎和 GPU 加速",
+      "coremlDescription": "适用于 macOS 的 Core ML 加速",
+      "webgpuDescription": "WebGPU 加速",
       "incompatible": "不兼容",
       "incompatibleWarning": "所选提供程序与此设备不兼容。请在设置中切换到 CPU。",
       "note": "更改将在下次分离时生效。"
@@ -886,7 +887,8 @@
     "installing": "正在完成更新…",
     "restartToApply": "更新已就绪 — 重启以应用",
     "restart": "重启",
-    "failed": "更新失败 — 请手动下载最新版本"
+    "failed": "更新失败 — 请手动下载最新版本",
+    "catalogUpgradeRequired": "此目录需要更新版本的 OpenKara。请更新 OpenKara 后继续。"
   },
   "catalog": {
     "streaming": {

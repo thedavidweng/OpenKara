@@ -707,7 +707,8 @@
       "directml": "DirectML",
       "directmlDescription": "Windows용 DirectX 12 GPU 가속",
       "coreml": "CoreML",
-      "coremlDescription": "Apple Silicon Neural Engine 및 GPU 가속",
+      "coremlDescription": "macOS용 Core ML 가속",
+      "webgpuDescription": "WebGPU 가속",
       "incompatible": "호환되지 않음",
       "incompatibleWarning": "이 제공자는 이 기기와 호환되지 않습니다. 설정에서 CPU로 전환하세요.",
       "note": "변경 사항은 다음 분리부터 적용돼요."
@@ -886,7 +887,8 @@
     "installing": "업데이트 마무리 중…",
     "restartToApply": "업데이트가 준비됐어요 — 적용하려면 다시 시작하세요",
     "restart": "다시 시작",
-    "failed": "업데이트 실패 — 최신 릴리스를 직접 다운로드하세요"
+    "failed": "업데이트 실패 — 최신 릴리스를 직접 다운로드하세요",
+    "catalogUpgradeRequired": "이 카탈로그를 사용하려면 최신 버전의 OpenKara가 필요합니다. OpenKara를 업데이트하세요."
   },
   "catalog": {
     "streaming": {

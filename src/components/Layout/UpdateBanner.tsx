@@ -1,13 +1,15 @@
 import { Download, Loader2, RotateCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 type Phase =
   | "hidden"
   | "available"
+  | "required"
   | "downloading"
   | "installing"
   | "ready"
@@ -18,10 +20,21 @@ export function UpdateBanner() {
   const [phase, setPhase] = useState<Phase>("hidden");
   const [version, setVersion] = useState<string | null>(null);
   const [percent, setPercent] = useState(0);
+  const [catalogUpgradeRequired, setCatalogUpgradeRequired] = useState(false);
   const updateRef = useRef<Update | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen<string>("catalog-upgrade-required", () => {
+        setCatalogUpgradeRequired(true);
+        setPhase(updateRef.current ? "available" : "required");
+      }).then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      });
+    }
     void (async () => {
       try {
         if (!(await invoke<boolean>("self_update_supported"))) return;
@@ -34,6 +47,7 @@ export function UpdateBanner() {
     })();
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 
@@ -128,11 +142,28 @@ export function UpdateBanner() {
 
   if (phase === "failed") {
     return (
-      <div className={containerClass}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px] text-[var(--color-destructive)]">
-            {t("updater.failed")}
-          </span>
+      <div className={containerClass} role="alert">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {catalogUpgradeRequired && (
+              <p className="text-[12px] text-[var(--color-text)]">
+                {t("updater.catalogUpgradeRequired")}
+              </p>
+            )}
+            <span className="text-[12px] text-[var(--color-destructive)]">
+              {t("updater.failed")}
+            </span>
+          </div>
+          {catalogUpgradeRequired && (
+            <button
+              type="button"
+              onClick={() => setPhase("required")}
+              className={primaryButtonClass}
+            >
+              <RotateCw size={12} />
+              {t("settings.runtime.checkButton")}
+            </button>
+          )}
           <button
             type="button"
             onClick={dismiss}
@@ -146,11 +177,44 @@ export function UpdateBanner() {
     );
   }
 
+  if (phase === "required") {
+    return (
+      <div className={containerClass} role="alert">
+        <span className="text-[12px] text-[var(--color-text)]">
+          {t("updater.catalogUpgradeRequired")}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            void invoke<boolean>("self_update_supported")
+              .then((supported) => (supported ? check() : null))
+              .then((update) => {
+                if (!update) {
+                  setPhase("failed");
+                  return;
+                }
+                updateRef.current = update;
+                setVersion(update.version);
+                setPhase("available");
+              })
+              .catch(() => setPhase("failed"));
+          }}
+          className={primaryButtonClass}
+        >
+          <RotateCw size={12} />
+          {t("settings.runtime.checkButton")}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={containerClass}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <span className="text-[12px] text-[var(--color-text)]">
-          {t("updater.available", { version: version ?? "" })}
+          {catalogUpgradeRequired
+            ? t("updater.catalogUpgradeRequired")
+            : t("updater.available", { version: version ?? "" })}
         </span>
         <div className="flex shrink-0 items-center gap-1">
           <button

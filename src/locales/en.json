@@ -813,7 +813,8 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU acceleration for Windows",
       "coreml": "CoreML",
-      "coremlDescription": "Apple Neural Engine and GPU acceleration for Apple Silicon",
+      "coremlDescription": "Core ML acceleration for macOS",
+      "webgpuDescription": "WebGPU acceleration",
       "incompatible": "Not compatible",
       "incompatibleWarning": "This provider is not compatible with this device. Switch to CPU in Settings.",
       "note": "Changes take effect on the next separation."
@@ -982,6 +983,7 @@
     "installing": "Finishing update…",
     "restartToApply": "Update ready — restart to apply",
     "restart": "Restart",
-    "failed": "Update failed — download the latest release manually"
+    "failed": "Update failed — download the latest release manually",
+    "catalogUpgradeRequired": "This catalog requires a newer OpenKara version. Update OpenKara to continue."
   }
 }
