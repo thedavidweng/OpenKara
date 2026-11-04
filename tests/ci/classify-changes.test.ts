@@ -198,6 +198,9 @@ describe("classifyFile", () => {
 
   test("AGENTS.md is docs", () => {
     expect(classifyFile("AGENTS.md")).toEqual(["docs"]);
+    expect(classifyFile("src/README.md")).toEqual(["docs"]);
+    expect(classifyFile("src-tauri/README.md")).toEqual(["docs"]);
+    expect(classifyFile("website/README.md")).toEqual(["docs"]);
   });
 
   test("package.json is deps_js", () => {
