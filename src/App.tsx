@@ -1,3 +1,4 @@
+// CI routing verification.
 import { useCallback, useState } from "react";
 import { AppLayout } from "@/components/Layout/AppLayout";
 import { AppShellSkeleton } from "@/components/Layout/AppShellSkeleton";
