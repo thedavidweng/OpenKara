@@ -131,7 +131,7 @@ const CATEGORY_PATTERNS = {
   ],
 
   ci_workflow: [
-    ".github/workflows/ci.yml",
+    ".github/workflows/**",
     ".github/labeler.yml",
     "scripts/ci/**/*.mjs",
     "scripts/check-standards.mjs",
@@ -222,6 +222,7 @@ const CATEGORY_REGEXES = Object.fromEntries(
  * @returns {string[]}
  */
 function classifyFile(file) {
+  if (file.endsWith(".md")) return ["docs"];
   const cats = [];
   for (const [cat, regexes] of Object.entries(CATEGORY_REGEXES)) {
     if (regexes.some((re) => re.test(file))) {
@@ -265,6 +266,7 @@ const JOB_RULES = {
   "ci-gate": () => true,
 
   "js-quality": (cats) =>
+    cats.has("docs") ||
     cats.has("frontend_app") ||
     cats.has("website") ||
     cats.has("frontend_tooling") ||
@@ -319,18 +321,17 @@ const JOB_RULES = {
     heavyEnabled && hasRustImpact(cats),
 
   "tauri-build-smoke": (cats, _event, heavyEnabled) => {
-    if (!heavyEnabled) {
+    if (!heavyEnabled && !cats.has("packaging_inputs")) {
       return false;
     }
-    const frontend =
-      cats.has("frontend_app") ||
-      cats.has("frontend_tooling") ||
-      cats.has("deps_js");
-    return frontend && !hasRustImpact(cats);
+    return cats.has("packaging_inputs") && !hasRustImpact(cats);
   },
 
   "tauri-build": (cats, _event, heavyEnabled) =>
-    heavyEnabled && hasRustImpact(cats),
+    (heavyEnabled || cats.has("packaging_inputs")) &&
+    ((cats.has("packaging_inputs") && hasRustImpact(cats)) ||
+      cats.has("ci_workflow") ||
+      cats.has("unknown")),
 };
 
 // All job IDs in declaration order (used by CI Gate and drift tests).
@@ -426,7 +427,10 @@ export function classifyChanges(files, event, options = {}) {
   const unknownFiles = [];
 
   for (const file of files) {
-    const cats = classifyFile(file);
+    const cats =
+      event === "release_dispatch" && file === "package.json"
+        ? ["release_metadata"]
+        : classifyFile(file);
     categoriesByFile[file] = cats;
     if (cats.length === 0) {
       unknownFiles.push(file);
@@ -443,6 +447,7 @@ export function classifyChanges(files, event, options = {}) {
     event === "push" ||
     event === "schedule" ||
     event === "workflow_dispatch" ||
+    categorySet.has("ci_workflow") ||
     (event === "pull_request" && labels.has(FULL_CI_LABEL));
 
   // Nightly schedule and manual dispatch always force full CI. Main push and

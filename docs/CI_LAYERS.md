@@ -8,7 +8,7 @@ the full Nightly matrix on every PR or every main push.
 | Layer     | Goal                               | Wall-clock target |
 | --------- | ---------------------------------- | ----------------- |
 | PR        | Fast feedback on the change set    | 10–20 minutes     |
-| Main push | CI Gate only                       | Under 1 minute    |
+| Main push | Path-matched checks and CI Gate    | Varies by change  |
 | Nightly   | Full release quality matrix        | 1–2 hours         |
 | Release   | Signed product + Windows #284 core | 30–45 minutes     |
 
@@ -24,8 +24,8 @@ Default PRs run only the fast job set:
 - cached Linux Rust format, Clippy, and integration tests (`rust-test`, `cargo-deny`, `dependency-checks`)
 - standards and release contract checks (`standards-reference`, `release-validation`)
 
-Heavy jobs do not run on default PRs. Add the `ci:full` label to a PR to run
-the path-matched heavy jobs before merge:
+Heavy jobs run when workflow files change. Add the `ci:full` label to another
+PR to run its path-matched heavy jobs before merge:
 
 - Tauri build matrix (`tauri-build`) and Linux smoke build (`tauri-build-smoke`)
 - Playwright UI smoke (`playwright-ui-smoke`)
@@ -41,10 +41,10 @@ runs, a missing or empty URL fails the job.
 
 ## Main push
 
-Main push runs CI Gate only: the gate accepts skipped verification jobs.
-PR checks run on the merge ref against the latest `main`, so a conflict
-between two merged PRs fails the next PR's CI. Manual `workflow_dispatch`
-still forces full CI.
+Main push runs path-matched checks and CI Gate. PR checks run on the merge ref
+against the latest `main`. Manual `workflow_dispatch` runs full CI. Release
+PR dispatches use the PR file list after they verify the head SHA and confirm
+that package metadata changed only in its version field.
 
 A red `main` push or `schedule` run opens or comments on the open
 `CI failure on main/nightly` tracking issue (`bug` label) with links to the
