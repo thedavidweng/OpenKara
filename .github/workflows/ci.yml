@@ -8,10 +8,15 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request number for release checks
+        type: string
+        required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pull_request || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pull_request != '' }}
 
 permissions:
   contents: read
@@ -34,13 +39,12 @@ jobs:
   #   unknown-files       JSON array of unmapped filenames
   #   categories          JSON array of detected categories
   #
-  # PR: path-aware jobs via classify-changes.mjs. Push runs only CI Gate.
+  # PR and main push: path-aware jobs via classify-changes.mjs.
   # workflow_dispatch: full CI (manual force). Full multi-platform and
   # accessibility matrices run on Nightly; Release owns signed packages and
   # Windows #284 core. See docs/CI_LAYERS.md.
   triage:
     name: Triage
-    if: github.event_name != 'push'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -49,6 +53,7 @@ jobs:
     outputs:
       expected-jobs: ${{ steps.classify.outputs.expected-jobs }}
       unknown: ${{ steps.classify.outputs.unknown }}
+      light-only: ${{ steps.classify.outputs.light-only }}
       run_standards-reference: ${{ steps.classify.outputs.run_standards-reference }}
       run_js-quality: ${{ steps.classify.outputs.run_js-quality }}
       run_app-frontend: ${{ steps.classify.outputs.run_app-frontend }}
@@ -88,16 +93,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pull_request }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ -n "$PR_NUMBER" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$GITHUB_SHA"
+            fi
             # Use the GitHub API with pagination to get the complete file list.
             gh api --paginate --jq '.[].filename' \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               > changed-files.txt
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if grep -Ev '^(\.release-please-manifest\.json|CHANGELOG\.md|package\.json)$' changed-files.txt; then
+                echo '::error::Release PR contains unexpected files'
+                exit 1
+              fi
+              gh api "repos/${GITHUB_REPOSITORY}/contents/package.json?ref=main" --jq .content | base64 -d | jq -S 'del(.version)' > base-package.json
+              jq -S 'del(.version)' package.json > head-package.json
+              diff -u base-package.json head-package.json
+            fi
           elif [ "$EVENT_NAME" = "push" ]; then
             # Fetch BEFORE so we can diff locally. The GitHub compare/commit
             # APIs cap their `files` arrays at 300 entries, which would
@@ -126,7 +143,7 @@ jobs:
       - name: Classify changes
         id: classify
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          EVENT_NAME: ${{ inputs.pull_request != '' && 'release_dispatch' || github.event_name }}
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
@@ -137,12 +154,13 @@ jobs:
             > classification.json
 
           # Extract outputs for GITHUB_OUTPUT.
-          jq -r '
+          jq -r --arg event "$EVENT_NAME" '
             "expected-jobs=\(.expectedJobs | @json)",
             "expected-skipped-heavy=\(.expectedSkippedHeavyJobs | @json)",
             "unknown=\(if .unknownFiles | length > 0 then "true" else "false" end)",
             "unknown-files=\(.unknownFiles | @json)",
-            "categories=\(.categories | @json)"
+            "categories=\(.categories | @json)",
+            "light-only=\(if ($event != "schedule" and $event != "workflow_dispatch") and (.categories | length > 0) and ([.categories[] | select(. != "docs" and . != "release_metadata")] | length == 0) then "true" else "false" end)"
           ' classification.json >> "$GITHUB_OUTPUT"
 
           # Per-job run_ booleans.
@@ -331,6 +349,7 @@ jobs:
       # file and then diffs it, so it cannot share the worktree.
       - parallel:
           - name: Audit dependencies
+            if: needs.triage.outputs.light-only != 'true'
             run: |
               pnpm audit --audit-level=high
 
@@ -341,12 +360,15 @@ jobs:
             run: node --run lint
 
           - name: Check i18n keys
+            if: needs.triage.outputs.light-only != 'true'
             run: node --run check:i18n
 
           - name: knip (unused exports / dependencies)
+            if: needs.triage.outputs.light-only != 'true'
             run: pnpm knip --no-progress
 
       - name: Check db-schema drift
+        if: needs.triage.outputs.light-only != 'true'
         run: |
           pnpm generate:db-schema
           git diff --exit-code docs/references/generated/db-schema.md
@@ -508,7 +530,6 @@ jobs:
 
   workflow-lint:
     name: Workflow lint
-    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -1365,15 +1386,6 @@ jobs:
             "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"
           )
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            for entry in "${JOBS[@]}"; do
-              if [ "${entry#*:}" != "skipped" ]; then
-                echo "::error::Expected ${entry%%:*} to be skipped on push"
-                exit 1
-              fi
-            done
-            exit 0
-          fi
           fail=0
           failed_jobs=()
 

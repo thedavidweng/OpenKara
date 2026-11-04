@@ -18,6 +18,7 @@ jobs:
     permissions:
       contents: write # create tags, releases, and release-please release PR commits
       pull-requests: write # open and update the running release PR
+      actions: write # dispatch required checks for the release PR
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
@@ -29,6 +30,18 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Dispatch release PR checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr list --state open --author 'app/github-actions' --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release-please--branches--main--")) | [.number, .headRefName] | @tsv' |
+          while IFS=$'\t' read -r number branch; do
+            gh workflow run ci.yml --ref "$branch" -f "pull_request=$number"
+            gh workflow run packaging.yml --ref "$branch" -f "pull_request=$number"
+          done
 
   # release-please bumps package.json and CHANGELOG.md in its release PR.
   # The native manifests (src-tauri/Cargo.toml, Cargo.lock, tauri.conf.json)

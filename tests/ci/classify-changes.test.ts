@@ -127,6 +127,7 @@ describe("classifyFile", () => {
 
   test("release.yml is release_workflow (not other_workflow)", () => {
     expect(classifyFile(".github/workflows/release.yml")).toEqual([
+      "ci_workflow",
       "release_workflow",
     ]);
   });
@@ -134,7 +135,7 @@ describe("classifyFile", () => {
   test("reusable-windows-installed-app.yml is release_workflow", () => {
     expect(
       classifyFile(".github/workflows/reusable-windows-installed-app.yml"),
-    ).toEqual(["release_workflow"]);
+    ).toEqual(["ci_workflow", "release_workflow"]);
   });
 
   test("Windows desktop E2E scripts are release_workflow", () => {
@@ -166,12 +167,14 @@ describe("classifyFile", () => {
 
   test("packaging.yml is packaging_workflow", () => {
     expect(classifyFile(".github/workflows/packaging.yml")).toEqual([
+      "ci_workflow",
       "packaging_workflow",
     ]);
   });
 
   test("mirror.yml is other_workflow", () => {
     expect(classifyFile(".github/workflows/mirror.yml")).toEqual([
+      "ci_workflow",
       "other_workflow",
     ]);
   });
@@ -184,19 +187,20 @@ describe("classifyFile", () => {
     ]);
 
     for (const file of CATEGORY_PATTERNS.workflow_contracts) {
-      expect(classifyFile(file), file).toEqual(["workflow_contracts"]);
+      expect(classifyFile(file), file).toContain("workflow_contracts");
 
       const result = pr(file);
       expect(result.expectedJobs, file).toContain("app-frontend");
       expect(result.expectedJobs, file).toContain("workflow-lint");
-      for (const job of FULL_CI_HEAVY) {
-        expect(result.expectedJobs, `${file}: ${job}`).not.toContain(job);
-      }
+      expect(result.heavyEnabled).toBe(file.startsWith(".github/workflows/"));
     }
   });
 
   test("AGENTS.md is docs", () => {
     expect(classifyFile("AGENTS.md")).toEqual(["docs"]);
+    expect(classifyFile("src/README.md")).toEqual(["docs"]);
+    expect(classifyFile("src-tauri/README.md")).toEqual(["docs"]);
+    expect(classifyFile("website/README.md")).toEqual(["docs"]);
   });
 
   test("package.json is deps_js", () => {
@@ -237,7 +241,7 @@ describe("classifyFile", () => {
     expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("website");
     expect(result.expectedJobs).not.toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
+    expect(result.expectedJobs).toContain("tauri-build-smoke");
     expect(result.expectedJobs).not.toContain("rust-test");
   });
 
@@ -271,6 +275,16 @@ describe("classifyFile", () => {
   test(".gitignore is unknown (no category)", () => {
     expect(classifyFile(".gitignore")).toEqual([]);
   });
+});
+
+test("release dispatch treats the validated package version as metadata", () => {
+  const result = classifyChanges(
+    ["package.json", "CHANGELOG.md", ".release-please-manifest.json"],
+    "release_dispatch",
+  );
+  expect(result.expectedJobs).not.toContain("app-frontend");
+  expect(result.expectedJobs).not.toContain("rust-test");
+  expect(result.expectedJobs).toContain("release-validation");
 });
 
 // ── Invariants ────────────────────────────────────────────────────────
@@ -418,16 +432,13 @@ describe("PR fixtures", () => {
 
   test("PR #154 — release.yml only", () => {
     const result = pr(".github/workflows/release.yml");
-    expect(result.categories).toEqual(["release_workflow"]);
+    expect(result.categories).toEqual(["ci_workflow", "release_workflow"]);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("workflow-lint");
     expect(result.expectedJobs).toContain("release-validation");
-    // No heavy jobs
-    expect(result.expectedJobs).not.toContain("app-frontend");
-    expect(result.expectedJobs).not.toContain("website");
-    for (const job of [...FULL_CI_HEAVY, ...DEFERRED_PR_HEAVY]) {
-      expect(result.expectedJobs).not.toContain(job);
-    }
+    expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("rust-test");
+    expect(result.expectedJobs).toContain("tauri-build");
   });
 });
 
@@ -442,19 +453,17 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).toContain("app-frontend");
     expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("rust-test");
-    for (const job of DEFERRED_PR_HEAVY) {
-      expect(result.expectedJobs).not.toContain(job);
-    }
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).toContain("tauri-build");
   });
 
   test("Packaging workflow (.github/workflows/packaging.yml)", () => {
     const result = pr(".github/workflows/packaging.yml");
-    expect(result.categories).toEqual(["packaging_workflow"]);
+    expect(result.categories).toEqual(["ci_workflow", "packaging_workflow"]);
     expect(result.unknownFiles).toEqual([]);
     expect(result.expectedJobs).toContain("workflow-lint");
-    // No app CI for packaging-workflow-only
-    expect(result.expectedJobs).not.toContain("app-frontend");
-    expect(result.expectedJobs).not.toContain("rust-test");
+    expect(result.expectedJobs).toContain("app-frontend");
+    expect(result.expectedJobs).toContain("rust-test");
   });
 
   test("E2E (tests/e2e/player.spec.ts) runs js-quality on PR, Playwright on full CI", () => {
@@ -514,6 +523,7 @@ describe("synthetic fixtures", () => {
       "conventional-commits",
       "standards-reference",
       "ci-gate",
+      "js-quality",
       "workflow-lint",
     ]);
   });
@@ -527,6 +537,7 @@ describe("synthetic fixtures", () => {
       "conventional-commits",
       "standards-reference",
       "ci-gate",
+      "js-quality",
       "workflow-lint",
     ]);
   });
@@ -562,9 +573,8 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).toContain("release-validation");
     expect(result.expectedJobs).toContain("app-frontend");
     expect(result.expectedJobs).toContain("js-quality");
-    for (const job of DEFERRED_PR_HEAVY) {
-      expect(result.expectedJobs).not.toContain(job);
-    }
+    expect(result.expectedJobs).toContain("playwright-ui-smoke");
+    expect(result.expectedJobs).toContain("tauri-build");
   });
 
   test("mixed website/Rust = union of website + Rust", () => {
@@ -628,18 +638,18 @@ describe("event type behavior", () => {
     expect(result.expectedJobs).not.toContain("tauri-build");
   });
 
-  test("push with frontend sources runs Playwright and Linux Tauri smoke", () => {
+  test("push with frontend sources runs frontend checks", () => {
     const result = classifyChanges(["src/App.tsx"], "push");
     expect(result.expectedJobs).toContain("app-frontend");
     expect(result.expectedJobs).toContain("js-quality");
     expect(result.expectedJobs).toContain("playwright-ui-smoke");
-    expect(result.expectedJobs).toContain("tauri-build-smoke");
+    expect(result.expectedJobs).not.toContain("tauri-build-smoke");
     expect(result.expectedJobs).not.toContain("tauri-build");
   });
 
   test("push with Rust sources runs the rust heavy set", () => {
     const result = classifyChanges(["src-tauri/src/lib.rs"], "push");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of FULL_CI_HEAVY.filter((job) => job !== "tauri-build")) {
       expect(result.expectedJobs).toContain(job);
     }
     expect(result.expectedJobs).not.toContain("tauri-build-smoke");
@@ -649,11 +659,11 @@ describe("event type behavior", () => {
   test("PR with ci:full label enables heavy jobs for changed paths", () => {
     const frontendFull = prFull("src/App.tsx");
     expect(frontendFull.expectedJobs).toContain("playwright-ui-smoke");
-    expect(frontendFull.expectedJobs).toContain("tauri-build-smoke");
+    expect(frontendFull.expectedJobs).not.toContain("tauri-build-smoke");
     expect(frontendFull.expectedJobs).not.toContain("tauri-build");
 
     const rustFull = prFull("src-tauri/src/lib.rs");
-    for (const job of FULL_CI_HEAVY) {
+    for (const job of FULL_CI_HEAVY.filter((job) => job !== "tauri-build")) {
       expect(rustFull.expectedJobs).toContain(job);
     }
     expect(rustFull.expectedJobs).not.toContain("tauri-build-smoke");

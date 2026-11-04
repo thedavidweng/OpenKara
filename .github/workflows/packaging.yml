@@ -8,10 +8,15 @@ on:
   schedule:
     - cron: "32 3 * * *"
   workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request number for release checks
+        type: string
+        required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pull_request || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pull_request != '' }}
 
 permissions:
   contents: read
@@ -44,12 +49,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pull_request }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ -n "$PR_NUMBER" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$GITHUB_SHA"
+            fi
             gh api --paginate --jq '.[].filename' \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               > changed-files.txt
@@ -79,7 +87,7 @@ jobs:
       - name: Classify changes
         id: classify
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          EVENT_NAME: ${{ inputs.pull_request != '' && 'release_dispatch' || github.event_name }}
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
@@ -91,10 +99,10 @@ jobs:
 
           # Check whether packaging-impacting categories are present.
           cats=$(jq -r '.categories | join(",")' classification.json)
-          full_ci=$(jq -r '.heavyEnabled' classification.json)
+          full_ci=$(jq -r '.heavyEnabled or (.categories | index("packaging_inputs") != null)' classification.json)
           {
             echo "packaging_inputs=$(echo "$cats" | grep -q 'packaging_inputs' && echo true || echo false)"
-            echo "packaging_workflow=$(echo "$cats" | grep -q 'packaging_workflow' && echo true || echo false)"
+            echo "packaging_workflow=$(echo "$cats" | grep -Eq 'packaging_workflow|ci_workflow' && echo true || echo false)"
             echo "release_metadata=$(echo "$cats" | grep -q 'release_metadata' && echo true || echo false)"
             echo "full_ci=$full_ci"
           } >> "$GITHUB_OUTPUT"
