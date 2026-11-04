@@ -36,8 +36,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh pr list --state open --author 'app/github-actions' --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("release-please--branches--main--")) | [.number, .headRefName] | @tsv' |
+          gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.head.ref | startswith("release-please--branches--main--"))) | [.number, .head.ref] | @tsv' |
           while IFS=$'\t' read -r number branch; do
             gh workflow run ci.yml --ref "$branch" -f "pull_request=$number"
             gh workflow run packaging.yml --ref "$branch" -f "pull_request=$number"
