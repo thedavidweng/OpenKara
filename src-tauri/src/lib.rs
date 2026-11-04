@@ -1,3 +1,4 @@
+// CI routing verification.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 pub mod airplay_stream;
