@@ -10,17 +10,6 @@ name: Branch Windows installed-app gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths:
-      - "src-tauri/build.rs"
-      - "src-tauri/common-controls.manifest"
-      - "src-tauri/src/commands/runtime_bootstrap.rs"
-      - "src-tauri/src/commands/runtime_worker.rs"
-      - "src-tauri/src/separator/webgpu.rs"
-      - "src-tauri/src/separator/runtime_bootstrap.rs"
-      - "src-tauri/src/separator/artifacts.rs"
-      - "src-tauri/src/runtime_bootstrap_regression.rs"
-      - ".github/workflows/reusable-windows-installed-app.yml"
-      - ".github/workflows/windows-installed-app-smoke-test.yml"
   push:
     branches:
       - main
@@ -55,11 +44,31 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.paths.outputs.run }}
+    steps:
+      - id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            files=$(gh api --paginate --jq '.[].filename' "repos/$GITHUB_REPOSITORY/pulls/$PR/files")
+            if printf '%s\n' "$files" | grep -Eq '^(\.github/workflows/.*|src-tauri/(build\.rs|common-controls\.manifest|src/commands/runtime_(bootstrap|worker)\.rs|src/separator/(webgpu|runtime_bootstrap|artifacts)\.rs|src/runtime_bootstrap_regression\.rs))$'; then
+              echo 'run=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'run=false' >> "$GITHUB_OUTPUT"
+            fi
+          fi
   windows-installed-app:
     name: Windows installed-app (branch)
-    if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'ci:full')
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     uses: $/.github/workflows/reusable-windows-installed-app.yml
     with:
       openkara_version: "0.0.0-test"
@@ -73,6 +82,21 @@ jobs:
       run_display_matrix: false
       previous_version: none
       retention_days: 1
+
+  gate:
+    name: Windows Installed-App Gate
+    if: always()
+    needs: [changes, windows-installed-app]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          RESULT: ${{ needs.windows-installed-app.result }}
+          EXPECTED: ${{ needs.changes.outputs.run }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$EXPECTED" = true ]; then test "$RESULT" = success; else test "$RESULT" = skipped; fi
 
   report-failure:
     name: Report main or nightly failure

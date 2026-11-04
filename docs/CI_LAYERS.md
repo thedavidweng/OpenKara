@@ -31,7 +31,9 @@ PR to run its path-matched heavy jobs before merge:
 - Playwright UI smoke (`playwright-ui-smoke`)
 - macOS Rust tests (`rust-test-macos`) and Windows Rust compile (`rust-test-windows-compile`)
 - Flatpak and WinGet packaging (`packaging.yml`)
-- Windows installed-app gate (`windows-installed-app-smoke-test.yml`)
+
+The Windows installed-app gate also runs when its runtime and packaging inputs
+or workflow files change.
 
 `rust-test-windows-compile` also carries the live Source Registry consumer
 gate. The owner arms the gate with the `OPENKARA_LIVE_REGISTRY_URL` repo

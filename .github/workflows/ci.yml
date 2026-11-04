@@ -154,13 +154,13 @@ jobs:
             > classification.json
 
           # Extract outputs for GITHUB_OUTPUT.
-          jq -r '
+          jq -r --arg event "$EVENT_NAME" '
             "expected-jobs=\(.expectedJobs | @json)",
             "expected-skipped-heavy=\(.expectedSkippedHeavyJobs | @json)",
             "unknown=\(if .unknownFiles | length > 0 then "true" else "false" end)",
             "unknown-files=\(.unknownFiles | @json)",
             "categories=\(.categories | @json)",
-            "light-only=\(if ([.categories[] | select(. != "docs" and . != "release_metadata")] | length) == 0 then "true" else "false" end)"
+            "light-only=\(if ($event != "schedule" and $event != "workflow_dispatch") and (.categories | length > 0) and ([.categories[] | select(. != "docs" and . != "release_metadata")] | length == 0) then "true" else "false" end)"
           ' classification.json >> "$GITHUB_OUTPUT"
 
           # Per-job run_ booleans.
