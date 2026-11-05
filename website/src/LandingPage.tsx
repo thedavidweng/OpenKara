@@ -188,6 +188,8 @@ const currentYear = new Date().getFullYear();
 
 export function LandingPage() {
   const [previewReady, setPreviewReady] = useState(false);
+  // Set only by an explicit click, so the app focuses itself only then.
+  const [previewFocus, setPreviewFocus] = useState(false);
   const previewStageRef = useRef<HTMLDivElement>(null);
   // The interactive app is ~660 KB, so it stays out of the first load. Once
   // the visitor starts scrolling toward it, it loads in the background; the
@@ -261,7 +263,10 @@ export function LandingPage() {
     <button
       className="preview-start"
       type="button"
-      onClick={() => setPreviewReady(true)}
+      onClick={() => {
+        setPreviewFocus(true);
+        setPreviewReady(true);
+      }}
     >
       <img
         src={withBase(`/img/preview/${language}-${theme}.webp`)}
@@ -350,7 +355,11 @@ export function LandingPage() {
           <div className="preview-stage" ref={previewStageRef}>
             {previewReady ? (
               <Suspense fallback={previewStart}>
-                <AppPreview language={appLanguage} theme={theme} />
+                <AppPreview
+                  language={appLanguage}
+                  theme={theme}
+                  focusOnMount={previewFocus}
+                />
               </Suspense>
             ) : (
               previewStart
