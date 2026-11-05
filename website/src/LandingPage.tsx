@@ -301,7 +301,7 @@ export function LandingPage() {
               </Suspense>
             ) : (
               <button
-                className="product-preview preview-start"
+                className="preview-start"
                 type="button"
                 onClick={() => setPreviewReady(true)}
               >
@@ -311,7 +311,10 @@ export function LandingPage() {
                   width="1426"
                   height="803"
                 />
-                <span>{copy.previewStart}</span>
+                <span>
+                  <Play size={13} fill="currentColor" />
+                  {copy.previewStart}
+                </span>
               </button>
             )}
           </div>
