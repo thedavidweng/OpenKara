@@ -42,14 +42,20 @@ function ensureTauriMock() {
 export function AppPreview({
   language,
   theme,
+  focusOnMount,
 }: {
   language: "en" | "zh-CN";
   theme: "dark" | "light";
+  focusOnMount: boolean;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    previewRef.current?.focus();
-  }, []);
+    // Only an explicit click asks for focus; automatic loading must not
+    // scroll the page or take keyboard focus.
+    if (focusOnMount) {
+      previewRef.current?.focus();
+    }
+  }, [focusOnMount]);
   // Inject the mock IPC once before first render.  The real app initialization
   // (useAppStartupRuntime) will call invoke() to load settings, library,
   // playback state, etc. — the same code path as the real Tauri app.

@@ -1,4 +1,11 @@
-import { lazy, Suspense, useLayoutEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Code,
   Download,
@@ -181,6 +188,39 @@ const currentYear = new Date().getFullYear();
 
 export function LandingPage() {
   const [previewReady, setPreviewReady] = useState(false);
+  // Set only by an explicit click, so the app focuses itself only then.
+  const [previewFocus, setPreviewFocus] = useState(false);
+  const previewStageRef = useRef<HTMLDivElement>(null);
+  // The interactive app is ~660 KB, so it stays out of the first load. Once
+  // the visitor starts scrolling toward it, it loads in the background; the
+  // poster remains until the app is ready. Clicking the button still works.
+  useEffect(() => {
+    if (previewReady) {
+      return;
+    }
+    const stage = previewStageRef.current;
+    if (!stage) {
+      return;
+    }
+    let observer: IntersectionObserver | undefined;
+    const arm = () => {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry?.isIntersecting) {
+            observer?.disconnect();
+            setPreviewReady(true);
+          }
+        },
+        { rootMargin: "600px 0px" },
+      );
+      observer.observe(stage);
+    };
+    window.addEventListener("scroll", arm, { once: true, passive: true });
+    return () => {
+      window.removeEventListener("scroll", arm);
+      observer?.disconnect();
+    };
+  }, [previewReady]);
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("openkara-site-language");
     if (saved === "en" || saved === "zh-CN") {
@@ -218,6 +258,28 @@ export function LandingPage() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute("content", theme === "dark" ? "#08090a" : "#f7f7f5");
   }, [language, theme]);
+
+  const previewStart = (
+    <button
+      className="preview-start"
+      type="button"
+      onClick={() => {
+        setPreviewFocus(true);
+        setPreviewReady(true);
+      }}
+    >
+      <img
+        src={withBase(`/img/preview/${language}-${theme}.webp`)}
+        alt=""
+        width="1426"
+        height="803"
+      />
+      <span>
+        <Play size={13} fill="currentColor" />
+        {copy.previewStart}
+      </span>
+    </button>
+  );
 
   return (
     <div className="landing-site">
@@ -290,32 +352,17 @@ export function LandingPage() {
         </section>
 
         <section className="preview-section" aria-label="OpenKara preview">
-          <div className="preview-stage">
+          <div className="preview-stage" ref={previewStageRef}>
             {previewReady ? (
-              <Suspense
-                fallback={
-                  <div className="product-preview" aria-hidden="true" />
-                }
-              >
-                <AppPreview language={appLanguage} theme={theme} />
+              <Suspense fallback={previewStart}>
+                <AppPreview
+                  language={appLanguage}
+                  theme={theme}
+                  focusOnMount={previewFocus}
+                />
               </Suspense>
             ) : (
-              <button
-                className="preview-start"
-                type="button"
-                onClick={() => setPreviewReady(true)}
-              >
-                <img
-                  src={withBase(`/img/preview/${language}-${theme}.webp`)}
-                  alt=""
-                  width="1426"
-                  height="803"
-                />
-                <span>
-                  <Play size={13} fill="currentColor" />
-                  {copy.previewStart}
-                </span>
-              </button>
+              previewStart
             )}
           </div>
         </section>
