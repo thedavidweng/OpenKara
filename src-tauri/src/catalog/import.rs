@@ -1154,6 +1154,52 @@ mod tests {
         assert_eq!(tracks[1].library_song_id, None);
     }
 
+    #[test]
+    fn remembered_playable_match_annotates_the_original_with_the_candidates_song() {
+        use crate::catalog::{lookup_playable_match, remember_playable_match};
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "a", 3);
+        let progress = run_streaming_import(
+            &mut connection,
+            &library,
+            &source,
+            StreamingImportRequest {
+                source_id: "fixture".to_owned(),
+                items: vec![item("a")],
+                playlist: None,
+            },
+            |_| panic!("no conflict"),
+        )
+        .expect("import");
+        let identity = |source: &str, id: &str| StreamingTrackIdentity {
+            source: source.to_owned(),
+            remote_track_id: id.to_owned(),
+        };
+        let original = identity("metadata", "orig");
+        assert_eq!(lookup_playable_match(&connection, &original), Ok(None));
+
+        remember_playable_match(&connection, &original, &identity("fixture", "missing"), 1)
+            .expect("remember");
+        remember_playable_match(&connection, &original, &identity("fixture", "a"), 2)
+            .expect("remember again");
+        assert_eq!(
+            lookup_playable_match(&connection, &original),
+            Ok(Some(identity("fixture", "a")))
+        );
+
+        let mut tracks = vec![source_track("orig"), source_track("other")];
+        tracks
+            .iter_mut()
+            .for_each(|t| t.source_id = "metadata".into());
+        crate::catalog::annotate_library_songs(&connection, "metadata", &mut tracks)
+            .expect("annotate");
+        assert_eq!(
+            tracks[0].library_song_id.as_deref(),
+            progress.imported_song_ids.first().map(String::as_str)
+        );
+        assert_eq!(tracks[1].library_song_id, None);
+    }
+
     fn source_track(id: &str) -> StreamingTrack {
         StreamingTrack {
             source_id: "fixture".to_owned(),

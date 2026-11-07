@@ -22,25 +22,88 @@ pub fn lookup_song_hash(
         .map_err(|error| CatalogError::Internal(error.to_string()))
 }
 
-/// Fills `library_song_id` from the persisted Streaming Track Identity.
+/// Fills `library_song_id` from the persisted Streaming Track Identity, or
+/// from the identity of the track's remembered Playable Match.
 pub fn annotate_library_songs(
     connection: &Connection,
     source_id: &str,
     tracks: &mut [super::types::StreamingTrack],
 ) -> Result<(), CatalogError> {
-    let mut statement = connection
+    let mut direct = connection
         .prepare_cached(
             "SELECT song_hash FROM streaming_track_identities \
              WHERE source = ?1 AND remote_track_id = ?2",
         )
         .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    let mut matched = connection
+        .prepare_cached(
+            "SELECT i.song_hash FROM playable_matches m \
+             JOIN streaming_track_identities i \
+               ON i.source = m.match_source AND i.remote_track_id = m.match_remote_track_id \
+             WHERE m.source = ?1 AND m.remote_track_id = ?2",
+        )
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
     for track in tracks {
-        track.library_song_id = statement
-            .query_row(params![source_id, track.remote_track_id], |row| row.get(0))
+        let args = params![source_id, track.remote_track_id];
+        track.library_song_id = direct
+            .query_row(args, |row| row.get(0))
             .optional()
             .map_err(|error| CatalogError::Internal(error.to_string()))?;
+        if track.library_song_id.is_none() {
+            track.library_song_id = matched
+                .query_row(args, |row| row.get(0))
+                .optional()
+                .map_err(|error| CatalogError::Internal(error.to_string()))?;
+        }
     }
     Ok(())
+}
+
+pub fn remember_playable_match(
+    connection: &Connection,
+    original: &StreamingTrackIdentity,
+    matched: &StreamingTrackIdentity,
+    matched_at_ms: i64,
+) -> Result<(), CatalogError> {
+    connection
+        .execute(
+            "INSERT INTO playable_matches \
+             (source, remote_track_id, match_source, match_remote_track_id, matched_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(source, remote_track_id) DO UPDATE SET \
+               match_source = excluded.match_source, \
+               match_remote_track_id = excluded.match_remote_track_id, \
+               matched_at_ms = excluded.matched_at_ms",
+            params![
+                original.source,
+                original.remote_track_id,
+                matched.source,
+                matched.remote_track_id,
+                matched_at_ms
+            ],
+        )
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    Ok(())
+}
+
+pub fn lookup_playable_match(
+    connection: &Connection,
+    original: &StreamingTrackIdentity,
+) -> Result<Option<StreamingTrackIdentity>, CatalogError> {
+    connection
+        .query_row(
+            "SELECT match_source, match_remote_track_id FROM playable_matches \
+             WHERE source = ?1 AND remote_track_id = ?2",
+            params![original.source, original.remote_track_id],
+            |row| {
+                Ok(StreamingTrackIdentity {
+                    source: row.get(0)?,
+                    remote_track_id: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| CatalogError::Internal(error.to_string()))
 }
 
 pub fn stamp_identity(

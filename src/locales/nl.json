@@ -963,7 +963,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Speelbare versie zoeken",
+        "findLabel": "Speelbare versie van “{{title}}” zoeken",
+        "title": "Kies een speelbare versie",
+        "original": "Origineel",
+        "versions": "Speelbare versies",
+        "sameIsrc": "Zelfde ISRC",
+        "loading": "Speelbare versies zoeken…",
+        "empty": "Geen speelbare versie gevonden in je andere bronnen.",
+        "import": "Importeren"
+      }
     }
   },
   "globalSearch": {

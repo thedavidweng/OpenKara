@@ -37,6 +37,7 @@ import type {
   MarketPackage,
   AuthChallenge,
   AuthPollResult,
+  PlayableMatches,
   StreamingTrackListing,
   StreamingSessionSnapshot,
   StreamingTrack,
@@ -413,6 +414,16 @@ export interface CatalogBackend {
     query: string,
     cursor?: string | null,
   ): Promise<StreamingTrackListing>;
+  findPlayableMatches(
+    sourceId: OnlineSourceId,
+    remoteTrackId: string,
+  ): Promise<PlayableMatches>;
+  rememberPlayableMatch(
+    sourceId: OnlineSourceId,
+    remoteTrackId: string,
+    matchSourceId: OnlineSourceId,
+    matchRemoteTrackId: string,
+  ): Promise<void>;
   startStreamingImport(
     sourceId: OnlineSourceId,
     remoteTrackIds: string[],

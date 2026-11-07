@@ -967,7 +967,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Найти воспроизводимую версию",
+        "findLabel": "Найти воспроизводимую версию «{{title}}»",
+        "title": "Выберите воспроизводимую версию",
+        "original": "Оригинал",
+        "versions": "Воспроизводимые версии",
+        "sameIsrc": "Тот же ISRC",
+        "loading": "Поиск воспроизводимых версий…",
+        "empty": "В других ваших источниках воспроизводимая версия не найдена.",
+        "import": "Импортировать"
+      }
     }
   },
   "globalSearch": {

@@ -269,6 +269,10 @@ pub fn run() {
             #[cfg(feature = "streaming-sources")]
             commands::catalog::search_streaming_source,
             #[cfg(feature = "streaming-sources")]
+            commands::catalog::find_playable_matches,
+            #[cfg(feature = "streaming-sources")]
+            commands::catalog::remember_playable_match,
+            #[cfg(feature = "streaming-sources")]
             commands::catalog::start_streaming_import,
             #[cfg(feature = "streaming-sources")]
             commands::catalog::continue_streaming_import,

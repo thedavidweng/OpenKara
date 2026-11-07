@@ -101,6 +101,23 @@ Progress, job snapshots and `streaming-import-progress` events all contain `sour
 
 Track states are `queued`, `downloading` (optional percent), `importing`, `imported` (song_id), `skipped` (refusal), or `failed` (reason). Failure reasons are `refusal`, `cancelled`, and `import_failed`. Refusal reasons are `no_play_rights`, `trial_clip`, `empty_url`, and `unavailable`. Protocol `no_media` maps to `empty_url`. A refusal never substitutes another source. Successful imports become ordinary library songs. Playlist origin and track identity include the source id. Conflict actions are `keep`, `replace`, `apply_keep`, `apply_replace`, or `cancel`.
 
+## Playable Match
+
+A track that its source refuses with `empty_url` can be imported from another installed Streaming Source. The user confirms every match. See [ADR 0048](../../adr/0048-match-a-playable-version-on-another-source-with-user-confirmation.md).
+
+| Command                                                                                    | Result            |
+| ------------------------------------------------------------------------------------------ | ----------------- |
+| `find_playable_matches(source_id,remote_track_id)`                                         | `PlayableMatches` |
+| `remember_playable_match(source_id,remote_track_id,match_source_id,match_remote_track_id)` | void              |
+
+`PlayableMatches` is `{remembered:{source_id,remote_track_id}|null,candidates:StreamingTrack[]}`. The original track metadata comes from the source track cache. A track that is not cached fails with `streaming_source_not_found`; the caller reloads the source listing.
+
+When a remembered match exists and its source is ready and allowed to import, `remembered` is set and `candidates` is empty. Otherwise the host searches every other ready source that can search with the query `<title> <first artist>`. It reads the first page only and runs the searches in parallel. A source that fails or needs a sign-in the user has not done is skipped. `candidates` holds at most 10 tracks, best first, with `library_song_id` filled.
+
+The host drops refused candidates and candidates from the original source. A candidate with a known duration more than 3000 ms from the original is dropped unless the ISRC is the same. The remaining candidates rank by tier: same ISRC, exact title and artist, then similar title with overlapping artists. A candidate whose title carries a version mark that the original lacks, or the reverse, ranks below all other candidates. Version marks are live, remix, instrumental, karaoke, and acoustic. Ties break on the smaller duration difference, then on search order.
+
+`remember_playable_match` stores the pair. The caller then imports the candidate with `start_streaming_import` on the candidate source. The library song gets the candidate's Streaming Track Identity and no Playlist Origin Stamp. Listings of the original source show the remembered match's library song as `library_song_id`.
+
 Online Preview queue ids are `stream:${source_id}:${encodeURIComponent(remote_id)}`. Metadata maps use the complete canonical id. Preview ids are not library songs and do not gain library lyrics, stems, or history. Host lyric lookup uses source-bound metadata. Preview work belongs to its source and must stop before source removal.
 
 `resolve_video_source_url(source_id,url)` returns `VideoQueueItem[]` for native YouTube links. Video queue ids retain `yt:`. It does not use YouTube `/player` stream URLs. `get_reveal_targets(song_id)` returns `song_file` and `stems` targets, each `{available,path}`. `reveal_in_folder(path)` opens an existing target in the system file manager.

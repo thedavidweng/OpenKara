@@ -7,6 +7,8 @@ mod import;
 #[cfg(feature = "streaming-sources")]
 mod job;
 #[cfg(feature = "streaming-sources")]
+pub mod matching;
+#[cfg(feature = "streaming-sources")]
 mod plugin;
 #[cfg(all(test, feature = "streaming-sources"))]
 mod plugin_tests;
@@ -24,7 +26,8 @@ pub(crate) use credentials::store_legacy_session;
 pub use credentials::{clear_retired_sessions, clear_session, load_credentials, store_session};
 #[cfg(feature = "streaming-sources")]
 pub use identity::{
-    annotate_library_songs, lookup_playlist_id, lookup_song_hash, StreamingTrackIdentity,
+    annotate_library_songs, lookup_playable_match, lookup_playlist_id, lookup_song_hash,
+    remember_playable_match, StreamingTrackIdentity,
 };
 #[cfg(feature = "streaming-sources")]
 pub use import::{

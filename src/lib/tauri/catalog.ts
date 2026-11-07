@@ -67,6 +67,20 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
       }),
     searchStreamingSource: (sourceId, query, cursor = null) =>
       invoke("search_streaming_source", { sourceId, query, cursor }),
+    findPlayableMatches: (sourceId, remoteTrackId) =>
+      invoke("find_playable_matches", { sourceId, remoteTrackId }),
+    rememberPlayableMatch: (
+      sourceId,
+      remoteTrackId,
+      matchSourceId,
+      matchRemoteTrackId,
+    ) =>
+      invoke("remember_playable_match", {
+        sourceId,
+        remoteTrackId,
+        matchSourceId,
+        matchRemoteTrackId,
+      }),
     startStreamingImport: (sourceId, remoteTrackIds, remotePlaylistId, jobId) =>
       invoke("start_streaming_import", {
         sourceId,

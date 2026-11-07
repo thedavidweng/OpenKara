@@ -965,7 +965,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Trova una versione riproducibile",
+        "findLabel": "Trova una versione riproducibile di “{{title}}”",
+        "title": "Scegli una versione riproducibile",
+        "original": "Originale",
+        "versions": "Versioni riproducibili",
+        "sameIsrc": "Stesso ISRC",
+        "loading": "Ricerca di versioni riproducibili…",
+        "empty": "Nessuna versione riproducibile trovata nelle tue altre fonti.",
+        "import": "Importa"
+      }
     }
   },
   "globalSearch": {

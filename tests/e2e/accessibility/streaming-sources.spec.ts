@@ -230,6 +230,44 @@ test("source switching keeps colliding remote tracks and cursor pages distinct",
   ).toContainText("Web Library: Shared Track");
 });
 
+test("a track without audio finds a playable version from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Web Library", exact: true }).click();
+  const browser = page.getByTestId("streaming-browser");
+  const search = browser.getByRole("textbox", { name: "Search source songs" });
+  await search.fill("Unplayable");
+  await search.press("Enter");
+
+  const find = browser.getByRole("button", {
+    name: "Find a playable version of “Unplayable Song”",
+  });
+  await expect(find).toBeVisible();
+  await find.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", {
+    name: "Choose a playable version",
+  });
+  await expect(dialog).toBeVisible();
+  const choice = dialog.getByRole("radio");
+  await expect(choice).toBeChecked();
+  await expect(dialog).toContainText("Plugin Library");
+  await a11y.axeForThemes();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(find).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Import", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await a11y.axeForThemes();
+});
+
 test("the sidebar search reaches every source from the keyboard", async ({
   page,
   a11y,

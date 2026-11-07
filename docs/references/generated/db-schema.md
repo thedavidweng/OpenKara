@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`, `014_lyrics_word_timed_probe.sql`, `015_streaming_identity.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`, `014_lyrics_word_timed_probe.sql`, `015_streaming_identity.sql`, `016_playable_matches.sql`.
 
 ## `songs`
 
@@ -156,6 +156,18 @@ Created by `015_streaming_identity.sql`.
 | `remote_playlist_id` | `TEXT` | NOT NULL           |
 | `playlist_id`        | `TEXT` | FK → playlists(id) |
 
+## `playable_matches`
+
+Created by `016_playable_matches.sql`.
+
+| Column                  | Type      | Notes    |
+| ----------------------- | --------- | -------- |
+| `source`                | `TEXT`    | NOT NULL |
+| `remote_track_id`       | `TEXT`    | NOT NULL |
+| `match_source`          | `TEXT`    | NOT NULL |
+| `match_remote_track_id` | `TEXT`    | NOT NULL |
+| `matched_at_ms`         | `INTEGER` | NOT NULL |
+
 ## Migration History
 
 1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
@@ -174,3 +186,4 @@ Created by `015_streaming_identity.sql`.
 14. `013_remote_publish_outbox.sql` — Durable publish change-set stored inside the library SQLite database.
 15. `014_lyrics_word_timed_probe.sql` — ALTER TABLE lyrics ADD COLUMN word_timed_checked_at INTEGER;
 16. `015_streaming_identity.sql` — CREATE TABLE IF NOT EXISTS streaming_track_identities (
+17. `016_playable_matches.sql` — CREATE TABLE IF NOT EXISTS playable_matches (

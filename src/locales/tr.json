@@ -963,7 +963,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Çalınabilir bir sürüm bul",
+        "findLabel": "“{{title}}” için çalınabilir bir sürüm bul",
+        "title": "Çalınabilir bir sürüm seçin",
+        "original": "Orijinal",
+        "versions": "Çalınabilir sürümler",
+        "sameIsrc": "Aynı ISRC",
+        "loading": "Çalınabilir sürümler aranıyor…",
+        "empty": "Diğer kaynaklarınızda çalınabilir bir sürüm bulunamadı.",
+        "import": "İçe aktar"
+      }
     }
   },
   "globalSearch": {

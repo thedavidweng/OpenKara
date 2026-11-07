@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Cari versi yang bisa diputar",
+        "findLabel": "Cari versi yang bisa diputar dari “{{title}}”",
+        "title": "Pilih versi yang bisa diputar",
+        "original": "Asli",
+        "versions": "Versi yang bisa diputar",
+        "sameIsrc": "ISRC sama",
+        "loading": "Mencari versi yang bisa diputar…",
+        "empty": "Tidak ada versi yang bisa diputar di sumber Anda yang lain.",
+        "import": "Impor"
+      }
     }
   },
   "globalSearch": {

@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Tìm phiên bản phát được",
+        "findLabel": "Tìm phiên bản phát được của “{{title}}”",
+        "title": "Chọn phiên bản phát được",
+        "original": "Bản gốc",
+        "versions": "Các phiên bản phát được",
+        "sameIsrc": "Cùng ISRC",
+        "loading": "Đang tìm phiên bản phát được…",
+        "empty": "Không tìm thấy phiên bản phát được trong các nguồn khác của bạn.",
+        "import": "Nhập"
+      }
     }
   },
   "globalSearch": {
