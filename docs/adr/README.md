@@ -92,4 +92,5 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0046 — Validate WebGPU output before separation](./0046-validate-webgpu-output-before-separation.md)
 - [0047 — Include the official Source Registry and update its sources automatically](./0047-include-the-official-source-registry-and-update-its-sources-automatically.md)
 - [0048 — Match a playable version on another source with user confirmation](./0048-match-a-playable-version-on-another-source-with-user-confirmation.md)
+- [0049 — Let a Streaming Source supply lyrics for its own tracks](./0049-let-a-streaming-source-supply-lyrics-for-its-own-tracks.md) (proposed)
 - [0050 — Build controls from shadcn/ui on Base UI](./0050-build-controls-from-shadcn-ui-on-base-ui.md)
