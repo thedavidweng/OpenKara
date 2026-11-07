@@ -31,6 +31,7 @@
 
 ## Shared enum: `ErrorCode`
 
+- `library_unavailable`
 - `database_unavailable`
 - `remote_repository_unavailable`
 - `remote_contention`

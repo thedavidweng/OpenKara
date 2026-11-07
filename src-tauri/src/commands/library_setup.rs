@@ -17,6 +17,46 @@ use tauri::State;
 pub struct LibraryRegistrySnapshot {
     pub active_library_id: Option<String>,
     pub libraries: Vec<RegisteredLibrary>,
+    /// Set when the active library is registered but could not be opened.
+    pub active_library_unavailable: Option<ActiveLibraryUnavailable>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveLibraryUnavailableReason {
+    /// The library folder does not exist (moved, renamed, or drive disconnected).
+    NotFound,
+    /// The folder exists but is not an openable OpenKara library.
+    NotOpenable,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ActiveLibraryUnavailable {
+    pub path: String,
+    pub reason: ActiveLibraryUnavailableReason,
+}
+
+impl LibraryRegistrySnapshot {
+    pub(crate) fn of(config: &AppConfig) -> Self {
+        Self {
+            active_library_id: config.active_library_id.clone(),
+            libraries: config.libraries.clone(),
+            active_library_unavailable: None,
+        }
+    }
+}
+
+fn active_library_unavailable(config: &AppConfig) -> Option<ActiveLibraryUnavailable> {
+    let path = config.active_library()?.working_copy_root()?;
+    let reason = if path.exists() {
+        ActiveLibraryUnavailableReason::NotOpenable
+    } else {
+        ActiveLibraryUnavailableReason::NotFound
+    };
+    Some(ActiveLibraryUnavailable {
+        path: path.display().to_string(),
+        reason,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,10 +111,7 @@ fn update_library_display_name(
 
     persist_app_config(app_data_dir, &config)?;
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(LibraryRegistrySnapshot::of(&config))
 }
 
 fn delete_library_data(
@@ -204,10 +241,7 @@ fn register_library(
         upload_statuses.clear();
     }
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(LibraryRegistrySnapshot::of(&config))
 }
 
 fn activate_library(
@@ -243,10 +277,7 @@ fn activate_library(
     persist_app_config(app_data_dir, &config)?;
     store_active_library(state, &mut config, lib)?;
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(LibraryRegistrySnapshot::of(&config))
 }
 
 #[tauri::command]
@@ -310,11 +341,18 @@ pub fn get_library_registry(state: State<'_, AppState>) -> CommandResult<Library
     // automation-smoke). Tauri's path().app_data_dir() ignores that override and
     // makes the frontend think no library is registered.
     let config = load_app_config(&state.shell.app_data_dir)?;
+    let mut snapshot = LibraryRegistrySnapshot::of(&config);
+    let library_open = state
+        .shell
+        .library
+        .lock()
+        .map_err(|_| state_lock_error("library lock was poisoned"))?
+        .is_some();
+    if !library_open {
+        snapshot.active_library_unavailable = active_library_unavailable(&config);
+    }
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -371,10 +409,7 @@ pub fn remove_library(
         )?;
     }
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(LibraryRegistrySnapshot::of(&config))
 }
 
 #[tauri::command]
@@ -425,6 +460,27 @@ mod tests {
         set_active_library(&mut config, library.id().to_owned());
         assert_eq!(config.active_library_id.as_deref(), Some(library.id()));
         assert_eq!(config.libraries.len(), 1);
+    }
+
+    #[test]
+    fn unavailable_reason_distinguishes_missing_and_unopenable_folders() {
+        let tmp = tempfile::tempdir().expect("temporary directory");
+        let mut config = AppConfig::default();
+        let missing = tmp.path().join("gone");
+        let library = RegisteredLibrary::local(missing.display().to_string(), "gone".to_owned());
+        upsert_library(&mut config, library.clone());
+        set_active_library(&mut config, library.id().to_owned());
+
+        let unavailable = active_library_unavailable(&config).expect("unavailable");
+        assert_eq!(unavailable.reason, ActiveLibraryUnavailableReason::NotFound);
+        assert_eq!(unavailable.path, missing.display().to_string());
+
+        fs::create_dir_all(&missing).expect("folder without marker");
+        let unavailable = active_library_unavailable(&config).expect("unavailable");
+        assert_eq!(
+            unavailable.reason,
+            ActiveLibraryUnavailableReason::NotOpenable
+        );
     }
 
     #[test]
