@@ -900,3 +900,56 @@ test("account menu focuses its action, restores focus on Escape, and dismisses o
   expect(screen.queryByRole("menu")).toBeNull();
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
+
+test.each([
+  ["usable signed out", ["search"]],
+  ["needs sign-in", ["liked_tracks"]],
+] as const)(
+  "a QR sign-in challenge renders once when the source is %s",
+  async (_name, capabilities) => {
+    const fixture = source("alpha", [...capabilities]);
+    if (!fixture.manifest) throw new Error("Fixture requires a manifest");
+    fixture.manifest.authentication = { flow: "qr" };
+    store = createCatalogStore(
+      createMockBackend({
+        overrides: {
+          catalog: {
+            getStreamingSession: async (source_id) => ({
+              source_id,
+              signed_in: false,
+              expired: false,
+              display_name: null,
+            }),
+            openStreamingSignIn: async (source_id) => ({
+              source_id,
+              challenge: "qr-alpha",
+              expires_at: "2099-01-01T00:00:00Z",
+              poll_after_ms: 60000,
+              presentation: {
+                kind: "qr",
+                content: "https://example.invalid/auth",
+                text: "Scan me",
+              },
+            }),
+          },
+        },
+      }),
+    );
+    shared.store = store;
+    store.getState().applySources([fixture]);
+    store.getState().setActiveSource("alpha");
+    render(<StreamingBrowser />);
+    await act(async () =>
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "catalog.streaming.connect",
+        })[0],
+      ),
+    );
+    expect(screen.getAllByTitle("catalog.streaming.scanCode")).toHaveLength(1);
+    expect(screen.getAllByText("Scan me")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: "common.cancel" }),
+    ).toHaveLength(1);
+  },
+);
