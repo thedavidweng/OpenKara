@@ -336,9 +336,8 @@ depends on:
 
 ## Publishing through a Source Registry
 
-A Source Registry is a UTF-8 JSON document at an HTTPS URL, maintained
-outside OpenKara. OpenKara ships with no registry. The user adds registries
-by URL. The [source host](source-host.md#source-registry-distribution)
+A Source Registry is a UTF-8 JSON document at an HTTPS URL. OpenKara
+includes the official registry. The user adds other registries by URL. The [source host](source-host.md#source-registry-distribution)
 contract gives the full format; the author-facing summary:
 
 ```text

@@ -154,6 +154,7 @@ export interface RegistryStatus {
   homepage: string;
   refreshed_at: number | null;
   last_error: HostError | null;
+  official: boolean;
 }
 export interface MarketVersion {
   version: string;

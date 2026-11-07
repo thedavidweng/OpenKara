@@ -31,6 +31,7 @@ const registry: RegistryStatus = {
   homepage: "https://sources.example.com",
   refreshed_at: 1700000000000,
   last_error: null,
+  official: false,
 };
 
 function preset(registries: RegistryStatus[]) {
@@ -71,7 +72,9 @@ test("lists registries with the last refresh time and fetch errors", () => {
   expect(
     screen.getByText("https://sources.example.com/registry.json"),
   ).toBeTruthy();
-  expect(screen.getByText("https://broken.example.com")).toBeTruthy();
+  expect(
+    screen.getByText("https://broken.example.com/registry.json"),
+  ).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain(
     "network: connection refused",
   );
@@ -273,4 +276,31 @@ test("removing a registry confirms and explains that installs keep working", asy
   );
   await waitFor(() => expect(listSourceMarket).toHaveBeenCalled());
   expect(screen.queryByText("Example Registry")).toBeNull();
+});
+
+test("the official registry has no remove action and load errors show", () => {
+  preset([{ ...registry, official: true, refreshed_at: null }]);
+  useCatalogStore.setState({ registriesError: "registry list failed" });
+  render(
+    <BackendProvider backend={createMockBackend()}>
+      <SourceRegistries />
+    </BackendProvider>,
+  );
+  const entry = screen.getByRole("article", { name: "Example Registry" });
+  expect(entry.textContent).toContain("settings.streaming.official");
+  expect(entry.textContent).toContain("settings.streaming.registries.never");
+  expect(
+    screen.queryByRole("button", {
+      name: "settings.streaming.registries.remove",
+    }),
+  ).toBeNull();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "registry list failed",
+  );
+  fireEvent.submit(
+    screen
+      .getByRole("button", { name: "settings.streaming.registries.add" })
+      .closest("form")!,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

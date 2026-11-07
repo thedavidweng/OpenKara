@@ -12,9 +12,12 @@ test("source registries and the market work from the keyboard", async ({
   await expect(dialog).toBeVisible();
 
   const registries = dialog.getByRole("region", { name: "Source Registries" });
+  await registries.getByText("Source Registries").click();
+  const official = registries.getByRole("article", { name: "Demo Registry" });
+  await expect(official).toContainText("Official");
   await expect(
-    registries.getByRole("heading", { name: "Demo Registry" }),
-  ).toBeVisible();
+    official.getByRole("button", { name: "Remove registry" }),
+  ).toHaveCount(0);
 
   const url = registries.getByRole("textbox", { name: "Registry URL" });
   await url.fill("https://extra.demo.test/registry.json");
@@ -30,10 +33,14 @@ test("source registries and the market work from the keyboard", async ({
     registries.getByRole("heading", { name: "extra.demo.test" }),
   ).toBeVisible();
 
-  const market = dialog.getByRole("region", { name: "Source Market" });
+  const market = dialog.getByRole("region", { name: "Available Sources" });
+  const installed = dialog.getByRole("region", { name: "Streaming Sources" });
   const fresh = market.getByRole("article", { name: "Fresh Library" });
   await expect(fresh).toBeVisible();
   await expect(fresh).toContainText("https://fresh.demo.test");
+  await expect(
+    market.getByRole("article", { name: "Web Library" }),
+  ).toHaveCount(0);
   await a11y.axeCheck();
 
   await fresh.getByRole("button", { name: "Install", exact: true }).click();
@@ -41,10 +48,12 @@ test("source registries and the market work from the keyboard", async ({
   await expect(install).toBeVisible();
   await expect(install).toContainText("https://fresh.demo.test");
   await install.getByRole("button", { name: "Install package" }).press("Enter");
-  await expect(fresh).toContainText("Installed");
-  await expect(fresh).toContainText("Disabled");
+  await expect(fresh).toHaveCount(0);
+  await expect(
+    installed.getByRole("article", { name: "Fresh Library" }),
+  ).toContainText("Disabled");
 
-  const web = market.getByRole("article", { name: "Web Library" });
+  const web = installed.getByRole("article", { name: "Web Library" });
   await web.getByRole("button", { name: "Update to 1.1.0" }).click();
   const consent = page.getByRole("dialog", { name: "Review new access" });
   await expect(consent).toBeVisible();
@@ -55,7 +64,7 @@ test("source registries and the market work from the keyboard", async ({
   await expect(
     web.getByRole("button", { name: "Update to 1.1.0" }),
   ).toHaveCount(0);
-  await expect(web.getByText("1.1.0 · Ready")).toBeVisible();
+  await expect(web).toContainText("Ready · 1.1.0");
   await a11y.axeCheck();
 
   await page.keyboard.press("Escape");
@@ -239,7 +248,7 @@ test("the Node-era replacement notice names the source and works from the keyboa
   });
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("Legacy Library");
-  await expect(notice).toContainText("add a Source Registry");
+  await expect(notice).toContainText("install its replacement in Settings");
   await a11y.axeCheck();
 
   await notice.getByRole("button", { name: "Open Settings" }).press("Enter");

@@ -35,6 +35,7 @@ const demoRegistry: RegistryStatus = {
   homepage: "https://sources.demo.test",
   refreshed_at: 1700000000000,
   last_error: null,
+  official: false,
 };
 
 const freshPackage: MarketPackage = {
@@ -146,7 +147,6 @@ test("lists packages with identity, license, capabilities and declared origins",
   expect(card.textContent).toContain("MIT");
   expect(card.textContent).toContain("Demo Registry");
   expect(card.textContent).toContain("demo-fresh");
-  expect(card.textContent).toContain("fresh-source");
   expect(card.textContent).toContain("1.0.0");
   expect(card.textContent).toContain("4.0 KB");
   expect(card.textContent).toContain("search");
@@ -191,87 +191,6 @@ test("install confirms the declared origins before installing", async () => {
     ),
   );
   await waitFor(() => expect(listSourceMarket).toHaveBeenCalled());
-  expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-test("an update that widens access asks for consent and names the additions", async () => {
-  const installMarketPackage = vi.fn().mockResolvedValue(webSnapshot);
-  const backend = createMockBackend({
-    overrides: {
-      catalog: {
-        installMarketPackage,
-        listSourceMarket: async () => [],
-        listStreamingSources: async () => [webSnapshot],
-      },
-    },
-  });
-  preset([webPackage], [webSnapshot]);
-  renderMarket(backend);
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: /settings\.streaming\.market\.updateTo/,
-    }),
-  );
-  const dialog = screen.getByRole("dialog");
-  expect(dialog.textContent).toContain("https://api.demo.test");
-  expect(dialog.textContent).toContain("preview");
-  expect(installMarketPackage).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "settings.streaming.market.consentConfirm",
-    }),
-  );
-  await waitFor(() =>
-    expect(installMarketPackage).toHaveBeenCalledWith(
-      "demo",
-      "demo-web",
-      "1.1.0",
-      true,
-      false,
-    ),
-  );
-});
-
-test("an update without new access installs without a consent dialog", async () => {
-  const installMarketPackage = vi.fn().mockResolvedValue(webSnapshot);
-  const backend = createMockBackend({
-    overrides: {
-      catalog: {
-        installMarketPackage,
-        listSourceMarket: async () => [],
-        listStreamingSources: async () => [webSnapshot],
-      },
-    },
-  });
-  preset(
-    [
-      {
-        ...webPackage,
-        update: {
-          version: "1.1.0",
-          added_origins: [],
-          added_capabilities: [],
-          requires_consent: false,
-        },
-      },
-    ],
-    [webSnapshot],
-  );
-  renderMarket(backend);
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: /settings\.streaming\.market\.updateTo/,
-    }),
-  );
-  await waitFor(() =>
-    expect(installMarketPackage).toHaveBeenCalledWith(
-      "demo",
-      "demo-web",
-      "1.1.0",
-      false,
-      false,
-    ),
-  );
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -338,25 +257,25 @@ test("a backend source_id_taken refusal opens the replacement confirmation", asy
   );
 });
 
-test("a pinned install shows the pin and no update offer", () => {
-  preset(
-    [
-      {
-        ...webPackage,
-        installed: { version: "1.0.0", pinned_version: "1.0.0" },
-        update: null,
-      },
-    ],
-    [webSnapshot],
-  );
+test("installed packages stay out of the available list", () => {
+  preset([freshPackage, webPackage], [webSnapshot]);
   renderMarket();
-  const card = screen.getByRole("article", { name: "Web Library" });
-  expect(card.textContent).toContain("settings.streaming.market.pinned");
-  expect(
-    screen.queryByRole("button", {
-      name: /settings\.streaming\.market\.updateTo/,
-    }),
-  ).toBeNull();
+  expect(screen.getByRole("article", { name: "Fresh Library" })).toBeTruthy();
+  expect(screen.queryByRole("article", { name: "Web Library" })).toBeNull();
+});
+
+test("official packages carry the official badge", () => {
+  useCatalogStore.setState({
+    registries: [{ ...demoRegistry, official: true }],
+    registriesStatus: "ready",
+    market: [freshPackage],
+    marketStatus: "ready",
+    sources: [],
+  });
+  renderMarket();
+  const card = screen.getByRole("article", { name: "Fresh Library" });
+  expect(card.textContent).toContain("settings.streaming.official");
+  expect(card.textContent).not.toContain("Demo Registry ·");
 });
 
 test("install errors surface the message naming each failed download URL", async () => {
@@ -400,4 +319,42 @@ test("without registries the market explains how to add packages", () => {
   expect(
     screen.getByText("settings.streaming.market.emptyNoRegistries"),
   ).toBeTruthy();
+});
+
+test("details list every listed version, newest first", () => {
+  preset([
+    {
+      ...freshPackage,
+      versions: [
+        freshPackage.versions[0],
+        { ...freshPackage.versions[0], version: "1.2.0" },
+      ],
+    },
+  ]);
+  renderMarket();
+  const card = screen.getByRole("article", { name: "Fresh Library" });
+  expect(card.textContent).toContain("1.2.0, 1.0.0");
+});
+
+test("a package without versions or network access still lists", () => {
+  preset([
+    { ...freshPackage, versions: [] },
+    {
+      ...freshPackage,
+      package_id: "quiet",
+      name: "Quiet",
+      versions: [
+        {
+          ...freshPackage.versions[0],
+          resource_origins: [],
+          capabilities: [],
+        },
+      ],
+    },
+  ]);
+  renderMarket();
+  expect(screen.getByRole("article", { name: "Fresh Library" })).toBeTruthy();
+  const quiet = screen.getByRole("article", { name: "Quiet" });
+  expect(quiet.textContent).toContain("settings.streaming.market.noOrigins");
+  expect(quiet.textContent).toContain("—");
 });

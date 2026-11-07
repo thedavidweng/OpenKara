@@ -52,10 +52,10 @@ export function SettingsOnlineSourcesSection() {
               <StreamingSources />
             </div>
             <div className="border-t border-[var(--color-border)] pt-4">
-              <SourceRegistries />
+              <SourceMarket />
             </div>
             <div className="border-t border-[var(--color-border)] pt-4">
-              <SourceMarket />
+              <SourceRegistries />
             </div>
           </>
         ) : null}

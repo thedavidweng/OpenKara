@@ -90,3 +90,4 @@ every other line of the old ADR untouched. Do not delete accepted records.
 - [0044 — Compile Streaming Sources out with a default-on Cargo feature](./0044-compile-streaming-sources-out-with-a-default-on-cargo-feature.md)
 - [0045 — Verify the rebase base and limit Keep Local to the approved conflict](./0045-verify-the-rebase-base-and-limit-keep-local-to-the-approved-conflict.md)
 - [0046 — Validate WebGPU output before separation](./0046-validate-webgpu-output-before-separation.md)
+- [0047 — Include the official Source Registry and update its sources automatically](./0047-include-the-official-source-registry-and-update-its-sources-automatically.md)

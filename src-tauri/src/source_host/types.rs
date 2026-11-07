@@ -89,6 +89,7 @@ pub struct HostConfig {
     pub(crate) operation_timeout: Duration,
     pub(crate) engine_memory_limit: usize,
     pub(crate) registry_refresh_interval: Duration,
+    pub(crate) official_registry: Option<StoredRegistry>,
     #[cfg(test)]
     pub(crate) allow_test_distribution_http: bool,
     #[cfg(test)]
@@ -109,6 +110,10 @@ impl HostConfig {
             operation_timeout: Duration::from_secs(30),
             engine_memory_limit: 64 * 1024 * 1024,
             registry_refresh_interval: Duration::from_secs(6 * 60 * 60),
+            official_registry: Some(StoredRegistry {
+                url: OFFICIAL_REGISTRY_URL.into(),
+                registry_id: OFFICIAL_REGISTRY_ID.into(),
+            }),
             #[cfg(test)]
             allow_test_distribution_http: false,
             #[cfg(test)]
@@ -123,6 +128,7 @@ impl HostConfig {
     pub(crate) fn fixture(data_root: PathBuf, host_version: String) -> Self {
         let mut config = Self::production(data_root.clone(), data_root, host_version);
         config.allow_test_distribution_http = true;
+        config.official_registry = None;
         config
     }
     #[cfg(test)]
@@ -317,6 +323,9 @@ impl PackageIdentity {
         format!("registry:{}/{}", self.registry_id, self.package_id)
     }
 }
+pub const OFFICIAL_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/thedavidweng/openkara-sources/main/registry.json";
+pub const OFFICIAL_REGISTRY_ID: &str = "org.openkara.sources";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StoredRegistry {
     pub url: String,
@@ -369,4 +378,6 @@ pub struct RegistryStatus {
     /// Unix time in milliseconds of the last successful fetch.
     pub refreshed_at: Option<u64>,
     pub last_error: Option<HostError>,
+    /// The built-in OpenKara registry: always present and not removable.
+    pub official: bool,
 }

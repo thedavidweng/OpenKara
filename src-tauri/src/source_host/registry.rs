@@ -60,6 +60,7 @@ pub(crate) struct RegistryEntry {
     pub refreshed_at: Option<u64>,
     pub attempted_at: Option<Instant>,
     pub error: Option<HostError>,
+    pub official: bool,
 }
 impl RegistryEntry {
     pub fn status(&self) -> RegistryStatus {
@@ -78,6 +79,7 @@ impl RegistryEntry {
                 .unwrap_or_default(),
             refreshed_at: self.refreshed_at,
             last_error: self.error.clone(),
+            official: self.official,
         }
     }
     pub fn due(&self, interval: std::time::Duration) -> bool {
@@ -283,9 +285,17 @@ pub(crate) fn restore(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
             Err(error) => return Err(error.into()),
         };
-    Ok(stored
-        .iter()
-        .map(|registry| {
+    let official = config.official_registry.as_ref();
+    let added = stored.iter().filter(|registry| {
+        official.is_none_or(|official| {
+            official.url != registry.url && official.registry_id != registry.registry_id
+        })
+    });
+    Ok(official
+        .map(|registry| (registry, true))
+        .into_iter()
+        .chain(added.map(|registry| (registry, false)))
+        .map(|(registry, official)| {
             let cached = cache.remove(&registry.url).filter(|cached| {
                 cached.document.registry_id == registry.registry_id
                     && validate(config, &cached.document).is_ok()
@@ -297,6 +307,7 @@ pub(crate) fn restore(
                 document: cached.map(|cached| cached.document),
                 attempted_at: None,
                 error: None,
+                official,
             }
         })
         .collect())

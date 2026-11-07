@@ -37,11 +37,16 @@ stay ordinary library songs.
 
 ## Source Registry distribution
 
-A Source Registry is a UTF-8 JSON document at an HTTPS URL. OpenKara ships
-with no registry. `add_registry(url)` fetches and validates the document before
+A Source Registry is a UTF-8 JSON document at an HTTPS URL. OpenKara includes
+the official registry `org.openkara.sources` at
+`https://raw.githubusercontent.com/thedavidweng/openkara-sources/main/registry.json`
+(see [ADR 0047](../../adr/0047-include-the-official-source-registry-and-update-its-sources-automatically.md)).
+The host lists it first and does not store it in `state.json`.
+`remove_registry` refuses it with `invalid_registry`. Adding its URL again
+keeps one entry. `add_registry(url)` fetches and validates the document before
 it stores the URL. Adding a registry installs nothing. `registries()` returns
-`{url, registry_id, display_name, homepage, refreshed_at, last_error}` for each
-added registry. `refreshed_at` is the Unix time in milliseconds of the last
+`{url, registry_id, display_name, homepage, refreshed_at, last_error, official}`
+for each registry. `refreshed_at` is the Unix time in milliseconds of the last
 successful fetch. Two added URLs cannot use the same `registry_id`. A URL that
 starts to serve a different `registry_id` keeps its last good listing.
 `remove_registry(registry_id)` removes an added registry. Its packages leave
@@ -112,6 +117,12 @@ old. A failed fetch keeps the last good listing, stores the error in
 `last_error`, and does not fail `refresh()`. Installed sources keep working.
 `registry-cache.json` keeps the last good listing of each registry across
 restarts.
+
+After each refresh poll and each `refresh()`, the host installs the update of
+each source from the official registry when the source is enabled, no pin
+holds it, the update adds no origins or capabilities, no install is active,
+the update is not already staged, and the last install of that version did
+not fail. Updates from added registries never install without a caller.
 
 ### Registry packages
 
@@ -313,7 +324,8 @@ The application presents the credential retention choice separately.
 `add_registry(url)`, `retry`, `set_enabled(source_id, enabled,
 stop_work)`, and `uninstall(source_id, stop_work)`. `install` is also the manual
 update action. Without an explicit version it honors a pin, then selects the
-newest compatible listed version. It never performs an automatic update.
+newest compatible listed version. The host calls it itself only for the
+official-registry updates that [Source Registry distribution](#source-registry-distribution) names.
 A first installation is disabled until the user enables it.
 If initialization fails, `SourceHost::unavailable(config, error)` retains that
 failure without file writes or source execution. The application can keep

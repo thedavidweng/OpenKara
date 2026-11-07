@@ -236,6 +236,7 @@ export function createTauriMock(data: any): TauriMockResult {
       homepage: "https://sources.demo.test",
       refreshed_at: 1700000000000,
       last_error: null,
+      official: true,
     },
   ];
   interface MockRegistryVersion {
@@ -1404,6 +1405,7 @@ export function createTauriMock(data: any): TauriMockResult {
         homepage: `https://${parsed.host}`,
         refreshed_at: Date.now(),
         last_error: null,
+        official: false,
       };
       sourceRegistries.push(entry);
       return clone(entry);
@@ -1412,6 +1414,13 @@ export function createTauriMock(data: any): TauriMockResult {
       const index = sourceRegistries.findIndex(
         (entry) => entry.registry_id === args.registryId,
       );
+      if (sourceRegistries[index]?.official)
+        throw {
+          code: "invalid_registry",
+          message:
+            "invalid_registry: The official Source Registry is built in. Disable or uninstall its sources instead.",
+          retryable: false,
+        };
       if (index >= 0) sourceRegistries.splice(index, 1);
     },
     list_source_market: () =>

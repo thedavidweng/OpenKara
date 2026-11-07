@@ -1,7 +1,7 @@
 # ADR 0041 — Run Streaming Sources as sandboxed packages from user-added registries
 
 Date: 2026-10-26
-Status: accepted
+Status: accepted; registry distribution amended by 0047
 
 ## Context
 

@@ -3,22 +3,20 @@ import { useTranslation } from "react-i18next";
 import { formatBytes } from "@/lib/format";
 import { useBackend } from "@/lib/backend";
 import { useCatalogStore } from "@/stores/catalog-store";
-import type { MarketPackage, MarketUpdate, SourceSnapshot } from "@/types/ipc";
+import type { MarketPackage, SourceSnapshot } from "@/types/ipc";
 import { SourceActionDialog } from "./SourceActionDialog";
+import { OfficialBadge } from "./OfficialBadge";
 import {
   compareVersions,
   declaredOrigins,
+  errorMessage,
+  isOfficialRegistry,
   latestVersion,
   marketErrorCode,
-  sourceActionButton,
+  sourceDetails,
+  sourcePrimaryButton,
+  sourceRow,
 } from "./source-market-utils";
-
-const errorMessage = (failure: unknown) =>
-  failure instanceof Error
-    ? failure.message
-    : typeof failure === "object" && failure !== null && "message" in failure
-      ? String(failure.message)
-      : String(failure);
 
 const marketKey = (pkg: MarketPackage) =>
   `${pkg.registry_id}/${pkg.package_id}`;
@@ -63,10 +61,6 @@ export function AddedAccessReview({
   );
 }
 
-interface ConsentTarget {
-  pkg: MarketPackage;
-  update: MarketUpdate;
-}
 interface ReplaceTarget {
   pkg: MarketPackage;
   current: SourceSnapshot | null;
@@ -86,9 +80,6 @@ export function SourceMarket() {
   const [installTarget, setInstallTarget] = useState<MarketPackage | null>(
     null,
   );
-  const [consentTarget, setConsentTarget] = useState<ConsentTarget | null>(
-    null,
-  );
   const [replaceTarget, setReplaceTarget] = useState<ReplaceTarget | null>(
     null,
   );
@@ -101,15 +92,6 @@ export function SourceMarket() {
     registries.find((entry) => entry.registry_id === registryId)
       ?.display_name ?? registryId;
 
-  const installedSnapshot = (pkg: MarketPackage) =>
-    sources.find(
-      (source) =>
-        source.installed_version &&
-        source.source_id === pkg.source_id &&
-        source.registry_id === pkg.registry_id &&
-        source.package_id === pkg.package_id,
-    );
-
   const holderOf = (pkg: MarketPackage) =>
     sources.find(
       (source) =>
@@ -119,15 +101,7 @@ export function SourceMarket() {
           source.package_id !== pkg.package_id),
     ) ?? null;
 
-  const runInstall = async (
-    pkg: MarketPackage,
-    options: {
-      version?: string | null;
-      consent?: boolean;
-      replace?: boolean;
-    } = {},
-  ) => {
-    const { version = null, consent = false, replace = false } = options;
+  const runInstall = async (pkg: MarketPackage, replace = false) => {
     const key = marketKey(pkg);
     setBusy(key);
     setErrors((old) => ({ ...old, [key]: "" }));
@@ -135,8 +109,8 @@ export function SourceMarket() {
       await catalog.installMarketPackage(
         pkg.registry_id,
         pkg.package_id,
-        version,
-        consent,
+        null,
+        false,
         replace,
       );
       const store = useCatalogStore.getState();
@@ -146,10 +120,6 @@ export function SourceMarket() {
       const code = marketErrorCode(failure);
       if (code === "source_id_taken" && !replace) {
         setReplaceTarget({ pkg, current: holderOf(pkg) });
-        return;
-      }
-      if (code === "consent_required" && !consent && pkg.update) {
-        setConsentTarget({ pkg, update: pkg.update });
         return;
       }
       setErrors((old) => ({ ...old, [key]: errorMessage(failure) }));
@@ -164,11 +134,6 @@ export function SourceMarket() {
     else setInstallTarget(pkg);
   };
 
-  const requestUpdate = (pkg: MarketPackage, update: MarketUpdate) => {
-    if (update.requires_consent) setConsentTarget({ pkg, update });
-    else void runInstall(pkg, { version: update.version });
-  };
-
   const confirmInstall = async () => {
     const target = installTarget;
     if (!target) return;
@@ -176,35 +141,29 @@ export function SourceMarket() {
     setInstallTarget(null);
   };
 
-  const confirmConsent = async () => {
-    const target = consentTarget;
-    if (!target) return;
-    await runInstall(target.pkg, {
-      version: target.update.version,
-      consent: true,
-    });
-    setConsentTarget(null);
-  };
-
   const confirmReplace = async () => {
     const target = replaceTarget;
     if (!target) return;
-    await runInstall(target.pkg, { replace: true });
+    await runInstall(target.pkg, true);
     setReplaceTarget(null);
   };
 
+  const available = market.filter((pkg) => !pkg.installed);
   return (
     <section aria-labelledby="source-market-title" className="space-y-3">
       <h3 id="source-market-title" className="text-sm font-semibold">
         {t("settings.streaming.market.title")}
       </h3>
+      <p className="text-xs text-[var(--color-text-dim)]">
+        {t("settings.streaming.trustNotice")}
+      </p>
       {loadError ? (
         <p role="alert" className="text-xs">
           {loadError}
         </p>
       ) : null}
       {status === "loading" ? <p role="status">{t("common.loading")}</p> : null}
-      {status === "ready" && market.length === 0 ? (
+      {status === "ready" && available.length === 0 ? (
         <p className="text-xs text-[var(--color-text-dim)]">
           {t(
             registriesStatus === "ready" && registries.length === 0
@@ -213,114 +172,89 @@ export function SourceMarket() {
           )}
         </p>
       ) : null}
-      {market.map((pkg) => {
+      {available.map((pkg) => {
         const key = marketKey(pkg);
         const pending = busy === key;
         const latest = latestVersion(pkg.versions);
-        const snapshot = installedSnapshot(pkg);
         const origins = latest ? declaredOrigins(latest) : [];
+        const official = isOfficialRegistry(registries, pkg.registry_id);
         const versions = [...pkg.versions].sort((a, b) =>
           compareVersions(b.version, a.version),
         );
         return (
-          <article
-            key={key}
-            aria-label={pkg.name}
-            className="space-y-3 rounded-xl border border-[var(--color-border)] p-4"
-          >
-            <header>
-              <h4 className="font-semibold">{pkg.name}</h4>
-              <p className="text-xs text-[var(--color-text-dim)]">
-                {pkg.description}
-              </p>
-            </header>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-              <dt>{t("settings.streaming.market.registry")}</dt>
-              <dd>{registryName(pkg.registry_id)}</dd>
-              <dt>{t("settings.streaming.market.packageId")}</dt>
-              <dd>{pkg.package_id}</dd>
-              <dt>{t("settings.streaming.market.sourceId")}</dt>
-              <dd>{pkg.source_id}</dd>
-              <dt>{t("settings.streaming.license")}</dt>
-              <dd>{pkg.license}</dd>
-              {latest ? (
-                <>
-                  <dt>{t("settings.streaming.market.version")}</dt>
-                  <dd>
-                    {latest.version} · {formatBytes(latest.size)}
-                  </dd>
-                  <dt>{t("settings.streaming.market.capabilities")}</dt>
-                  <dd>{latest.capabilities.join(", ") || "—"}</dd>
-                  <dt>{t("settings.streaming.market.origins")}</dt>
-                  <dd>
-                    {origins.length ? (
-                      <ul>
-                        {origins.map((origin) => (
-                          <li key={origin} className="break-all">
-                            {origin}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      t("settings.streaming.market.noOrigins")
-                    )}
-                  </dd>
-                </>
-              ) : null}
-              {pkg.installed ? (
-                <>
-                  <dt>{t("settings.streaming.market.installed")}</dt>
-                  <dd>
-                    {pkg.installed.version}
-                    {snapshot
-                      ? ` · ${t(`settings.streaming.states.${snapshot.state}`)}`
-                      : ""}
-                    {pkg.installed.pinned_version
-                      ? ` · ${t("settings.streaming.market.pinned", { version: pkg.installed.pinned_version })}`
-                      : ""}
-                  </dd>
-                </>
-              ) : null}
-            </dl>
-            {versions.length > 1 ? (
-              <details className="text-xs">
-                <summary>{t("settings.streaming.market.versions")}</summary>
-                <ul>
-                  {versions.map((version) => (
-                    <li key={version.version}>
-                      {version.version} · {formatBytes(version.size)}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
+          <article key={key} aria-label={pkg.name} className={sourceRow}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <header className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="font-semibold">{pkg.name}</h4>
+                  {official ? <OfficialBadge /> : null}
+                </div>
+                <p className="text-xs text-[var(--color-text-dim)]">
+                  {pkg.description}
+                </p>
+                <p className="text-xs text-[var(--color-text-dim)]">
+                  {[
+                    latest
+                      ? `${latest.version} · ${formatBytes(latest.size)}`
+                      : null,
+                    official ? null : registryName(pkg.registry_id),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </header>
+              <button
+                className={sourcePrimaryButton}
+                disabled={pending}
+                onClick={() => requestInstall(pkg)}
+              >
+                {t("settings.streaming.market.install")}
+              </button>
+            </div>
             {errors[key] ? (
               <p role="alert" className="text-xs">
                 {errors[key]}
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
-              {!pkg.installed ? (
-                <button
-                  className={sourceActionButton}
-                  disabled={pending}
-                  onClick={() => requestInstall(pkg)}
-                >
-                  {t("settings.streaming.market.install")}
-                </button>
-              ) : null}
-              {pkg.update ? (
-                <button
-                  className={sourceActionButton}
-                  disabled={pending}
-                  onClick={() => pkg.update && requestUpdate(pkg, pkg.update)}
-                >
-                  {t("settings.streaming.market.updateTo", {
-                    version: pkg.update.version,
-                  })}
-                </button>
-              ) : null}
-            </div>
+            <details className={sourceDetails}>
+              <summary>{t("settings.streaming.details")}</summary>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt>{t("settings.streaming.market.registry")}</dt>
+                <dd>{registryName(pkg.registry_id)}</dd>
+                <dt>{t("settings.streaming.market.packageId")}</dt>
+                <dd className="break-all">{pkg.package_id}</dd>
+                <dt>{t("settings.streaming.license")}</dt>
+                <dd>{pkg.license}</dd>
+                {latest ? (
+                  <>
+                    <dt>{t("settings.streaming.market.capabilities")}</dt>
+                    <dd>{latest.capabilities.join(", ") || "—"}</dd>
+                    <dt>{t("settings.streaming.market.origins")}</dt>
+                    <dd>
+                      {origins.length ? (
+                        <ul>
+                          {origins.map((origin) => (
+                            <li key={origin} className="break-all">
+                              {origin}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        t("settings.streaming.market.noOrigins")
+                      )}
+                    </dd>
+                  </>
+                ) : null}
+                {versions.length > 1 ? (
+                  <>
+                    <dt>{t("settings.streaming.market.versions")}</dt>
+                    <dd>
+                      {versions.map((version) => version.version).join(", ")}
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+            </details>
           </article>
         );
       })}
@@ -367,26 +301,6 @@ export function SourceMarket() {
             );
           })()
         : null}
-      {consentTarget ? (
-        <SourceActionDialog
-          title={t("settings.streaming.market.consentTitle")}
-          confirmLabel={t("settings.streaming.market.consentConfirm")}
-          busy={busy !== null}
-          onConfirm={() => void confirmConsent()}
-          onCancel={() => setConsentTarget(null)}
-        >
-          <p>
-            {t("settings.streaming.market.consentBody", {
-              name: consentTarget.pkg.name,
-              version: consentTarget.update.version,
-            })}
-          </p>
-          <AddedAccessReview
-            addedOrigins={consentTarget.update.added_origins}
-            addedCapabilities={consentTarget.update.added_capabilities}
-          />
-        </SourceActionDialog>
-      ) : null}
       {replaceTarget ? (
         <SourceActionDialog
           title={t("settings.streaming.market.replaceTitle", {
