@@ -345,7 +345,7 @@
       "notIncluded": "Cette version d’OpenKara n’inclut pas les sources de streaming.",
       "refresh": "Rechercher des mises à jour",
       "trustNotice": "Les sources de streaming s’exécutent dans un bac à sable et ne contactent que les origines qu’elles déclarent. Vérifiez les origines et fonctions déclarées avant d’installer.",
-      "empty": "Aucune source installée. Installez-en une ci-dessous.",
+      "empty": "Aucune source installée. Trouvez-en dans Découvrir.",
       "license": "Licence",
       "installed": "Version installée",
       "notInstalled": "Non installée",
@@ -407,10 +407,10 @@
         "removeTitle": "Supprimer le registre de sources",
         "removeBody": "Les paquets de {{name}} quittent le catalogue. Les sources que vous en avez installées continuent de fonctionner mais ne peuvent plus être mises à jour.",
         "removeConfirm": "Supprimer le registre",
-        "failing": "échec de l’actualisation"
+        "failing": "échec de l’actualisation",
+        "manage": "Registres…"
       },
       "market": {
-        "title": "Sources disponibles",
         "emptyNoRegistries": "Ajoutez un registre de sources pour parcourir les paquets.",
         "empty": "Aucune autre source à installer.",
         "registry": "Registre",
@@ -441,7 +441,14 @@
       "details": "Détails",
       "updateAll": "Tout mettre à jour ({{count}})",
       "autoUpdateNotice": "Les sources officielles se mettent à jour automatiquement si la mise à jour ne demande aucun nouvel accès. Les autres attendent votre accord.",
-      "signedInAs": "Connecté en tant que {{name}}"
+      "signedInAs": "Connecté en tant que {{name}}",
+      "tabsLabel": "Vues des sources de streaming",
+      "tabs": {
+        "installed": "Installées ({{count}})",
+        "discover": "Découvrir"
+      },
+      "updateAvailable": "Mise à jour disponible",
+      "open": "Ouvrir"
     },
     "title": "Préférences",
     "library": {
@@ -796,6 +803,14 @@
       "description": "Activez une origine musicale ou vidéo. Les deux restent désactivées jusqu’à ce que vous les choisissiez.",
       "youtube": "YouTube",
       "youtubeDescription": "Collez un lien de vidéo ou de playlist publique dans la file. OpenKara ne télécharge pas l’audio YouTube."
+    },
+    "pagesLabel": "Sections des préférences",
+    "pages": {
+      "library": "Bibliothèque",
+      "onlineSources": "Sources en ligne",
+      "separation": "Séparation",
+      "playback": "Lecture",
+      "general": "Général"
     }
   },
   "bootstrap": {

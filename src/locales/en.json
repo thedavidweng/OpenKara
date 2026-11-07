@@ -481,7 +481,7 @@
       "notIncluded": "This OpenKara build does not include Streaming Sources.",
       "refresh": "Check for updates",
       "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. Review the declared origins and capabilities before you install.",
-      "empty": "No sources installed yet. Install one below.",
+      "empty": "No sources installed yet. Find one in Discover.",
       "license": "License",
       "installed": "Installed version",
       "notInstalled": "Not installed",
@@ -543,10 +543,10 @@
         "removeTitle": "Remove Source Registry",
         "removeBody": "Packages from {{name}} leave the market. Sources you installed from it keep working but can no longer update.",
         "removeConfirm": "Remove registry",
-        "failing": "refresh failed"
+        "failing": "refresh failed",
+        "manage": "Registries…"
       },
       "market": {
-        "title": "Available Sources",
         "emptyNoRegistries": "Add a Source Registry to browse packages.",
         "empty": "No more sources to install.",
         "registry": "Registry",
@@ -577,7 +577,14 @@
       "details": "Details",
       "updateAll": "Update all ({{count}})",
       "autoUpdateNotice": "Official sources update automatically when an update needs no new access. Other updates wait for you.",
-      "signedInAs": "Signed in as {{name}}"
+      "signedInAs": "Signed in as {{name}}",
+      "tabsLabel": "Streaming Source views",
+      "tabs": {
+        "installed": "Installed ({{count}})",
+        "discover": "Discover"
+      },
+      "updateAvailable": "Update available",
+      "open": "Open"
     },
     "title": "Preferences",
     "library": {
@@ -932,6 +939,14 @@
     "lyricsBlurInactive": {
       "enable": "Blur lyrics that are not playing",
       "description": "Softens past and upcoming lines. Leave this off so you can read ahead while singing."
+    },
+    "pagesLabel": "Preferences sections",
+    "pages": {
+      "library": "Library",
+      "onlineSources": "Online Sources",
+      "separation": "Separation",
+      "playback": "Playback",
+      "general": "General"
     }
   },
   "bootstrap": {

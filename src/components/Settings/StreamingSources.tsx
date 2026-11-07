@@ -4,18 +4,31 @@ import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useBackend } from "@/lib/backend";
 import { useCatalogStore } from "@/stores/catalog-store";
 import type { MarketUpdate, SourceSnapshot } from "@/types/ipc";
-import { StreamingSignIn } from "@/components/Catalog/StreamingSignIn";
+import { useSettingsStore } from "@/stores/settings-store";
 import { SourceActionDialog } from "./SourceActionDialog";
 import { AddedAccessReview } from "./SourceMarket";
 import { OfficialBadge } from "./OfficialBadge";
 import {
   errorMessage,
+  isInstalledSource,
   isOfficialRegistry,
   sourceActionButton,
   sourceDetails,
   sourcePrimaryButton,
   sourceRow,
 } from "./source-market-utils";
+
+const rowButton =
+  "min-h-9 min-w-20 rounded-full border border-[var(--color-border)] px-4 text-xs focus-visible:outline-2 disabled:opacity-50";
+const rowPrimaryButton =
+  "min-h-9 min-w-20 rounded-full bg-[var(--color-accent)] px-4 text-xs font-medium text-[var(--color-on-accent)] hover:bg-[var(--color-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
+
+const hasSignIn = (source: SourceSnapshot) => {
+  const auth = source.manifest?.authentication;
+  return (
+    !!auth && typeof auth === "object" && "flow" in auth && auth.flow !== "none"
+  );
+};
 
 interface Decision {
   source: SourceSnapshot;
@@ -150,13 +163,11 @@ export function StreamingSources() {
         catalog.installStreamingSource(source.source_id, null, false),
       );
   };
-  const installed = sources.filter(
-    (source) =>
-      source.installed_version ||
-      source.state === "installing" ||
-      source.state === "cancelling" ||
-      source.state === "update_required",
-  );
+  const installed = sources.filter(isInstalledSource);
+  const openSource = (source: SourceSnapshot) => {
+    useSettingsStore.getState().close();
+    useCatalogStore.getState().setActiveSource(source.source_id);
+  };
   const toggleEnabled = (source: SourceSnapshot) =>
     source.enabled
       ? source.active_work.length
@@ -168,11 +179,11 @@ export function StreamingSources() {
           catalog.setStreamingSourceEnabled(source.source_id, true, false),
         );
   return (
-    <section aria-labelledby="installed-sources-title" className="space-y-3">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="installed-sources-title" className="text-sm font-semibold">
-          {t("settings.streaming.title")}
-        </h3>
+        <p className="min-w-0 flex-1 basis-56 text-xs text-[var(--color-text-dim)]">
+          {t("settings.streaming.autoUpdateNotice")}
+        </p>
         <div className="flex flex-wrap gap-2">
           {updatable.length > 1 ? (
             <button
@@ -198,9 +209,6 @@ export function StreamingSources() {
           </button>
         </div>
       </div>
-      <p className="text-xs text-[var(--color-text-dim)]">
-        {t("settings.streaming.autoUpdateNotice")}
-      </p>
       {error ? (
         <p role="alert" className="text-xs">
           {error}
@@ -218,9 +226,11 @@ export function StreamingSources() {
         const update = marketUpdate(source);
         const working =
           source.state === "installing" || source.state === "cancelling";
+        const signedIn = !!session?.signed_in && !session.expired;
         const summary = [
           t(`settings.streaming.states.${source.state}`),
           source.installed_version,
+          update ? t("settings.streaming.updateAvailable") : null,
           session?.expired
             ? t("catalog.streaming.sessionExpired")
             : session?.signed_in
@@ -237,22 +247,24 @@ export function StreamingSources() {
             aria-label={source.name}
             className={sourceRow}
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <header className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="font-semibold">{source.name}</h4>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <header className="min-w-0 flex-1 basis-48">
+                <div className="flex items-center gap-2">
+                  <h4 className="min-w-0 truncate font-semibold">
+                    {source.name}
+                  </h4>
                   {isOfficialRegistry(registries, source.registry_id) ? (
                     <OfficialBadge />
                   ) : null}
                 </div>
-                <p className="text-xs text-[var(--color-text-dim)]">
+                <p className="truncate text-xs text-[var(--color-text-dim)]">
                   {summary.join(" · ")}
                 </p>
               </header>
-              <div className="flex flex-wrap gap-2">
+              <div className="ml-auto flex flex-wrap justify-end gap-2">
                 {working ? (
                   <button
-                    className={sourceActionButton}
+                    className={rowButton}
                     disabled={source.state === "cancelling"}
                     onClick={() =>
                       void run(source, () =>
@@ -268,7 +280,7 @@ export function StreamingSources() {
                     source.last_error ||
                     !source.installed_version ? (
                       <button
-                        className={sourcePrimaryButton}
+                        className={rowPrimaryButton}
                         disabled={pending || !source.available_version}
                         onClick={() => installOrUpdate(source)}
                       >
@@ -282,9 +294,21 @@ export function StreamingSources() {
                               })}
                       </button>
                     ) : null}
+                    {source.enabled &&
+                    source.loaded &&
+                    source.state === "ready" ? (
+                      <button
+                        className={rowButton}
+                        onClick={() => openSource(source)}
+                      >
+                        {signedIn || !hasSignIn(source)
+                          ? t("settings.streaming.open")
+                          : t("catalog.streaming.connect")}
+                      </button>
+                    ) : null}
                     {source.installed_version ? (
                       <button
-                        className={sourceActionButton}
+                        className={rowButton}
                         disabled={pending}
                         onClick={() => toggleEnabled(source)}
                       >
@@ -351,27 +375,6 @@ export function StreamingSources() {
                   .join(", ")}
               </p>
             ) : null}
-            {source.enabled && source.loaded && source.state === "ready" ? (
-              session?.signed_in && !session.expired ? (
-                <button
-                  className={sourceActionButton}
-                  onClick={() =>
-                    source.active_work.length
-                      ? decide(source, "signOut")
-                      : void useCatalogStore
-                          .getState()
-                          .signOut(source.source_id)
-                  }
-                >
-                  {t("catalog.streaming.signOut")}
-                </button>
-              ) : !!source.manifest?.authentication &&
-                typeof source.manifest.authentication === "object" &&
-                "flow" in source.manifest.authentication &&
-                source.manifest.authentication.flow !== "none" ? (
-                <StreamingSignIn sourceId={source.source_id} compact />
-              ) : null
-            ) : null}
             {source.installed_version ? (
               <details className={sourceDetails}>
                 <summary>{t("settings.streaming.details")}</summary>
@@ -404,6 +407,20 @@ export function StreamingSources() {
                     </dd>
                   </dl>
                   <div className="flex flex-wrap gap-2">
+                    {signedIn ? (
+                      <button
+                        className={sourceActionButton}
+                        onClick={() =>
+                          source.active_work.length
+                            ? decide(source, "signOut")
+                            : void useCatalogStore
+                                .getState()
+                                .signOut(source.source_id)
+                        }
+                      >
+                        {t("catalog.streaming.signOut")}
+                      </button>
+                    ) : null}
                     <button
                       className={sourceActionButton}
                       disabled={pending}
@@ -556,6 +573,6 @@ export function StreamingSources() {
           ) : null}
         </SourceActionDialog>
       ) : null}
-    </section>
+    </div>
   );
 }

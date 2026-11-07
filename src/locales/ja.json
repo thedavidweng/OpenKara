@@ -344,7 +344,7 @@
       "notIncluded": "この OpenKara ビルドにはストリーミングソースが含まれていません。",
       "refresh": "アップデートを確認",
       "trustNotice": "ストリーミングソースはサンドボックスで動作し、宣言したオリジンにのみ接続できます。インストール前に宣言されたオリジンと機能を確認してください。",
-      "empty": "インストール済みのソースはありません。下からインストールできます。",
+      "empty": "インストール済みのソースはありません。「探す」から見つけられます。",
       "license": "ライセンス",
       "installed": "インストール済みバージョン",
       "notInstalled": "未インストール",
@@ -406,10 +406,10 @@
         "removeTitle": "ソースレジストリを削除",
         "removeBody": "{{name}} のパッケージはマーケットから外れます。そこからインストールしたソースは引き続き使えますが、更新はできなくなります。",
         "removeConfirm": "レジストリを削除",
-        "failing": "更新に失敗"
+        "failing": "更新に失敗",
+        "manage": "レジストリ…"
       },
       "market": {
-        "title": "利用可能なソース",
         "emptyNoRegistries": "ソースレジストリを追加してパッケージを探します。",
         "empty": "インストールできるソースはほかにありません。",
         "registry": "レジストリ",
@@ -440,7 +440,14 @@
       "details": "詳細",
       "updateAll": "すべて更新（{{count}}）",
       "autoUpdateNotice": "公式ソースの更新は、新しいアクセスが不要なら自動でインストールされます。その他の更新は確認が必要です。",
-      "signedInAs": "{{name}} としてサインイン中"
+      "signedInAs": "{{name}} としてサインイン中",
+      "tabsLabel": "ストリーミングソースの表示",
+      "tabs": {
+        "installed": "インストール済み（{{count}}）",
+        "discover": "探す"
+      },
+      "updateAvailable": "アップデートあり",
+      "open": "開く"
     },
     "title": "環境設定",
     "library": {
@@ -795,6 +802,14 @@
       "description": "音楽または動画の提供元をオンにします。選ぶまでどちらもオフのままです。",
       "youtube": "YouTube",
       "youtubeDescription": "公開動画またはプレイリストのリンクをキューに貼り付けます。OpenKara は YouTube 音声をダウンロードしません。"
+    },
+    "pagesLabel": "環境設定のセクション",
+    "pages": {
+      "library": "ライブラリ",
+      "onlineSources": "オンラインソース",
+      "separation": "分離",
+      "playback": "再生",
+      "general": "一般"
     }
   },
   "bootstrap": {

@@ -140,6 +140,15 @@ native Video Source. A failed source refresh keeps existing snapshots usable.
 The local-library view is separate from the active source id. A valid source
 id such as `library` does not alias local-library navigation.
 
+Preferences shows one page at a time from a section nav. The Online Sources
+page has the YouTube preference and a Streaming Sources area with an
+Installed tab and a Discover tab; Discover holds the market and a Registries
+disclosure. An installed row shows its status, an update, open or sign-in, and
+enable or disable action, and keeps origins, pin, sign-out and uninstall under
+Details. Settings never hosts the sign-in challenge: Open and Sign in close
+Preferences and select the source's browser view. Any sidebar navigation
+closes Preferences.
+
 Settings lists the added Source Registries with their last fetch error and
 offers add and remove. Adding a registry, whether by a pasted URL or by an
 `openkara://add-registry` link, first shows a confirmation that names the URL
@@ -148,7 +157,9 @@ refusal of a registry id conflict (`invalid_registry`) stays visible. Removing
 a registry explains that installed sources keep working but cannot update.
 The market lists each package with its registry, package id, source id,
 license, versions, capabilities, and declared origins. Install confirms the
-declared origins and capabilities first. An update whose entry carries
+declared origins and capabilities first; after a successful first install the
+frontend enables the source with `set_streaming_source_enabled`, because the
+confirmation is the user's consent to run it. An update whose entry carries
 `requires_consent` opens a review that names `added_origins` and
 `added_capabilities` before the update runs with consent. Installing a package
 whose source id another installed package holds opens a replacement

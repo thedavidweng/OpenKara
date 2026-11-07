@@ -344,7 +344,7 @@
       "notIncluded": "Build OpenKara ini tidak menyertakan Sumber Streaming.",
       "refresh": "Periksa pembaruan",
       "trustNotice": "Sumber Streaming berjalan di sandbox dan hanya dapat menghubungi origin yang dideklarasikan. Tinjau origin dan kemampuan yang dideklarasikan sebelum memasang.",
-      "empty": "Belum ada sumber yang terpasang. Pasang salah satu di bawah.",
+      "empty": "Belum ada sumber yang terpasang. Temukan di Jelajahi.",
       "license": "Lisensi",
       "installed": "Versi terpasang",
       "notInstalled": "Belum dipasang",
@@ -406,10 +406,10 @@
         "removeTitle": "Hapus Registri Sumber",
         "removeBody": "Paket dari {{name}} akan hilang dari pasar. Sumber yang Anda pasang darinya tetap berfungsi tetapi tidak dapat diperbarui lagi.",
         "removeConfirm": "Hapus registri",
-        "failing": "gagal memuat ulang"
+        "failing": "gagal memuat ulang",
+        "manage": "Registri…"
       },
       "market": {
-        "title": "Sumber Tersedia",
         "emptyNoRegistries": "Tambahkan Registri Sumber untuk menelusuri paket.",
         "empty": "Tidak ada sumber lain untuk dipasang.",
         "registry": "Registri",
@@ -440,7 +440,14 @@
       "details": "Detail",
       "updateAll": "Perbarui semua ({{count}})",
       "autoUpdateNotice": "Sumber resmi diperbarui otomatis jika pembaruan tidak memerlukan akses baru. Pembaruan lain menunggu persetujuan Anda.",
-      "signedInAs": "Masuk sebagai {{name}}"
+      "signedInAs": "Masuk sebagai {{name}}",
+      "tabsLabel": "Tampilan Sumber Streaming",
+      "tabs": {
+        "installed": "Terpasang ({{count}})",
+        "discover": "Jelajahi"
+      },
+      "updateAvailable": "Pembaruan tersedia",
+      "open": "Buka"
     },
     "title": "Preferensi",
     "library": {
@@ -795,6 +802,14 @@
       "description": "Nyalakan sumber musik atau video. Keduanya tetap mati sampai Anda memilihnya.",
       "youtube": "YouTube",
       "youtubeDescription": "Tempel tautan video atau daftar putar publik ke antrean. OpenKara tidak mengunduh audio YouTube."
+    },
+    "pagesLabel": "Bagian preferensi",
+    "pages": {
+      "library": "Pustaka",
+      "onlineSources": "Sumber daring",
+      "separation": "Pemisahan",
+      "playback": "Pemutaran",
+      "general": "Umum"
     }
   },
   "bootstrap": {
