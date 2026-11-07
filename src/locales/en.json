@@ -95,6 +95,24 @@
         "loading": "Looking for playable versions…",
         "empty": "No playable version found on your other sources.",
         "import": "Import"
+      },
+      "playlistMatch": {
+        "find": "Find playable versions ({{count}})",
+        "title": "Find playable versions",
+        "loaded": "Only the songs loaded so far are included ({{count}}).",
+        "searching": "Searching {{current}} of {{total}}…",
+        "select": "Playable version of “{{title}}”",
+        "skip": "Skip",
+        "remembered": "{{option}} (remembered)",
+        "noCandidate": "No playable version found",
+        "summary": "{{selected}} of {{total}} will be imported.",
+        "addToPlaylist": "Add them to a playlist",
+        "import": "Import",
+        "importing": "Importing {{current}} of {{total}}…",
+        "imported": "Imported {{imported}}.",
+        "addedTo": "Added to playlist “{{name}}”.",
+        "notImported": "Not imported ({{count}})",
+        "skipped": "Skipped"
       }
     }
   },

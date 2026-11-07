@@ -974,6 +974,24 @@
         "loading": "Speelbare versies zoeken…",
         "empty": "Geen speelbare versie gevonden in je andere bronnen.",
         "import": "Importeren"
+      },
+      "playlistMatch": {
+        "find": "Speelbare versies zoeken ({{count}})",
+        "title": "Speelbare versies zoeken",
+        "loaded": "Alleen de tot nu toe geladen nummers zijn inbegrepen ({{count}}).",
+        "searching": "Zoeken {{current}} van {{total}}…",
+        "select": "Speelbare versie van “{{title}}”",
+        "skip": "Overslaan",
+        "remembered": "{{option}} (onthouden)",
+        "noCandidate": "Geen speelbare versie gevonden",
+        "summary": "{{selected}} van {{total}} worden geïmporteerd.",
+        "addToPlaylist": "Toevoegen aan een afspeellijst",
+        "import": "Importeren",
+        "importing": "Importeren {{current}} van {{total}}…",
+        "imported": "{{imported}} geïmporteerd.",
+        "addedTo": "Toegevoegd aan afspeellijst “{{name}}”.",
+        "notImported": "Niet geïmporteerd ({{count}})",
+        "skipped": "Overgeslagen"
       }
     }
   },

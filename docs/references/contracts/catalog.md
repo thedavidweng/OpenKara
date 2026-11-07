@@ -109,6 +109,7 @@ A track that its source refuses with `empty_url` can be imported from another in
 | ------------------------------------------------------------------------------------------ | ----------------- |
 | `find_playable_matches(source_id,remote_track_id)`                                         | `PlayableMatches` |
 | `remember_playable_match(source_id,remote_track_id,match_source_id,match_remote_track_id)` | void              |
+| `streaming_playlist_library_id(source_id,remote_playlist_id)`                              | `string \| null`  |
 
 `PlayableMatches` is `{remembered:{source_id,remote_track_id}|null,candidates:StreamingTrack[]}`. The original track metadata comes from the source track cache. A track that is not cached fails with `streaming_source_not_found`; the caller reloads the source listing.
 
@@ -117,6 +118,14 @@ When a remembered match exists and its source is ready and allowed to import, `r
 The host drops refused candidates and candidates from the original source. A candidate with a known duration more than 3000 ms from the original is dropped unless the ISRC is the same. The remaining candidates rank by tier: same ISRC, exact title and artist, then similar title with overlapping artists. A candidate whose title carries a version mark that the original lacks, or the reverse, ranks below all other candidates. Version marks are live, remix, instrumental, karaoke, and acoustic. Ties break on the smaller duration difference, then on search order.
 
 `remember_playable_match` stores the pair. The caller then imports the candidate with `start_streaming_import` on the candidate source. The library song gets the candidate's Streaming Track Identity and no Playlist Origin Stamp. Listings of the original source show the remembered match's library song as `library_song_id`.
+
+`streaming_playlist_library_id` is read-only. It returns the id of the OpenKara Playlist that carries the Playlist Origin Stamp of the Streaming Playlist, or `null`.
+
+### Playlist-wide matching
+
+The Streaming Playlist view offers "Find playable versions" for the loaded tracks that can be matched. The host runs `find_playable_matches` for each of them, 3 at a time. The user reviews one choice per track in a dialog: a candidate, the remembered match, or "Skip". For each chosen pair the host calls `remember_playable_match`. It then runs one Streaming Import per candidate source, one after the other, with no playlist argument. A matched import writes no Playlist Origin Stamp.
+
+When the user keeps "Add them to a playlist" on, the host adds songs after the last import. If `streaming_playlist_library_id` returns a Playlist, the host appends the matched songs that it does not hold yet. Otherwise the host creates a Playlist with the name of the Streaming Playlist. It holds every loaded track that has a library song, in the order of the Streaming Playlist. The host does not stamp that Playlist. Tracks that stay unmatched are listed in the dialog.
 
 Online Preview queue ids are `stream:${source_id}:${encodeURIComponent(remote_id)}`. Metadata maps use the complete canonical id. Preview ids are not library songs and do not gain library lyrics, stems, or history. Host lyric lookup uses source-bound metadata. Preview work belongs to its source and must stop before source removal.
 

@@ -973,6 +973,24 @@
         "loading": "再生できるバージョンを探しています…",
         "empty": "ほかのソースに再生できるバージョンは見つかりませんでした。",
         "import": "インポート"
+      },
+      "playlistMatch": {
+        "find": "再生できるバージョンを探す（{{count}}）",
+        "title": "再生できるバージョンを探す",
+        "loaded": "これまでに読み込んだ曲のみが対象です（{{count}} 曲）。",
+        "searching": "検索中：{{current}} / {{total}}…",
+        "select": "「{{title}}」の再生できるバージョン",
+        "skip": "スキップ",
+        "remembered": "{{option}}（記憶済み）",
+        "noCandidate": "再生できるバージョンが見つかりません",
+        "summary": "{{total}} 曲中 {{selected}} 曲をインポートします。",
+        "addToPlaylist": "プレイリストに追加する",
+        "import": "インポート",
+        "importing": "インポート中：{{current}} / {{total}}…",
+        "imported": "{{imported}} 曲をインポートしました。",
+        "addedTo": "プレイリスト「{{name}}」に追加しました。",
+        "notImported": "インポートされなかった曲（{{count}}）",
+        "skipped": "スキップ"
       }
     }
   },

@@ -973,6 +973,24 @@
         "loading": "Mencari versi yang bisa diputar…",
         "empty": "Tidak ada versi yang bisa diputar di sumber Anda yang lain.",
         "import": "Impor"
+      },
+      "playlistMatch": {
+        "find": "Cari versi yang bisa diputar ({{count}})",
+        "title": "Cari versi yang bisa diputar",
+        "loaded": "Hanya lagu yang sudah dimuat yang disertakan ({{count}}).",
+        "searching": "Mencari {{current}} dari {{total}}…",
+        "select": "Versi yang bisa diputar dari “{{title}}”",
+        "skip": "Lewati",
+        "remembered": "{{option}} (diingat)",
+        "noCandidate": "Tidak ada versi yang bisa diputar",
+        "summary": "{{selected}} dari {{total}} akan diimpor.",
+        "addToPlaylist": "Tambahkan ke playlist",
+        "import": "Impor",
+        "importing": "Mengimpor {{current}} dari {{total}}…",
+        "imported": "{{imported}} diimpor.",
+        "addedTo": "Ditambahkan ke playlist “{{name}}”.",
+        "notImported": "Tidak diimpor ({{count}})",
+        "skipped": "Dilewati"
       }
     }
   },

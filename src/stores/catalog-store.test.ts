@@ -236,3 +236,293 @@ describe("Playable Match", () => {
     expect(store.getState().playableMatch).toBeNull();
   });
 });
+
+describe("playlist-wide Playable Match", () => {
+  const listed = (
+    sourceId: string,
+    id: string,
+    overrides: Partial<StreamingTrack> = {},
+  ): StreamingTrack => ({
+    source_id: sourceId,
+    remote_track_id: id,
+    title: `Song ${id}`,
+    artist: "Artist",
+    album: null,
+    duration_ms: 180000,
+    refusal: null,
+    library_song_id: null,
+    cover_url: null,
+    isrc: null,
+    ...overrides,
+  });
+  const refused = (id: string) =>
+    listed("meta", id, {
+      refusal: { reason: "empty_url", title: `Song ${id}`, artist: "Artist" },
+    });
+  const tracks = [
+    refused("a"),
+    listed("meta", "own", { library_song_id: "song-own" }),
+    refused("b"),
+    refused("c"),
+    refused("d"),
+  ];
+  const candidates: Record<string, StreamingTrack[]> = {
+    a: [listed("files", "a1"), listed("web", "a2")],
+    b: [listed("web", "b1")],
+    c: [listed("files", "c1")],
+  };
+  const rememberedD = listed("web", "d1");
+
+  const setup = async ({
+    stamped = null,
+    existing = [],
+  }: { stamped?: string | null; existing?: string[] } = {}) => {
+    let searching = 0;
+    let maxSearching = 0;
+    let importing = 0;
+    let maxImporting = 0;
+    const imports: Array<{ source: string; ids: string[]; playlist: unknown }> =
+      [];
+    const remembered: string[] = [];
+    const added: Array<{ playlist: string; songs: string[] }> = [];
+    const created: string[] = [];
+    let holder!: ReturnType<typeof createCatalogStore>;
+    const backend = createMockBackend({
+      overrides: {
+        catalog: {
+          getStreamingPlaylist: async (sourceId: string, remoteId: string) => ({
+            source_id: sourceId,
+            remote_id: remoteId,
+            name: "Road trip",
+            tracks,
+            next_cursor: null,
+            cover_url: null,
+            description: null,
+            track_count: tracks.length,
+            creator: null,
+            updated_at_ms: null,
+          }),
+          findPlayableMatches: async (_source: string, id: string) => {
+            maxSearching = Math.max(maxSearching, ++searching);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            searching--;
+            return id === "d"
+              ? {
+                  remembered: {
+                    source_id: "web",
+                    remote_track_id: "d1",
+                  },
+                  candidates: [],
+                }
+              : { remembered: null, candidates: candidates[id] ?? [] };
+          },
+          getStreamingTracks: async () => [rememberedD],
+          rememberPlayableMatch: async (
+            _source: string,
+            id: string,
+            _matchSource: string,
+            matchId: string,
+          ) => {
+            remembered.push(`${id}>${matchId}`);
+          },
+          startStreamingImport: async (
+            sourceId: string,
+            ids: string[],
+            playlist: string | null,
+            jobId: string,
+          ) => {
+            maxImporting = Math.max(maxImporting, ++importing);
+            imports.push({ source: sourceId, ids, playlist });
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            for (const id of ids)
+              holder.getState().applyImportEvent({
+                source_id: sourceId,
+                job_id: jobId,
+                remote_track_id: id,
+                title: id,
+                artist: "Artist",
+                state: { kind: "imported", song_id: `song-${id}` },
+                completed: 1,
+                total: ids.length,
+              });
+            importing--;
+            return {
+              source_id: sourceId,
+              status: "completed" as const,
+              imported_song_ids: ids.map((id) => `song-${id}`),
+              failed: [],
+              playlist_id: null,
+              conflict: null,
+            };
+          },
+          streamingPlaylistLibraryId: async () => stamped,
+        },
+        playlist: {
+          listPlaylists: async () => [
+            {
+              id: "pl-existing",
+              name: "Imported earlier",
+              song_count: 0,
+              created_at: 0,
+              updated_at: 0,
+            },
+          ],
+          getPlaylistSongs: async () =>
+            existing.map((song_hash, sort_order) => ({
+              song_hash,
+              added_at: 0,
+              sort_order,
+              singer: null,
+            })),
+          createPlaylist: async (name: string) => {
+            created.push(name);
+            return {
+              id: "pl-new",
+              name,
+              song_count: 0,
+              created_at: 0,
+              updated_at: 0,
+            };
+          },
+          addSongsToPlaylist: async (playlist: string, songs: string[]) => {
+            added.push({ playlist, songs });
+          },
+        },
+      },
+    });
+    holder = createCatalogStore(backend);
+    holder
+      .getState()
+      .applySources([
+        source("meta", ["search", "playlists", "playlist_tracks"]),
+        source("files", ["search", "import"]),
+        source("web", ["search", "import"]),
+      ]);
+    holder.getState().setActiveSource("meta");
+    await holder.getState().openPlaylist("pl");
+    return {
+      store: holder,
+      imports,
+      remembered,
+      added,
+      created,
+      concurrency: () => ({ maxSearching, maxImporting }),
+    };
+  };
+
+  test("searches the matchable tracks 3 at a time and preselects the remembered match", async () => {
+    const { store, concurrency } = await setup();
+
+    const pending = store.getState().findPlaylistMatches();
+    expect(store.getState().playlistMatch).toMatchObject({
+      phase: "searching",
+      searchTotal: 4,
+    });
+    await pending;
+
+    expect(concurrency().maxSearching).toBe(3);
+    const match = store.getState().playlistMatch!;
+    expect(match).toMatchObject({ phase: "review", searched: 4 });
+    expect(match.rows.map((row) => row.original.remote_track_id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+    expect(match.rows.map((row) => row.choice)).toEqual([
+      onlinePreviewQueueId("files", "a1"),
+      onlinePreviewQueueId("web", "b1"),
+      onlinePreviewQueueId("files", "c1"),
+      onlinePreviewQueueId("web", "d1"),
+    ]);
+    expect(match.rows[3].rememberedKey).toBe(match.rows[3].choice);
+  });
+
+  test("a track without candidates has no choice and is listed as unmatched", async () => {
+    const { store, imports } = await setup();
+    candidates.c = [];
+    try {
+      await store.getState().findPlaylistMatches();
+      expect(store.getState().playlistMatch!.rows[2]).toMatchObject({
+        options: [],
+        choice: null,
+      });
+      store.getState().setPlaylistMatchChoice(1, null);
+      await store.getState().confirmPlaylistMatches();
+    } finally {
+      candidates.c = [listed("files", "c1")];
+    }
+
+    expect(imports.flatMap((job) => job.ids).sort()).toEqual(["a1", "d1"]);
+    expect(
+      store.getState().playlistMatch!.failures.map((f) => [f.title, f.reason]),
+    ).toEqual([
+      ["Song b", "skipped"],
+      ["Song c", "noCandidate"],
+    ]);
+  });
+
+  test("imports one job per source in turn with no Playlist Origin Stamp, then creates an unstamped Playlist in playlist order", async () => {
+    const { store, imports, remembered, added, created, concurrency } =
+      await setup();
+    await store.getState().findPlaylistMatches();
+    store
+      .getState()
+      .setPlaylistMatchChoice(1, onlinePreviewQueueId("web", "b1"));
+
+    await store.getState().confirmPlaylistMatches();
+
+    expect(imports).toEqual([
+      { source: "files", ids: ["a1", "c1"], playlist: null },
+      { source: "web", ids: ["b1", "d1"], playlist: null },
+    ]);
+    expect(concurrency().maxImporting).toBe(1);
+    expect(remembered).toEqual(["a>a1", "b>b1", "c>c1"]);
+    expect(created).toEqual(["Road trip"]);
+    expect(added).toEqual([
+      {
+        playlist: "pl-new",
+        songs: ["song-a1", "song-own", "song-b1", "song-c1", "song-d1"],
+      },
+    ]);
+    expect(store.getState().playlistMatch).toMatchObject({
+      phase: "done",
+      imported: 4,
+      playlistName: "Road trip",
+      failures: [],
+    });
+  });
+
+  test("appends only the matched songs that the stamped Playlist lacks", async () => {
+    const { store, added, created } = await setup({
+      stamped: "pl-existing",
+      existing: ["song-a1"],
+    });
+    await store.getState().findPlaylistMatches();
+
+    await store.getState().confirmPlaylistMatches();
+
+    expect(created).toEqual([]);
+    expect(added).toEqual([
+      {
+        playlist: "pl-existing",
+        songs: ["song-b1", "song-c1", "song-d1"],
+      },
+    ]);
+    expect(store.getState().playlistMatch?.playlistName).toBe(
+      "Imported earlier",
+    );
+  });
+
+  test("leaves Playlists alone when the box is unchecked", async () => {
+    const { store, added, created } = await setup();
+    await store.getState().findPlaylistMatches();
+    store.getState().setPlaylistMatchAddToPlaylist(false);
+
+    await store.getState().confirmPlaylistMatches();
+
+    expect(created).toEqual([]);
+    expect(added).toEqual([]);
+    expect(store.getState().playlistMatch?.playlistName).toBeNull();
+  });
+});

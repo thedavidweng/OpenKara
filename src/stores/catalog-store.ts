@@ -6,6 +6,7 @@ import type {
   AuthChallenge,
   CommandError,
   ImportConflictPrompt,
+  ImportRefusal,
   LibraryDecisionAction,
   MarketPackage,
   PreviewQueueItem,
@@ -52,6 +53,38 @@ export interface PlayableMatchState {
   original: StreamingTrack;
   status: "loading" | "ready";
   candidates: StreamingTrack[];
+}
+export interface PlaylistMatchRow {
+  original: StreamingTrack;
+  options: StreamingTrack[];
+  /** Queue id of the option the user confirmed in an earlier session. */
+  rememberedKey: string | null;
+  /** Queue id of the chosen option, or null to skip the track. */
+  choice: string | null;
+}
+export interface PlaylistMatchFailure {
+  title: string;
+  artist: string;
+  reason: "noCandidate" | "skipped" | StreamingImportFailure["reason"];
+  refusal: ImportRefusal | null;
+}
+/** The open "find playable versions" dialog for the loaded part of one Streaming Playlist. */
+export interface PlaylistMatchState {
+  sourceId: string;
+  remoteId: string;
+  name: string;
+  phase: "searching" | "review" | "importing" | "done";
+  searched: number;
+  searchTotal: number;
+  rows: PlaylistMatchRow[];
+  addToPlaylist: boolean;
+  /** Songs that earlier import jobs of this run have finished. */
+  finishedBefore: number;
+  importTotal: number;
+  cancelling: boolean;
+  imported: number;
+  playlistName: string | null;
+  failures: PlaylistMatchFailure[];
 }
 export interface SourceBrowseState {
   session: StreamingSessionSnapshot | null;
@@ -153,6 +186,14 @@ export interface CatalogState extends SourceBrowseState {
   findPlayableMatch: (track: StreamingTrack) => Promise<void>;
   confirmPlayableMatch: (candidate: StreamingTrack) => Promise<void>;
   closePlayableMatch: () => void;
+  playlistMatch: PlaylistMatchState | null;
+  /** Search a playable version for every matchable loaded track of the open Streaming Playlist. */
+  findPlaylistMatches: () => Promise<void>;
+  setPlaylistMatchChoice: (index: number, choice: string | null) => void;
+  setPlaylistMatchAddToPlaylist: (add: boolean) => void;
+  confirmPlaylistMatches: () => Promise<void>;
+  cancelPlaylistMatchImport: () => Promise<void>;
+  closePlaylistMatch: () => void;
   importPlaylist: () => Promise<void>;
   importTracks: (
     ids: string[],
@@ -255,6 +296,22 @@ export function canFindPlayableMatch(
     )
   );
 }
+/** A matchable track in an open Streaming Playlist: refused with no audio and not in the library. */
+export function canMatchInPlaylist(
+  sources: SourceSnapshot[],
+  track: StreamingTrack,
+  states: Record<string, StreamingImportTrackState>,
+) {
+  return (
+    canFindPlayableMatch(sources, track) &&
+    !track.library_song_id &&
+    states[onlinePreviewQueueId(track.source_id, track.remote_track_id)]
+      ?.kind !== "imported"
+  );
+}
+const MATCH_SEARCH_CONCURRENCY = 3;
+const trackKey = (track: StreamingTrack) =>
+  onlinePreviewQueueId(track.source_id, track.remote_track_id);
 export function createCatalogStore(
   backend: Backend = tauriBackend,
 ): CatalogStore {
@@ -435,6 +492,73 @@ export function createCatalogStore(
     );
     await store.getState().importTracks([remoteTrackId], null, label, sourceId);
   };
+  let matchAborted = false;
+  const importFinished = () =>
+    new Promise<void>((resolve) => {
+      const done = () => store.getState().importRun?.phase !== "running";
+      if (done()) return resolve();
+      const unsubscribe = store.subscribe(() => {
+        if (!done()) return;
+        unsubscribe();
+        resolve();
+      });
+    });
+  const patchMatch = (update: Partial<PlaylistMatchState>) =>
+    store.setState((state) =>
+      state.playlistMatch
+        ? { playlistMatch: { ...state.playlistMatch, ...update } }
+        : {},
+    );
+  const songOf = (track: StreamingTrack) => {
+    const state = store.getState().trackStates[trackKey(track)];
+    return (
+      (state?.kind === "imported" && state.song_id) ||
+      track.library_song_id ||
+      null
+    );
+  };
+  /** Returns the name of the Playlist that received the songs, or null. */
+  const addMatchedSongsToPlaylist = async (
+    match: PlaylistMatchState,
+    matchedSongs: string[],
+  ) => {
+    const existing = await backend.catalog.streamingPlaylistLibraryId(
+      match.sourceId,
+      match.remoteId,
+    );
+    if (existing) {
+      const [playlists, present] = await Promise.all([
+        backend.playlist.listPlaylists(),
+        backend.playlist.getPlaylistSongs(existing),
+      ]);
+      const have = new Set(present.map((song) => song.song_hash));
+      const missing = matchedSongs.filter((song) => !have.has(song));
+      if (missing.length > 0)
+        await backend.playlist.addSongsToPlaylist(existing, missing);
+      return playlists.find((item) => item.id === existing)?.name ?? match.name;
+    }
+    const matchedFor = new Map(
+      match.rows.flatMap((row) => {
+        const chosen = row.options.find((o) => trackKey(o) === row.choice);
+        const song = chosen && songOf(chosen);
+        return song ? [[trackKey(row.original), song] as const] : [];
+      }),
+    );
+    const ordered = [
+      ...new Set(
+        (browse(match.sourceId).playlistDetail?.tracks ?? []).flatMap(
+          (track) => {
+            const song = matchedFor.get(trackKey(track)) ?? songOf(track);
+            return song ? [song] : [];
+          },
+        ),
+      ),
+    ];
+    if (ordered.length === 0) return null;
+    const created = await backend.playlist.createPlaylist(match.name);
+    await backend.playlist.addSongsToPlaylist(created.id, ordered);
+    return created.name;
+  };
   const poll = async (
     id: string,
     challenge: AuthChallenge,
@@ -532,6 +656,7 @@ export function createCatalogStore(
     activeSourceId: null,
     globalSearch: { query: "", sections: {} },
     playableMatch: null,
+    playlistMatch: null,
     sourcesSupported: null,
     sources: [],
     sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
@@ -1063,6 +1188,199 @@ export function createCatalogStore(
     closePlayableMatch: () => {
       generation("_host", "playable-match");
       set({ playableMatch: null });
+    },
+    findPlaylistMatches: async () => {
+      const sourceId = get().activeSourceId ?? "";
+      const detail = browse(sourceId).playlistDetail;
+      if (!detail || get().importRun?.phase === "running") return;
+      const matchable = detail.tracks.filter((track) =>
+        canMatchInPlaylist(get().sources, track, get().trackStates),
+      );
+      if (matchable.length === 0) return;
+      const current = generation("_host", "playlist-match");
+      set({
+        playlistMatch: {
+          sourceId,
+          remoteId: detail.remote_id,
+          name: detail.name,
+          phase: "searching",
+          searched: 0,
+          searchTotal: matchable.length,
+          rows: [],
+          addToPlaylist: true,
+          finishedBefore: 0,
+          importTotal: 0,
+          cancelling: false,
+          imported: 0,
+          playlistName: null,
+          failures: [],
+        },
+      });
+      const search = async (
+        original: StreamingTrack,
+      ): Promise<PlaylistMatchRow> => {
+        const none = {
+          original,
+          options: [],
+          rememberedKey: null,
+          choice: null,
+        };
+        try {
+          const { remembered, candidates } =
+            await backend.catalog.findPlayableMatches(
+              original.source_id,
+              original.remote_track_id,
+            );
+          if (!remembered)
+            return {
+              original,
+              options: candidates,
+              rememberedKey: null,
+              choice: candidates[0] ? trackKey(candidates[0]) : null,
+            };
+          const [track] = await backend.catalog.getStreamingTracks(
+            remembered.source_id,
+            [remembered.remote_track_id],
+          );
+          return track
+            ? {
+                original,
+                options: [track],
+                rememberedKey: trackKey(track),
+                choice: trackKey(track),
+              }
+            : none;
+        } catch {
+          return none;
+        }
+      };
+      const rows: PlaylistMatchRow[] = [];
+      let next = 0;
+      const worker = async () => {
+        while (next < matchable.length && current()) {
+          const index = next++;
+          rows[index] = await search(matchable[index]);
+          if (current())
+            patchMatch({ searched: (get().playlistMatch?.searched ?? 0) + 1 });
+        }
+      };
+      await Promise.all(
+        Array.from({ length: MATCH_SEARCH_CONCURRENCY }, worker),
+      );
+      if (current()) patchMatch({ phase: "review", rows });
+    },
+    setPlaylistMatchChoice: (index, choice) => {
+      const rows = get().playlistMatch?.rows;
+      if (!rows?.[index]) return;
+      patchMatch({
+        rows: rows.map((row, i) => (i === index ? { ...row, choice } : row)),
+      });
+    },
+    setPlaylistMatchAddToPlaylist: (addToPlaylist) =>
+      patchMatch({ addToPlaylist }),
+    confirmPlaylistMatches: async () => {
+      const match = get().playlistMatch;
+      if (!match || match.phase !== "review") return;
+      const chosen = match.rows.flatMap((row) => {
+        const candidate = row.options.find((o) => trackKey(o) === row.choice);
+        return candidate ? [{ row, candidate }] : [];
+      });
+      if (chosen.length === 0) return;
+      matchAborted = false;
+      patchMatch({
+        phase: "importing",
+        importTotal: chosen.length,
+        finishedBefore: 0,
+        cancelling: false,
+      });
+      try {
+        for (const { row, candidate } of chosen)
+          if (row.rememberedKey !== row.choice)
+            await backend.catalog.rememberPlayableMatch(
+              row.original.source_id,
+              row.original.remote_track_id,
+              candidate.source_id,
+              candidate.remote_track_id,
+            );
+      } catch (error) {
+        patchMatch({ phase: "review" });
+        notifyError(error);
+        return;
+      }
+      const failures: PlaylistMatchFailure[] = match.rows.flatMap((row) =>
+        row.choice
+          ? []
+          : [
+              {
+                title: row.original.title,
+                artist: row.original.artist,
+                reason: row.options.length ? "skipped" : "noCandidate",
+                refusal: null,
+              },
+            ],
+      );
+      const bySource = new Map<string, typeof chosen>();
+      for (const item of chosen)
+        bySource.set(item.candidate.source_id, [
+          ...(bySource.get(item.candidate.source_id) ?? []),
+          item,
+        ]);
+      let imported = 0;
+      let finished = 0;
+      for (const [sourceId, items] of bySource) {
+        if (matchAborted) {
+          for (const { row } of items)
+            failures.push({
+              title: row.original.title,
+              artist: row.original.artist,
+              reason: "cancelled",
+              refusal: null,
+            });
+          continue;
+        }
+        for (const { row, candidate } of items)
+          matchedOriginals.set(trackKey(candidate), trackKey(row.original));
+        patchMatch({ finishedBefore: finished });
+        await get().importTracks(
+          items.map(({ candidate }) => candidate.remote_track_id),
+          null,
+          match.name,
+          sourceId,
+        );
+        await importFinished();
+        finished += items.length;
+        imported += get().importRun?.imported ?? 0;
+        for (const failure of get().importFailures)
+          failures.push({
+            title: failure.title,
+            artist: failure.artist,
+            reason: failure.reason,
+            refusal: failure.refusal,
+          });
+      }
+      let playlistName: string | null = null;
+      if (match.addToPlaylist && imported > 0) {
+        try {
+          const songs = chosen.flatMap(({ candidate }) => {
+            const song = songOf(candidate);
+            return song ? [song] : [];
+          });
+          playlistName = await addMatchedSongsToPlaylist(match, songs);
+        } catch (error) {
+          notifyError(error);
+        }
+      }
+      patchMatch({ phase: "done", imported, playlistName, failures });
+    },
+    cancelPlaylistMatchImport: async () => {
+      matchAborted = true;
+      patchMatch({ cancelling: true });
+      await get().cancelImport();
+    },
+    closePlaylistMatch: () => {
+      if (get().playlistMatch?.phase === "importing") return;
+      generation("_host", "playlist-match");
+      set({ playlistMatch: null });
     },
     importPlaylist: async () => {
       const id = get().activeSourceId ?? "";

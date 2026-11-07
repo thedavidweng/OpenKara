@@ -117,7 +117,7 @@ One query over the local library and every ready **Streaming Source** that can s
 _Avoid_: Unified catalog, federated library, UNM
 
 **Playable Match (可播放匹配)**:
-A user-confirmed choice of a track on another **Streaming Source** to import in place of a track whose source has no media (an **Import Refusal** with an empty stream URL). The library song gets the candidate's **Streaming Track Identity**. OpenKara remembers the choice for the original track. A matched import gets no **Playlist Origin Stamp**.
+A user-confirmed choice of a track on another **Streaming Source** to import in place of a track whose source has no media (an **Import Refusal** with an empty stream URL). The library song gets the candidate's **Streaming Track Identity**. OpenKara remembers the choice for the original track. A matched import gets no **Playlist Origin Stamp**. A user can match all loaded tracks of a **Streaming Playlist** in one review. The matched songs go to the **Playlist** that carries the stamp of that **Streaming Playlist**, or else to a new unstamped **Playlist** with the name of the **Streaming Playlist**.
 _Avoid_: UNM, unblock, fallback, auto-replace
 
 **Playlist Origin Stamp (歌单来源印记)**:

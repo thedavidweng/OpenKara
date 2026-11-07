@@ -7,6 +7,7 @@ import { MainContentView } from "./MainContentView";
 import { YoutubeLinkPopover } from "@/components/Catalog/YoutubeLinkPopover";
 import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialog";
 import { PlayableMatchDialog } from "@/components/Catalog/PlayableMatchDialog";
+import { PlayablePlaylistMatchDialog } from "@/components/Catalog/PlayablePlaylistMatchDialog";
 import { LibraryDecisionDialog } from "@/components/Library/LibraryDecisionDialog";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
@@ -153,6 +154,7 @@ export function AppLayout({
 
       {!previewMode && <ToastContainer />}
       {!previewMode && <ImportCdgChoiceDialog />}
+      {!previewMode && <PlayablePlaylistMatchDialog />}
       {!previewMode && <LibraryDecisionDialog />}
       {!previewMode && <PlayableMatchDialog />}
       {!previewMode && <YoutubeLinkPopover />}

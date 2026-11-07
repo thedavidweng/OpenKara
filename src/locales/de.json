@@ -974,6 +974,24 @@
         "loading": "Suche nach abspielbaren Versionen …",
         "empty": "In deinen anderen Quellen wurde keine abspielbare Version gefunden.",
         "import": "Importieren"
+      },
+      "playlistMatch": {
+        "find": "Abspielbare Versionen finden ({{count}})",
+        "title": "Abspielbare Versionen finden",
+        "loaded": "Nur die bisher geladenen Titel sind enthalten ({{count}}).",
+        "searching": "Suche {{current}} von {{total}}…",
+        "select": "Abspielbare Version von „{{title}}“",
+        "skip": "Überspringen",
+        "remembered": "{{option}} (gemerkt)",
+        "noCandidate": "Keine abspielbare Version gefunden",
+        "summary": "{{selected}} von {{total}} werden importiert.",
+        "addToPlaylist": "Zu einer Playlist hinzufügen",
+        "import": "Importieren",
+        "importing": "Importiere {{current}} von {{total}}…",
+        "imported": "{{imported}} importiert.",
+        "addedTo": "Zur Playlist „{{name}}“ hinzugefügt.",
+        "notImported": "Nicht importiert ({{count}})",
+        "skipped": "Übersprungen"
       }
     }
   },
