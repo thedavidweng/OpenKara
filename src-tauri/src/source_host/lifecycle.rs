@@ -67,7 +67,7 @@ impl SourceHost {
         let _guard = gate
             .try_lock()
             .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
-        self.install_locked(id, version, consent).await
+        self.install_locked(id, version, consent, None).await
     }
     /// Installs a package that an added Source Registry lists. The package
     /// identity is the registry id and package id. When another package holds
@@ -93,10 +93,18 @@ impl SourceHost {
         let _guard = gate
             .try_lock()
             .map_err(|_| HostError::new("busy", "A source installation is already active."))?;
-        self.claim(&id, &identity, replace).await?;
-        self.install_locked(&id, version, consent).await
+        if self.claim(&id, &identity, replace)? {
+            // The current package stays until the replacement is downloaded
+            // and verified, so a failed replacement leaves it installed.
+            self.install_locked(&id, version, consent, Some(&identity))
+                .await
+        } else {
+            self.install_locked(&id, version, consent, None).await
+        }
     }
-    async fn claim(&self, id: &str, identity: &PackageIdentity, replace: bool) -> HostResult<()> {
+    /// Claims a free source id for the package. Returns true when another
+    /// package holds it and a confirmed replacement must take it over.
+    fn claim(&self, id: &str, identity: &PackageIdentity, replace: bool) -> HostResult<bool> {
         let owner = identity.owner_binding();
         {
             let state = self.inner.state.lock().unwrap();
@@ -106,7 +114,7 @@ impl SourceHost {
                 .get(id)
                 .is_some_and(|source| source.owner_binding == owner)
             {
-                return Ok(());
+                return Ok(false);
             }
             let taken = state
                 .stored
@@ -115,14 +123,18 @@ impl SourceHost {
                 .is_some_and(|source| source.active.is_some() || source.staged.is_some());
             if !taken {
                 drop(state);
-                return self.claim_free(id, identity);
+                self.claim_free(id, identity)?;
+                return Ok(false);
             }
             if !replace {
                 return Err(HostError::new("source_id_taken", SOURCE_ID_TAKEN));
             }
         }
-        // A confirmed replacement stops the current package's work before its
-        // claim is cleared; it refuses while work is active.
+        Ok(true)
+    }
+    /// Takes the source id over from the current package. It stops that
+    /// package's work first and refuses while work is active.
+    async fn take_over(&self, id: &str, identity: &PackageIdentity) -> HostResult<()> {
         self.stop_work(id, false).await?;
         self.claim_free(id, identity)
     }
@@ -166,16 +178,22 @@ impl SourceHost {
         id: &str,
         version: Option<&str>,
         consent: bool,
+        replacement: Option<&PackageIdentity>,
     ) -> HostResult<(registry::Candidate, Cancellation)> {
         let mut state = self.inner.state.lock().unwrap();
         let stored = state.stored.sources.get(id).ok_or_else(unknown)?;
-        // A carried-over retired record on an installed replacement is only
-        // a pending old-owner credential cleanup, not a missing package.
-        if stored.retired.is_some() && stored.package.is_none() {
-            return Err(replacement_required());
-        }
-        let identity = stored.package.as_ref().ok_or_else(not_listed)?;
-        let wanted = version.or(stored.pinned_version.as_deref());
+        let (identity, wanted) = match replacement {
+            Some(identity) => (identity, version),
+            None => {
+                // A carried-over retired record on an installed replacement is
+                // only a pending old-owner credential cleanup, not a missing package.
+                if stored.retired.is_some() && stored.package.is_none() {
+                    return Err(replacement_required());
+                }
+                let identity = stored.package.as_ref().ok_or_else(not_listed)?;
+                (identity, version.or(stored.pinned_version.as_deref()))
+            }
+        };
         let package = registry::package(&state.registries, identity).ok_or_else(not_listed)?;
         if package.source_id != id {
             return Err(HostError::new(
@@ -188,7 +206,8 @@ impl SourceHost {
             package: package.clone(),
             version: registry::select(&self.inner.config, package, wanted)?.clone(),
         };
-        if !consent {
+        // The replacement confirmation is the consent for a new package.
+        if !consent && replacement.is_none() {
             if let Some(active) = &stored.active {
                 if active.manifest.version != candidate.version.version {
                     let (added_origins, added_capabilities) = market::added_declarations(
@@ -214,8 +233,9 @@ impl SourceHost {
         id: &str,
         version: Option<&str>,
         consent: bool,
+        replacement: Option<&PackageIdentity>,
     ) -> HostResult<SourceSnapshot> {
-        let (candidate, cancel) = match self.plan(id, version, consent) {
+        let (candidate, cancel) = match self.plan(id, version, consent, replacement) {
             Ok(selection) => selection,
             Err(error) => {
                 self.inner
@@ -231,7 +251,9 @@ impl SourceHost {
             }
         };
         let planned_version = candidate.version.version.clone();
-        let result = self.install_registry_release(id, &candidate, &cancel).await;
+        let result = self
+            .install_registry_release(id, &candidate, &cancel, replacement)
+            .await;
         {
             let mut state = self.inner.state.lock().unwrap();
             let live = state.sources.entry(id.into()).or_default();
@@ -253,6 +275,7 @@ impl SourceHost {
         id: &str,
         candidate: &registry::Candidate,
         cancel: &Cancellation,
+        replacement: Option<&PackageIdentity>,
     ) -> HostResult<()> {
         let config = &self.inner.config;
         let release = registry::download(config, candidate, cancel, &|done, total| {
@@ -260,7 +283,8 @@ impl SourceHost {
         })
         .await?;
         let package = self.inner.verified_package(&release)?;
-        self.stage_candidate(id, &release, package, cancel).await
+        self.stage_candidate(id, &release, package, cancel, replacement)
+            .await
     }
     /// Starts a downloaded candidate to pass its compatibility check, then
     /// stages it to replace the active release once the source is idle.
@@ -270,6 +294,7 @@ impl SourceHost {
         release: &Release,
         package: std::path::PathBuf,
         cancel: &Cancellation,
+        replacement: Option<&PackageIdentity>,
     ) -> HostResult<()> {
         let config = &self.inner.config;
         cancel.check()?;
@@ -295,6 +320,11 @@ impl SourceHost {
         candidate.stop().await;
         cancel.check()?;
         self.inner.verified_package(release)?;
+        // A replacement takes the source id over only after it has passed
+        // every check, so a failed replacement keeps the current package.
+        if let Some(identity) = replacement {
+            self.take_over(id, identity).await?;
+        }
         {
             let mut state = self.inner.state.lock().unwrap();
             let mut stored = state.stored.clone();

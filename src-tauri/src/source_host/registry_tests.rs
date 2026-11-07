@@ -984,6 +984,43 @@ async fn a_confirmed_replacement_takes_the_source_id_without_carrying_credential
 }
 
 #[tokio::test]
+async fn a_failed_replacement_keeps_the_current_package() {
+    let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
+    fixture.install(None).await.unwrap();
+    let owner = fixture.host.description("fixture").unwrap().owner_binding;
+    let mut other = MockRegistry::new("org.example.other", "fixture").await;
+    for (version, code) in [
+        (
+            Version {
+                registry_majors: vec![3],
+                manifest_majors: vec![3],
+                ..Version::new("5.0.0")
+            },
+            "incompatible_plugin",
+        ),
+        (
+            Version {
+                describe_major: 3,
+                ..Version::new("6.0.0")
+            },
+            "incompatible_plugin",
+        ),
+    ] {
+        other.publish(&[version]).await;
+        fixture.host.add_registry(&other.url()).await.unwrap();
+        let error = fixture
+            .host
+            .install_package(other.id, &other.package_id(), None, false, true)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, code);
+        let kept = fixture.host.description("fixture").unwrap();
+        assert_eq!(kept.owner_binding, owner);
+        assert_eq!(kept.manifest.version, "1.0.0");
+    }
+}
+
+#[tokio::test]
 async fn removing_a_registry_keeps_installed_sources_and_ends_updates() {
     let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
     fixture.install(None).await.unwrap();
