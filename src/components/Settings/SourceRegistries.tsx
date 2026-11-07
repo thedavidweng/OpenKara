@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBackend } from "@/lib/backend";
@@ -109,7 +110,14 @@ export function SourceRegistries() {
           aria-controls="source-registries-panel"
           onClick={() => setOpen(!open)}
         >
-          {`${t("settings.streaming.registries.title")} (${registries.length})`}
+          <span className="inline-flex items-center gap-1.5">
+            {`${t("settings.streaming.registries.title")} (${registries.length})`}
+            <ChevronDown
+              aria-hidden="true"
+              size={14}
+              className={open ? "rotate-180" : undefined}
+            />
+          </span>
         </button>
         {failing ? (
           <span className="text-xs text-[var(--color-text-dim)]">
@@ -118,7 +126,10 @@ export function SourceRegistries() {
         ) : null}
       </div>
       {open ? (
-        <div id="source-registries-panel" className="space-y-3">
+        <div
+          id="source-registries-panel"
+          className="space-y-3 border-b border-[var(--color-border)] pb-4"
+        >
           <p className="text-xs text-[var(--color-text-dim)]">
             {t("settings.streaming.registries.description")}
           </p>

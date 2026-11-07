@@ -184,6 +184,8 @@ export interface MarketPackage {
   versions: MarketVersion[];
   installed: MarketInstall | null;
   update: MarketUpdate | null;
+  installable_version: string | null;
+  required_host_version: string | null;
 }
 export interface AuthChallenge {
   source_id: string;

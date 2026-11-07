@@ -11,6 +11,7 @@ import {
   declaredOrigins,
   errorMessage,
   isOfficialRegistry,
+  installableVersion,
   latestVersion,
   marketErrorCode,
   sourceDetails,
@@ -173,7 +174,8 @@ export function SourceMarket() {
       {available.map((pkg) => {
         const key = marketKey(pkg);
         const pending = busy === key;
-        const latest = latestVersion(pkg.versions);
+        const installable = installableVersion(pkg);
+        const latest = installable ?? latestVersion(pkg.versions);
         const origins = latest ? declaredOrigins(latest) : [];
         const official = isOfficialRegistry(registries, pkg.registry_id);
         const versions = [...pkg.versions].sort((a, b) =>
@@ -201,13 +203,27 @@ export function SourceMarket() {
                     .join(" · ")}
                 </p>
               </header>
-              <button
-                className={sourcePrimaryButton}
-                disabled={pending}
-                onClick={() => requestInstall(pkg)}
-              >
-                {t("settings.streaming.market.install")}
-              </button>
+              {installable ? (
+                <button
+                  className={sourcePrimaryButton}
+                  disabled={pending}
+                  onClick={() => requestInstall(pkg)}
+                >
+                  {t(
+                    holderOf(pkg)
+                      ? "settings.streaming.market.replace"
+                      : "settings.streaming.market.install",
+                  )}
+                </button>
+              ) : (
+                <p className="max-w-48 text-right text-xs text-[var(--color-text-dim)]">
+                  {pkg.required_host_version
+                    ? t("settings.streaming.market.needsHost", {
+                        version: pkg.required_host_version,
+                      })
+                    : t("settings.streaming.market.incompatible")}
+                </p>
+              )}
             </div>
             {errors[key] ? (
               <p role="alert" className="text-xs">
@@ -258,7 +274,7 @@ export function SourceMarket() {
       })}
       {installTarget
         ? (() => {
-            const latest = latestVersion(installTarget.versions);
+            const latest = installableVersion(installTarget);
             const origins = latest ? declaredOrigins(latest) : [];
             return (
               <SourceActionDialog
@@ -302,7 +318,7 @@ export function SourceMarket() {
       {replaceTarget ? (
         <SourceActionDialog
           title={t("settings.streaming.market.replaceTitle", {
-            sourceId: replaceTarget.pkg.source_id,
+            name: replaceTarget.pkg.name,
           })}
           confirmLabel={t("settings.streaming.market.replaceConfirm")}
           busy={busy !== null}
@@ -311,10 +327,11 @@ export function SourceMarket() {
         >
           <p>
             {t("settings.streaming.market.replaceBody", {
-              current:
-                replaceTarget.current?.name ?? replaceTarget.pkg.source_id,
-              name: replaceTarget.pkg.name,
-              sourceId: replaceTarget.pkg.source_id,
+              current: replaceTarget.current?.name ?? replaceTarget.pkg.name,
+              currentRegistry: replaceTarget.current?.registry_id
+                ? registryName(replaceTarget.current.registry_id)
+                : "OpenKara",
+              registry: registryName(replaceTarget.pkg.registry_id),
             })}
           </p>
         </SourceActionDialog>

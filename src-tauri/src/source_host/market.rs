@@ -1,4 +1,4 @@
-use super::{registry, types::*, SourceHost, State};
+use super::{engine, registry, types::*, SourceHost, State};
 use std::collections::BTreeSet;
 
 impl SourceHost {
@@ -63,6 +63,20 @@ fn market_package(
             }
         })
     });
+    let installable_version = registry::select(config, package, None)
+        .ok()
+        .map(|version| version.version.clone());
+    let required_host_version = if installable_version.is_some() {
+        None
+    } else {
+        package
+            .versions
+            .iter()
+            .filter(|version| version.protocol_majors.contains(&engine::PROTOCOL_MAJOR))
+            .filter_map(|version| semver::Version::parse(&version.minimum_host_version).ok())
+            .min()
+            .map(|version| version.to_string())
+    };
     MarketPackage {
         registry_id: registry_id.into(),
         package_id: package.package_id.clone(),
@@ -86,6 +100,8 @@ fn market_package(
             pinned_version: stored.pinned_version.clone(),
         }),
         update,
+        installable_version,
+        required_host_version,
     }
 }
 

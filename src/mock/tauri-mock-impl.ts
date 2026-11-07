@@ -413,6 +413,8 @@ export function createTauriMock(data: any): TauriMockResult {
           }
         : null,
       update,
+      installable_version: candidate.version,
+      required_host_version: null,
     };
   }
   function marketPackageOf(registryId: string, packageId: string) {

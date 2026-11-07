@@ -175,8 +175,8 @@ test("a refused registry add surfaces the refusal message", async () => {
     }),
   );
   await waitFor(() => {
-    expect(screen.getByRole("alert").textContent).toContain(
-      "invalid_registry: Another added URL already serves the registry id example.",
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Another added URL already serves the registry id example.",
     );
   });
   expect(screen.queryByRole("dialog")).toBeNull();

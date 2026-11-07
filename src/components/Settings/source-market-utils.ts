@@ -1,4 +1,5 @@
 import type {
+  MarketPackage,
   MarketVersion,
   RegistryStatus,
   SourceSnapshot,
@@ -31,12 +32,15 @@ export function isOfficialRegistry(
   );
 }
 
+/** The readable part of a failure; host messages start with their error code. */
 export function errorMessage(failure: unknown): string {
-  return failure instanceof Error
-    ? failure.message
-    : typeof failure === "object" && failure !== null && "message" in failure
-      ? String(failure.message)
-      : String(failure);
+  const message =
+    failure instanceof Error
+      ? failure.message
+      : typeof failure === "object" && failure !== null && "message" in failure
+        ? String(failure.message)
+        : String(failure);
+  return message.replace(/^[a-z_]+: /, "");
 }
 
 function versionParts(version: string): {
@@ -115,4 +119,13 @@ export function marketErrorCode(error: unknown): MarketErrorCode | null {
     if ((RECOGNIZED_HOST_CODES as readonly string[]).includes(candidate))
       return candidate as MarketErrorCode;
   return null;
+}
+
+/** The newest version of a package that this OpenKara can install. */
+export function installableVersion(pkg: MarketPackage): MarketVersion | null {
+  return (
+    pkg.versions.find(
+      (version) => version.version === pkg.installable_version,
+    ) ?? null
+  );
 }
