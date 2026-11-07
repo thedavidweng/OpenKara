@@ -507,6 +507,10 @@ export function createTauriMock(data: any): TauriMockResult {
     string,
     { sourceId: string; state: string; polls: number }
   >();
+  const rememberedMatches = new Map<
+    string,
+    { source_id: string; remote_track_id: string }
+  >();
   let importSourceId: string | null = null;
   let importJob: StreamingImportJobSnapshot | null = null;
   let importCancelled = false;
@@ -589,10 +593,38 @@ export function createTauriMock(data: any): TauriMockResult {
       }),
     );
   }
+  /** Web Library lists "Unplayable Song" without audio; Plugin Library has it. */
+  function unplayableSong(sourceId: string) {
+    tracks(sourceId);
+    const refused = sourceId === "demo-web";
+    return {
+      source_id: sourceId,
+      remote_track_id: refused ? "unplayable:/web" : "unplayable:/plugin",
+      title: "Unplayable Song",
+      artist: "Demo Artist",
+      album: refused ? "Metadata Album" : "Playable Album",
+      duration_ms: refused ? 200000 : 201000,
+      refusal: refused
+        ? {
+            reason: "empty_url",
+            title: "Unplayable Song",
+            artist: "Demo Artist",
+          }
+        : null,
+      library_song_id: null,
+      cover_url: null,
+      isrc: null,
+    };
+  }
+  function knownTracks(sourceId: string) {
+    return [...tracks(sourceId), unplayableSong(sourceId)];
+  }
   function page(sourceId: string, cursor?: string | null, query = "") {
-    const values = tracks(sourceId).filter((track) =>
-      track.title.toLowerCase().includes(query.toLowerCase()),
-    );
+    const values = query.toLowerCase().includes("unplayable")
+      ? [unplayableSong(sourceId)]
+      : tracks(sourceId).filter((track) =>
+          track.title.toLowerCase().includes(query.toLowerCase()),
+        );
     if (cursor && cursor !== `${sourceId}:next`)
       throw {
         code: "streaming_invalid_cursor",
@@ -1621,6 +1653,37 @@ export function createTauriMock(data: any): TauriMockResult {
       query: string;
       cursor?: string;
     }) => page(args.sourceId, args.cursor, args.query),
+    find_playable_matches: (args: {
+      sourceId: string;
+      remoteTrackId: string;
+    }) => {
+      const remembered = rememberedMatches.get(
+        `${args.sourceId}:${args.remoteTrackId}`,
+      );
+      if (remembered) return { remembered, candidates: [] };
+      return {
+        remembered: null,
+        candidates: sourceSnapshots
+          .filter(
+            (snapshot) =>
+              snapshot.source_id !== args.sourceId &&
+              snapshot.manifest?.capabilities.includes("search"),
+          )
+          .map((snapshot) => unplayableSong(snapshot.source_id))
+          .filter((track) => !track.refusal),
+      };
+    },
+    remember_playable_match: (args: {
+      sourceId: string;
+      remoteTrackId: string;
+      matchSourceId: string;
+      matchRemoteTrackId: string;
+    }) => {
+      rememberedMatches.set(`${args.sourceId}:${args.remoteTrackId}`, {
+        source_id: args.matchSourceId,
+        remote_track_id: args.matchRemoteTrackId,
+      });
+    },
     cancel_streaming_import: () => {
       importCancelled = true;
     },
@@ -1637,7 +1700,9 @@ export function createTauriMock(data: any): TauriMockResult {
           retryable: true,
         };
       const selected = args.remoteTrackIds.flatMap((id) =>
-        tracks(args.sourceId).filter((track) => track.remote_track_id === id),
+        knownTracks(args.sourceId).filter(
+          (track) => track.remote_track_id === id,
+        ),
       );
       importSourceId = args.sourceId;
       importCancelled = false;

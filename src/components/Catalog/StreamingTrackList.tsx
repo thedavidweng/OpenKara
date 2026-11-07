@@ -15,7 +15,11 @@ import {
   playbackIdFor,
   usePlayPreview,
 } from "@/components/Catalog/use-play-preview";
-import { sourceAllows, useCatalogStore } from "@/stores/catalog-store";
+import {
+  canFindPlayableMatch,
+  sourceAllows,
+  useCatalogStore,
+} from "@/stores/catalog-store";
 import { usePlayerStore } from "@/stores/player-store";
 import type { StreamingImportTrackState, StreamingTrack } from "@/types/ipc";
 import { onlinePreviewQueueId } from "@/playback";
@@ -103,15 +107,36 @@ function RowAction({
   track,
   state,
   busy,
+  canImport,
+  matchable,
 }: {
   track: StreamingTrack;
   state: StreamingImportTrackState | undefined;
   busy: boolean;
+  canImport: boolean;
+  matchable: boolean;
 }) {
   const { t } = useTranslation();
   const importTracks = useCatalogStore((s) => s.importTracks);
+  const findPlayableMatch = useCatalogStore((s) => s.findPlayableMatch);
 
-  if (track.refusal) return null;
+  const inLibrary = state?.kind === "imported" || !!track.library_song_id;
+  if (track.refusal && !inLibrary) {
+    return matchable ? (
+      <button
+        type="button"
+        disabled={busy}
+        aria-label={t("catalog.streaming.playableMatch.findLabel", {
+          title: track.title,
+        })}
+        onClick={() => void findPlayableMatch(track)}
+        className={`inline-flex min-h-8 items-center whitespace-nowrap rounded-full border border-[var(--color-border-light)] px-3 text-[12px] text-[var(--color-text)] hover:bg-[var(--color-ghost-hover)] disabled:opacity-40 ${focusRing}`}
+      >
+        {t("catalog.streaming.playableMatch.find")}
+      </button>
+    ) : null;
+  }
+  if (!canImport) return null;
   if (state?.kind === "queued") {
     return (
       <ProgressRing
@@ -142,7 +167,7 @@ function RowAction({
       />
     );
   }
-  if (state?.kind === "imported" || track.library_song_id) {
+  if (inLibrary) {
     return (
       <span
         role="img"
@@ -228,7 +253,10 @@ const StreamingTrackRow = memo(function StreamingTrackRow({
   const playing = usePlayerStore(
     (s) => s.snapshot?.song_id === playbackIdFor(track),
   );
-  const unavailable = !!track.refusal && !track.library_song_id;
+  const matchable = useCatalogStore((s) =>
+    canFindPlayableMatch(s.sources, track),
+  );
+  const unavailable = !!track.refusal && !track.library_song_id && !matchable;
   const canSelect = isTrackSelectable(track, state);
   const reason =
     unavailable && track.refusal
@@ -324,11 +352,15 @@ const StreamingTrackRow = memo(function StreamingTrackRow({
       </div>
       <div
         role="gridcell"
-        className="flex w-16 shrink-0 items-center justify-end"
+        className={`flex shrink-0 items-center justify-end ${matchable ? "min-w-16" : "w-16"}`}
       >
-        {canImport ? (
-          <RowAction track={track} state={state} busy={busy} />
-        ) : null}
+        <RowAction
+          track={track}
+          state={state}
+          busy={busy}
+          canImport={canImport}
+          matchable={matchable}
+        />
       </div>
     </div>
   );
@@ -369,12 +401,14 @@ export function StreamingTrackList({
   const [focusIndex, setFocusIndex] = useState(0);
   const headerBox = useRef<HTMLInputElement>(null);
 
-  const unavailableCount = tracks.reduce(
-    (total, track) => total + (track.refusal && !track.library_song_id ? 1 : 0),
-    0,
-  );
+  const sources = useCatalogStore((s) => s.sources);
+  const isUnavailable = (track: StreamingTrack) =>
+    !!track.refusal &&
+    !track.library_song_id &&
+    !canFindPlayableMatch(sources, track);
+  const unavailableCount = tracks.filter(isUnavailable).length;
   const visible = hideUnavailable
-    ? tracks.filter((track) => !track.refusal || track.library_song_id)
+    ? tracks.filter((track) => !isUnavailable(track))
     : tracks;
 
   const virtualizer = useVirtualizer({

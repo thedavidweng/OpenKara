@@ -6,6 +6,7 @@ import { ToastContainer } from "@/components/Layout/ToastContainer";
 import { MainContentView } from "./MainContentView";
 import { YoutubeLinkPopover } from "@/components/Catalog/YoutubeLinkPopover";
 import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialog";
+import { PlayableMatchDialog } from "@/components/Catalog/PlayableMatchDialog";
 import { LibraryDecisionDialog } from "@/components/Library/LibraryDecisionDialog";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
@@ -153,6 +154,7 @@ export function AppLayout({
       {!previewMode && <ToastContainer />}
       {!previewMode && <ImportCdgChoiceDialog />}
       {!previewMode && <LibraryDecisionDialog />}
+      {!previewMode && <PlayableMatchDialog />}
       {!previewMode && <YoutubeLinkPopover />}
     </div>
   );

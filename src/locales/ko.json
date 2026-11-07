@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "재생 가능한 버전 찾기",
+        "findLabel": "“{{title}}”의 재생 가능한 버전 찾기",
+        "title": "재생 가능한 버전 선택",
+        "original": "원곡",
+        "versions": "재생 가능한 버전",
+        "sameIsrc": "동일한 ISRC",
+        "loading": "재생 가능한 버전을 찾는 중…",
+        "empty": "다른 소스에서 재생 가능한 버전을 찾지 못했습니다.",
+        "import": "가져오기"
+      }
     }
   },
   "globalSearch": {

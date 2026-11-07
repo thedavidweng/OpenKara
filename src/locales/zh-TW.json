@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "尋找可播放版本",
+        "findLabel": "尋找「{{title}}」的可播放版本",
+        "title": "選擇可播放版本",
+        "original": "原曲目",
+        "versions": "可播放版本",
+        "sameIsrc": "相同 ISRC",
+        "loading": "正在尋找可播放版本…",
+        "empty": "在你的其他音源中找不到可播放版本。",
+        "import": "匯入"
+      }
     }
   },
   "globalSearch": {

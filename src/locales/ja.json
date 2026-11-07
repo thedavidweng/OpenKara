@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "再生できるバージョンを探す",
+        "findLabel": "「{{title}}」の再生できるバージョンを探す",
+        "title": "再生できるバージョンを選択",
+        "original": "元の曲",
+        "versions": "再生できるバージョン",
+        "sameIsrc": "同じ ISRC",
+        "loading": "再生できるバージョンを探しています…",
+        "empty": "ほかのソースに再生できるバージョンは見つかりませんでした。",
+        "import": "インポート"
+      }
     }
   },
   "globalSearch": {

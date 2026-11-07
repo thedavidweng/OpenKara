@@ -1,7 +1,9 @@
 use crate::cache;
 use crate::catalog::{self, StreamingSource};
 use crate::commands::error::{database_error, internal_error, state_lock_error, CommandResult};
-use crate::source_host::{Cancellation, SourceHost, WorkKind, WorkLease};
+use crate::source_host::{
+    Cancellation, SourceHost, SourceSnapshot, SourceState, WorkKind, WorkLease,
+};
 use crate::AppState;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -655,6 +657,156 @@ pub async fn search_streaming_source(
         Ok(page)
     })
     .await
+}
+fn source_ready(snapshot: &SourceSnapshot) -> bool {
+    snapshot.installed_version.is_some()
+        && snapshot.enabled
+        && snapshot.loaded
+        && !matches!(
+            snapshot.state,
+            SourceState::NotInstalled
+                | SourceState::Disabled
+                | SourceState::UpdateRequired
+                | SourceState::Unavailable
+                | SourceState::Cancelling
+        )
+}
+/// Mirrors the frontend's `sourceAllows` for the `search` and `import` operations.
+fn source_allows(app: &AppHandle, snapshot: &SourceSnapshot, capability: &str) -> bool {
+    let Some(manifest) = snapshot
+        .manifest
+        .as_ref()
+        .filter(|_| source_ready(snapshot))
+    else {
+        return false;
+    };
+    if !manifest.capabilities.iter().any(|c| c == capability) {
+        return false;
+    }
+    let operation = if capability == "import" {
+        "media.resolve"
+    } else {
+        capability
+    };
+    !manifest
+        .requires_authentication
+        .iter()
+        .any(|required| required == operation)
+        || source(app, &snapshot.source_id)
+            .and_then(|source| source.session().map_err(Into::into))
+            .is_ok_and(|session| session.signed_in && !session.expired)
+}
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
+}
+#[tauri::command]
+pub async fn find_playable_matches(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    source_id: String,
+    remote_track_id: String,
+) -> CommandResult<catalog::matching::PlayableMatches> {
+    let state = state.inner().clone();
+    blocking(move || {
+        let original = app_handle
+            .state::<Arc<catalog::TrackMetadataCache>>()
+            .get(&source_id, &remote_track_id)
+            .ok_or_else(|| catalog::CatalogError::SourceFailure {
+                code: "not_found".into(),
+                message: "The track is no longer available. Reload the source listing.".into(),
+                retryable: false,
+            })?;
+        let snapshots = app_handle.state::<SourceHost>().snapshots();
+        let library = state.library_root()?;
+        let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+        let identity = catalog::StreamingTrackIdentity {
+            source: source_id.clone(),
+            remote_track_id,
+        };
+        if let Some(remembered) = catalog::lookup_playable_match(&connection, &identity)? {
+            let usable = snapshots.iter().any(|snapshot| {
+                snapshot.source_id == remembered.source
+                    && source_allows(&app_handle, snapshot, "import")
+            });
+            if usable {
+                return Ok(catalog::matching::PlayableMatches {
+                    remembered: Some(catalog::matching::PlayableMatchTarget {
+                        source_id: remembered.source,
+                        remote_track_id: remembered.remote_track_id,
+                    }),
+                    candidates: Vec::new(),
+                });
+            }
+        }
+        let first_artist = original.artist.split(", ").next().unwrap_or_default();
+        let query = format!("{} {first_artist}", original.title);
+        let query = query.trim();
+        let pages: Vec<(String, Vec<catalog::StreamingTrack>)> = std::thread::scope(|scope| {
+            let searches: Vec<_> = snapshots
+                .iter()
+                .filter(|snapshot| {
+                    snapshot.source_id != source_id
+                        && source_allows(&app_handle, snapshot, "search")
+                })
+                .map(|snapshot| {
+                    let app = &app_handle;
+                    let id = snapshot.source_id.clone();
+                    scope.spawn(move || {
+                        let page = source(app, &id)
+                            .ok()?
+                            .track_page("search", json!({"query": query, "cursor": null}))
+                            .ok()?;
+                        Some((id, page.tracks))
+                    })
+                })
+                .collect();
+            searches
+                .into_iter()
+                .filter_map(|search| search.join().ok().flatten())
+                .collect()
+        });
+        let mut candidates = Vec::new();
+        for (id, mut tracks) in pages {
+            catalog::annotate_library_songs(&connection, &id, &mut tracks)?;
+            candidates.extend(tracks);
+        }
+        Ok(catalog::matching::PlayableMatches {
+            remembered: None,
+            candidates: catalog::matching::rank_candidates(&original, candidates),
+        })
+    })
+    .await
+}
+#[tauri::command]
+pub async fn remember_playable_match(
+    state: State<'_, AppState>,
+    source_id: String,
+    remote_track_id: String,
+    match_source_id: String,
+    match_remote_track_id: String,
+) -> CommandResult<()> {
+    if source_id == match_source_id {
+        return Err(internal_error(
+            "a playable match must come from another source",
+        ));
+    }
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+    catalog::remember_playable_match(
+        &connection,
+        &catalog::StreamingTrackIdentity {
+            source: source_id,
+            remote_track_id,
+        },
+        &catalog::StreamingTrackIdentity {
+            source: match_source_id,
+            remote_track_id: match_remote_track_id,
+        },
+        now_ms(),
+    )
+    .map_err(Into::into)
 }
 #[tauri::command]
 pub async fn start_streaming_import(

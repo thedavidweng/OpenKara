@@ -138,6 +138,7 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     }
 
     connection.execute_batch(include_str!("../../migrations/015_streaming_identity.sql"))?;
+    connection.execute_batch(include_str!("../../migrations/016_playable_matches.sql"))?;
 
     Ok(())
 }

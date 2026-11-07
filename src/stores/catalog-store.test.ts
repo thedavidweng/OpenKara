@@ -4,8 +4,14 @@ import {
   DEFAULT_MOCK_DATA,
 } from "@/lib/backend/mock-backend";
 import { source } from "@/test-utils/streaming-source";
-import type { StreamingTrackListing } from "@/types/ipc";
-import { createCatalogStore } from "./catalog-store";
+import { onlinePreviewQueueId } from "@/playback";
+import type {
+  PlayableMatches,
+  StreamingImportProgress,
+  StreamingTrack,
+  StreamingTrackListing,
+} from "@/types/ipc";
+import { canFindPlayableMatch, createCatalogStore } from "./catalog-store";
 
 describe("Streaming Source support", () => {
   test("a build with Streaming Sources reports them once and keeps the answer", async () => {
@@ -103,5 +109,130 @@ describe("global search", () => {
       status: "ready",
       cursor: "next",
     });
+  });
+});
+
+describe("Playable Match", () => {
+  const original: StreamingTrack = {
+    source_id: "meta",
+    remote_track_id: "orig",
+    title: "Sunny Day",
+    artist: "Jay Chou",
+    album: null,
+    duration_ms: 180000,
+    refusal: { reason: "empty_url", title: "Sunny Day", artist: "Jay Chou" },
+    library_song_id: null,
+    cover_url: null,
+    isrc: null,
+  };
+  const candidate: StreamingTrack = {
+    ...original,
+    source_id: "files",
+    remote_track_id: "cand",
+    refusal: null,
+  };
+  const progress = (failed = false): StreamingImportProgress => ({
+    source_id: "files",
+    status: "completed",
+    imported_song_ids: failed ? [] : ["song"],
+    failed: failed
+      ? [
+          {
+            remote_track_id: "cand",
+            title: "Sunny Day",
+            artist: "Jay Chou",
+            reason: "import_failed",
+            refusal: null,
+          },
+        ]
+      : [],
+    playlist_id: null,
+    conflict: null,
+  });
+  const setup = (matches: PlayableMatches) => {
+    const calls: string[] = [];
+    const backend = createMockBackend({
+      overrides: {
+        catalog: {
+          findPlayableMatches: async () => matches,
+          rememberPlayableMatch: async () => {
+            calls.push("remember");
+          },
+          startStreamingImport: async (sourceId: string, ids: string[]) => {
+            calls.push(`import ${sourceId} ${ids.join()}`);
+            return progress();
+          },
+        },
+      },
+    });
+    return { calls, store: createCatalogStore(backend) };
+  };
+
+  test("only a track without audio can look for a playable version", () => {
+    const sources = [source("meta", ["search"]), source("files", ["search"])];
+    expect(canFindPlayableMatch(sources, original)).toBe(true);
+    expect(
+      canFindPlayableMatch(sources, {
+        ...original,
+        refusal: { ...original.refusal!, reason: "no_play_rights" },
+      }),
+    ).toBe(false);
+    expect(canFindPlayableMatch([sources[0]], original)).toBe(false);
+  });
+
+  test("the user's pick is remembered, then imported from the candidate source", async () => {
+    const { calls, store } = setup({
+      remembered: null,
+      candidates: [candidate],
+    });
+
+    await store.getState().findPlayableMatch(original);
+    expect(store.getState().playableMatch).toMatchObject({
+      status: "ready",
+      candidates: [candidate],
+    });
+
+    await store.getState().confirmPlayableMatch(candidate);
+    expect(calls).toEqual(["remember", "import files cand"]);
+    expect(store.getState().playableMatch).toBeNull();
+    expect(
+      store.getState().trackStates[onlinePreviewQueueId("meta", "orig")],
+    ).toEqual({ kind: "imported", song_id: "" });
+  });
+
+  test("a remembered match imports without a dialog", async () => {
+    const { calls, store } = setup({
+      remembered: { source_id: "files", remote_track_id: "cand" },
+      candidates: [],
+    });
+
+    await store.getState().findPlayableMatch(original);
+
+    expect(calls).toEqual(["import files cand"]);
+    expect(store.getState().playableMatch).toBeNull();
+  });
+
+  test("closing the dialog drops a late search result", async () => {
+    let finish!: (matches: PlayableMatches) => void;
+    const store = createCatalogStore(
+      createMockBackend({
+        overrides: {
+          catalog: {
+            findPlayableMatches: () =>
+              new Promise<PlayableMatches>((resolve) => {
+                finish = resolve;
+              }),
+          },
+        },
+      }),
+    );
+
+    const pending = store.getState().findPlayableMatch(original);
+    expect(store.getState().playableMatch?.status).toBe("loading");
+    store.getState().closePlayableMatch();
+    finish({ remembered: null, candidates: [candidate] });
+    await pending;
+
+    expect(store.getState().playableMatch).toBeNull();
   });
 });

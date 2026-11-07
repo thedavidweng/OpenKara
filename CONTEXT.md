@@ -116,6 +116,10 @@ _Avoid_: Temporary song, cached track, trial play
 One query over the local library and every ready **Streaming Source** that can search. Each result keeps its own source, so **Online Preview** and **Streaming Import** use that source. It does not pair a track from one source with audio from another.
 _Avoid_: Unified catalog, federated library, UNM
 
+**Playable Match (可播放匹配)**:
+A user-confirmed choice of a track on another **Streaming Source** to import in place of a track whose source has no media (an **Import Refusal** with an empty stream URL). The library song gets the candidate's **Streaming Track Identity**. OpenKara remembers the choice for the original track. A matched import gets no **Playlist Origin Stamp**.
+_Avoid_: UNM, unblock, fallback, auto-replace
+
 **Playlist Origin Stamp (歌单来源印记)**:
 The **Streaming Source** and that source's playlist id stored on a **Playlist**. It only matches a later **Streaming Import** of the same **Streaming Playlist**. It is not a live link.
 _Avoid_: Binding, sync id, remote playlist id as the playlist itself
@@ -244,6 +248,7 @@ _Avoid_: Official romanization, TTML roman, x-roman
 - A **Streaming Source** does not write library songs, **Playlists**, or a **Remote Repository**.
 - A **Streaming Playlist** stays on the **Streaming Source** until the user performs a **Streaming Import**.
 - After a **Streaming Import**, the new songs and any new **Playlist** belong to OpenKara. They do not stay bound to the **Streaming Playlist**.
+- A **Playable Match** is never silent. The user sees the original and the candidate before the **Streaming Import** starts. The source package still returns only its own media and never searches other services.
 - A **Playlist Origin Stamp** only finds the same **Playlist** on a later **Streaming Import**. It does not refresh that **Playlist** when the **Streaming Playlist** changes on its own.
 - A **Streaming Track Identity** matches one listing. A live cut and a studio cut are different listings when the source gives them different ids.
 - The file hash identifies one stored file. Two bitrates of the same **Streaming Track Identity** are the same library song, not two songs.

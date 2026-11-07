@@ -47,6 +47,12 @@ export interface GlobalSearch {
   query: string;
   sections: Record<string, GlobalSearchSection>;
 }
+/** The open "choose a playable version" dialog for one refused track. */
+export interface PlayableMatchState {
+  original: StreamingTrack;
+  status: "loading" | "ready";
+  candidates: StreamingTrack[];
+}
 export interface SourceBrowseState {
   session: StreamingSessionSnapshot | null;
   sessionStatus: LoadStatus;
@@ -142,6 +148,11 @@ export interface CatalogState extends SourceBrowseState {
   searchEverywhere: (query: string) => Promise<void>;
   /** Load a source's next result page, or retry its failed page. */
   searchMoreIn: (sourceId: string) => Promise<void>;
+  playableMatch: PlayableMatchState | null;
+  /** Import a refused track from another source: the remembered match, or the one the user picks. */
+  findPlayableMatch: (track: StreamingTrack) => Promise<void>;
+  confirmPlayableMatch: (candidate: StreamingTrack) => Promise<void>;
+  closePlayableMatch: () => void;
   importPlaylist: () => Promise<void>;
   importTracks: (
     ids: string[],
@@ -229,10 +240,27 @@ export function sourceAllows(
       (!!session?.signed_in && !session.expired))
   );
 }
+/** A track refused with no audio can be matched when another source can search. */
+export function canFindPlayableMatch(
+  sources: SourceSnapshot[],
+  track: StreamingTrack,
+) {
+  return (
+    track.refusal?.reason === "empty_url" &&
+    sources.some(
+      (source) =>
+        source.source_id !== track.source_id &&
+        sourceReady(source) &&
+        !!source.manifest?.capabilities.includes("search"),
+    )
+  );
+}
 export function createCatalogStore(
   backend: Backend = tauriBackend,
 ): CatalogStore {
   const generations = new Map<string, number>();
+  /** Candidate queue id to the original queue id it stands in for. */
+  const matchedOriginals = new Map<string, string>();
   const authTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let supportCheck: Promise<boolean> | null = null;
   const generation = (id: string, operation: string) => {
@@ -351,6 +379,11 @@ export function createCatalogStore(
           : { kind: "failed", reason: failure.reason }
         : { kind: "imported", song_id: "" };
     }
+    for (const [candidate, original] of matchedOriginals) {
+      if (states[candidate]?.kind === "imported")
+        states[original] = states[candidate];
+      if (terminal(states[candidate])) matchedOriginals.delete(candidate);
+    }
     store.setState({
       trackStates: states,
       pendingConflict: null,
@@ -388,6 +421,19 @@ export function createCatalogStore(
       },
     });
     notifyError(error);
+  };
+  const importMatch = async (
+    original: StreamingTrack,
+    sourceId: string,
+    remoteTrackId: string,
+    label: string,
+  ) => {
+    if (store.getState().importRun?.phase === "running") return;
+    matchedOriginals.set(
+      onlinePreviewQueueId(sourceId, remoteTrackId),
+      onlinePreviewQueueId(original.source_id, original.remote_track_id),
+    );
+    await store.getState().importTracks([remoteTrackId], null, label, sourceId);
   };
   const poll = async (
     id: string,
@@ -485,6 +531,7 @@ export function createCatalogStore(
     activeView: "library",
     activeSourceId: null,
     globalSearch: { query: "", sections: {} },
+    playableMatch: null,
     sourcesSupported: null,
     sources: [],
     sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
@@ -961,6 +1008,61 @@ export function createCatalogStore(
       )
         return;
       await searchSection(id, query, section.cursor);
+    },
+    findPlayableMatch: async (original) => {
+      const current = generation("_host", "playable-match");
+      set({ playableMatch: { original, status: "loading", candidates: [] } });
+      try {
+        const { remembered, candidates } =
+          await backend.catalog.findPlayableMatches(
+            original.source_id,
+            original.remote_track_id,
+          );
+        if (!current()) return;
+        if (remembered) {
+          set({ playableMatch: null });
+          await importMatch(
+            original,
+            remembered.source_id,
+            remembered.remote_track_id,
+            original.title,
+          );
+          return;
+        }
+        set({ playableMatch: { original, status: "ready", candidates } });
+      } catch (error) {
+        if (current()) {
+          set({ playableMatch: null });
+          notifyError(error);
+        }
+      }
+    },
+    confirmPlayableMatch: async (candidate) => {
+      const original = get().playableMatch?.original;
+      if (!original) return;
+      generation("_host", "playable-match");
+      set({ playableMatch: null });
+      try {
+        await backend.catalog.rememberPlayableMatch(
+          original.source_id,
+          original.remote_track_id,
+          candidate.source_id,
+          candidate.remote_track_id,
+        );
+      } catch (error) {
+        notifyError(error);
+        return;
+      }
+      await importMatch(
+        original,
+        candidate.source_id,
+        candidate.remote_track_id,
+        candidate.title,
+      );
+    },
+    closePlayableMatch: () => {
+      generation("_host", "playable-match");
+      set({ playableMatch: null });
     },
     importPlaylist: async () => {
       const id = get().activeSourceId ?? "";

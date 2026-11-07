@@ -962,7 +962,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "ค้นหาเวอร์ชันที่เล่นได้",
+        "findLabel": "ค้นหาเวอร์ชันที่เล่นได้ของ “{{title}}”",
+        "title": "เลือกเวอร์ชันที่เล่นได้",
+        "original": "ต้นฉบับ",
+        "versions": "เวอร์ชันที่เล่นได้",
+        "sameIsrc": "ISRC เดียวกัน",
+        "loading": "กำลังค้นหาเวอร์ชันที่เล่นได้…",
+        "empty": "ไม่พบเวอร์ชันที่เล่นได้ในแหล่งอื่นของคุณ",
+        "import": "นำเข้า"
+      }
     }
   },
   "globalSearch": {

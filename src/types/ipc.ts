@@ -242,6 +242,16 @@ export interface StreamingTrack {
   isrc: string | null;
 }
 
+export interface PlayableMatchTarget {
+  source_id: OnlineSourceId;
+  remote_track_id: string;
+}
+
+export interface PlayableMatches {
+  remembered: PlayableMatchTarget | null;
+  candidates: StreamingTrack[];
+}
+
 export interface StreamingPlaylistSummary {
   source_id: OnlineSourceId;
   remote_id: string;

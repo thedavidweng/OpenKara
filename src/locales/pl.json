@@ -967,7 +967,18 @@
       "scanCode": "Scan to sign in",
       "unavailable": "Source unavailable. Open Settings to manage it.",
       "noOperations": "This source has no supported browsing operations.",
-      "signedIn": "Signed in"
+      "signedIn": "Signed in",
+      "playableMatch": {
+        "find": "Znajdź wersję do odtworzenia",
+        "findLabel": "Znajdź wersję do odtworzenia utworu „{{title}}”",
+        "title": "Wybierz wersję do odtworzenia",
+        "original": "Oryginał",
+        "versions": "Wersje do odtworzenia",
+        "sameIsrc": "Ten sam ISRC",
+        "loading": "Szukanie wersji do odtworzenia…",
+        "empty": "Nie znaleziono wersji do odtworzenia w pozostałych źródłach.",
+        "import": "Importuj"
+      }
     }
   },
   "globalSearch": {
