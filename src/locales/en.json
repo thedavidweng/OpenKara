@@ -87,6 +87,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Search results",
+    "title": "Results for “{{query}}”",
+    "library": "Library",
+    "libraryEmpty": "No songs in your library match.",
+    "libraryMore": "Showing {{shown}} of {{count}}. The sidebar lists all of them.",
+    "searching": "Searching…",
+    "signInToSearch": "Sign in to {{name}} to search it.",
+    "openSource": "Open {{name}}",
+    "searchFailed": "Couldn't search {{name}}.",
+    "searchSources": "Search online sources for “{{query}}”"
+  },
   "youtube": {
     "pasteLink": "Paste a YouTube link",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

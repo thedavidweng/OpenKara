@@ -966,6 +966,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Suchergebnisse",
+    "title": "Ergebnisse für „{{query}}“",
+    "library": "Mediathek",
+    "libraryEmpty": "Keine Songs in deiner Mediathek passen.",
+    "libraryMore": "{{shown}} von {{count}} angezeigt. Die Seitenleiste zeigt alle.",
+    "searching": "Suche läuft…",
+    "signInToSearch": "Melde dich bei {{name}} an, um dort zu suchen.",
+    "openSource": "{{name}} öffnen",
+    "searchFailed": "Suche in {{name}} fehlgeschlagen.",
+    "searchSources": "Online-Quellen nach „{{query}}“ durchsuchen"
+  },
   "youtube": {
     "pasteLink": "YouTube-Link einfügen",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

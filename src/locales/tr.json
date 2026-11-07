@@ -966,6 +966,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Arama sonuçları",
+    "title": "“{{query}}” için sonuçlar",
+    "library": "Kitaplık",
+    "libraryEmpty": "Kitaplığında eşleşen şarkı yok.",
+    "libraryMore": "{{count}} sonuçtan {{shown}} tanesi gösteriliyor. Tümü kenar çubuğunda.",
+    "searching": "Aranıyor…",
+    "signInToSearch": "Aramak için {{name}} hesabında oturum aç.",
+    "openSource": "{{name}} aç",
+    "searchFailed": "{{name}} içinde arama yapılamadı.",
+    "searchSources": "Çevrimiçi kaynaklarda “{{query}}” ara"
+  },
   "youtube": {
     "pasteLink": "YouTube bağlantısı yapıştır",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

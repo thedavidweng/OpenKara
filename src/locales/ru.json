@@ -970,6 +970,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Результаты поиска",
+    "title": "Результаты по запросу «{{query}}»",
+    "library": "Медиатека",
+    "libraryEmpty": "В медиатеке нет подходящих песен.",
+    "libraryMore": "Показано {{shown}} из {{count}}. Полный список — на боковой панели.",
+    "searching": "Поиск…",
+    "signInToSearch": "Войдите в {{name}}, чтобы искать там.",
+    "openSource": "Открыть {{name}}",
+    "searchFailed": "Не удалось выполнить поиск в {{name}}.",
+    "searchSources": "Искать «{{query}}» в онлайн-источниках"
+  },
   "youtube": {
     "pasteLink": "Вставить ссылку YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

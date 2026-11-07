@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "搜索结果",
+    "title": "“{{query}}”的搜索结果",
+    "library": "曲库",
+    "libraryEmpty": "曲库里没有匹配的歌曲。",
+    "libraryMore": "显示 {{count}} 首中的 {{shown}} 首，侧边栏列出全部。",
+    "searching": "正在搜索…",
+    "signInToSearch": "登录 {{name}} 后才能搜索。",
+    "openSource": "打开 {{name}}",
+    "searchFailed": "无法搜索 {{name}}。",
+    "searchSources": "在在线来源中搜索“{{query}}”"
+  },
   "youtube": {
     "pasteLink": "粘贴 YouTube 链接",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

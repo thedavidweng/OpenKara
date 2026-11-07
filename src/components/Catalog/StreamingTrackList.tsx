@@ -169,7 +169,9 @@ function RowAction({
           ? t("catalog.streaming.retryImportLabel", { title: track.title })
           : t("catalog.streaming.importTrackLabel", { title: track.title })
       }
-      onClick={() => void importTracks([track.remote_track_id])}
+      onClick={() =>
+        void importTracks([track.remote_track_id], null, null, track.source_id)
+      }
       className={`${actionButton} ${
         retry
           ? "text-[var(--color-destructive)]"

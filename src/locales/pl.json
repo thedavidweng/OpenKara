@@ -970,6 +970,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Wyniki wyszukiwania",
+    "title": "Wyniki dla „{{query}}”",
+    "library": "Biblioteka",
+    "libraryEmpty": "Żaden utwór w bibliotece nie pasuje.",
+    "libraryMore": "Pokazano {{shown}} z {{count}}. Pełna lista jest na pasku bocznym.",
+    "searching": "Wyszukiwanie…",
+    "signInToSearch": "Zaloguj się do {{name}}, aby tam wyszukiwać.",
+    "openSource": "Otwórz {{name}}",
+    "searchFailed": "Nie udało się przeszukać {{name}}.",
+    "searchSources": "Szukaj „{{query}}” w źródłach online"
+  },
   "youtube": {
     "pasteLink": "Wklej link YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

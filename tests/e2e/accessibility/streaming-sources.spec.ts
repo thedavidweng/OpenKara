@@ -230,6 +230,39 @@ test("source switching keeps colliding remote tracks and cursor pages distinct",
   ).toContainText("Web Library: Shared Track");
 });
 
+test("the sidebar search reaches every source from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search", exact: true });
+  await search.fill("Shared Track");
+  await search.press("Enter");
+
+  const results = page.getByTestId("global-search");
+  await expect(
+    results.getByRole("heading", { name: "Results for “Shared Track”" }),
+  ).toBeVisible();
+  for (const name of ["Web Library", "Plugin Library"]) {
+    await expect(
+      results
+        .getByRole("region", { name, exact: true })
+        .getByTestId("streaming-track-row")
+        .first(),
+    ).toContainText(`${name}: Shared Track`);
+  }
+  await a11y.axeForThemes();
+
+  await page.getByRole("button", { name: "All Tracks" }).click();
+  await expect(results).toBeHidden();
+  const searchSources = page.getByRole("button", {
+    name: "Search online sources for “Shared Track”",
+  });
+  await searchSources.focus();
+  await page.keyboard.press("Enter");
+  await expect(results).toBeVisible();
+});
+
 test("the Node-era replacement notice names the source and works from the keyboard", async ({
   page,
   a11y,

@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Hasil pencarian",
+    "title": "Hasil untuk “{{query}}”",
+    "library": "Pustaka",
+    "libraryEmpty": "Tidak ada lagu di pustaka yang cocok.",
+    "libraryMore": "Menampilkan {{shown}} dari {{count}}. Bilah samping menampilkan semuanya.",
+    "searching": "Mencari…",
+    "signInToSearch": "Masuk ke {{name}} untuk mencari di sana.",
+    "openSource": "Buka {{name}}",
+    "searchFailed": "Tidak dapat mencari di {{name}}.",
+    "searchSources": "Cari “{{query}}” di sumber online"
+  },
   "youtube": {
     "pasteLink": "Tempel tautan YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

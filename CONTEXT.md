@@ -112,6 +112,10 @@ _Avoid_: Grey song as the generic name, skip, unblock, UNM
 Playback of a permitted full-length **Streaming Source** track through the shared progressive stream player, with no library song behind it. Its queue id includes the source and encoded remote id: `stream:<source>:<id>`. Host lyric lookup uses source-bound metadata; stems and library lyric storage do not apply. Trial clips and tracks under an **Import Refusal** are never previewed. **Streaming Import** turns accepted media into a library song.
 _Avoid_: Temporary song, cached track, trial play
 
+**Global Search (全局搜索)**:
+One query over the local library and every ready **Streaming Source** that can search. Each result keeps its own source, so **Online Preview** and **Streaming Import** use that source. It does not pair a track from one source with audio from another.
+_Avoid_: Unified catalog, federated library, UNM
+
 **Playlist Origin Stamp (歌单来源印记)**:
 The **Streaming Source** and that source's playlist id stored on a **Playlist**. It only matches a later **Streaming Import** of the same **Streaming Playlist**. It is not a live link.
 _Avoid_: Binding, sync id, remote playlist id as the playlist itself

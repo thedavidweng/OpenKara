@@ -3,6 +3,8 @@ import {
   createMockBackend,
   DEFAULT_MOCK_DATA,
 } from "@/lib/backend/mock-backend";
+import { source } from "@/test-utils/streaming-source";
+import type { StreamingTrackListing } from "@/types/ipc";
 import { createCatalogStore } from "./catalog-store";
 
 describe("Streaming Source support", () => {
@@ -58,5 +60,48 @@ describe("Streaming Source support", () => {
 
     await expect(store.getState().loadSourcesSupport()).resolves.toBe(false);
     expect(store.getState().sourcesSupported).toBe(false);
+  });
+});
+
+describe("global search", () => {
+  test("a newer query drops results that arrive late for an older one", async () => {
+    let finishOld!: (page: StreamingTrackListing) => void;
+    const search = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise<StreamingTrackListing>((resolve) => {
+          finishOld = resolve;
+        }),
+      )
+      .mockResolvedValue({ tracks: [], next_cursor: "next" });
+    const store = createCatalogStore(
+      createMockBackend({
+        overrides: {
+          catalog: {
+            getStreamingSession: async (source_id) => ({
+              source_id,
+              signed_in: false,
+              display_name: null,
+              expired: false,
+            }),
+            searchStreamingSource: search,
+          },
+        },
+      }),
+    );
+    const first = source("alpha", ["search"]);
+    store.getState().applySources([first]);
+    const old = store.getState().searchEverywhere("old");
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1));
+    await store.getState().searchEverywhere("new");
+    finishOld({ tracks: [], next_cursor: "stale" });
+    await old;
+
+    const { query, sections } = store.getState().globalSearch;
+    expect(query).toBe("new");
+    expect(sections[first.source_id]).toMatchObject({
+      status: "ready",
+      cursor: "next",
+    });
   });
 });

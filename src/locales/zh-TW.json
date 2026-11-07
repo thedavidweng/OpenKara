@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "搜尋結果",
+    "title": "「{{query}}」的搜尋結果",
+    "library": "曲庫",
+    "libraryEmpty": "曲庫裡沒有符合的歌曲。",
+    "libraryMore": "顯示 {{count}} 首中的 {{shown}} 首，側邊欄列出全部。",
+    "searching": "正在搜尋…",
+    "signInToSearch": "登入 {{name}} 後才能搜尋。",
+    "openSource": "開啟 {{name}}",
+    "searchFailed": "無法搜尋 {{name}}。",
+    "searchSources": "在線上來源中搜尋「{{query}}」"
+  },
   "youtube": {
     "pasteLink": "貼上 YouTube 連結",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

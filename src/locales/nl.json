@@ -966,6 +966,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Zoekresultaten",
+    "title": "Resultaten voor ‘{{query}}’",
+    "library": "Bibliotheek",
+    "libraryEmpty": "Geen nummers in je bibliotheek komen overeen.",
+    "libraryMore": "{{shown}} van {{count}} getoond. De zijbalk toont ze allemaal.",
+    "searching": "Zoeken…",
+    "signInToSearch": "Log in bij {{name}} om daar te zoeken.",
+    "openSource": "{{name}} openen",
+    "searchFailed": "Zoeken in {{name}} is mislukt.",
+    "searchSources": "Online bronnen doorzoeken op ‘{{query}}’"
+  },
   "youtube": {
     "pasteLink": "YouTube-link plakken",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

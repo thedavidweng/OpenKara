@@ -37,6 +37,8 @@ function debounce<T extends (...args: never[]) => void>(
 interface LibraryState {
   songs: Song[];
   searchQuery: string;
+  /** The trimmed query that `songs` answers; empty for the whole library. */
+  songsQuery: string;
   isImporting: boolean;
   importErrors: ImportFailure[];
   selectedSongIds: Set<string>;
@@ -111,7 +113,7 @@ export function createLibraryStore(backend: Backend = tauriBackend) {
     try {
       const songs = await library.searchLibrary(query);
       if (gen !== searchGeneration) return;
-      store.setState({ songs });
+      store.setState({ songs, songsQuery: query.trim() });
     } catch (e) {
       if (gen !== searchGeneration) return;
       notifyError(e);
@@ -121,6 +123,7 @@ export function createLibraryStore(backend: Backend = tauriBackend) {
   const store = create<LibraryState>((set, get) => ({
     songs: [],
     searchQuery: "",
+    songsQuery: "",
     isImporting: false,
     importErrors: [],
     selectedSongIds: new Set<string>(),
@@ -141,7 +144,7 @@ export function createLibraryStore(backend: Backend = tauriBackend) {
         } catch {}
 
         const songs = await library.getLibrary();
-        set({ songs });
+        set({ songs, songsQuery: "" });
 
         try {
           const statuses = await separation.getAllSeparationStatuses();
@@ -216,7 +219,7 @@ export function createLibraryStore(backend: Backend = tauriBackend) {
     searchSongs: async (query) => {
       try {
         const songs = await library.searchLibrary(query);
-        set({ songs });
+        set({ songs, songsQuery: query.trim() });
       } catch (e) {
         notifyError(e);
       }
