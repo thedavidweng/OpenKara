@@ -407,8 +407,7 @@
         "removeTitle": "Supprimer le registre de sources",
         "removeBody": "Les paquets de {{name}} quittent le catalogue. Les sources que vous en avez installées continuent de fonctionner mais ne peuvent plus être mises à jour.",
         "removeConfirm": "Supprimer le registre",
-        "failing": "échec de l’actualisation",
-        "manage": "Registres…"
+        "failing": "échec de l’actualisation"
       },
       "market": {
         "emptyNoRegistries": "Ajoutez un registre de sources pour parcourir les paquets.",

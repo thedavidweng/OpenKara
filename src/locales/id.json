@@ -406,8 +406,7 @@
         "removeTitle": "Hapus Registri Sumber",
         "removeBody": "Paket dari {{name}} akan hilang dari pasar. Sumber yang Anda pasang darinya tetap berfungsi tetapi tidak dapat diperbarui lagi.",
         "removeConfirm": "Hapus registri",
-        "failing": "gagal memuat ulang",
-        "manage": "Registri…"
+        "failing": "gagal memuat ulang"
       },
       "market": {
         "emptyNoRegistries": "Tambahkan Registri Sumber untuk menelusuri paket.",

@@ -408,8 +408,7 @@
         "removeTitle": "Usuń rejestr źródeł",
         "removeBody": "Pakiety z {{name}} znikną z katalogu. Zainstalowane z niego źródła nadal działają, ale nie mogą się już aktualizować.",
         "removeConfirm": "Usuń rejestr",
-        "failing": "odświeżanie nie powiodło się",
-        "manage": "Rejestry…"
+        "failing": "odświeżanie nie powiodło się"
       },
       "market": {
         "emptyNoRegistries": "Dodaj rejestr źródeł, aby przeglądać pakiety.",

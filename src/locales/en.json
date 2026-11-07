@@ -543,8 +543,7 @@
         "removeTitle": "Remove Source Registry",
         "removeBody": "Packages from {{name}} leave the market. Sources you installed from it keep working but can no longer update.",
         "removeConfirm": "Remove registry",
-        "failing": "refresh failed",
-        "manage": "Registries…"
+        "failing": "refresh failed"
       },
       "market": {
         "emptyNoRegistries": "Add a Source Registry to browse packages.",

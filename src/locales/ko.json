@@ -406,8 +406,7 @@
         "removeTitle": "소스 레지스트리 제거",
         "removeBody": "{{name}}의 패키지가 마켓에서 사라집니다. 여기서 설치한 소스는 계속 작동하지만 더 이상 업데이트할 수 없습니다.",
         "removeConfirm": "레지스트리 제거",
-        "failing": "새로 고침 실패",
-        "manage": "레지스트리…"
+        "failing": "새로 고침 실패"
       },
       "market": {
         "emptyNoRegistries": "소스 레지스트리를 추가해 패키지를 둘러보세요.",

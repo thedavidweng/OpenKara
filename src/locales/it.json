@@ -407,8 +407,7 @@
         "removeTitle": "Rimuovi registro di fonti",
         "removeBody": "I pacchetti di {{name}} escono dal catalogo. Le fonti che hai installato da qui continuano a funzionare ma non possono più aggiornarsi.",
         "removeConfirm": "Rimuovi registro",
-        "failing": "aggiornamento non riuscito",
-        "manage": "Registri…"
+        "failing": "aggiornamento non riuscito"
       },
       "market": {
         "emptyNoRegistries": "Aggiungi un registro di fonti per sfogliare i pacchetti.",

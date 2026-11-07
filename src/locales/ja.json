@@ -406,8 +406,7 @@
         "removeTitle": "ソースレジストリを削除",
         "removeBody": "{{name}} のパッケージはマーケットから外れます。そこからインストールしたソースは引き続き使えますが、更新はできなくなります。",
         "removeConfirm": "レジストリを削除",
-        "failing": "更新に失敗",
-        "manage": "レジストリ…"
+        "failing": "更新に失敗"
       },
       "market": {
         "emptyNoRegistries": "ソースレジストリを追加してパッケージを探します。",

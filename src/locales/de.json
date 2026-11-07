@@ -406,8 +406,7 @@
         "removeTitle": "Quellen-Registry entfernen",
         "removeBody": "Pakete von {{name}} verschwinden aus dem Angebot. Daraus installierte Quellen funktionieren weiter, können aber nicht mehr aktualisiert werden.",
         "removeConfirm": "Registry entfernen",
-        "failing": "Aktualisierung fehlgeschlagen",
-        "manage": "Registrys…"
+        "failing": "Aktualisierung fehlgeschlagen"
       },
       "market": {
         "emptyNoRegistries": "Füge eine Quellen-Registry hinzu, um Pakete zu durchsuchen.",

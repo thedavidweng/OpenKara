@@ -407,8 +407,7 @@
         "removeTitle": "Quitar registro de fuentes",
         "removeBody": "Los paquetes de {{name}} salen del catálogo. Las fuentes que instalaste desde él siguen funcionando, pero ya no pueden actualizarse.",
         "removeConfirm": "Quitar registro",
-        "failing": "error al actualizar",
-        "manage": "Registros…"
+        "failing": "error al actualizar"
       },
       "market": {
         "emptyNoRegistries": "Añade un registro de fuentes para explorar paquetes.",

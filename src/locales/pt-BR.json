@@ -407,8 +407,7 @@
         "removeTitle": "Remover registro de fontes",
         "removeBody": "Os pacotes de {{name}} saem do mercado. As fontes instaladas a partir dele continuam funcionando, mas não podem mais ser atualizadas.",
         "removeConfirm": "Remover registro",
-        "failing": "falha ao atualizar",
-        "manage": "Registros…"
+        "failing": "falha ao atualizar"
       },
       "market": {
         "emptyNoRegistries": "Adicione um registro de fontes para explorar pacotes.",

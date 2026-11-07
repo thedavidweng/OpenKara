@@ -406,8 +406,7 @@
         "removeTitle": "Xóa kho nguồn",
         "removeBody": "Các gói từ {{name}} sẽ biến mất khỏi chợ. Các nguồn bạn đã cài từ kho này vẫn hoạt động nhưng không thể cập nhật nữa.",
         "removeConfirm": "Xóa kho",
-        "failing": "làm mới thất bại",
-        "manage": "Sổ đăng ký…"
+        "failing": "làm mới thất bại"
       },
       "market": {
         "emptyNoRegistries": "Hãy thêm kho nguồn để duyệt các gói.",

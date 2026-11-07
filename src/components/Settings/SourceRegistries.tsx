@@ -109,12 +109,13 @@ export function SourceRegistries() {
           aria-controls="source-registries-panel"
           onClick={() => setOpen(!open)}
         >
-          {t("settings.streaming.registries.manage")}
+          {`${t("settings.streaming.registries.title")} (${registries.length})`}
         </button>
-        <span className="text-xs text-[var(--color-text-dim)]">
-          {registries.length}
-          {failing ? ` · ${t("settings.streaming.registries.failing")}` : ""}
-        </span>
+        {failing ? (
+          <span className="text-xs text-[var(--color-text-dim)]">
+            {t("settings.streaming.registries.failing")}
+          </span>
+        ) : null}
       </div>
       {open ? (
         <div id="source-registries-panel" className="space-y-3">
