@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "Şarkıcıyı Kaldır",
     "confirmRemoveSingerMessage": "Bu şarkıcı, kuyruktaki şarkılara atanmış. Şarkıcıyı kaldırmak, bu şarkıları da kuyruktan kaldırır."
   },
+  "libraryRecovery": {
+    "title": "Kitaplığınız bulunamadı",
+    "descriptionNotFound": "OpenKara bu klasörü bulamadı. Taşınmış, yeniden adlandırılmış veya bağlı olmayan bir sürücüde olabilir.",
+    "descriptionNotOpenable": "Klasör var, ancak OpenKara onu kitaplık olarak açamıyor.",
+    "retry": "Yeniden dene",
+    "retryDescription": "Sürücüyü yeniden bağladıktan sonra kullanın.",
+    "locate": "Kitaplığı bul…",
+    "locateDescription": "Klasör taşındıysa veya yeniden adlandırıldıysa onu seçin.",
+    "otherLibraries": "Başka bir kitaplık aç",
+    "dialogTitleLocate": "Karaoke Kitaplığınızı bulun"
+  },
   "errors": {
+    "library_unavailable": "Açık kitaplık yok",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

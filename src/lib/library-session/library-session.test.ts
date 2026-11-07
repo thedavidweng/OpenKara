@@ -28,6 +28,7 @@ const registryWith = (
   activeLibraryId: string | null,
 ): LibraryRegistrySnapshot => ({
   active_library_id: activeLibraryId,
+  active_library_unavailable: null,
   libraries: [localLibrary, remoteRepository],
 });
 
@@ -223,6 +224,7 @@ describe("LibrarySession.adoptRegistry", () => {
 
     await harness.session.adoptRegistry({
       active_library_id: null,
+      active_library_unavailable: null,
       libraries: [],
     });
 

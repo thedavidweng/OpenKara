@@ -853,7 +853,19 @@
     "confirmRemoveSinger": "Retirer le chanteur",
     "confirmRemoveSingerMessage": "Ce chanteur est attribué à des chansons de la file. Le retirer supprimera également ces chansons de la file."
   },
+  "libraryRecovery": {
+    "title": "Votre bibliothèque est introuvable",
+    "descriptionNotFound": "OpenKara ne trouve pas ce dossier. Il a peut-être été déplacé, renommé ou se trouve sur un disque non connecté.",
+    "descriptionNotOpenable": "Ce dossier existe, mais OpenKara ne peut pas l'ouvrir comme bibliothèque.",
+    "retry": "Réessayer",
+    "retryDescription": "À utiliser après avoir reconnecté le disque.",
+    "locate": "Localiser la bibliothèque…",
+    "locateDescription": "Choisissez le dossier s'il a été déplacé ou renommé.",
+    "otherLibraries": "Ouvrir une autre bibliothèque",
+    "dialogTitleLocate": "Localiser votre bibliothèque de karaoké"
+  },
   "errors": {
+    "library_unavailable": "Aucune bibliothèque ouverte",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

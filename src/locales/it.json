@@ -853,7 +853,19 @@
     "confirmRemoveSinger": "Rimuovi cantante",
     "confirmRemoveSingerMessage": "Questo cantante è assegnato a canzoni nella coda. Rimuovendolo verranno rimosse dalla coda anche quelle canzoni."
   },
+  "libraryRecovery": {
+    "title": "Impossibile trovare la tua libreria",
+    "descriptionNotFound": "OpenKara non trova questa cartella. Potrebbe essere stata spostata, rinominata o trovarsi su un disco non collegato.",
+    "descriptionNotOpenable": "La cartella esiste, ma OpenKara non riesce ad aprirla come libreria.",
+    "retry": "Riprova",
+    "retryDescription": "Usalo dopo aver ricollegato il disco.",
+    "locate": "Individua libreria…",
+    "locateDescription": "Scegli la cartella se è stata spostata o rinominata.",
+    "otherLibraries": "Apri un'altra libreria",
+    "dialogTitleLocate": "Individua la tua libreria karaoke"
+  },
   "errors": {
+    "library_unavailable": "Nessuna libreria aperta",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

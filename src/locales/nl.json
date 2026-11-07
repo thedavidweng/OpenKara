@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "Zanger verwijderen",
     "confirmRemoveSingerMessage": "Deze zanger is toegewezen aan nummers in de wachtrij. Als je de zanger verwijdert, worden ook die nummers uit de wachtrij verwijderd."
   },
+  "libraryRecovery": {
+    "title": "Je bibliotheek is niet gevonden",
+    "descriptionNotFound": "OpenKara kan deze map niet vinden. Hij is mogelijk verplaatst, hernoemd of staat op een station dat niet is aangesloten.",
+    "descriptionNotOpenable": "Deze map bestaat, maar OpenKara kan hem niet als bibliotheek openen.",
+    "retry": "Opnieuw proberen",
+    "retryDescription": "Gebruik dit nadat je het station weer hebt aangesloten.",
+    "locate": "Bibliotheek zoeken…",
+    "locateDescription": "Kies de map als die is verplaatst of hernoemd.",
+    "otherLibraries": "Een andere bibliotheek openen",
+    "dialogTitleLocate": "Zoek je karaokebibliotheek"
+  },
   "errors": {
+    "library_unavailable": "Geen bibliotheek geopend",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

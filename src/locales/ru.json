@@ -854,7 +854,19 @@
     "confirmRemoveSinger": "Удалить певца",
     "confirmRemoveSingerMessage": "Этот певец назначен на песни в очереди. При его удалении эти песни также будут убраны из очереди."
   },
+  "libraryRecovery": {
+    "title": "Библиотека не найдена",
+    "descriptionNotFound": "OpenKara не нашёл эту папку. Её могли переместить или переименовать, либо она находится на неподключённом диске.",
+    "descriptionNotOpenable": "Папка существует, но OpenKara не может открыть её как библиотеку.",
+    "retry": "Повторить",
+    "retryDescription": "Нажмите после повторного подключения диска.",
+    "locate": "Указать библиотеку…",
+    "locateDescription": "Выберите папку, если её переместили или переименовали.",
+    "otherLibraries": "Открыть другую библиотеку",
+    "dialogTitleLocate": "Укажите расположение караоке-библиотеки"
+  },
   "errors": {
+    "library_unavailable": "Нет открытой библиотеки",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

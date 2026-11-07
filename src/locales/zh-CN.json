@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },
+  "libraryRecovery": {
+    "title": "找不到你的曲库",
+    "descriptionNotFound": "OpenKara 找不到这个文件夹。它可能已被移动、重命名，或位于未连接的磁盘上。",
+    "descriptionNotOpenable": "该文件夹存在，但 OpenKara 无法将其作为曲库打开。",
+    "retry": "重试",
+    "retryDescription": "重新连接磁盘后点这里。",
+    "locate": "定位曲库…",
+    "locateDescription": "如果文件夹被移动或重命名，请重新选择它。",
+    "otherLibraries": "打开其他曲库",
+    "dialogTitleLocate": "定位你的卡拉OK曲库"
+  },
   "errors": {
+    "library_unavailable": "没有打开的曲库",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

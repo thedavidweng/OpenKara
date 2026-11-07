@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "Sänger entfernen",
     "confirmRemoveSingerMessage": "Diesem Sänger sind Songs in der Warteschlange zugewiesen. Beim Entfernen werden auch diese Songs aus der Warteschlange entfernt."
   },
+  "libraryRecovery": {
+    "title": "Deine Bibliothek wurde nicht gefunden",
+    "descriptionNotFound": "OpenKara kann diesen Ordner nicht finden. Er wurde vielleicht verschoben, umbenannt oder liegt auf einem nicht verbundenen Laufwerk.",
+    "descriptionNotOpenable": "Dieser Ordner existiert, aber OpenKara kann ihn nicht als Bibliothek öffnen.",
+    "retry": "Erneut versuchen",
+    "retryDescription": "Nutze das, nachdem du das Laufwerk wieder verbunden hast.",
+    "locate": "Bibliothek suchen…",
+    "locateDescription": "Wähle den Ordner, falls er verschoben oder umbenannt wurde.",
+    "otherLibraries": "Andere Bibliothek öffnen",
+    "dialogTitleLocate": "Karaoke-Bibliothek suchen"
+  },
   "errors": {
+    "library_unavailable": "Keine Bibliothek geöffnet",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

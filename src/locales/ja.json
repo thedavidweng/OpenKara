@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "シンガーを削除",
     "confirmRemoveSingerMessage": "このシンガーはキュー内の曲に割り当てられています。削除すると、それらの曲もキューから削除されます。"
   },
+  "libraryRecovery": {
+    "title": "ライブラリが見つかりません",
+    "descriptionNotFound": "OpenKara はこのフォルダを見つけられませんでした。移動、名前変更、または接続されていないドライブにある可能性があります。",
+    "descriptionNotOpenable": "フォルダは存在しますが、OpenKara はライブラリとして開けません。",
+    "retry": "再試行",
+    "retryDescription": "ドライブを再接続したらこちらを使ってください。",
+    "locate": "ライブラリを探す…",
+    "locateDescription": "フォルダを移動または名前変更した場合は選び直してください。",
+    "otherLibraries": "別のライブラリを開く",
+    "dialogTitleLocate": "カラオケライブラリの場所を選択"
+  },
   "errors": {
+    "library_unavailable": "開いているライブラリがありません",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",
