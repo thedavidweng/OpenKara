@@ -1,17 +1,16 @@
+import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBackend } from "@/lib/backend";
 import { useCatalogStore } from "@/stores/catalog-store";
 import type { RegistryStatus } from "@/types/ipc";
 import { SourceActionDialog } from "./SourceActionDialog";
-import { sourceActionButton } from "./source-market-utils";
-
-const errorMessage = (failure: unknown) =>
-  failure instanceof Error
-    ? failure.message
-    : typeof failure === "object" && failure !== null && "message" in failure
-      ? String(failure.message)
-      : String(failure);
+import { OfficialBadge } from "./OfficialBadge";
+import {
+  errorMessage,
+  sourceActionButton,
+  sourceRow,
+} from "./source-market-utils";
 
 export function SourceRegistries() {
   const { t, i18n } = useTranslation();
@@ -26,6 +25,7 @@ export function SourceRegistries() {
   const [error, setError] = useState<string | null>(null);
   const [addTarget, setAddTarget] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RegistryStatus | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (status === "idle") void useCatalogStore.getState().loadRegistries();
@@ -34,6 +34,7 @@ export function SourceRegistries() {
   useEffect(() => {
     if (!registryLink || busy) return;
     useCatalogStore.getState().clearRegistryLink();
+    setOpen(true);
     section.current?.scrollIntoView?.({ block: "start" });
     setRemoveTarget(null);
     if (registryLink.kind === "add_registry") {
@@ -94,103 +95,120 @@ export function SourceRegistries() {
     }
   };
 
+  const failing = registries.some((entry) => entry.last_error);
   return (
     <section
       ref={section}
       aria-labelledby="source-registries-title"
       className="space-y-3"
     >
-      <h3 id="source-registries-title" className="text-sm font-semibold">
-        {t("settings.streaming.registries.title")}
-      </h3>
-      <p className="text-xs text-[var(--color-text-dim)]">
-        {t("settings.streaming.registries.description")}
-      </p>
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = url.trim();
-          if (trimmed) setAddTarget(trimmed);
-        }}
+      <details
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+        className="group space-y-3"
       >
-        <label className="flex-1 text-xs">
-          <span className="mb-1 block">
-            {t("settings.streaming.registries.urlLabel")}
-          </span>
-          <input
-            type="text"
-            value={url}
-            placeholder={t("settings.streaming.registries.urlPlaceholder")}
-            onChange={(event) => setUrl(event.target.value)}
-            className="min-h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs"
+        <summary className="flex cursor-pointer list-none items-center gap-2 select-none [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--color-text-dim)] transition-transform group-open:rotate-90 motion-reduce:transition-none"
           />
-        </label>
-        <button
-          type="submit"
-          className={sourceActionButton}
-          disabled={busy || !url.trim()}
-        >
-          {t("settings.streaming.registries.add")}
-        </button>
-      </form>
+          <h3 id="source-registries-title" className="text-sm font-semibold">
+            {t("settings.streaming.registries.title")}
+          </h3>
+          <span className="text-xs text-[var(--color-text-dim)]">
+            {registries.length}
+            {failing ? ` · ${t("settings.streaming.registries.failing")}` : ""}
+          </span>
+        </summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-[var(--color-text-dim)]">
+            {t("settings.streaming.registries.description")}
+          </p>
+          {loadError ? (
+            <p role="alert" className="text-xs">
+              {loadError}
+            </p>
+          ) : null}
+          {status === "loading" ? (
+            <p role="status">{t("common.loading")}</p>
+          ) : null}
+          {registries.map((entry) => (
+            <article
+              key={entry.registry_id}
+              aria-label={entry.display_name}
+              className={sourceRow}
+            >
+              <header className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-semibold">{entry.display_name}</h4>
+                    {entry.official ? <OfficialBadge /> : null}
+                  </div>
+                  <p className="break-all text-xs text-[var(--color-text-dim)]">
+                    {entry.url}
+                  </p>
+                  <p className="text-xs text-[var(--color-text-dim)]">
+                    {t("settings.streaming.registries.refreshed")}:{" "}
+                    {entry.refreshed_at
+                      ? new Intl.DateTimeFormat(i18n.language, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(entry.refreshed_at)
+                      : t("settings.streaming.registries.never")}
+                  </p>
+                </div>
+                {entry.official ? null : (
+                  <button
+                    className={sourceActionButton}
+                    disabled={busy}
+                    onClick={() => setRemoveTarget(entry)}
+                  >
+                    {t("settings.streaming.registries.remove")}
+                  </button>
+                )}
+              </header>
+              {entry.last_error ? (
+                <p role="alert" className="text-xs">
+                  {entry.last_error.message}
+                </p>
+              ) : null}
+            </article>
+          ))}
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = url.trim();
+              if (trimmed) setAddTarget(trimmed);
+            }}
+          >
+            <label className="flex-1 text-xs">
+              <span className="mb-1 block">
+                {t("settings.streaming.registries.urlLabel")}
+              </span>
+              <input
+                type="text"
+                value={url}
+                placeholder={t("settings.streaming.registries.urlPlaceholder")}
+                onChange={(event) => setUrl(event.target.value)}
+                className="min-h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs"
+              />
+            </label>
+            <button
+              type="submit"
+              className={sourceActionButton}
+              disabled={busy || !url.trim()}
+            >
+              {t("settings.streaming.registries.add")}
+            </button>
+          </form>
+        </div>
+      </details>
       {error ? (
         <p role="alert" className="text-xs">
           {error}
         </p>
       ) : null}
-      {loadError ? (
-        <p role="alert" className="text-xs">
-          {loadError}
-        </p>
-      ) : null}
-      {status === "loading" ? <p role="status">{t("common.loading")}</p> : null}
-      {status === "ready" && registries.length === 0 ? (
-        <p className="text-xs text-[var(--color-text-dim)]">
-          {t("settings.streaming.registries.empty")}
-        </p>
-      ) : null}
-      {registries.map((entry) => (
-        <article
-          key={entry.registry_id}
-          aria-label={entry.display_name}
-          className="space-y-2 rounded-xl border border-[var(--color-border)] p-4"
-        >
-          <header className="flex items-start justify-between gap-3">
-            <div>
-              <h4 className="font-semibold">{entry.display_name}</h4>
-              <p className="break-all text-xs text-[var(--color-text-dim)]">
-                {entry.url}
-              </p>
-            </div>
-            <button
-              className={sourceActionButton}
-              disabled={busy}
-              onClick={() => setRemoveTarget(entry)}
-            >
-              {t("settings.streaming.registries.remove")}
-            </button>
-          </header>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-            <dt>{t("settings.streaming.registries.homepage")}</dt>
-            <dd className="break-all">{entry.homepage}</dd>
-            <dt>{t("settings.streaming.registries.refreshed")}</dt>
-            <dd>
-              {entry.refreshed_at
-                ? new Intl.DateTimeFormat(i18n.language, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  }).format(entry.refreshed_at)
-                : t("settings.streaming.registries.never")}
-            </dd>
-          </dl>
-          {entry.last_error ? (
-            <p role="alert" className="text-xs">
-              {entry.last_error.message}
-            </p>
-          ) : null}
-        </article>
-      ))}
       {addTarget ? (
         <SourceActionDialog
           title={t("settings.streaming.registries.addTitle")}

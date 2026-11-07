@@ -31,6 +31,7 @@ const registry: RegistryStatus = {
   homepage: "https://sources.example.com",
   refreshed_at: 1700000000000,
   last_error: null,
+  official: false,
 };
 
 function preset(registries: RegistryStatus[]) {
@@ -71,7 +72,9 @@ test("lists registries with the last refresh time and fetch errors", () => {
   expect(
     screen.getByText("https://sources.example.com/registry.json"),
   ).toBeTruthy();
-  expect(screen.getByText("https://broken.example.com")).toBeTruthy();
+  expect(
+    screen.getByText("https://broken.example.com/registry.json"),
+  ).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain(
     "network: connection refused",
   );

@@ -6,6 +6,7 @@ impl SourceHost {
     pub async fn refresh(&self) -> HostResult<Vec<SourceSnapshot>> {
         self.inner.check()?;
         self.refresh_registries(false).await;
+        self.update_official_sources().await;
         self.maintain().await;
         let snapshots = self.snapshots();
         for snapshot in &snapshots {
@@ -33,8 +34,12 @@ impl SourceHost {
                 "Another added Source Registry already uses this registry id, or this URL now serves a different registry. Remove the other registry first.",
             ));
         }
+        let official = state
+            .registries
+            .iter()
+            .any(|entry| entry.official && entry.url == url);
         let mut stored = state.stored.clone();
-        if !stored.registries.iter().any(|entry| entry.url == url) {
+        if !official && !stored.registries.iter().any(|entry| entry.url == url) {
             stored.registries.push(StoredRegistry {
                 url: url.clone(),
                 registry_id: document.registry_id.clone(),
@@ -52,6 +57,7 @@ impl SourceHost {
                     refreshed_at: None,
                     attempted_at: None,
                     error: None,
+                    official: false,
                 });
                 state.registries.len() - 1
             }
@@ -71,15 +77,24 @@ impl SourceHost {
     pub fn remove_registry(&self, registry_id: &str) -> HostResult<()> {
         self.inner.check()?;
         let mut state = self.inner.state.lock().unwrap();
-        if !state
+        match state
             .registries
             .iter()
-            .any(|entry| entry.registry_id == registry_id)
+            .find(|entry| entry.registry_id == registry_id)
         {
-            return Err(HostError::new(
-                "not_found",
-                "No added Source Registry uses this registry id.",
-            ));
+            None => {
+                return Err(HostError::new(
+                    "not_found",
+                    "No added Source Registry uses this registry id.",
+                ))
+            }
+            Some(entry) if entry.official => {
+                return Err(HostError::new(
+                    "invalid_registry",
+                    "The official Source Registry is built in. Disable or uninstall its sources instead.",
+                ))
+            }
+            Some(_) => {}
         }
         let mut stored = state.stored.clone();
         stored
@@ -124,6 +139,44 @@ impl SourceHost {
             for snapshot in self.snapshots() {
                 let _ = self.inner.changes.send(snapshot);
             }
+        }
+        self.update_official_sources().await;
+    }
+    /// Installs the update of each enabled source from the official registry
+    /// when the update adds no origins or capabilities. A pin, a staged
+    /// update, or a failed attempt at the same version holds it back. Other
+    /// updates wait for the user.
+    async fn update_official_sources(&self) {
+        let market = self.market();
+        let due: Vec<String> = {
+            let state = self.inner.state.lock().unwrap();
+            market
+                .into_iter()
+                .filter(|package| {
+                    state
+                        .registries
+                        .iter()
+                        .any(|entry| entry.official && entry.registry_id == package.registry_id)
+                })
+                .filter_map(|package| {
+                    let update = package.update.filter(|update| !update.requires_consent)?;
+                    let stored = state.stored.sources.get(&package.source_id)?;
+                    let live = state.sources.get(&package.source_id);
+                    let held = !stored.enabled
+                        || stored
+                            .staged
+                            .as_ref()
+                            .is_some_and(|staged| staged.manifest.version == update.version)
+                        || live.is_some_and(|live| {
+                            live.install.is_some()
+                                || live.failed_install.as_deref() == Some(update.version.as_str())
+                        });
+                    (!held).then_some(package.source_id)
+                })
+                .collect()
+        };
+        for id in due {
+            let _ = self.install(&id, None, false).await;
         }
     }
     /// Fetches each added registry (only the overdue ones when `only_due`) and

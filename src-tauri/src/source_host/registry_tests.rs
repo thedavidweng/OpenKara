@@ -1330,3 +1330,111 @@ async fn registry_consumer_acceptance_installs_starts_and_describes_with_verifie
     assert_eq!(snapshot.installed_version.as_deref(), Some("1.0.0"));
     assert_eq!(snapshot.state, SourceState::Ready);
 }
+
+#[tokio::test]
+async fn the_official_registry_is_built_in_and_its_updates_install_by_themselves() {
+    let root = tempfile::tempdir().unwrap();
+    let mut official = MockRegistry::new("org.example.official", "fixture").await;
+    official.publish(&[Version::new("1.0.0")]).await;
+    let mut config = config(root.path());
+    config.registry_refresh_interval = Duration::from_millis(100);
+    config.official_registry = Some(StoredRegistry {
+        url: official.url(),
+        registry_id: official.id.into(),
+    });
+    let host = SourceHost::new(config).await.unwrap();
+    eventually("the first official fetch", || {
+        host.registries()
+            .first()
+            .is_some_and(|entry| entry.official && entry.refreshed_at.is_some())
+    })
+    .await;
+    assert_eq!(
+        host.remove_registry(official.id).unwrap_err().code,
+        "invalid_registry"
+    );
+    assert!(
+        host.add_registry(&official.url()).await.unwrap().official,
+        "adding the official URL again keeps one built-in entry"
+    );
+    assert_eq!(host.registries().len(), 1);
+
+    host.install_package(official.id, &official.package_id(), None, false, false)
+        .await
+        .unwrap();
+    host.set_enabled("fixture", true, false).await.unwrap();
+    official
+        .publish(&[Version::new("1.0.0"), Version::new("1.1.0")])
+        .await;
+    eventually("the automatic official update", || {
+        host.snapshot("fixture")
+            .unwrap()
+            .installed_version
+            .as_deref()
+            == Some("1.1.0")
+    })
+    .await;
+
+    let mut widened = fixture_manifest("fixture", "2.0.0").resource_origins;
+    widened.push("https://added-origin.fixture.test".into());
+    official
+        .publish(&[
+            Version::new("1.1.0"),
+            Version {
+                resource_origins: Some(widened),
+                ..Version::new("2.0.0")
+            },
+        ])
+        .await;
+    eventually("the widened update listed", || {
+        host.snapshot("fixture")
+            .unwrap()
+            .available_version
+            .as_deref()
+            == Some("2.0.0")
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        host.snapshot("fixture")
+            .unwrap()
+            .installed_version
+            .as_deref(),
+        Some("1.1.0"),
+        "an update that adds access waits for consent"
+    );
+}
+
+#[tokio::test]
+async fn updates_from_an_added_registry_wait_for_the_user() {
+    let root = tempfile::tempdir().unwrap();
+    let mut registry = MockRegistry::new("org.example.registry", "fixture").await;
+    registry.publish(&[Version::new("1.0.0")]).await;
+    let mut config = config(root.path());
+    config.registry_refresh_interval = Duration::from_millis(100);
+    let host = SourceHost::new(config).await.unwrap();
+    assert!(!host.add_registry(&registry.url()).await.unwrap().official);
+    host.install_package(registry.id, &registry.package_id(), None, false, false)
+        .await
+        .unwrap();
+    host.set_enabled("fixture", true, false).await.unwrap();
+    registry
+        .publish(&[Version::new("1.0.0"), Version::new("1.1.0")])
+        .await;
+    eventually("the update listed", || {
+        host.snapshot("fixture")
+            .unwrap()
+            .available_version
+            .as_deref()
+            == Some("1.1.0")
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        host.snapshot("fixture")
+            .unwrap()
+            .installed_version
+            .as_deref(),
+        Some("1.0.0")
+    );
+}

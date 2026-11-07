@@ -438,10 +438,9 @@
     "streaming": {
       "title": "Streaming Sources",
       "notIncluded": "This OpenKara build does not include Streaming Sources.",
-      "refresh": "Check for sources and updates",
-      "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. You see the declared origins and capabilities before you install. Source Registries are maintained outside OpenKara.",
-      "empty": "No sources are available. Check for sources to try again.",
-      "publisher": "Publisher / package",
+      "refresh": "Check for updates",
+      "trustNotice": "Streaming Sources run in a sandbox and can contact only the origins they declare. Review the declared origins and capabilities before you install.",
+      "empty": "No sources installed yet. Install one below.",
       "license": "License",
       "installed": "Installed version",
       "notInstalled": "Not installed",
@@ -449,20 +448,16 @@
       "loaded": "Engine",
       "loadedReady": "Loaded",
       "loadedNotReady": "Not loaded",
-      "state": "Source state",
-      "authentication": "Account",
-      "signedOut": "Signed out",
       "staged": "Version {{version}} waits for active work to finish.",
       "registryRemoved": "Its Source Registry was removed. This source keeps working but cannot update.",
       "replacementNotice": {
         "title": "Streaming Sources need replacement",
-        "body": "OpenKara no longer runs Node-based Streaming Sources. It removed {{names}} and the saved sign-in. Your library songs and playlists stay. To keep using a source, add a Source Registry, install the replacement, and sign in again.",
+        "body": "OpenKara no longer runs Node-based Streaming Sources. It removed {{names}} and the saved sign-in. Your library songs and playlists stay. To keep using a source, install its replacement in Settings and sign in again.",
         "openSettings": "Open Settings",
         "dismiss": "Dismiss"
       },
       "activeWork": "Active work",
       "install": "Install",
-      "update": "Update",
       "disable": "Disable",
       "enable": "Enable",
       "pin": "Pin installed version",
@@ -493,7 +488,7 @@
       },
       "registries": {
         "title": "Source Registries",
-        "description": "A Source Registry lists Streaming Sources you can install. Registries are maintained outside OpenKara.",
+        "description": "A Source Registry lists Streaming Sources you can install. OpenKara includes the official registry. Other registries are maintained outside OpenKara.",
         "urlLabel": "Registry URL",
         "urlPlaceholder": "https://registry.example.com/registry.json",
         "add": "Add registry",
@@ -501,19 +496,18 @@
         "addBody": "{{url}} is maintained outside OpenKara. Its maintainers decide which packages it offers. OpenKara verifies every download against the registry's integrity record before it runs.",
         "addConfirm": "Add registry",
         "linkInvalid": "This link cannot add a Source Registry. A registry link must name one HTTPS registry URL: {{link}}",
-        "empty": "No Source Registries. OpenKara ships without one.",
-        "homepage": "Homepage",
         "refreshed": "Last refresh",
         "never": "Never",
         "remove": "Remove registry",
         "removeTitle": "Remove Source Registry",
         "removeBody": "Packages from {{name}} leave the market. Sources you installed from it keep working but can no longer update.",
-        "removeConfirm": "Remove registry"
+        "removeConfirm": "Remove registry",
+        "failing": "refresh failed"
       },
       "market": {
-        "title": "Source Market",
+        "title": "Available Sources",
         "emptyNoRegistries": "Add a Source Registry to browse packages.",
-        "empty": "The added registries offer no packages.",
+        "empty": "No more sources to install.",
         "registry": "Registry",
         "packageId": "Package",
         "sourceId": "Source id",
@@ -537,7 +531,12 @@
         "replaceTitle": "Replace {{sourceId}}",
         "replaceBody": "{{current}} already provides the source {{sourceId}}. Replacing it signs the old package out, removes its saved credentials, and installs {{name}} disabled.",
         "replaceConfirm": "Replace and install"
-      }
+      },
+      "official": "Official",
+      "details": "Details",
+      "updateAll": "Update all ({{count}})",
+      "autoUpdateNotice": "Official sources update automatically when an update needs no new access. Other updates wait for you.",
+      "signedInAs": "Signed in as {{name}}"
     },
     "title": "Preferences",
     "library": {

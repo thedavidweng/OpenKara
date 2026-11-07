@@ -35,6 +35,7 @@ const demoRegistry: RegistryStatus = {
   homepage: "https://sources.demo.test",
   refreshed_at: 1700000000000,
   last_error: null,
+  official: false,
 };
 
 const registrySource: SourceSnapshot = {
@@ -119,7 +120,7 @@ test("a registry update that widens access asks for consent before updating", as
     </BackendProvider>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "settings.streaming.update" }),
+    screen.getByRole("button", { name: /settings.streaming.market.updateTo/ }),
   );
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("https://api.demo.test");
@@ -162,7 +163,7 @@ test("a registry update without new access installs without consent", async () =
     </BackendProvider>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "settings.streaming.update" }),
+    screen.getByRole("button", { name: /settings.streaming.market.updateTo/ }),
   );
   await waitFor(() =>
     expect(installStreamingSource).toHaveBeenCalledWith(
