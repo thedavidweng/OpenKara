@@ -160,11 +160,17 @@ test("install confirms the declared origins before installing", async () => {
     registry_id: "demo",
     package_id: "demo-fresh",
   });
+  const setStreamingSourceEnabled = vi.fn().mockResolvedValue(webSnapshot);
   const listSourceMarket = vi.fn().mockResolvedValue([]);
   const listStreamingSources = vi.fn().mockResolvedValue([]);
   const backend = createMockBackend({
     overrides: {
-      catalog: { installMarketPackage, listSourceMarket, listStreamingSources },
+      catalog: {
+        installMarketPackage,
+        setStreamingSourceEnabled,
+        listSourceMarket,
+        listStreamingSources,
+      },
     },
   });
   preset([freshPackage]);
@@ -191,6 +197,11 @@ test("install confirms the declared origins before installing", async () => {
     ),
   );
   await waitFor(() => expect(listSourceMarket).toHaveBeenCalled());
+  expect(setStreamingSourceEnabled).toHaveBeenCalledWith(
+    "fresh-source",
+    true,
+    false,
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 

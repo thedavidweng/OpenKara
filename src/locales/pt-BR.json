@@ -345,7 +345,7 @@
       "notIncluded": "Esta versão do OpenKara não inclui Fontes de streaming.",
       "refresh": "Verificar atualizações",
       "trustNotice": "Fontes de streaming rodam em sandbox e só acessam as origens que declaram. Revise as origens e recursos declarados antes de instalar.",
-      "empty": "Nenhuma fonte instalada ainda. Instale uma abaixo.",
+      "empty": "Nenhuma fonte instalada ainda. Encontre uma em Descobrir.",
       "license": "Licença",
       "installed": "Versão instalada",
       "notInstalled": "Não instalada",
@@ -407,10 +407,10 @@
         "removeTitle": "Remover registro de fontes",
         "removeBody": "Os pacotes de {{name}} saem do mercado. As fontes instaladas a partir dele continuam funcionando, mas não podem mais ser atualizadas.",
         "removeConfirm": "Remover registro",
-        "failing": "falha ao atualizar"
+        "failing": "falha ao atualizar",
+        "manage": "Registros…"
       },
       "market": {
-        "title": "Fontes disponíveis",
         "emptyNoRegistries": "Adicione um registro de fontes para explorar pacotes.",
         "empty": "Não há mais fontes para instalar.",
         "registry": "Registro",
@@ -441,7 +441,14 @@
       "details": "Detalhes",
       "updateAll": "Atualizar tudo ({{count}})",
       "autoUpdateNotice": "Fontes oficiais se atualizam sozinhas quando a atualização não pede novo acesso. As demais aguardam sua confirmação.",
-      "signedInAs": "Conectado como {{name}}"
+      "signedInAs": "Conectado como {{name}}",
+      "tabsLabel": "Visões das fontes de streaming",
+      "tabs": {
+        "installed": "Instaladas ({{count}})",
+        "discover": "Descobrir"
+      },
+      "updateAvailable": "Atualização disponível",
+      "open": "Abrir"
     },
     "title": "Preferências",
     "library": {
@@ -796,6 +803,14 @@
       "description": "Ative uma origem de música ou vídeo. As duas ficam desligadas até você escolhê-las.",
       "youtube": "YouTube",
       "youtubeDescription": "Cole um link público de vídeo ou playlist na fila. O OpenKara não baixa o áudio do YouTube."
+    },
+    "pagesLabel": "Seções das preferências",
+    "pages": {
+      "library": "Biblioteca",
+      "onlineSources": "Fontes online",
+      "separation": "Separação",
+      "playback": "Reprodução",
+      "general": "Geral"
     }
   },
   "bootstrap": {

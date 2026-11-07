@@ -344,7 +344,7 @@
       "notIncluded": "Deze OpenKara-build bevat geen streamingbronnen.",
       "refresh": "Zoeken naar updates",
       "trustNotice": "Streamingbronnen draaien in een sandbox en kunnen alleen de opgegeven origins bereiken. Controleer de opgegeven origins en functies voordat je installeert.",
-      "empty": "Nog geen bronnen geïnstalleerd. Installeer er hieronder een.",
+      "empty": "Nog geen bronnen geïnstalleerd. Vind er een onder Ontdekken.",
       "license": "Licentie",
       "installed": "Geïnstalleerde versie",
       "notInstalled": "Niet geïnstalleerd",
@@ -406,10 +406,10 @@
         "removeTitle": "Bronnenregister verwijderen",
         "removeBody": "Pakketten van {{name}} verdwijnen uit de markt. Bronnen die je ervan hebt geïnstalleerd blijven werken, maar kunnen niet meer worden bijgewerkt.",
         "removeConfirm": "Register verwijderen",
-        "failing": "vernieuwen mislukt"
+        "failing": "vernieuwen mislukt",
+        "manage": "Registers…"
       },
       "market": {
-        "title": "Beschikbare bronnen",
         "emptyNoRegistries": "Voeg een bronnenregister toe om pakketten te bekijken.",
         "empty": "Geen andere bronnen om te installeren.",
         "registry": "Register",
@@ -440,7 +440,14 @@
       "details": "Details",
       "updateAll": "Alles bijwerken ({{count}})",
       "autoUpdateNotice": "Officiële bronnen werken zichzelf bij als een update geen nieuwe toegang vraagt. Andere updates wachten op jou.",
-      "signedInAs": "Ingelogd als {{name}}"
+      "signedInAs": "Ingelogd als {{name}}",
+      "tabsLabel": "Weergaven van streamingbronnen",
+      "tabs": {
+        "installed": "Geïnstalleerd ({{count}})",
+        "discover": "Ontdekken"
+      },
+      "updateAvailable": "Update beschikbaar",
+      "open": "Openen"
     },
     "title": "Voorkeuren",
     "library": {
@@ -795,6 +802,14 @@
       "description": "Zet een muziek- of videobron aan. Beide blijven uit tot je ze kiest.",
       "youtube": "YouTube",
       "youtubeDescription": "Plak een openbare video- of afspeellijstlink in de wachtrij. OpenKara downloadt geen YouTube-audio."
+    },
+    "pagesLabel": "Voorkeurensecties",
+    "pages": {
+      "library": "Bibliotheek",
+      "onlineSources": "Online bronnen",
+      "separation": "Scheiding",
+      "playback": "Afspelen",
+      "general": "Algemeen"
     }
   },
   "bootstrap": {

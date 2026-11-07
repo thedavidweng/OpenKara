@@ -68,6 +68,11 @@ test("lists registries with the last refresh time and fetch errors", () => {
       <SourceRegistries />
     </BackendProvider>,
   );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "settings.streaming.registries.manage",
+    }),
+  );
   expect(screen.getByText("Example Registry")).toBeTruthy();
   expect(
     screen.getByText("https://sources.example.com/registry.json"),
@@ -96,6 +101,11 @@ test("adding a registry asks for confirmation and names the maintainer", async (
     <BackendProvider backend={backend}>
       <SourceRegistries />
     </BackendProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "settings.streaming.registries.manage",
+    }),
   );
   fireEvent.change(
     screen.getByRole("textbox", {
@@ -142,6 +152,11 @@ test("a refused registry add surfaces the refusal message", async () => {
     <BackendProvider backend={backend}>
       <SourceRegistries />
     </BackendProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "settings.streaming.registries.manage",
+    }),
   );
   fireEvent.change(
     screen.getByRole("textbox", {
@@ -257,6 +272,11 @@ test("removing a registry confirms and explains that installs keep working", asy
   );
   fireEvent.click(
     screen.getByRole("button", {
+      name: "settings.streaming.registries.manage",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
       name: "settings.streaming.registries.remove",
     }),
   );
@@ -285,6 +305,11 @@ test("the official registry has no remove action and load errors show", () => {
     <BackendProvider backend={createMockBackend()}>
       <SourceRegistries />
     </BackendProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "settings.streaming.registries.manage",
+    }),
   );
   const entry = screen.getByRole("article", { name: "Example Registry" });
   expect(entry.textContent).toContain("settings.streaming.official");

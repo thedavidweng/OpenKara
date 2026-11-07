@@ -345,7 +345,7 @@
       "notIncluded": "Esta versión de OpenKara no incluye fuentes de streaming.",
       "refresh": "Buscar actualizaciones",
       "trustNotice": "Las fuentes de streaming se ejecutan en un entorno aislado y solo pueden contactar los orígenes que declaran. Revisa los orígenes y funciones declarados antes de instalar.",
-      "empty": "Aún no hay fuentes instaladas. Instala una abajo.",
+      "empty": "Aún no hay fuentes instaladas. Encuentra alguna en Descubrir.",
       "license": "Licencia",
       "installed": "Versión instalada",
       "notInstalled": "No instalada",
@@ -407,10 +407,10 @@
         "removeTitle": "Quitar registro de fuentes",
         "removeBody": "Los paquetes de {{name}} salen del catálogo. Las fuentes que instalaste desde él siguen funcionando, pero ya no pueden actualizarse.",
         "removeConfirm": "Quitar registro",
-        "failing": "error al actualizar"
+        "failing": "error al actualizar",
+        "manage": "Registros…"
       },
       "market": {
-        "title": "Fuentes disponibles",
         "emptyNoRegistries": "Añade un registro de fuentes para explorar paquetes.",
         "empty": "No hay más fuentes para instalar.",
         "registry": "Registro",
@@ -441,7 +441,14 @@
       "details": "Detalles",
       "updateAll": "Actualizar todo ({{count}})",
       "autoUpdateNotice": "Las fuentes oficiales se actualizan solas cuando la actualización no pide acceso nuevo. Las demás esperan tu confirmación.",
-      "signedInAs": "Sesión iniciada como {{name}}"
+      "signedInAs": "Sesión iniciada como {{name}}",
+      "tabsLabel": "Vistas de fuentes de streaming",
+      "tabs": {
+        "installed": "Instaladas ({{count}})",
+        "discover": "Descubrir"
+      },
+      "updateAvailable": "Actualización disponible",
+      "open": "Abrir"
     },
     "title": "Preferencias",
     "library": {
@@ -796,6 +803,14 @@
       "description": "Activa un origen de música o vídeo. Ambos siguen apagados hasta que los elijas.",
       "youtube": "YouTube",
       "youtubeDescription": "Pega un enlace público de vídeo o lista en la cola. OpenKara no descarga audio de YouTube."
+    },
+    "pagesLabel": "Secciones de preferencias",
+    "pages": {
+      "library": "Biblioteca",
+      "onlineSources": "Orígenes en línea",
+      "separation": "Separación",
+      "playback": "Reproducción",
+      "general": "General"
     }
   },
   "bootstrap": {

@@ -113,6 +113,10 @@ export function SourceMarket() {
         false,
         replace,
       );
+      // Confirming the install review is consent to run the source. A
+      // replacement stays disabled, as its confirmation states.
+      if (!replace)
+        await catalog.setStreamingSourceEnabled(pkg.source_id, true, false);
       const store = useCatalogStore.getState();
       store.applySources(await catalog.listStreamingSources());
       store.applyMarket(await catalog.listSourceMarket());
@@ -150,13 +154,7 @@ export function SourceMarket() {
 
   const available = market.filter((pkg) => !pkg.installed);
   return (
-    <section aria-labelledby="source-market-title" className="space-y-3">
-      <h3 id="source-market-title" className="text-sm font-semibold">
-        {t("settings.streaming.market.title")}
-      </h3>
-      <p className="text-xs text-[var(--color-text-dim)]">
-        {t("settings.streaming.trustNotice")}
-      </p>
+    <div className="space-y-3">
       {loadError ? (
         <p role="alert" className="text-xs">
           {loadError}
@@ -321,6 +319,6 @@ export function SourceMarket() {
           </p>
         </SourceActionDialog>
       ) : null}
-    </section>
+    </div>
   );
 }

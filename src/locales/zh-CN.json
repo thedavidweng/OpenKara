@@ -344,7 +344,7 @@
       "notIncluded": "此 OpenKara 版本不包含流媒体源。",
       "refresh": "检查更新",
       "trustNotice": "流媒体源在沙盒中运行，只能访问其声明的地址。安装前请查看它声明的地址和功能。",
-      "empty": "尚未安装任何源。可在下方安装。",
+      "empty": "尚未安装任何源。可在“发现”中查找。",
       "license": "许可证",
       "installed": "已安装版本",
       "notInstalled": "未安装",
@@ -406,10 +406,10 @@
         "removeTitle": "移除源注册表",
         "removeBody": "{{name}} 中的软件包将从市场下架。你从中安装的源仍可使用，但无法再更新。",
         "removeConfirm": "移除注册表",
-        "failing": "刷新失败"
+        "failing": "刷新失败",
+        "manage": "注册表…"
       },
       "market": {
-        "title": "可安装的源",
         "emptyNoRegistries": "添加源注册表以浏览软件包。",
         "empty": "没有更多可安装的源。",
         "registry": "注册表",
@@ -440,7 +440,14 @@
       "details": "详情",
       "updateAll": "全部更新（{{count}}）",
       "autoUpdateNotice": "官方源的更新若不需要新增权限，会自动安装。其他更新需要你确认。",
-      "signedInAs": "已登录：{{name}}"
+      "signedInAs": "已登录：{{name}}",
+      "tabsLabel": "流媒体源视图",
+      "tabs": {
+        "installed": "已安装（{{count}}）",
+        "discover": "发现"
+      },
+      "updateAvailable": "有可用更新",
+      "open": "打开"
     },
     "title": "偏好设置",
     "library": {
@@ -795,6 +802,14 @@
     "lyricsBlurInactive": {
       "enable": "模糊非当前歌词",
       "description": "虚化当前句以外的歌词。卡拉OK需要提前看清后面几行时请保持关闭。"
+    },
+    "pagesLabel": "偏好设置分区",
+    "pages": {
+      "library": "资料库",
+      "onlineSources": "在线来源",
+      "separation": "分离",
+      "playback": "播放",
+      "general": "通用"
     }
   },
   "bootstrap": {

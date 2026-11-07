@@ -344,7 +344,7 @@
       "notIncluded": "Bản dựng OpenKara này không có Nguồn phát trực tuyến.",
       "refresh": "Kiểm tra cập nhật",
       "trustNotice": "Nguồn phát trực tuyến chạy trong sandbox và chỉ có thể kết nối tới các địa chỉ đã khai báo. Hãy xem các địa chỉ và khả năng đã khai báo trước khi cài.",
-      "empty": "Chưa cài nguồn nào. Hãy cài một nguồn bên dưới.",
+      "empty": "Chưa cài nguồn nào. Hãy tìm trong Khám phá.",
       "license": "Giấy phép",
       "installed": "Phiên bản đã cài",
       "notInstalled": "Chưa cài",
@@ -406,10 +406,10 @@
         "removeTitle": "Xóa kho nguồn",
         "removeBody": "Các gói từ {{name}} sẽ biến mất khỏi chợ. Các nguồn bạn đã cài từ kho này vẫn hoạt động nhưng không thể cập nhật nữa.",
         "removeConfirm": "Xóa kho",
-        "failing": "làm mới thất bại"
+        "failing": "làm mới thất bại",
+        "manage": "Sổ đăng ký…"
       },
       "market": {
-        "title": "Nguồn có sẵn",
         "emptyNoRegistries": "Hãy thêm kho nguồn để duyệt các gói.",
         "empty": "Không còn nguồn nào để cài.",
         "registry": "Kho",
@@ -440,7 +440,14 @@
       "details": "Chi tiết",
       "updateAll": "Cập nhật tất cả ({{count}})",
       "autoUpdateNotice": "Nguồn chính thức tự cập nhật khi bản cập nhật không cần thêm quyền truy cập. Các bản cập nhật khác chờ bạn xác nhận.",
-      "signedInAs": "Đã đăng nhập: {{name}}"
+      "signedInAs": "Đã đăng nhập: {{name}}",
+      "tabsLabel": "Chế độ xem nguồn phát trực tuyến",
+      "tabs": {
+        "installed": "Đã cài ({{count}})",
+        "discover": "Khám phá"
+      },
+      "updateAvailable": "Có bản cập nhật",
+      "open": "Mở"
     },
     "title": "Tùy chọn",
     "library": {
@@ -795,6 +802,14 @@
       "description": "Bật nguồn nhạc hoặc video. Cả hai đều tắt cho đến khi bạn chọn.",
       "youtube": "YouTube",
       "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube."
+    },
+    "pagesLabel": "Các mục tùy chọn",
+    "pages": {
+      "library": "Thư viện",
+      "onlineSources": "Nguồn trực tuyến",
+      "separation": "Tách âm",
+      "playback": "Phát lại",
+      "general": "Chung"
     }
   },
   "bootstrap": {

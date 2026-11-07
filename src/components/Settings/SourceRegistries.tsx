@@ -1,4 +1,3 @@
-import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBackend } from "@/lib/backend";
@@ -99,28 +98,26 @@ export function SourceRegistries() {
   return (
     <section
       ref={section}
-      aria-labelledby="source-registries-title"
+      aria-label={t("settings.streaming.registries.title")}
       className="space-y-3"
     >
-      <details
-        open={open}
-        onToggle={(event) => setOpen(event.currentTarget.open)}
-        className="group space-y-3"
-      >
-        <summary className="flex cursor-pointer list-none items-center gap-2 select-none [&::-webkit-details-marker]:hidden">
-          <ChevronRight
-            aria-hidden="true"
-            className="h-4 w-4 text-[var(--color-text-dim)] transition-transform group-open:rotate-90 motion-reduce:transition-none"
-          />
-          <h3 id="source-registries-title" className="text-sm font-semibold">
-            {t("settings.streaming.registries.title")}
-          </h3>
-          <span className="text-xs text-[var(--color-text-dim)]">
-            {registries.length}
-            {failing ? ` · ${t("settings.streaming.registries.failing")}` : ""}
-          </span>
-        </summary>
-        <div className="mt-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className={sourceActionButton}
+          aria-expanded={open}
+          aria-controls="source-registries-panel"
+          onClick={() => setOpen(!open)}
+        >
+          {t("settings.streaming.registries.manage")}
+        </button>
+        <span className="text-xs text-[var(--color-text-dim)]">
+          {registries.length}
+          {failing ? ` · ${t("settings.streaming.registries.failing")}` : ""}
+        </span>
+      </div>
+      {open ? (
+        <div id="source-registries-panel" className="space-y-3">
           <p className="text-xs text-[var(--color-text-dim)]">
             {t("settings.streaming.registries.description")}
           </p>
@@ -203,7 +200,7 @@ export function SourceRegistries() {
             </button>
           </form>
         </div>
-      </details>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs">
           {error}

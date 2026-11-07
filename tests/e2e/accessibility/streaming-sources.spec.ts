@@ -11,8 +11,10 @@ test("source registries and the market work from the keyboard", async ({
   const dialog = page.getByRole("dialog", { name: "Preferences" });
   await expect(dialog).toBeVisible();
 
+  await dialog.getByRole("tab", { name: "Online Sources" }).click();
+  await dialog.getByRole("tab", { name: "Discover" }).click();
   const registries = dialog.getByRole("region", { name: "Source Registries" });
-  await registries.getByText("Source Registries").click();
+  await registries.getByRole("button", { name: "Registries…" }).click();
   const official = registries.getByRole("article", { name: "Demo Registry" });
   await expect(official).toContainText("Official");
   await expect(
@@ -33,13 +35,11 @@ test("source registries and the market work from the keyboard", async ({
     registries.getByRole("heading", { name: "extra.demo.test" }),
   ).toBeVisible();
 
-  const market = dialog.getByRole("region", { name: "Available Sources" });
-  const installed = dialog.getByRole("region", { name: "Streaming Sources" });
-  const fresh = market.getByRole("article", { name: "Fresh Library" });
+  const fresh = dialog.getByRole("article", { name: "Fresh Library" });
   await expect(fresh).toBeVisible();
   await expect(fresh).toContainText("https://fresh.demo.test");
   await expect(
-    market.getByRole("article", { name: "Web Library" }),
+    dialog.getByRole("article", { name: "Web Library" }),
   ).toHaveCount(0);
   await a11y.axeCheck();
 
@@ -49,11 +49,14 @@ test("source registries and the market work from the keyboard", async ({
   await expect(install).toContainText("https://fresh.demo.test");
   await install.getByRole("button", { name: "Install package" }).press("Enter");
   await expect(fresh).toHaveCount(0);
+  await dialog.getByRole("tab", { name: /^Installed/ }).click();
+  const installedFresh = dialog.getByRole("article", { name: "Fresh Library" });
+  await expect(installedFresh).toContainText("Ready");
   await expect(
-    installed.getByRole("article", { name: "Fresh Library" }),
-  ).toContainText("Disabled");
+    installedFresh.getByRole("button", { name: "Disable" }),
+  ).toBeVisible();
 
-  const web = installed.getByRole("article", { name: "Web Library" });
+  const web = dialog.getByRole("article", { name: "Web Library" });
   await web.getByRole("button", { name: "Update to 1.1.0" }).click();
   const consent = page.getByRole("dialog", { name: "Review new access" });
   await expect(consent).toBeVisible();
@@ -69,6 +72,45 @@ test("source registries and the market work from the keyboard", async ({
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+});
+
+test("the preferences page nav and source tabs work from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  const library = dialog.getByRole("tab", { name: "Library" });
+  await library.focus();
+  await page.keyboard.press("ArrowDown");
+  const sources = dialog.getByRole("tab", { name: "Online Sources" });
+  await expect(sources).toBeFocused();
+  await expect(sources).toHaveAttribute("aria-selected", "true");
+  const installed = dialog.getByRole("tab", { name: /^Installed/ });
+  await installed.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByRole("tab", { name: "Discover" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await a11y.axeCheck();
+});
+
+test("a sidebar source closes preferences and opens the source", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+  await page.getByRole("button", { name: "Web Library", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(
+    page
+      .getByTestId("streaming-browser")
+      .getByRole("heading", { name: "Web Library", exact: true }),
+  ).toBeVisible();
 });
 
 test("a registry link opens the add confirmation from anywhere in the app", async ({
