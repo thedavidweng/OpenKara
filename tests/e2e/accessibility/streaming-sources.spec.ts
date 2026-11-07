@@ -14,7 +14,9 @@ test("source registries and the market work from the keyboard", async ({
   await dialog.getByRole("tab", { name: "Online Sources" }).click();
   await dialog.getByRole("tab", { name: "Discover" }).click();
   const registries = dialog.getByRole("region", { name: "Source Registries" });
-  await registries.getByRole("button", { name: "Registries…" }).click();
+  await registries
+    .getByRole("button", { name: /^Source Registries \(/ })
+    .click();
   const official = registries.getByRole("article", { name: "Demo Registry" });
   await expect(official).toContainText("Official");
   await expect(

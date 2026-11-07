@@ -406,8 +406,7 @@
         "removeTitle": "移除源注册表",
         "removeBody": "{{name}} 中的软件包将从市场下架。你从中安装的源仍可使用，但无法再更新。",
         "removeConfirm": "移除注册表",
-        "failing": "刷新失败",
-        "manage": "注册表…"
+        "failing": "刷新失败"
       },
       "market": {
         "emptyNoRegistries": "添加源注册表以浏览软件包。",

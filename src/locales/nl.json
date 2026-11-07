@@ -406,8 +406,7 @@
         "removeTitle": "Bronnenregister verwijderen",
         "removeBody": "Pakketten van {{name}} verdwijnen uit de markt. Bronnen die je ervan hebt geïnstalleerd blijven werken, maar kunnen niet meer worden bijgewerkt.",
         "removeConfirm": "Register verwijderen",
-        "failing": "vernieuwen mislukt",
-        "manage": "Registers…"
+        "failing": "vernieuwen mislukt"
       },
       "market": {
         "emptyNoRegistries": "Voeg een bronnenregister toe om pakketten te bekijken.",

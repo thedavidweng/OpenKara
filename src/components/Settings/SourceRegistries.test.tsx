@@ -70,7 +70,7 @@ test("lists registries with the last refresh time and fetch errors", () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "settings.streaming.registries.manage",
+      name: /^settings\.streaming\.registries\.title \(/,
     }),
   );
   expect(screen.getByText("Example Registry")).toBeTruthy();
@@ -104,7 +104,7 @@ test("adding a registry asks for confirmation and names the maintainer", async (
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "settings.streaming.registries.manage",
+      name: /^settings\.streaming\.registries\.title \(/,
     }),
   );
   fireEvent.change(
@@ -155,7 +155,7 @@ test("a refused registry add surfaces the refusal message", async () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "settings.streaming.registries.manage",
+      name: /^settings\.streaming\.registries\.title \(/,
     }),
   );
   fireEvent.change(
@@ -272,7 +272,7 @@ test("removing a registry confirms and explains that installs keep working", asy
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "settings.streaming.registries.manage",
+      name: /^settings\.streaming\.registries\.title \(/,
     }),
   );
   fireEvent.click(
@@ -308,7 +308,7 @@ test("the official registry has no remove action and load errors show", () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "settings.streaming.registries.manage",
+      name: /^settings\.streaming\.registries\.title \(/,
     }),
   );
   const entry = screen.getByRole("article", { name: "Example Registry" });

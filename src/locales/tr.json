@@ -406,8 +406,7 @@
         "removeTitle": "Kaynak Dizinini Kaldır",
         "removeBody": "{{name}} paketleri pazardan kalkar. Bu dizinden yüklediğiniz kaynaklar çalışmaya devam eder ama artık güncellenemez.",
         "removeConfirm": "Dizini kaldır",
-        "failing": "yenileme başarısız",
-        "manage": "Kayıt defterleri…"
+        "failing": "yenileme başarısız"
       },
       "market": {
         "emptyNoRegistries": "Paketlere göz atmak için bir Kaynak Dizini ekleyin.",
