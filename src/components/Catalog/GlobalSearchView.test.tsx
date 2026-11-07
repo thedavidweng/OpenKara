@@ -82,6 +82,7 @@ const track = (sourceId: string): StreamingTrack => ({
   refusal: null,
   library_song_id: null,
   cover_url: null,
+  isrc: null,
 });
 const song = (index: number): Song => ({
   hash: `hash-${index}`,

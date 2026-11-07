@@ -56,6 +56,7 @@ const track = (id: string, overrides: Partial<StreamingTrack> = {}) => ({
   refusal: null,
   library_song_id: null,
   cover_url: null,
+  isrc: null,
   ...overrides,
 });
 

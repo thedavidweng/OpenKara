@@ -204,6 +204,8 @@ pub struct StreamingTrack {
     pub library_song_id: Option<String>,
     /// Host-managed artwork handle; never a source CDN URL.
     pub cover_url: Option<String>,
+    /// Normalized 12-character ISRC, when the source supplies a valid one.
+    pub isrc: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -585,6 +585,7 @@ export function createTauriMock(data: any): TauriMockResult {
         refusal: null,
         library_song_id: null,
         cover_url: null,
+        isrc: null,
       }),
     );
   }

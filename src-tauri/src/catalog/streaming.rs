@@ -233,6 +233,7 @@ impl FakeStreamingSource {
             refusal,
             library_song_id: None,
             cover_url: None,
+            isrc: None,
         }
     }
 }

@@ -1,3 +1,4 @@
+use super::plugin::{normalize_isrc, Track};
 use super::*;
 use crate::source_host::test_support::{fixture_manifest, RegistryFixture};
 use crate::source_host::{HostConfig, SourceHost, SourceManifest};
@@ -222,4 +223,25 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
     }).await.unwrap();
     assert!(host.snapshot("challenge").unwrap().enabled);
     assert!(cache.get("challenge", "1").is_some());
+}
+
+fn parsed_isrc(isrc: serde_json::Value) -> Option<String> {
+    let mut track = json!({"id":"1","title":"t","artists":["a"],"album":null,"duration_ms":null,"artwork":null,"refusal":null});
+    if !isrc.is_null() {
+        track["isrc"] = isrc;
+    }
+    let track: Track = serde_json::from_value(track).expect("track parses");
+    track.isrc.and_then(|isrc| normalize_isrc(&isrc))
+}
+
+#[test]
+fn isrc_is_normalized_and_invalid_values_are_dropped() {
+    assert_eq!(
+        parsed_isrc(json!(" us-rc1 7607839 ")).as_deref(),
+        Some("USRC17607839")
+    );
+    assert_eq!(parsed_isrc(json!("USRC1760783")), None);
+    assert_eq!(parsed_isrc(json!("1SRC17607839")), None);
+    assert_eq!(parsed_isrc(json!("USRC1760783X")), None);
+    assert_eq!(parsed_isrc(serde_json::Value::Null), None);
 }

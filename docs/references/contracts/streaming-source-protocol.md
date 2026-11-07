@@ -1,4 +1,4 @@
-# Streaming Source protocol 2.0
+# Streaming Source protocol 2.1
 
 Status: implemented host contract for protocol major 2 on the `openkara-js`
 runtime. See the [source host](source-host.md) for registry distribution,
@@ -8,7 +8,7 @@ installation, lifecycle, and media boundaries, and the
 [rights inventory](../streaming-source-provenance.md). Architecture:
 [ADR 0041](../../adr/0041-run-streaming-sources-as-sandboxed-packages-from-user-added-registries.md).
 
-Protocol 2.0 keeps the methods, data shapes, capabilities, authentication
+Protocol 2.x keeps the methods, data shapes, capabilities, authentication
 flows, cursors, and error codes of protocol 1.0. The runtime and the
 transport changed: a protocol 2.0 package is one ES module that the host
 runs in an embedded QuickJS engine instead of a Node stdio process. The
@@ -82,7 +82,13 @@ and whose `minimum_host_version` is at most the host version. When no
 listed version qualifies, the install fails as `incompatible_plugin` and
 the host downloads nothing. An unknown manifest runtime kind fails the
 same way. A protocol minor change is additive; new required fields or
-changed meanings require a new major.
+changed meanings require a new major. The host checks the protocol major
+only. It accepts any declared minor, so a package that declares minor 0
+keeps working and can omit fields that minor 1 added.
+
+### Changes in 2.1
+
+`Track` has the optional field `isrc: string | null`.
 
 ## Package and identity
 
@@ -99,7 +105,7 @@ scripts. A listed version is at most 32 MiB of archive bytes.
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `package_id`, `publisher`, `source_id`    | Stable package, publisher, and source identity. The source id is lowercase ASCII `[a-z][a-z0-9_-]{0,63}`.                        |
 | `version`, `minimum_host_version`         | SemVer strings. The host uses SemVer ordering.                                                                                   |
-| `protocol`                                | `{ "majors": [2], "minor": 0 }`. The majors list is nonempty.                                                                    |
+| `protocol`                                | `{ "majors": [2], "minor": 1 }`. The majors list is nonempty.                                                                    |
 | `runtime`                                 | `{ "kind": "openkara-js", "major": 1 }` for the embedded engine.                                                                 |
 | `entry`, `name`, `description`, `license` | Relative `.mjs` entry, plain display text, SPDX expression. No HTML or executable presentation.                                  |
 | `capabilities`                            | Known capability strings listed below.                                                                                           |
@@ -228,7 +234,11 @@ JSON-safe nonnegative integers.
 
 `Track` is `{id, title, artists: string[], album: string | null,
 duration_ms: number | null, artwork: Resource | null,
-refusal: ImportRefusal | null}`. Id and title are nonempty strings.
+refusal: ImportRefusal | null, isrc: string | null}`. Id and title are
+nonempty strings. The host removes hyphens and spaces from `isrc` and
+uppercases it. It drops a value that is not 12 characters of the ISRC form
+(two letters, three letters or digits, seven digits) and does not reject
+the track. A package can omit `isrc`.
 `StreamingPlaylist` is `{id, name, description: string | null,
 artwork: Resource | null, track_count: number | null}`.
 
