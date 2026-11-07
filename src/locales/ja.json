@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "検索結果",
+    "title": "「{{query}}」の検索結果",
+    "library": "ライブラリ",
+    "libraryEmpty": "ライブラリに一致する曲はありません。",
+    "libraryMore": "{{count}} 曲中 {{shown}} 曲を表示中。すべてサイドバーに表示されています。",
+    "searching": "検索中…",
+    "signInToSearch": "{{name}} を検索するにはサインインしてください。",
+    "openSource": "{{name}} を開く",
+    "searchFailed": "{{name}} を検索できませんでした。",
+    "searchSources": "オンラインソースで「{{query}}」を検索"
+  },
   "youtube": {
     "pasteLink": "YouTube リンクを貼り付ける",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

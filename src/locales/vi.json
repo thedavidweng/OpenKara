@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Kết quả tìm kiếm",
+    "title": "Kết quả cho “{{query}}”",
+    "library": "Thư viện",
+    "libraryEmpty": "Không có bài hát nào trong thư viện khớp.",
+    "libraryMore": "Đang hiển thị {{shown}} trên {{count}}. Thanh bên liệt kê tất cả.",
+    "searching": "Đang tìm…",
+    "signInToSearch": "Đăng nhập {{name}} để tìm kiếm.",
+    "openSource": "Mở {{name}}",
+    "searchFailed": "Không thể tìm trong {{name}}.",
+    "searchSources": "Tìm “{{query}}” trong các nguồn trực tuyến"
+  },
   "youtube": {
     "pasteLink": "Dán liên kết YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

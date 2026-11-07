@@ -1,6 +1,7 @@
 import { useCallback, useReducer } from "react";
 import { QueuePanel } from "@/components/Player/QueuePanel";
 import { GlobalProgressBar } from "@/components/Layout/GlobalProgressBar";
+import { GlobalSearchView } from "@/components/Catalog/GlobalSearchView";
 import { StreamingBrowser } from "@/components/Catalog/StreamingBrowser";
 import { StreamingImportBar } from "@/components/Catalog/StreamingImportBar";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
@@ -83,7 +84,13 @@ export function MainContentView({
           {/* App self-update (#255). Preview builds run in a browser with no
               Tauri IPC, so the launch check would only ever reject — skip it. */}
           {!previewMode && <UpdateBanner />}
-          {streaming ? <StreamingBrowser /> : <PlaybackStage />}
+          {catalogView === "search" ? (
+            <GlobalSearchView />
+          ) : streaming ? (
+            <StreamingBrowser />
+          ) : (
+            <PlaybackStage />
+          )}
           <StreamingImportBar />
         </div>
         {queueShouldRender && (

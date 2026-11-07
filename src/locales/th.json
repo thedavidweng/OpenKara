@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "ผลการค้นหา",
+    "title": "ผลการค้นหา “{{query}}”",
+    "library": "คลังเพลง",
+    "libraryEmpty": "ไม่มีเพลงในคลังที่ตรงกัน",
+    "libraryMore": "แสดง {{shown}} จาก {{count}} เพลง แถบด้านข้างแสดงทั้งหมด",
+    "searching": "กำลังค้นหา…",
+    "signInToSearch": "ลงชื่อเข้าใช้ {{name}} เพื่อค้นหา",
+    "openSource": "เปิด {{name}}",
+    "searchFailed": "ค้นหาใน {{name}} ไม่ได้",
+    "searchSources": "ค้นหา “{{query}}” ในแหล่งออนไลน์"
+  },
   "youtube": {
     "pasteLink": "วางลิงก์ YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

@@ -37,6 +37,16 @@ export interface ImportRun {
   label: string | null;
   cancelling: boolean;
 }
+/** One source's part of a global search. */
+export interface GlobalSearchSection {
+  status: LoadStatus | "signed_out";
+  tracks: StreamingTrack[];
+  cursor: string | null;
+}
+export interface GlobalSearch {
+  query: string;
+  sections: Record<string, GlobalSearchSection>;
+}
 export interface SourceBrowseState {
   session: StreamingSessionSnapshot | null;
   sessionStatus: LoadStatus;
@@ -66,7 +76,7 @@ export interface SourceBrowseState {
   errors: Partial<Record<string, string>>;
 }
 export interface CatalogState extends SourceBrowseState {
-  activeView: "library" | "streaming";
+  activeView: "library" | "streaming" | "search";
   activeSourceId: string | null;
   sourcesSupported: boolean | null;
   sources: SourceSnapshot[];
@@ -127,6 +137,11 @@ export interface CatalogState extends SourceBrowseState {
   loadPlaylists: (more?: boolean) => Promise<void>;
   openPlaylist: (remoteId: string, more?: boolean) => Promise<void>;
   search: (query: string, more?: boolean) => Promise<void>;
+  globalSearch: GlobalSearch;
+  /** Search every enabled source that can search, and show the results. */
+  searchEverywhere: (query: string) => Promise<void>;
+  /** Load a source's next result page, or retry its failed page. */
+  searchMoreIn: (sourceId: string) => Promise<void>;
   importPlaylist: () => Promise<void>;
   importTracks: (
     ids: string[],
@@ -177,11 +192,10 @@ const message = (error: unknown) =>
       : String(error);
 const terminal = (state?: StreamingImportTrackState) =>
   state && ["imported", "skipped", "failed"].includes(state.kind);
-export function sourceAllows(
+/** The source is installed, enabled, loaded, and able to take calls. */
+export function sourceReady(
   source: SourceSnapshot | undefined,
-  capability: string,
-  session?: StreamingSessionSnapshot | null,
-) {
+): source is SourceSnapshot {
   return (
     !!source?.installed_version &&
     source.enabled &&
@@ -192,7 +206,16 @@ export function sourceAllows(
       "update_required",
       "unavailable",
       "cancelling",
-    ].includes(source.state) &&
+    ].includes(source.state)
+  );
+}
+export function sourceAllows(
+  source: SourceSnapshot | undefined,
+  capability: string,
+  session?: StreamingSessionSnapshot | null,
+) {
+  return (
+    sourceReady(source) &&
     !!source.manifest?.capabilities.includes(capability) &&
     (!source.manifest.requires_authentication.includes(
       capability === "track_details"
@@ -238,7 +261,8 @@ export function createCatalogStore(
           state.sourceStates,
           { [id]: next },
         ),
-        ...(state.activeView === "streaming" && state.activeSourceId === id
+        ...(state.activeView !== "library" &&
+        (state.activeSourceId ?? "") === id
           ? next
           : {}),
       };
@@ -274,6 +298,7 @@ export function createCatalogStore(
     return [
       ...state.liked,
       ...state.searchResults,
+      ...(store.getState().globalSearch.sections[id]?.tracks ?? []),
       ...Object.values(state.playlistDetails).flatMap(
         (detail) => detail.tracks,
       ),
@@ -404,10 +429,62 @@ export function createCatalogStore(
       }
     }
   };
+  const setSection = (
+    id: string,
+    query: string,
+    update: Partial<GlobalSearchSection>,
+  ) =>
+    store.setState(({ globalSearch }) =>
+      globalSearch.query === query && globalSearch.sections[id]
+        ? {
+            globalSearch: {
+              query,
+              sections: {
+                ...globalSearch.sections,
+                [id]: { ...globalSearch.sections[id], ...update },
+              },
+            },
+          }
+        : {},
+    );
+  const searchSection = async (
+    id: string,
+    query: string,
+    cursor: string | null,
+  ) => {
+    const { sources, globalSearch } = store.getState();
+    const source = sources.find((item) => item.source_id === id);
+    if (!sourceAllows(source, "search", browse(id).session)) {
+      setSection(id, query, { status: "signed_out" });
+      return;
+    }
+    const current = generation(id, "global-search");
+    const before = globalSearch.sections[id]?.tracks ?? [];
+    setSection(id, query, { status: "loading" });
+    try {
+      const page = await backend.catalog.searchStreamingSource(
+        id,
+        query,
+        cursor,
+      );
+      if (current())
+        setSection(id, query, {
+          status: "ready",
+          tracks: cursor ? [...before, ...page.tracks] : page.tracks,
+          cursor: page.next_cursor,
+        });
+    } catch (error) {
+      if (current()) {
+        setSection(id, query, { status: "error" });
+        fail(id, "search", error);
+      }
+    }
+  };
   const store: CatalogStore = create<CatalogState>((set, get) => ({
     ...emptyBrowse(),
     activeView: "library",
     activeSourceId: null,
+    globalSearch: { query: "", sections: {} },
     sourcesSupported: null,
     sources: [],
     sourceStates: Object.create(null) as Record<string, SourceBrowseState>,
@@ -844,6 +921,46 @@ export function createCatalogStore(
           fail(id, "search", error);
         }
       }
+    },
+    searchEverywhere: async (query) => {
+      const trimmed = query.trim();
+      if (!trimmed) return;
+      const candidates = get().sources.filter(
+        (source) =>
+          sourceReady(source) &&
+          source.manifest?.capabilities.includes("search"),
+      );
+      set({
+        activeView: "search",
+        activeSourceId: null,
+        ...emptyBrowse(),
+        globalSearch: {
+          query: trimmed,
+          sections: Object.fromEntries(
+            candidates.map((source) => [
+              source.source_id,
+              { status: "loading", tracks: [], cursor: null },
+            ]),
+          ),
+        },
+      });
+      await Promise.all(
+        candidates.map(async ({ source_id: id }) => {
+          if (browse(id).sessionStatus === "idle") await get().loadSession(id);
+          await searchSection(id, trimmed, null);
+        }),
+      );
+    },
+    searchMoreIn: async (id) => {
+      const { query, sections } = get().globalSearch;
+      const section = sections[id];
+      if (
+        !section ||
+        section.status === "loading" ||
+        (!section.cursor && section.status !== "error")
+      )
+        return;
+      await searchSection(id, query, section.cursor);
     },
     importPlaylist: async () => {
       const id = get().activeSourceId ?? "";

@@ -965,6 +965,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "검색 결과",
+    "title": "“{{query}}” 검색 결과",
+    "library": "보관함",
+    "libraryEmpty": "보관함에 일치하는 곡이 없습니다.",
+    "libraryMore": "{{count}}곡 중 {{shown}}곡 표시. 전체 목록은 사이드바에 있습니다.",
+    "searching": "검색 중…",
+    "signInToSearch": "{{name}}에서 검색하려면 로그인하세요.",
+    "openSource": "{{name}} 열기",
+    "searchFailed": "{{name}}에서 검색하지 못했습니다.",
+    "searchSources": "온라인 소스에서 “{{query}}” 검색"
+  },
   "youtube": {
     "pasteLink": "YouTube 링크 붙여넣기",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

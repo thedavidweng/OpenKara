@@ -217,7 +217,7 @@ describe("StreamingTrackList", () => {
         name: 'catalog.streaming.retryImportLabel|{"title":"Song 2"}',
       }),
     );
-    expect(importTracks).toHaveBeenCalledWith(["2"]);
+    expect(importTracks).toHaveBeenCalledWith(["2"], null, null, "alpha");
   });
 
   test("a download button imports one track", () => {
@@ -227,7 +227,7 @@ describe("StreamingTrackList", () => {
         name: 'catalog.streaming.importTrackLabel|{"title":"Song 1"}',
       }),
     );
-    expect(importTracks).toHaveBeenCalledWith(["1"]);
+    expect(importTracks).toHaveBeenCalledWith(["1"], null, null, "alpha");
   });
 
   test("unavailable rows are dimmed and carry the reason when shown", () => {
@@ -342,7 +342,7 @@ describe("StreamingTrackList", () => {
     });
     expect(importButton.closest('[role="gridcell"]')).not.toBeNull();
     fireEvent.click(importButton);
-    expect(importTracks).toHaveBeenCalledWith(["2"]);
+    expect(importTracks).toHaveBeenCalledWith(["2"], null, null, "alpha");
   });
 
   test("an unavailable track explains itself instead of playing", () => {

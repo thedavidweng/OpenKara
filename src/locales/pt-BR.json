@@ -968,6 +968,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Resultados da pesquisa",
+    "title": "Resultados para “{{query}}”",
+    "library": "Biblioteca",
+    "libraryEmpty": "Nenhuma música da sua biblioteca corresponde.",
+    "libraryMore": "Mostrando {{shown}} de {{count}}. A barra lateral lista todas.",
+    "searching": "Pesquisando…",
+    "signInToSearch": "Entre em {{name}} para pesquisar lá.",
+    "openSource": "Abrir {{name}}",
+    "searchFailed": "Não foi possível pesquisar em {{name}}.",
+    "searchSources": "Pesquisar “{{query}}” nas fontes online"
+  },
   "youtube": {
     "pasteLink": "Colar um link do YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",

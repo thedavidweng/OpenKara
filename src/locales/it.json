@@ -968,6 +968,18 @@
       "signedIn": "Signed in"
     }
   },
+  "globalSearch": {
+    "regionLabel": "Risultati della ricerca",
+    "title": "Risultati per “{{query}}”",
+    "library": "Libreria",
+    "libraryEmpty": "Nessun brano della libreria corrisponde.",
+    "libraryMore": "Mostrati {{shown}} di {{count}}. La barra laterale li elenca tutti.",
+    "searching": "Ricerca in corso…",
+    "signInToSearch": "Accedi a {{name}} per cercare lì.",
+    "openSource": "Apri {{name}}",
+    "searchFailed": "Impossibile cercare in {{name}}.",
+    "searchSources": "Cerca “{{query}}” nelle fonti online"
+  },
   "youtube": {
     "pasteLink": "Incolla un link YouTube",
     "pastePlaceholder": "https://www.youtube.com/watch?v=…",
