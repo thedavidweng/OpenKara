@@ -281,10 +281,7 @@ pub(crate) fn register_remote_library(
         upload_statuses.clear();
     }
 
-    Ok(LibraryRegistrySnapshot {
-        active_library_id: config.active_library_id.clone(),
-        libraries: config.libraries.clone(),
-    })
+    Ok(LibraryRegistrySnapshot::of(&config))
 }
 
 pub(crate) fn remove_remote_library_credentials(
