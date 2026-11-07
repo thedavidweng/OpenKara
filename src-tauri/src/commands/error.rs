@@ -8,6 +8,7 @@ pub enum ErrorCode {
     DatabaseUnavailable,
     RemoteRepositoryUnavailable,
     RemoteContention,
+    LibraryUnavailable,
     MediaReadFailed,
     SongNotFound,
     ModelUnavailable,

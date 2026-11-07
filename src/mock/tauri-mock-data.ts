@@ -166,3 +166,28 @@ export const E2E_MOCK_DATA: MockData = {
     stem_mode: null,
   },
 };
+
+export const MISSING_LIBRARY_MOCK_DATA: MockData = {
+  ...E2E_MOCK_DATA,
+  libraryRegistry: {
+    active_library_id: "mock-lib-missing",
+    libraries: [
+      {
+        id: "mock-lib-missing",
+        kind: "local",
+        display_name: "OpenKara",
+        root_path: "/Users/demo/Music/OpenKara",
+      },
+      {
+        id: "mock-lib-2",
+        kind: "local",
+        display_name: "Backup Library",
+        root_path: "/Users/demo/Music/Backup",
+      },
+    ],
+    active_library_unavailable: {
+      path: "/Users/demo/Music/OpenKara",
+      reason: "not_found",
+    },
+  },
+};

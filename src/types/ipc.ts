@@ -1,4 +1,5 @@
 export type ErrorCode =
+  | "library_unavailable"
   | "database_unavailable"
   | "remote_repository_unavailable"
   | "remote_contention"
@@ -489,9 +490,15 @@ export type RegisteredLibrary =
   | LocalLibraryRegistration
   | RemoteLibraryRegistration;
 
+export interface ActiveLibraryUnavailable {
+  path: string;
+  reason: "not_found" | "not_openable";
+}
+
 export interface LibraryRegistrySnapshot {
   active_library_id: string | null;
   libraries: RegisteredLibrary[];
+  active_library_unavailable: ActiveLibraryUnavailable | null;
 }
 
 export interface DeleteLibraryResult {

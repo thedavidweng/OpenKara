@@ -1027,6 +1027,7 @@ describe("CommandError shape matches Rust CommandError", () => {
 
   test("ErrorCode values match Rust ErrorCode enum", () => {
     const validCodes: CommandError["code"][] = [
+      "library_unavailable",
       "database_unavailable",
       "remote_repository_unavailable",
       "remote_contention",
@@ -1047,7 +1048,7 @@ describe("CommandError shape matches Rust CommandError", () => {
       "video_source_unavailable",
       "internal",
     ];
-    expect(validCodes).toHaveLength(19);
+    expect(validCodes).toHaveLength(20);
     for (const code of validCodes) {
       expect(typeof code).toBe("string");
     }

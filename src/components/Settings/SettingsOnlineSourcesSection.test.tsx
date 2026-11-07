@@ -62,6 +62,14 @@ describe("SettingsOnlineSourcesSection", () => {
     });
 
     expect(container.textContent).toContain("Source management");
+    expect(container.textContent).not.toContain("Source market");
+
+    const discover = container.querySelector<HTMLElement>(
+      '[role="tab"][id$="-discover"]',
+    );
+    await user.click(discover!);
+
+    expect(container.textContent).not.toContain("Source management");
     expect(container.textContent).toContain("Registry management");
     expect(container.textContent).toContain("Source market");
     expect(container.textContent).not.toContain(

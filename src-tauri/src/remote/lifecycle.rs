@@ -299,10 +299,7 @@ impl<'a> RemoteRepositoryLifecycle<'a> {
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
         *guard = Some(LibraryRoot::open(&root_path).map_err(internal_error)?);
 
-        Ok(LibraryRegistrySnapshot {
-            active_library_id: config.active_library_id.clone(),
-            libraries: config.libraries.clone(),
-        })
+        Ok(LibraryRegistrySnapshot::of(&config))
     }
 
     fn pull_working_copy_from_remote(

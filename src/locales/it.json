@@ -345,7 +345,7 @@
       "notIncluded": "Questa build di OpenKara non include le fonti di streaming.",
       "refresh": "Cerca aggiornamenti",
       "trustNotice": "Le fonti di streaming girano in una sandbox e possono contattare solo le origini dichiarate. Controlla origini e funzioni dichiarate prima di installare.",
-      "empty": "Nessuna fonte installata. Installane una qui sotto.",
+      "empty": "Nessuna fonte installata. Trovane una in Scopri.",
       "license": "Licenza",
       "installed": "Versione installata",
       "notInstalled": "Non installata",
@@ -410,7 +410,6 @@
         "failing": "aggiornamento non riuscito"
       },
       "market": {
-        "title": "Fonti disponibili",
         "emptyNoRegistries": "Aggiungi un registro di fonti per sfogliare i pacchetti.",
         "empty": "Nessun’altra fonte da installare.",
         "registry": "Registro",
@@ -441,7 +440,14 @@
       "details": "Dettagli",
       "updateAll": "Aggiorna tutto ({{count}})",
       "autoUpdateNotice": "Le fonti ufficiali si aggiornano da sole quando l’aggiornamento non richiede nuovi accessi. Gli altri aggiornamenti attendono la tua conferma.",
-      "signedInAs": "Accesso come {{name}}"
+      "signedInAs": "Accesso come {{name}}",
+      "tabsLabel": "Viste delle fonti di streaming",
+      "tabs": {
+        "installed": "Installate ({{count}})",
+        "discover": "Scopri"
+      },
+      "updateAvailable": "Aggiornamento disponibile",
+      "open": "Apri"
     },
     "title": "Preferenze",
     "library": {
@@ -796,6 +802,14 @@
       "description": "Attiva un’origine musicale o video. Entrambe restano disattivate finché non le scegli.",
       "youtube": "YouTube",
       "youtubeDescription": "Incolla un link pubblico di video o playlist nella coda. OpenKara non scarica l’audio di YouTube."
+    },
+    "pagesLabel": "Sezioni delle preferenze",
+    "pages": {
+      "library": "Libreria",
+      "onlineSources": "Origini online",
+      "separation": "Separazione",
+      "playback": "Riproduzione",
+      "general": "Generale"
     }
   },
   "bootstrap": {
@@ -838,7 +852,19 @@
     "confirmRemoveSinger": "Rimuovi cantante",
     "confirmRemoveSingerMessage": "Questo cantante è assegnato a canzoni nella coda. Rimuovendolo verranno rimosse dalla coda anche quelle canzoni."
   },
+  "libraryRecovery": {
+    "title": "Impossibile trovare la tua libreria",
+    "descriptionNotFound": "OpenKara non trova questa cartella. Potrebbe essere stata spostata, rinominata o trovarsi su un disco non collegato.",
+    "descriptionNotOpenable": "La cartella esiste, ma OpenKara non riesce ad aprirla come libreria.",
+    "retry": "Riprova",
+    "retryDescription": "Usalo dopo aver ricollegato il disco.",
+    "locate": "Individua libreria…",
+    "locateDescription": "Scegli la cartella se è stata spostata o rinominata.",
+    "otherLibraries": "Apri un'altra libreria",
+    "dialogTitleLocate": "Individua la tua libreria karaoke"
+  },
   "errors": {
+    "library_unavailable": "Nessuna libreria aperta",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

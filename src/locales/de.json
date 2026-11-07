@@ -344,7 +344,7 @@
       "notIncluded": "Dieser OpenKara-Build enthält keine Streaming-Quellen.",
       "refresh": "Nach Updates suchen",
       "trustNotice": "Streaming-Quellen laufen in einer Sandbox und können nur die angegebenen Ursprünge erreichen. Prüfe die angegebenen Ursprünge und Funktionen vor der Installation.",
-      "empty": "Noch keine Quellen installiert. Installiere unten eine.",
+      "empty": "Noch keine Quellen installiert. Unter „Entdecken“ findest du welche.",
       "license": "Lizenz",
       "installed": "Installierte Version",
       "notInstalled": "Nicht installiert",
@@ -409,7 +409,6 @@
         "failing": "Aktualisierung fehlgeschlagen"
       },
       "market": {
-        "title": "Verfügbare Quellen",
         "emptyNoRegistries": "Füge eine Quellen-Registry hinzu, um Pakete zu durchsuchen.",
         "empty": "Keine weiteren Quellen zum Installieren.",
         "registry": "Registry",
@@ -440,7 +439,14 @@
       "details": "Details",
       "updateAll": "Alle aktualisieren ({{count}})",
       "autoUpdateNotice": "Offizielle Quellen werden automatisch aktualisiert, wenn ein Update keinen neuen Zugriff braucht. Andere Updates warten auf dich.",
-      "signedInAs": "Angemeldet als {{name}}"
+      "signedInAs": "Angemeldet als {{name}}",
+      "tabsLabel": "Ansichten der Streaming-Quellen",
+      "tabs": {
+        "installed": "Installiert ({{count}})",
+        "discover": "Entdecken"
+      },
+      "updateAvailable": "Update verfügbar",
+      "open": "Öffnen"
     },
     "title": "Einstellungen",
     "library": {
@@ -795,6 +801,14 @@
       "description": "Schalte eine Musik- oder Videoquelle ein. Beide bleiben aus, bis du sie wählst.",
       "youtube": "YouTube",
       "youtubeDescription": "Füge einen öffentlichen Video- oder Playlist-Link in die Warteschlange ein. OpenKara lädt kein YouTube-Audio herunter."
+    },
+    "pagesLabel": "Bereiche der Einstellungen",
+    "pages": {
+      "library": "Bibliothek",
+      "onlineSources": "Online-Quellen",
+      "separation": "Trennung",
+      "playback": "Wiedergabe",
+      "general": "Allgemein"
     }
   },
   "bootstrap": {
@@ -837,7 +851,19 @@
     "confirmRemoveSinger": "Sänger entfernen",
     "confirmRemoveSingerMessage": "Diesem Sänger sind Songs in der Warteschlange zugewiesen. Beim Entfernen werden auch diese Songs aus der Warteschlange entfernt."
   },
+  "libraryRecovery": {
+    "title": "Deine Bibliothek wurde nicht gefunden",
+    "descriptionNotFound": "OpenKara kann diesen Ordner nicht finden. Er wurde vielleicht verschoben, umbenannt oder liegt auf einem nicht verbundenen Laufwerk.",
+    "descriptionNotOpenable": "Dieser Ordner existiert, aber OpenKara kann ihn nicht als Bibliothek öffnen.",
+    "retry": "Erneut versuchen",
+    "retryDescription": "Nutze das, nachdem du das Laufwerk wieder verbunden hast.",
+    "locate": "Bibliothek suchen…",
+    "locateDescription": "Wähle den Ordner, falls er verschoben oder umbenannt wurde.",
+    "otherLibraries": "Andere Bibliothek öffnen",
+    "dialogTitleLocate": "Karaoke-Bibliothek suchen"
+  },
   "errors": {
+    "library_unavailable": "Keine Bibliothek geöffnet",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

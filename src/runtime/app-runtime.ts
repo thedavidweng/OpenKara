@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { LibraryRegistrySnapshot } from "@/types/ipc";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
@@ -32,6 +33,7 @@ type AnimationFrameScheduler = (callback: FrameRequestCallback) => number;
 export function useAppStartupRuntime(
   libraryReady: boolean | null,
   setLibraryReady: (ready: boolean) => void,
+  setUnavailableRegistry: (registry: LibraryRegistrySnapshot) => void,
 ) {
   const backend = useBackend();
   const loadLibrary = useLibraryStore((s) => s.loadLibrary);
@@ -63,12 +65,20 @@ export function useAppStartupRuntime(
   useEffect(() => {
     backend.librarySetup
       .getLibraryRegistry()
-      .then((registry) => setLibraryReady(registry.active_library_id !== null))
+      .then((registry) => {
+        if (registry.active_library_unavailable) {
+          setUnavailableRegistry(registry);
+        }
+        setLibraryReady(
+          registry.active_library_id !== null &&
+            !registry.active_library_unavailable,
+        );
+      })
       .catch((error) => {
         notifyError(error);
         setLibraryReady(false);
       });
-  }, [backend, setLibraryReady]);
+  }, [backend, setLibraryReady, setUnavailableRegistry]);
 
   useEffect(() => {
     if (!libraryReady) {

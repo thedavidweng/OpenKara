@@ -344,7 +344,7 @@
       "notIncluded": "Deze OpenKara-build bevat geen streamingbronnen.",
       "refresh": "Zoeken naar updates",
       "trustNotice": "Streamingbronnen draaien in een sandbox en kunnen alleen de opgegeven origins bereiken. Controleer de opgegeven origins en functies voordat je installeert.",
-      "empty": "Nog geen bronnen geïnstalleerd. Installeer er hieronder een.",
+      "empty": "Nog geen bronnen geïnstalleerd. Vind er een onder Ontdekken.",
       "license": "Licentie",
       "installed": "Geïnstalleerde versie",
       "notInstalled": "Niet geïnstalleerd",
@@ -409,7 +409,6 @@
         "failing": "vernieuwen mislukt"
       },
       "market": {
-        "title": "Beschikbare bronnen",
         "emptyNoRegistries": "Voeg een bronnenregister toe om pakketten te bekijken.",
         "empty": "Geen andere bronnen om te installeren.",
         "registry": "Register",
@@ -440,7 +439,14 @@
       "details": "Details",
       "updateAll": "Alles bijwerken ({{count}})",
       "autoUpdateNotice": "Officiële bronnen werken zichzelf bij als een update geen nieuwe toegang vraagt. Andere updates wachten op jou.",
-      "signedInAs": "Ingelogd als {{name}}"
+      "signedInAs": "Ingelogd als {{name}}",
+      "tabsLabel": "Weergaven van streamingbronnen",
+      "tabs": {
+        "installed": "Geïnstalleerd ({{count}})",
+        "discover": "Ontdekken"
+      },
+      "updateAvailable": "Update beschikbaar",
+      "open": "Openen"
     },
     "title": "Voorkeuren",
     "library": {
@@ -795,6 +801,14 @@
       "description": "Zet een muziek- of videobron aan. Beide blijven uit tot je ze kiest.",
       "youtube": "YouTube",
       "youtubeDescription": "Plak een openbare video- of afspeellijstlink in de wachtrij. OpenKara downloadt geen YouTube-audio."
+    },
+    "pagesLabel": "Voorkeurensecties",
+    "pages": {
+      "library": "Bibliotheek",
+      "onlineSources": "Online bronnen",
+      "separation": "Scheiding",
+      "playback": "Afspelen",
+      "general": "Algemeen"
     }
   },
   "bootstrap": {
@@ -837,7 +851,19 @@
     "confirmRemoveSinger": "Zanger verwijderen",
     "confirmRemoveSingerMessage": "Deze zanger is toegewezen aan nummers in de wachtrij. Als je de zanger verwijdert, worden ook die nummers uit de wachtrij verwijderd."
   },
+  "libraryRecovery": {
+    "title": "Je bibliotheek is niet gevonden",
+    "descriptionNotFound": "OpenKara kan deze map niet vinden. Hij is mogelijk verplaatst, hernoemd of staat op een station dat niet is aangesloten.",
+    "descriptionNotOpenable": "Deze map bestaat, maar OpenKara kan hem niet als bibliotheek openen.",
+    "retry": "Opnieuw proberen",
+    "retryDescription": "Gebruik dit nadat je het station weer hebt aangesloten.",
+    "locate": "Bibliotheek zoeken…",
+    "locateDescription": "Kies de map als die is verplaatst of hernoemd.",
+    "otherLibraries": "Een andere bibliotheek openen",
+    "dialogTitleLocate": "Zoek je karaokebibliotheek"
+  },
   "errors": {
+    "library_unavailable": "Geen bibliotheek geopend",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

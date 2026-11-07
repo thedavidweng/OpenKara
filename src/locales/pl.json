@@ -346,7 +346,7 @@
       "notIncluded": "Ta wersja OpenKara nie zawiera źródeł strumieniowych.",
       "refresh": "Sprawdź aktualizacje",
       "trustNotice": "Źródła strumieniowe działają w piaskownicy i mogą łączyć się tylko z zadeklarowanymi originami. Przed instalacją sprawdź zadeklarowane originy i funkcje.",
-      "empty": "Brak zainstalowanych źródeł. Zainstaluj jedno poniżej.",
+      "empty": "Brak zainstalowanych źródeł. Znajdź jakieś w zakładce Odkrywaj.",
       "license": "Licencja",
       "installed": "Zainstalowana wersja",
       "notInstalled": "Niezainstalowane",
@@ -411,7 +411,6 @@
         "failing": "odświeżanie nie powiodło się"
       },
       "market": {
-        "title": "Dostępne źródła",
         "emptyNoRegistries": "Dodaj rejestr źródeł, aby przeglądać pakiety.",
         "empty": "Nie ma więcej źródeł do zainstalowania.",
         "registry": "Rejestr",
@@ -442,7 +441,14 @@
       "details": "Szczegóły",
       "updateAll": "Zaktualizuj wszystko ({{count}})",
       "autoUpdateNotice": "Oficjalne źródła aktualizują się same, gdy aktualizacja nie wymaga nowego dostępu. Inne aktualizacje czekają na Ciebie.",
-      "signedInAs": "Zalogowano jako {{name}}"
+      "signedInAs": "Zalogowano jako {{name}}",
+      "tabsLabel": "Widoki źródeł strumieniowych",
+      "tabs": {
+        "installed": "Zainstalowane ({{count}})",
+        "discover": "Odkrywaj"
+      },
+      "updateAvailable": "Dostępna aktualizacja",
+      "open": "Otwórz"
     },
     "title": "Preferencje",
     "library": {
@@ -797,6 +803,14 @@
       "description": "Włącz źródło muzyki lub wideo. Oba pozostają wyłączone, dopóki ich nie wybierzesz.",
       "youtube": "YouTube",
       "youtubeDescription": "Wklej publiczny link do filmu lub playlisty do kolejki. OpenKara nie pobiera dźwięku z YouTube."
+    },
+    "pagesLabel": "Sekcje preferencji",
+    "pages": {
+      "library": "Biblioteka",
+      "onlineSources": "Źródła online",
+      "separation": "Separacja",
+      "playback": "Odtwarzanie",
+      "general": "Ogólne"
     }
   },
   "bootstrap": {
@@ -839,7 +853,19 @@
     "confirmRemoveSinger": "Usuń śpiewającego",
     "confirmRemoveSingerMessage": "Ten śpiewający jest przypisany do utworów w kolejce. Jego usunięcie spowoduje również usunięcie tych utworów z kolejki."
   },
+  "libraryRecovery": {
+    "title": "Nie znaleziono Twojej biblioteki",
+    "descriptionNotFound": "OpenKara nie może znaleźć tego folderu. Mógł zostać przeniesiony, zmieniono jego nazwę albo znajduje się na niepodłączonym dysku.",
+    "descriptionNotOpenable": "Folder istnieje, ale OpenKara nie może otworzyć go jako biblioteki.",
+    "retry": "Spróbuj ponownie",
+    "retryDescription": "Użyj po ponownym podłączeniu dysku.",
+    "locate": "Wskaż bibliotekę…",
+    "locateDescription": "Wybierz folder, jeśli został przeniesiony lub zmieniono jego nazwę.",
+    "otherLibraries": "Otwórz inną bibliotekę",
+    "dialogTitleLocate": "Wskaż swoją bibliotekę karaoke"
+  },
   "errors": {
+    "library_unavailable": "Brak otwartej biblioteki",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

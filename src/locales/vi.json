@@ -344,7 +344,7 @@
       "notIncluded": "Bản dựng OpenKara này không có Nguồn phát trực tuyến.",
       "refresh": "Kiểm tra cập nhật",
       "trustNotice": "Nguồn phát trực tuyến chạy trong sandbox và chỉ có thể kết nối tới các địa chỉ đã khai báo. Hãy xem các địa chỉ và khả năng đã khai báo trước khi cài.",
-      "empty": "Chưa cài nguồn nào. Hãy cài một nguồn bên dưới.",
+      "empty": "Chưa cài nguồn nào. Hãy tìm trong Khám phá.",
       "license": "Giấy phép",
       "installed": "Phiên bản đã cài",
       "notInstalled": "Chưa cài",
@@ -409,7 +409,6 @@
         "failing": "làm mới thất bại"
       },
       "market": {
-        "title": "Nguồn có sẵn",
         "emptyNoRegistries": "Hãy thêm kho nguồn để duyệt các gói.",
         "empty": "Không còn nguồn nào để cài.",
         "registry": "Kho",
@@ -440,7 +439,14 @@
       "details": "Chi tiết",
       "updateAll": "Cập nhật tất cả ({{count}})",
       "autoUpdateNotice": "Nguồn chính thức tự cập nhật khi bản cập nhật không cần thêm quyền truy cập. Các bản cập nhật khác chờ bạn xác nhận.",
-      "signedInAs": "Đã đăng nhập: {{name}}"
+      "signedInAs": "Đã đăng nhập: {{name}}",
+      "tabsLabel": "Chế độ xem nguồn phát trực tuyến",
+      "tabs": {
+        "installed": "Đã cài ({{count}})",
+        "discover": "Khám phá"
+      },
+      "updateAvailable": "Có bản cập nhật",
+      "open": "Mở"
     },
     "title": "Tùy chọn",
     "library": {
@@ -795,6 +801,14 @@
       "description": "Bật nguồn nhạc hoặc video. Cả hai đều tắt cho đến khi bạn chọn.",
       "youtube": "YouTube",
       "youtubeDescription": "Dán liên kết video hoặc danh sách phát công khai vào hàng đợi. OpenKara không tải âm thanh YouTube."
+    },
+    "pagesLabel": "Các mục tùy chọn",
+    "pages": {
+      "library": "Thư viện",
+      "onlineSources": "Nguồn trực tuyến",
+      "separation": "Tách âm",
+      "playback": "Phát lại",
+      "general": "Chung"
     }
   },
   "bootstrap": {
@@ -837,7 +851,19 @@
     "confirmRemoveSinger": "Xóa ca sĩ",
     "confirmRemoveSingerMessage": "Ca sĩ này đang được gán cho các bài hát trong hàng chờ. Xóa họ cũng sẽ xóa những bài hát đó khỏi hàng chờ."
   },
+  "libraryRecovery": {
+    "title": "Không tìm thấy thư viện của bạn",
+    "descriptionNotFound": "OpenKara không tìm thấy thư mục này. Thư mục có thể đã bị di chuyển, đổi tên hoặc nằm trên ổ đĩa chưa kết nối.",
+    "descriptionNotOpenable": "Thư mục này tồn tại nhưng OpenKara không thể mở nó như một thư viện.",
+    "retry": "Thử lại",
+    "retryDescription": "Dùng sau khi bạn kết nối lại ổ đĩa.",
+    "locate": "Định vị thư viện…",
+    "locateDescription": "Chọn thư mục nếu nó đã bị di chuyển hoặc đổi tên.",
+    "otherLibraries": "Mở thư viện khác",
+    "dialogTitleLocate": "Định vị Thư viện Karaoke của bạn"
+  },
   "errors": {
+    "library_unavailable": "Chưa mở thư viện nào",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

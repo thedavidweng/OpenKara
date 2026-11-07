@@ -19,6 +19,7 @@ const setActivePlaylist = vi.fn();
 const setCatalogView = vi.fn();
 const setYoutubeLinkOpen = vi.fn();
 const settingsState = {
+  close: vi.fn(),
   hideBatchSeparate: true,
   hideUpgradeAll: true,
   stemMode: "two_stem",
@@ -200,6 +201,7 @@ describe("Sidebar catalog source rows", () => {
     expect(setCatalogView).toHaveBeenCalledWith("library");
     expect(setCatalogView).toHaveBeenCalledWith("alpha");
     expect(setActivePlaylist).toHaveBeenCalledWith(null);
+    expect(settingsState.close).toHaveBeenCalled();
   });
 
   test("shows the online sources header with sign-in hint when signed out", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_SHORTCUTS, matchesShortcut } from "@/lib/app-shortcuts";
 import {
@@ -57,6 +57,17 @@ export function StreamingBrowser() {
       "unavailable",
       "cancelling",
     ].includes(source.state);
+  const challengeId =
+    state.sourceStates[state.activeSourceId ?? ""]?.challenge?.challenge;
+  const signInCard = useRef<HTMLDivElement>(null);
+  const headerSignIn = useRef<HTMLButtonElement>(null);
+  const [starting, setStarting] = useState(false);
+  const hadChallenge = useRef(false);
+  useEffect(() => {
+    if (challengeId) signInCard.current?.focus();
+    else if (hadChallenge.current) headerSignIn.current?.focus();
+    hadChallenge.current = !!challengeId;
+  }, [challengeId]);
   const draft = state.searchDraft;
   const setDraft = state.setSearchDraft;
   const input = useRef<HTMLInputElement>(null);
@@ -155,6 +166,11 @@ export function StreamingBrowser() {
     typeof authDeclared === "object" &&
     "flow" in authDeclared &&
     authDeclared.flow !== "none";
+  const signInCardElement = (
+    <div ref={signInCard} tabIndex={-1} className="outline-none">
+      <StreamingSignIn key={state.activeSourceId ?? ""} />
+    </div>
+  );
   return (
     <section
       data-testid="streaming-browser"
@@ -176,8 +192,23 @@ export function StreamingBrowser() {
               key={state.activeSourceId ?? ""}
               name={state.session.display_name ?? ""}
             />
-          ) : hasAuth && ready ? (
-            <StreamingSignIn key={state.activeSourceId ?? ""} compact />
+          ) : hasAuth && ready && available && !challengeId ? (
+            <button
+              ref={headerSignIn}
+              type="button"
+              className={button}
+              disabled={starting || state.authStatus === "loading"}
+              onClick={async () => {
+                setStarting(true);
+                try {
+                  await state.openSignIn();
+                } finally {
+                  setStarting(false);
+                }
+              }}
+            >
+              {t("catalog.streaming.connect")}
+            </button>
           ) : null}
         </header>
         <StreamingSignInErrorBanner />
@@ -193,6 +224,7 @@ export function StreamingBrowser() {
           <p role="status">{t("catalog.streaming.unavailable")}</p>
         ) : (
           <>
+            {available && challengeId ? signInCardElement : null}
             {capabilities.includes("search") ? (
               <form
                 role="search"
@@ -270,7 +302,7 @@ export function StreamingBrowser() {
                   </button>
                 ) : null}
                 {!available ? (
-                  <StreamingSignIn />
+                  signInCardElement
                 ) : (
                   <>
                     {isDetail ? (

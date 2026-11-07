@@ -84,7 +84,11 @@ function registryOf(
   activeLibraryId: string | null,
   libraries: RegisteredLibrary[],
 ): LibraryRegistrySnapshot {
-  return { active_library_id: activeLibraryId, libraries };
+  return {
+    active_library_id: activeLibraryId,
+    libraries,
+    active_library_unavailable: null,
+  };
 }
 
 function deleteResult(

@@ -345,7 +345,7 @@
       "notIncluded": "Esta versão do OpenKara não inclui Fontes de streaming.",
       "refresh": "Verificar atualizações",
       "trustNotice": "Fontes de streaming rodam em sandbox e só acessam as origens que declaram. Revise as origens e recursos declarados antes de instalar.",
-      "empty": "Nenhuma fonte instalada ainda. Instale uma abaixo.",
+      "empty": "Nenhuma fonte instalada ainda. Encontre uma em Descobrir.",
       "license": "Licença",
       "installed": "Versão instalada",
       "notInstalled": "Não instalada",
@@ -410,7 +410,6 @@
         "failing": "falha ao atualizar"
       },
       "market": {
-        "title": "Fontes disponíveis",
         "emptyNoRegistries": "Adicione um registro de fontes para explorar pacotes.",
         "empty": "Não há mais fontes para instalar.",
         "registry": "Registro",
@@ -441,7 +440,14 @@
       "details": "Detalhes",
       "updateAll": "Atualizar tudo ({{count}})",
       "autoUpdateNotice": "Fontes oficiais se atualizam sozinhas quando a atualização não pede novo acesso. As demais aguardam sua confirmação.",
-      "signedInAs": "Conectado como {{name}}"
+      "signedInAs": "Conectado como {{name}}",
+      "tabsLabel": "Visões das fontes de streaming",
+      "tabs": {
+        "installed": "Instaladas ({{count}})",
+        "discover": "Descobrir"
+      },
+      "updateAvailable": "Atualização disponível",
+      "open": "Abrir"
     },
     "title": "Preferências",
     "library": {
@@ -796,6 +802,14 @@
       "description": "Ative uma origem de música ou vídeo. As duas ficam desligadas até você escolhê-las.",
       "youtube": "YouTube",
       "youtubeDescription": "Cole um link público de vídeo ou playlist na fila. O OpenKara não baixa o áudio do YouTube."
+    },
+    "pagesLabel": "Seções das preferências",
+    "pages": {
+      "library": "Biblioteca",
+      "onlineSources": "Fontes online",
+      "separation": "Separação",
+      "playback": "Reprodução",
+      "general": "Geral"
     }
   },
   "bootstrap": {
@@ -838,7 +852,19 @@
     "confirmRemoveSinger": "Remover cantor",
     "confirmRemoveSingerMessage": "Este cantor está atribuído a músicas na fila. Removê-lo também removerá essas músicas da fila."
   },
+  "libraryRecovery": {
+    "title": "Não encontramos sua biblioteca",
+    "descriptionNotFound": "O OpenKara não encontrou esta pasta. Ela pode ter sido movida, renomeada ou estar em uma unidade desconectada.",
+    "descriptionNotOpenable": "A pasta existe, mas o OpenKara não consegue abri-la como biblioteca.",
+    "retry": "Tentar novamente",
+    "retryDescription": "Use depois de reconectar a unidade.",
+    "locate": "Localizar biblioteca…",
+    "locateDescription": "Escolha a pasta se ela foi movida ou renomeada.",
+    "otherLibraries": "Abrir outra biblioteca",
+    "dialogTitleLocate": "Localize sua biblioteca de karaokê"
+  },
   "errors": {
+    "library_unavailable": "Nenhuma biblioteca aberta",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

@@ -1,7 +1,6 @@
 use crate::commands::bootstrap::{self, ModelBootstrapStatusSnapshot};
-use crate::commands::error::{state_lock_error, CommandError};
+use crate::commands::error::{state_lock_error, CommandError, ErrorCode, FallbackAction};
 use crate::commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot;
-use crate::library::error::LibraryError;
 use crate::library_root::LibraryRoot;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -50,7 +49,12 @@ impl AppShell {
             .lock()
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
         guard.clone().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal("no library configured".to_owned()))
+            CommandError::new(
+                ErrorCode::LibraryUnavailable,
+                "no library is open".to_owned(),
+                false,
+                FallbackAction::ShowEmptyState,
+            )
         })
     }
 
