@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "ลบนักร้อง",
     "confirmRemoveSingerMessage": "นักร้องคนนี้ถูกกำหนดให้กับเพลงในคิว การลบออกจะลบเพลงเหล่านั้นออกจากคิวด้วย"
   },
+  "libraryRecovery": {
+    "title": "ไม่พบคลังเพลงของคุณ",
+    "descriptionNotFound": "OpenKara ไม่พบโฟลเดอร์นี้ อาจถูกย้าย เปลี่ยนชื่อ หรืออยู่ในไดรฟ์ที่ไม่ได้เชื่อมต่อ",
+    "descriptionNotOpenable": "มีโฟลเดอร์นี้อยู่ แต่ OpenKara เปิดเป็นคลังเพลงไม่ได้",
+    "retry": "ลองอีกครั้ง",
+    "retryDescription": "ใช้หลังจากเชื่อมต่อไดรฟ์อีกครั้ง",
+    "locate": "ค้นหาคลังเพลง…",
+    "locateDescription": "เลือกโฟลเดอร์หากถูกย้ายหรือเปลี่ยนชื่อ",
+    "otherLibraries": "เปิดคลังเพลงอื่น",
+    "dialogTitleLocate": "ระบุตำแหน่งคลังเพลงคาราโอเกะของคุณ"
+  },
   "errors": {
+    "library_unavailable": "ไม่มีคลังเพลงที่เปิดอยู่",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

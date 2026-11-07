@@ -60,6 +60,7 @@ function withRegistryOverride(
 
   const registry: LibraryRegistrySnapshot = {
     active_library_id: activeLibraryId ?? null,
+    active_library_unavailable: null,
     libraries,
   };
 

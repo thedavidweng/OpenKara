@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "Xóa ca sĩ",
     "confirmRemoveSingerMessage": "Ca sĩ này đang được gán cho các bài hát trong hàng chờ. Xóa họ cũng sẽ xóa những bài hát đó khỏi hàng chờ."
   },
+  "libraryRecovery": {
+    "title": "Không tìm thấy thư viện của bạn",
+    "descriptionNotFound": "OpenKara không tìm thấy thư mục này. Thư mục có thể đã bị di chuyển, đổi tên hoặc nằm trên ổ đĩa chưa kết nối.",
+    "descriptionNotOpenable": "Thư mục này tồn tại nhưng OpenKara không thể mở nó như một thư viện.",
+    "retry": "Thử lại",
+    "retryDescription": "Dùng sau khi bạn kết nối lại ổ đĩa.",
+    "locate": "Định vị thư viện…",
+    "locateDescription": "Chọn thư mục nếu nó đã bị di chuyển hoặc đổi tên.",
+    "otherLibraries": "Mở thư viện khác",
+    "dialogTitleLocate": "Định vị Thư viện Karaoke của bạn"
+  },
   "errors": {
+    "library_unavailable": "Chưa mở thư viện nào",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

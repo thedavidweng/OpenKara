@@ -54,7 +54,11 @@ export const DEFAULT_MOCK_DATA: MockData = {
   lyrics: { raw_lrc: "", lines: [], offset_ms: 0, source: "manual" },
   primarySongHash: "",
   sidebarWidth: 280,
-  libraryRegistry: { active_library_id: null, libraries: [] },
+  libraryRegistry: {
+    active_library_id: null,
+    libraries: [],
+    active_library_unavailable: null,
+  },
   activeLibrary: {
     id: "local:/library",
     kind: "local",

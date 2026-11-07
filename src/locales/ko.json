@@ -852,7 +852,19 @@
     "confirmRemoveSinger": "가수 제거",
     "confirmRemoveSingerMessage": "이 가수는 대기열의 노래에 지정되어 있어요. 가수를 제거하면 해당 노래도 대기열에서 함께 제거돼요."
   },
+  "libraryRecovery": {
+    "title": "라이브러리를 찾을 수 없습니다",
+    "descriptionNotFound": "OpenKara가 이 폴더를 찾지 못했습니다. 폴더가 이동되었거나 이름이 바뀌었거나, 연결되지 않은 드라이브에 있을 수 있습니다.",
+    "descriptionNotOpenable": "폴더는 있지만 OpenKara가 라이브러리로 열 수 없습니다.",
+    "retry": "다시 시도",
+    "retryDescription": "드라이브를 다시 연결한 뒤 사용하세요.",
+    "locate": "라이브러리 찾기…",
+    "locateDescription": "폴더가 이동되었거나 이름이 바뀌었다면 다시 선택하세요.",
+    "otherLibraries": "다른 라이브러리 열기",
+    "dialogTitleLocate": "노래방 라이브러리 위치 선택"
+  },
   "errors": {
+    "library_unavailable": "열린 라이브러리 없음",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

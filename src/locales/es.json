@@ -853,7 +853,19 @@
     "confirmRemoveSinger": "Quitar cantante",
     "confirmRemoveSingerMessage": "Este cantante está asignado a canciones de la cola. Al quitarlo, también se quitarán esas canciones de la cola."
   },
+  "libraryRecovery": {
+    "title": "No se encuentra tu biblioteca",
+    "descriptionNotFound": "OpenKara no encuentra esta carpeta. Puede que se haya movido, renombrado o que esté en una unidad desconectada.",
+    "descriptionNotOpenable": "La carpeta existe, pero OpenKara no puede abrirla como biblioteca.",
+    "retry": "Reintentar",
+    "retryDescription": "Úsalo después de volver a conectar la unidad.",
+    "locate": "Localizar biblioteca…",
+    "locateDescription": "Elige la carpeta si se movió o se renombró.",
+    "otherLibraries": "Abrir otra biblioteca",
+    "dialogTitleLocate": "Localiza tu biblioteca de karaoke"
+  },
   "errors": {
+    "library_unavailable": "Ninguna biblioteca abierta",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

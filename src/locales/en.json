@@ -989,7 +989,19 @@
     "confirmRemoveSinger": "Remove Singer",
     "confirmRemoveSingerMessage": "This singer is assigned to songs in the queue. Removing them will also remove those songs from the queue."
   },
+  "libraryRecovery": {
+    "title": "Your library could not be found",
+    "descriptionNotFound": "OpenKara could not find this folder. It may have been moved, renamed, or stored on a drive that is not connected.",
+    "descriptionNotOpenable": "This folder exists, but OpenKara cannot open it as a library.",
+    "retry": "Try again",
+    "retryDescription": "Use this after you reconnect the drive.",
+    "locate": "Locate library…",
+    "locateDescription": "Choose the folder if it was moved or renamed.",
+    "otherLibraries": "Open another library",
+    "dialogTitleLocate": "Locate your Karaoke Library"
+  },
   "errors": {
+    "library_unavailable": "No library open",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",
