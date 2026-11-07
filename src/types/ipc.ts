@@ -238,6 +238,8 @@ export interface StreamingTrack {
   library_song_id: string | null;
   /** Host-managed artwork resource URL. */
   cover_url: string | null;
+  /** Normalized 12-character ISRC, or null. */
+  isrc: string | null;
 }
 
 export interface StreamingPlaylistSummary {

@@ -70,7 +70,7 @@ struct Account {
     display_name: String,
 }
 #[derive(Deserialize)]
-struct Track {
+pub(super) struct Track {
     id: String,
     title: String,
     artists: Vec<String>,
@@ -78,6 +78,24 @@ struct Track {
     duration_ms: Option<u64>,
     artwork: Option<ResourceDescriptor>,
     refusal: Option<Refusal>,
+    #[serde(default)]
+    pub(super) isrc: Option<String>,
+}
+pub(super) fn normalize_isrc(raw: &str) -> Option<String> {
+    let isrc: String = raw
+        .trim()
+        .chars()
+        .filter(|c| *c != '-' && *c != ' ')
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    let bytes = isrc.as_bytes();
+    let valid = bytes.len() == 12
+        && bytes[..2].iter().all(u8::is_ascii_uppercase)
+        && bytes[2..5]
+            .iter()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        && bytes[5..].iter().all(u8::is_ascii_digit);
+    valid.then_some(isrc)
 }
 #[derive(Deserialize)]
 struct Refusal {
@@ -322,6 +340,7 @@ impl PluginStreamingSource {
             refusal,
             library_song_id: None,
             cover_url: self.artwork(track.artwork)?,
+            isrc: track.isrc.and_then(|isrc| normalize_isrc(&isrc)),
         })
     }
     fn refusal(
