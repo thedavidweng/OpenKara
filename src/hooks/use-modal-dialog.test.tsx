@@ -47,6 +47,36 @@ describe("useModalDialog", () => {
     expect(document.activeElement).toBe(first);
   });
 
+  test("Tab moves through every reachable control, skipping hidden ones", async () => {
+    function Harness() {
+      const dialogRef = useRef<HTMLDivElement>(null);
+      useModalDialog({ dialogRef, onDismiss: vi.fn() });
+      return (
+        <div ref={dialogRef} role="dialog" tabIndex={-1}>
+          <button>One</button>
+          <button tabIndex={-1}>Roving</button>
+          <details>
+            <summary>More</summary>
+            <button>Folded</button>
+          </details>
+          <div hidden>
+            <button>Hidden</button>
+          </div>
+          <button>Two</button>
+        </div>
+      );
+    }
+    render(<Harness />);
+    const one = screen.getByRole("button", { name: "One" });
+    await waitFor(() => expect(document.activeElement).toBe(one));
+    const order = [];
+    for (let i = 0; i < 3; i++) {
+      fireEvent.keyDown(document, { key: "Tab" });
+      order.push(document.activeElement?.textContent);
+    }
+    expect(order).toEqual(["More", "Two", "One"]);
+  });
+
   test("only dismisses the topmost nested dialog with Escape", async () => {
     const lowerDismiss = vi.fn();
     const upperDismiss = vi.fn();
