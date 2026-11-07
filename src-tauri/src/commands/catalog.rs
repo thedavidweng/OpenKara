@@ -809,6 +809,16 @@ pub async fn remember_playable_match(
     .map_err(Into::into)
 }
 #[tauri::command]
+pub async fn streaming_playlist_library_id(
+    state: State<'_, AppState>,
+    source_id: String,
+    remote_playlist_id: String,
+) -> CommandResult<Option<String>> {
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+    catalog::lookup_playlist_id(&connection, &source_id, &remote_playlist_id).map_err(Into::into)
+}
+#[tauri::command]
 pub async fn start_streaming_import(
     state: State<'_, AppState>,
     app_handle: AppHandle,

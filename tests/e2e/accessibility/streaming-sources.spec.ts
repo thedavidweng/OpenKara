@@ -268,6 +268,50 @@ test("a track without audio finds a playable version from the keyboard", async (
   await a11y.axeForThemes();
 });
 
+test("a playlist finds playable versions for its songs from the keyboard", async ({
+  page,
+  a11y,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Web Library", exact: true }).click();
+  const browser = page.getByTestId("streaming-browser");
+  await browser
+    .getByRole("button", { name: "Sign in", exact: true })
+    .first()
+    .click();
+  await browser.getByRole("tab", { name: "Playlists", exact: true }).click();
+  await browser.getByRole("button", { name: /Unplayable picks/ }).click();
+
+  const find = browser.getByRole("button", {
+    name: "Find playable versions (1)",
+  });
+  await expect(find).toBeVisible();
+  await find.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Find playable versions" });
+  await expect(dialog).toBeVisible();
+  const choice = dialog.getByRole("combobox", {
+    name: "Playable version of “Unplayable Song”",
+  });
+  await expect(choice).toContainText("Plugin Library");
+  await expect(dialog).toContainText("1 of 1 will be imported.");
+  await a11y.axeForThemes();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(find).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Import", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByRole("status")).toContainText("Imported");
+  await expect(
+    dialog.getByRole("region", { name: /Not imported/ }),
+  ).toContainText("Unplayable Song");
+  await a11y.axeForThemes();
+});
+
 test("the sidebar search reaches every source from the keyboard", async ({
   page,
   a11y,

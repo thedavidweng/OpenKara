@@ -973,6 +973,24 @@
         "loading": "正在尋找可播放版本…",
         "empty": "在你的其他音源中找不到可播放版本。",
         "import": "匯入"
+      },
+      "playlistMatch": {
+        "find": "尋找可播放版本（{{count}}）",
+        "title": "尋找可播放版本",
+        "loaded": "僅包含目前已載入的歌曲（{{count}} 首）。",
+        "searching": "正在搜尋：第 {{current}} 首，共 {{total}} 首…",
+        "select": "「{{title}}」的可播放版本",
+        "skip": "略過",
+        "remembered": "{{option}}（已記住）",
+        "noCandidate": "找不到可播放版本",
+        "summary": "將匯入 {{selected}} 首，共 {{total}} 首。",
+        "addToPlaylist": "加入播放清單",
+        "import": "匯入",
+        "importing": "正在匯入：第 {{current}} 首，共 {{total}} 首…",
+        "imported": "已匯入 {{imported}} 首。",
+        "addedTo": "已加入播放清單「{{name}}」。",
+        "notImported": "未匯入（{{count}}）",
+        "skipped": "已略過"
       }
     }
   },

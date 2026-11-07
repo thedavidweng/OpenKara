@@ -974,6 +974,24 @@
         "loading": "Çalınabilir sürümler aranıyor…",
         "empty": "Diğer kaynaklarınızda çalınabilir bir sürüm bulunamadı.",
         "import": "İçe aktar"
+      },
+      "playlistMatch": {
+        "find": "Çalınabilir sürümleri bul ({{count}})",
+        "title": "Çalınabilir sürümleri bul",
+        "loaded": "Yalnızca şimdiye kadar yüklenen şarkılar dahildir ({{count}}).",
+        "searching": "Aranıyor: {{current}} / {{total}}…",
+        "select": "“{{title}}” için çalınabilir sürüm",
+        "skip": "Atla",
+        "remembered": "{{option}} (hatırlandı)",
+        "noCandidate": "Çalınabilir sürüm bulunamadı",
+        "summary": "{{total}} şarkıdan {{selected}} tanesi içe aktarılacak.",
+        "addToPlaylist": "Bir çalma listesine ekle",
+        "import": "İçe aktar",
+        "importing": "İçe aktarılıyor: {{current}} / {{total}}…",
+        "imported": "{{imported}} şarkı içe aktarıldı.",
+        "addedTo": "“{{name}}” çalma listesine eklendi.",
+        "notImported": "İçe aktarılmadı ({{count}})",
+        "skipped": "Atlandı"
       }
     }
   },

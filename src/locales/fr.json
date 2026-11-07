@@ -976,6 +976,24 @@
         "loading": "Recherche de versions lisibles…",
         "empty": "Aucune version lisible trouvée dans vos autres sources.",
         "import": "Importer"
+      },
+      "playlistMatch": {
+        "find": "Trouver des versions lisibles ({{count}})",
+        "title": "Trouver des versions lisibles",
+        "loaded": "Seuls les titres chargés jusqu’ici sont inclus ({{count}}).",
+        "searching": "Recherche de {{current}} sur {{total}}…",
+        "select": "Version lisible de « {{title}} »",
+        "skip": "Ignorer",
+        "remembered": "{{option}} (mémorisée)",
+        "noCandidate": "Aucune version lisible trouvée",
+        "summary": "{{selected}} sur {{total}} seront importés.",
+        "addToPlaylist": "Les ajouter à une playlist",
+        "import": "Importer",
+        "importing": "Importation de {{current}} sur {{total}}…",
+        "imported": "{{imported}} importé(s).",
+        "addedTo": "Ajoutés à la playlist « {{name}} ».",
+        "notImported": "Non importés ({{count}})",
+        "skipped": "Ignoré"
       }
     }
   },

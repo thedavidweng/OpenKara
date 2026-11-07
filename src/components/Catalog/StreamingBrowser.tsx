@@ -2,6 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_SHORTCUTS, matchesShortcut } from "@/lib/app-shortcuts";
 import {
+  canMatchInPlaylist,
   sourceAllows,
   useCatalogStore,
   type StreamingTab,
@@ -142,6 +143,11 @@ export function StreamingBrowser() {
     else if (active === "playlists") void state.loadPlaylists(more);
     else void state.search(state.searchQuery || draft, more);
   };
+  const matchableCount = isDetail
+    ? tracks.filter((track) =>
+        canMatchInPlaylist(state.sources, track, state.trackStates),
+      ).length
+    : 0;
   const canImport = sourceAllows(source, "import", state.session);
   const authDeclared = source?.manifest?.authentication;
   const hasAuth =
@@ -400,16 +406,34 @@ export function StreamingBrowser() {
                                 })}
                               </button>
                             ) : isDetail ? (
-                              <button
-                                className={button}
-                                disabled={
-                                  state.importRun?.phase === "running" ||
-                                  status === "loading"
-                                }
-                                onClick={() => void state.importPlaylist()}
-                              >
-                                {t("catalog.streaming.importPlaylist")}
-                              </button>
+                              <>
+                                <button
+                                  className={button}
+                                  disabled={
+                                    state.importRun?.phase === "running" ||
+                                    status === "loading"
+                                  }
+                                  onClick={() => void state.importPlaylist()}
+                                >
+                                  {t("catalog.streaming.importPlaylist")}
+                                </button>
+                                {matchableCount > 0 ? (
+                                  <button
+                                    className={button}
+                                    disabled={
+                                      state.importRun?.phase === "running" ||
+                                      status === "loading"
+                                    }
+                                    onClick={() =>
+                                      void state.findPlaylistMatches()
+                                    }
+                                  >
+                                    {t("catalog.streaming.playlistMatch.find", {
+                                      count: matchableCount,
+                                    })}
+                                  </button>
+                                ) : null}
+                              </>
                             ) : null}
                           </div>
                         ) : null}

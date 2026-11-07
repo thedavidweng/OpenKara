@@ -1610,7 +1610,9 @@ export function createTauriMock(data: any): TauriMockResult {
       remoteTrackIds: string[];
     }) =>
       args.remoteTrackIds.flatMap((id) =>
-        tracks(args.sourceId).filter((track) => track.remote_track_id === id),
+        knownTracks(args.sourceId).filter(
+          (track) => track.remote_track_id === id,
+        ),
       ),
     list_streaming_playlists: (args: { sourceId: string; cursor?: string }) => {
       tracks(args.sourceId);
@@ -1629,6 +1631,17 @@ export function createTauriMock(data: any): TauriMockResult {
             track_count: 3,
             cover_url: null,
           },
+          ...(args.cursor || args.sourceId !== "demo-web"
+            ? []
+            : [
+                {
+                  source_id: args.sourceId,
+                  remote_id: "unplayable-picks",
+                  name: "Unplayable picks",
+                  track_count: 2,
+                  cover_url: null,
+                },
+              ]),
         ],
         next_cursor: args.cursor ? null : `${args.sourceId}:playlists`,
       };
@@ -1640,8 +1653,16 @@ export function createTauriMock(data: any): TauriMockResult {
     }) => ({
       source_id: args.sourceId,
       remote_id: args.remotePlaylistId,
-      name: "Shared playlist",
-      ...page(args.sourceId, args.cursor),
+      name:
+        args.remotePlaylistId === "unplayable-picks"
+          ? "Unplayable picks"
+          : "Shared playlist",
+      ...(args.remotePlaylistId === "unplayable-picks"
+        ? {
+            tracks: [tracks(args.sourceId)[1], unplayableSong(args.sourceId)],
+            next_cursor: null,
+          }
+        : page(args.sourceId, args.cursor)),
       cover_url: null,
       description: "UI-only fixture",
       track_count: 3,
@@ -1673,6 +1694,7 @@ export function createTauriMock(data: any): TauriMockResult {
           .filter((track) => !track.refusal),
       };
     },
+    streaming_playlist_library_id: () => null,
     remember_playable_match: (args: {
       sourceId: string;
       remoteTrackId: string;

@@ -424,6 +424,10 @@ export interface CatalogBackend {
     matchSourceId: OnlineSourceId,
     matchRemoteTrackId: string,
   ): Promise<void>;
+  streamingPlaylistLibraryId(
+    sourceId: OnlineSourceId,
+    remotePlaylistId: string,
+  ): Promise<string | null>;
   startStreamingImport(
     sourceId: OnlineSourceId,
     remoteTrackIds: string[],

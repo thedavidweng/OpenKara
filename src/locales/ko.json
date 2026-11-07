@@ -973,6 +973,24 @@
         "loading": "재생 가능한 버전을 찾는 중…",
         "empty": "다른 소스에서 재생 가능한 버전을 찾지 못했습니다.",
         "import": "가져오기"
+      },
+      "playlistMatch": {
+        "find": "재생 가능한 버전 찾기({{count}})",
+        "title": "재생 가능한 버전 찾기",
+        "loaded": "지금까지 불러온 곡만 포함됩니다({{count}}곡).",
+        "searching": "검색 중: {{current}} / {{total}}…",
+        "select": "“{{title}}”의 재생 가능한 버전",
+        "skip": "건너뛰기",
+        "remembered": "{{option}}(기억됨)",
+        "noCandidate": "재생 가능한 버전을 찾지 못했습니다",
+        "summary": "{{total}}곡 중 {{selected}}곡을 가져옵니다.",
+        "addToPlaylist": "재생목록에 추가",
+        "import": "가져오기",
+        "importing": "가져오는 중: {{current}} / {{total}}…",
+        "imported": "{{imported}}곡을 가져왔습니다.",
+        "addedTo": "재생목록 “{{name}}”에 추가했습니다.",
+        "notImported": "가져오지 못한 곡({{count}})",
+        "skipped": "건너뜀"
       }
     }
   },

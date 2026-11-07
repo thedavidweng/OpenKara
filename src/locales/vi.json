@@ -973,6 +973,24 @@
         "loading": "Đang tìm phiên bản phát được…",
         "empty": "Không tìm thấy phiên bản phát được trong các nguồn khác của bạn.",
         "import": "Nhập"
+      },
+      "playlistMatch": {
+        "find": "Tìm phiên bản phát được ({{count}})",
+        "title": "Tìm phiên bản phát được",
+        "loaded": "Chỉ gồm các bài đã tải đến hiện tại ({{count}}).",
+        "searching": "Đang tìm {{current}}/{{total}}…",
+        "select": "Phiên bản phát được của “{{title}}”",
+        "skip": "Bỏ qua",
+        "remembered": "{{option}} (đã ghi nhớ)",
+        "noCandidate": "Không tìm thấy phiên bản phát được",
+        "summary": "Sẽ nhập {{selected}}/{{total}} bài.",
+        "addToPlaylist": "Thêm vào danh sách phát",
+        "import": "Nhập",
+        "importing": "Đang nhập {{current}}/{{total}}…",
+        "imported": "Đã nhập {{imported}} bài.",
+        "addedTo": "Đã thêm vào danh sách phát “{{name}}”.",
+        "notImported": "Chưa nhập ({{count}})",
+        "skipped": "Đã bỏ qua"
       }
     }
   },

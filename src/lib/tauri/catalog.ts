@@ -81,6 +81,8 @@ export function createCatalogCommands(invoke: InvokeCommand): CatalogBackend {
         matchSourceId,
         matchRemoteTrackId,
       }),
+    streamingPlaylistLibraryId: (sourceId, remotePlaylistId) =>
+      invoke("streaming_playlist_library_id", { sourceId, remotePlaylistId }),
     startStreamingImport: (sourceId, remoteTrackIds, remotePlaylistId, jobId) =>
       invoke("start_streaming_import", {
         sourceId,

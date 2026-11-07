@@ -976,6 +976,24 @@
         "loading": "Buscando versiones reproducibles…",
         "empty": "No se encontró ninguna versión reproducible en tus otras fuentes.",
         "import": "Importar"
+      },
+      "playlistMatch": {
+        "find": "Buscar versiones reproducibles ({{count}})",
+        "title": "Buscar versiones reproducibles",
+        "loaded": "Solo se incluyen las canciones cargadas hasta ahora ({{count}}).",
+        "searching": "Buscando {{current}} de {{total}}…",
+        "select": "Versión reproducible de «{{title}}»",
+        "skip": "Omitir",
+        "remembered": "{{option}} (recordada)",
+        "noCandidate": "No se encontró ninguna versión reproducible",
+        "summary": "Se importarán {{selected}} de {{total}}.",
+        "addToPlaylist": "Añadirlas a una lista",
+        "import": "Importar",
+        "importing": "Importando {{current}} de {{total}}…",
+        "imported": "Importadas: {{imported}}.",
+        "addedTo": "Añadidas a la lista «{{name}}».",
+        "notImported": "No importadas ({{count}})",
+        "skipped": "Omitida"
       }
     }
   },

@@ -978,6 +978,24 @@
         "loading": "Szukanie wersji do odtworzenia…",
         "empty": "Nie znaleziono wersji do odtworzenia w pozostałych źródłach.",
         "import": "Importuj"
+      },
+      "playlistMatch": {
+        "find": "Znajdź odtwarzalne wersje ({{count}})",
+        "title": "Znajdź odtwarzalne wersje",
+        "loaded": "Uwzględniono tylko dotychczas załadowane utwory ({{count}}).",
+        "searching": "Wyszukiwanie: {{current}} z {{total}}…",
+        "select": "Odtwarzalna wersja „{{title}}”",
+        "skip": "Pomiń",
+        "remembered": "{{option}} (zapamiętano)",
+        "noCandidate": "Nie znaleziono odtwarzalnej wersji",
+        "summary": "Zaimportowane zostanie: {{selected}} z {{total}}.",
+        "addToPlaylist": "Dodaj do playlisty",
+        "import": "Importuj",
+        "importing": "Importowanie: {{current}} z {{total}}…",
+        "imported": "Zaimportowano: {{imported}}.",
+        "addedTo": "Dodano do playlisty „{{name}}”.",
+        "notImported": "Nie zaimportowano ({{count}})",
+        "skipped": "Pominięto"
       }
     }
   },
