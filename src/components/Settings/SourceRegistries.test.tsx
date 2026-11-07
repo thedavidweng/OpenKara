@@ -277,3 +277,30 @@ test("removing a registry confirms and explains that installs keep working", asy
   await waitFor(() => expect(listSourceMarket).toHaveBeenCalled());
   expect(screen.queryByText("Example Registry")).toBeNull();
 });
+
+test("the official registry has no remove action and load errors show", () => {
+  preset([{ ...registry, official: true, refreshed_at: null }]);
+  useCatalogStore.setState({ registriesError: "registry list failed" });
+  render(
+    <BackendProvider backend={createMockBackend()}>
+      <SourceRegistries />
+    </BackendProvider>,
+  );
+  const entry = screen.getByRole("article", { name: "Example Registry" });
+  expect(entry.textContent).toContain("settings.streaming.official");
+  expect(entry.textContent).toContain("settings.streaming.registries.never");
+  expect(
+    screen.queryByRole("button", {
+      name: "settings.streaming.registries.remove",
+    }),
+  ).toBeNull();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "registry list failed",
+  );
+  fireEvent.submit(
+    screen
+      .getByRole("button", { name: "settings.streaming.registries.add" })
+      .closest("form")!,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

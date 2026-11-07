@@ -335,3 +335,26 @@ test("details list every listed version, newest first", () => {
   const card = screen.getByRole("article", { name: "Fresh Library" });
   expect(card.textContent).toContain("1.2.0, 1.0.0");
 });
+
+test("a package without versions or network access still lists", () => {
+  preset([
+    { ...freshPackage, versions: [] },
+    {
+      ...freshPackage,
+      package_id: "quiet",
+      name: "Quiet",
+      versions: [
+        {
+          ...freshPackage.versions[0],
+          resource_origins: [],
+          capabilities: [],
+        },
+      ],
+    },
+  ]);
+  renderMarket();
+  expect(screen.getByRole("article", { name: "Fresh Library" })).toBeTruthy();
+  const quiet = screen.getByRole("article", { name: "Quiet" });
+  expect(quiet.textContent).toContain("settings.streaming.market.noOrigins");
+  expect(quiet.textContent).toContain("—");
+});

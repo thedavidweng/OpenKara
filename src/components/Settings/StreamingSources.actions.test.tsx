@@ -10,7 +10,10 @@ import {
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { BackendProvider } from "@/lib/backend";
 import { createMockBackend } from "@/lib/backend/mock-backend";
-import { useCatalogStore } from "@/stores/catalog-store";
+import {
+  useCatalogStore,
+  type SourceBrowseState,
+} from "@/stores/catalog-store";
 import type { MarketPackage, SourceSnapshot } from "@/types/ipc";
 import { StreamingSources } from "./StreamingSources";
 
@@ -182,4 +185,65 @@ test("check for updates refreshes sources, registries and the market", async () 
   await waitFor(() => expect(loadMarket).toHaveBeenCalled());
   expect(loadSources).toHaveBeenCalledWith(true);
   expect(loadRegistries).toHaveBeenCalled();
+});
+
+test("rows summarize state, account, staged and pinned versions", () => {
+  useCatalogStore.setState({
+    sourceStates: {
+      expired: {
+        session: {
+          source_id: "expired",
+          signed_in: true,
+          display_name: null,
+          expired: true,
+        },
+        errors: {},
+      } as SourceBrowseState,
+      named: {
+        session: {
+          source_id: "named",
+          signed_in: true,
+          display_name: "Ana",
+          expired: false,
+        },
+        errors: {},
+      } as SourceBrowseState,
+    },
+  });
+  setup([
+    snapshot("expired", { staged_version: "1.1.0" }),
+    snapshot("named", { pinned_version: "1.0.0", loaded: false }),
+    snapshot("plain", { available_version: null }),
+  ]);
+  const expired = screen.getByRole("article", { name: "expired" });
+  expect(expired.textContent).toContain("catalog.streaming.sessionExpired");
+  expect(expired.textContent).toContain("settings.streaming.staged");
+  const named = screen.getByRole("article", { name: "named" });
+  expect(named.textContent).toContain("settings.streaming.signedInAs");
+  expect(named.textContent).toContain("settings.streaming.unpin · 1.0.0");
+  expect(named.textContent).toContain("settings.streaming.loadedNotReady");
+  expect(screen.getByRole("article", { name: "plain" }).textContent).toContain(
+    "—",
+  );
+});
+
+test("a failed source shows retry, and a failed action shows its message", async () => {
+  const catalog = setup([
+    snapshot("broken", {
+      last_error: { code: "network", message: "offline", retryable: true },
+    }),
+    snapshot("new", { installed_version: null, state: "update_required" }),
+  ]);
+  catalog.installStreamingSource.mockRejectedValueOnce(new Error("refused"));
+  fireEvent.click(screen.getByRole("button", { name: "common.retry" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("article", { name: "broken" }).textContent,
+    ).toContain("refused"),
+  );
+  expect(
+    within(screen.getByRole("article", { name: "new" })).getByRole("button", {
+      name: "settings.streaming.install",
+    }),
+  ).toBeTruthy();
 });
