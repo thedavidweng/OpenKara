@@ -639,14 +639,7 @@ fn validate_declarations(manifest: &SourceManifest) -> HostResult<()> {
             if !origins
                 .iter()
                 .any(|value| value.as_str() == Some(origin.as_str()))
-                || auth["cookie_names"].as_array().is_none_or(|cookies| {
-                    cookies.is_empty()
-                        || cookies.iter().any(|cookie| {
-                            cookie.as_str().is_none_or(|name| {
-                                name.is_empty() || name.contains(['\r', '\n', ';', '=', ' '])
-                            })
-                        })
-                })
+                || cookie_groups(&auth["cookie_names"]).is_none()
             {
                 return Err(mismatch());
             }
@@ -660,6 +653,25 @@ fn validate_declarations(manifest: &SourceManifest) -> HostResult<()> {
         _ => return Err(mismatch()),
     }
     Ok(())
+}
+
+/// Reads a web sign-in `cookie_names` list. Each entry is a cookie name or a
+/// list of alternative names, any one of which satisfies the entry.
+pub(crate) fn cookie_groups(value: &serde_json::Value) -> Option<Vec<Vec<String>>> {
+    let valid = |name: &str| !name.is_empty() && !name.contains(['\r', '\n', ';', '=', ' ']);
+    let groups = value
+        .as_array()?
+        .iter()
+        .map(|entry| match entry {
+            serde_json::Value::String(name) => valid(name).then(|| vec![name.clone()]),
+            serde_json::Value::Array(names) if !names.is_empty() => names
+                .iter()
+                .map(|name| name.as_str().filter(|name| valid(name)).map(str::to_owned))
+                .collect(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!groups.is_empty()).then_some(groups)
 }
 
 /// Confirms that an installed registry package still has its sealed files and manifest.
@@ -678,7 +690,27 @@ pub(crate) fn verified_package(config: &HostConfig, release: &Release) -> HostRe
 
 #[cfg(test)]
 mod tests {
-    use super::sha512;
+    use super::{cookie_groups, sha512};
+    use serde_json::json;
+
+    #[test]
+    fn cookie_names_accept_names_and_groups_of_alternatives() {
+        assert_eq!(
+            cookie_groups(&json!(["key", ["uin", "wxuin"]])),
+            Some(vec![vec!["key".into()], vec!["uin".into(), "wxuin".into()]])
+        );
+        for invalid in [
+            json!([]),
+            json!([[]]),
+            json!(["a=b"]),
+            json!([["uin", ""]]),
+            json!([["uin", 1]]),
+            json!([[["nested"]]]),
+            json!("key"),
+        ] {
+            assert_eq!(cookie_groups(&invalid), None, "{invalid}");
+        }
+    }
 
     #[test]
     fn integrity_accepts_one_sha512_subresource_integrity_value() {

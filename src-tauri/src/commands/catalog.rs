@@ -183,14 +183,8 @@ pub async fn open_streaming_sign_in(
             .filter_map(Value::as_str)
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        let cookies = auth
-            .get("cookie_names")
-            .and_then(Value::as_array)
-            .ok_or_else(|| internal_error("official sign-in cookies missing"))?
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+        let cookies = crate::source_host::cookie_groups(&auth["cookie_names"])
+            .ok_or_else(|| internal_error("official sign-in cookies missing"))?;
         let allowed = origins.clone();
         let opened = tauri::WebviewWindowBuilder::new(
             &app_handle,
@@ -247,7 +241,7 @@ pub async fn open_streaming_sign_in(
 fn read_cookies(
     window: &WebviewWindow,
     origins: &[String],
-    names: &[String],
+    groups: &[Vec<String>],
 ) -> CommandResult<Option<catalog::StreamingCredentials>> {
     let mut values = std::collections::BTreeMap::new();
     for origin in origins {
@@ -258,12 +252,25 @@ fn read_cookies(
             .cookies_for_url(url)
             .map_err(|_| internal_error("could not read official sign-in cookies"))?
         {
-            if names.iter().any(|name| name == cookie.name()) && !cookie.value().is_empty() {
+            if groups.iter().flatten().any(|name| name == cookie.name())
+                && !cookie.value().is_empty()
+            {
                 values.insert(cookie.name().to_owned(), cookie.value().to_owned());
             }
         }
     }
-    Ok((!names.is_empty() && names.iter().all(|name| values.contains_key(name))).then_some(values))
+    Ok(signed_in_cookies(values, groups))
+}
+/// The captured cookies once every entry has at least one of its names present.
+fn signed_in_cookies(
+    values: catalog::StreamingCredentials,
+    groups: &[Vec<String>],
+) -> Option<catalog::StreamingCredentials> {
+    (!groups.is_empty()
+        && groups
+            .iter()
+            .all(|group| group.iter().any(|name| values.contains_key(name))))
+    .then_some(values)
 }
 async fn watch_web_sign_in(
     app: AppHandle,
@@ -271,7 +278,7 @@ async fn watch_web_sign_in(
     challenge: String,
     window: WebviewWindow,
     origins: Vec<String>,
-    names: Vec<String>,
+    names: Vec<Vec<String>>,
     lease: Arc<WorkLease>,
     expires_at: i64,
 ) {
@@ -1067,4 +1074,30 @@ pub(crate) fn settle_cancelled_import(
         Some(catalog::LibraryDecisionAction::Cancel),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::signed_in_cookies;
+
+    #[test]
+    fn web_sign_in_waits_for_one_name_from_every_entry() {
+        let groups = vec![
+            vec!["key".to_owned()],
+            vec!["uin".to_owned(), "wxuin".to_owned()],
+        ];
+        let cookies = |pairs: &[&str]| {
+            pairs
+                .iter()
+                .map(|name| ((*name).to_owned(), "v".to_owned()))
+                .collect()
+        };
+        assert_eq!(signed_in_cookies(cookies(&["key"]), &groups), None);
+        assert_eq!(signed_in_cookies(cookies(&["wxuin"]), &groups), None);
+        assert_eq!(
+            signed_in_cookies(cookies(&["key", "wxuin"]), &groups),
+            Some(cookies(&["key", "wxuin"]))
+        );
+        assert!(signed_in_cookies(cookies(&["key", "uin"]), &groups).is_some());
+    }
 }
