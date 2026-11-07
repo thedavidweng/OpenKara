@@ -66,6 +66,16 @@ export function StreamingSources() {
   useEffect(() => {
     if (status === "idle") void useCatalogStore.getState().loadSources();
   }, [status]);
+  // Official badges and update offers need registries and the market even
+  // when the Discover tab, which also loads them, has never been opened.
+  const marketStatus = useCatalogStore((s) => s.marketStatus);
+  useEffect(() => {
+    if (registriesStatus === "idle")
+      void useCatalogStore.getState().loadRegistries();
+  }, [registriesStatus]);
+  useEffect(() => {
+    if (marketStatus === "idle") void useCatalogStore.getState().loadMarket();
+  }, [marketStatus]);
   const run = async (
     source: SourceSnapshot,
     operation: () => Promise<SourceSnapshot | void>,

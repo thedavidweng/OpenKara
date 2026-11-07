@@ -87,6 +87,11 @@ test("the preferences page nav and source tabs work from the keyboard", async ({
   const sources = dialog.getByRole("tab", { name: "Online Sources" });
   await expect(sources).toBeFocused();
   await expect(sources).toHaveAttribute("aria-selected", "true");
+  const web = dialog.getByRole("article", { name: "Web Library" });
+  await expect(web).toContainText("Official");
+  await expect(
+    web.getByRole("button", { name: "Update to 1.1.0" }),
+  ).toBeVisible();
   const installed = dialog.getByRole("tab", { name: /^Installed/ });
   await installed.focus();
   await page.keyboard.press("ArrowRight");
