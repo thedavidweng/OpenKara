@@ -162,22 +162,14 @@ impl SourceHost {
         for id in ids {
             let gate = self.inner.gate(&id, false);
             let Ok(guard) = gate.try_lock() else { continue };
-            let (instance, activate, changed) = {
+            let (instance, activate) = {
                 let mut state = self.inner.state.lock().unwrap();
                 let staged = state.stored.sources[&id].staged.is_some();
                 let live = state.sources.entry(id.clone()).or_default();
-                let mut changed = false;
-                if live
-                    .instance
-                    .take_if(|instance| !instance.alive())
-                    .is_some()
-                {
-                    live.error = Some(HostError::new(
-                        "source_unavailable",
-                        "Source stopped at a time or memory limit. Retry or install a source update.",
-                    ));
-                    changed = true;
-                }
+                // The next request starts a fresh instance, and the request
+                // that hit the limit already reported it, so this is not a
+                // lasting source error.
+                live.instance.take_if(|instance| !instance.alive());
                 let idle = live.work.is_empty()
                     && !live.stopping
                     && live
@@ -189,7 +181,7 @@ impl SourceHost {
                         instance.idle_for() >= self.inner.config.idle_timeout
                     });
                 let instance = if stop { live.instance.take() } else { None };
-                (instance, staged && idle && live.install.is_none(), changed)
+                (instance, staged && idle && live.install.is_none())
             };
             let stopped = instance.is_some();
             if let Some(instance) = instance {
@@ -208,7 +200,7 @@ impl SourceHost {
                         .error = Some(error);
                 }
             }
-            if stopped || activate || changed {
+            if stopped || activate {
                 self.inner.publish(&id);
             }
         }
