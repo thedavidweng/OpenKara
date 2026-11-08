@@ -946,3 +946,43 @@ test.each([
     ).toHaveLength(1);
   },
 );
+
+test("the clear button empties the search and returns focus to the field", async () => {
+  store.getState().applySources([source("alpha", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  const field = screen.getByRole("textbox") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "night" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.clearSearch" }),
+  );
+  expect(field.value).toBe("");
+  expect(document.activeElement).toBe(field);
+  expect(
+    screen.queryByRole("button", { name: "catalog.streaming.clearSearch" }),
+  ).toBeNull();
+});
+
+test("a failed session check offers a retry that loads the session again", async () => {
+  const getStreamingSession = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({
+      source_id: "alpha",
+      signed_in: false,
+      display_name: null,
+      expired: false,
+    });
+  store = createCatalogStore(
+    createMockBackend({ overrides: { catalog: { getStreamingSession } } }),
+  );
+  shared.store = store;
+  store.getState().applySources([source("alpha", ["search"])]);
+  store.getState().setActiveSource("alpha");
+  render(<StreamingBrowser />);
+  fireEvent.click(await screen.findByRole("button", { name: "common.retry" }));
+  await waitFor(() => expect(getStreamingSession).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "common.retry" })).toBeNull(),
+  );
+});
