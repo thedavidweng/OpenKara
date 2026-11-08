@@ -16,6 +16,7 @@ mod types;
 mod work;
 
 pub use network::MediaResponse;
+pub(crate) use registry::cookie_groups;
 pub use runtime::RequestHandle;
 pub use types::*;
 pub use work::WorkLease;

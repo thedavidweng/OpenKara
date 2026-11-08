@@ -190,10 +190,16 @@ Manifest authentication:
 `{"flow":"web","sign_in_url":"https://service.example/login",
 "navigation_origins":["https://service.example"],"cookie_names":["SESSION"]}`.
 The sign-in URL's origin must appear in `navigation_origins`, and
-`cookie_names` must be a nonempty list of valid cookie names. The host
-opens an isolated window without app IPC and allows only the declared
-origins. It captures only the listed cookies. `auth.start {}` returns
-`{challenge, expires_at, presentation:{kind:"web"}}`.
+`cookie_names` must be a nonempty list. Each entry is a valid cookie name or
+a nonempty list of alternative names, such as `["uin","wxuin"]` for a
+service that names the account cookie by sign-in method. Hosts before 0.21.0
+accept only names, so a package that uses alternatives sets
+`minimum_host_version` to at least 0.21.0. The host opens an isolated window
+without app IPC and allows only the declared origins, including for
+embedded frames, so a sign-in page that embeds another origin lists it too.
+It captures only the listed cookies and completes when every entry has at
+least one present name, passing every listed cookie that is present.
+`auth.start {}` returns `{challenge, expires_at, presentation:{kind:"web"}}`.
 `auth.complete {challenge, credentials}` verifies the account and returns
 `{session, credentials}` only on success. An unknown or expired challenge
 throws `challenge_expired`. Window closure calls `auth.cancel {challenge}`.
