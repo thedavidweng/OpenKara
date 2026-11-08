@@ -42,22 +42,32 @@ pub(super) fn extract_embedded_cover_art_for_song(
         CommandError::from(LibraryError::Internal(message))
     })?;
 
+    set_cover_art(connection, library, &song, &cover_art)
+}
+
+/// Stores `cover_art` as the song's cover and regenerates its derivatives.
+pub fn set_cover_art(
+    connection: &Connection,
+    library: &LibraryRoot,
+    song: &Song,
+    cover_art: &[u8],
+) -> Result<Song, CommandError> {
     // Regenerate artwork derivatives whenever authoritative cover bytes change.
     // Derivative identity is the SHA-256 of the cover bytes, so a new cover
     // produces new filenames and cannot serve stale imagery. Failure is
     // non-fatal: the original cover art is still persisted below, and lazy
     // repair will regenerate derivatives on the next cover art read.
-    let (thumb_path, preview_path) =
-        match artwork::generate_artwork_derivatives(library, &cover_art) {
-            Ok(derivatives) => (Some(derivatives.thumb_path), Some(derivatives.preview_path)),
-            Err(e) => {
-                tracing::warn!(
-                    "artwork derivative generation failed for song {}: {e}",
-                    song.hash
-                );
-                (None, None)
-            }
-        };
+    let (thumb_path, preview_path) = match artwork::generate_artwork_derivatives(library, cover_art)
+    {
+        Ok(derivatives) => (Some(derivatives.thumb_path), Some(derivatives.preview_path)),
+        Err(e) => {
+            tracing::warn!(
+                "artwork derivative generation failed for song {}: {e}",
+                song.hash
+            );
+            (None, None)
+        }
+    };
 
     // Write the original bytes and both derivative paths in one atomic UPDATE
     // so a crash cannot leave a row with new paths referencing unwritten files
@@ -66,7 +76,7 @@ pub(super) fn extract_embedded_cover_art_for_song(
     let (old_thumb, old_preview) = match cache::replace_cover_art_and_derivatives(
         connection,
         &song.hash,
-        Some(&cover_art),
+        Some(cover_art),
         thumb_path.as_deref(),
         preview_path.as_deref(),
     ) {
