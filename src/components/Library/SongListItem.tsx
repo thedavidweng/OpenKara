@@ -260,7 +260,7 @@ export function SongListItem({
 
   return (
     <div
-      className={`group relative flex select-none items-center gap-2.5 rounded-[14px] border px-3 py-2.5 transition-colors duration-150 ${
+      className={`group relative flex select-none items-center gap-2.5 rounded-[14px] border px-2 py-2.5 transition-colors duration-150 ${
         isSelected
           ? "border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)]"
           : "border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
@@ -305,25 +305,19 @@ export function SongListItem({
       />
 
       <div className="relative z-10 pointer-events-none flex min-w-0 flex-1 flex-col justify-center">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           {isCurrentPlaying ? (
-            <div className="flex w-3 shrink-0 justify-center">
-              <span className="inline-flex h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-            </div>
+            <span className="size-1.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
           ) : isCurrentLoading ? (
-            <div className="flex w-3 shrink-0 justify-center">
-              <Loader2 size={10} className="animate-spin" />
-            </div>
-          ) : (
-            <div className="w-3 shrink-0" />
-          )}
-          <span className="truncate text-[15px] font-semibold">
+            <Loader2 size={10} className="shrink-0 animate-spin" />
+          ) : null}
+          <span className="truncate text-[14px] font-semibold">
             {songDisplayTitle(song)}
           </span>
         </div>
 
         {showBatchSongProgress && (
-          <div className="mt-1.5 pl-5">
+          <div className="mt-1.5">
             <TaskProgressBar
               compact
               label=""
@@ -335,7 +329,7 @@ export function SongListItem({
           </div>
         )}
 
-        <div className="flex items-center gap-2 pl-5 text-[12px] text-[var(--color-text-dim)]">
+        <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-dim)]">
           <span className="min-w-0 flex-1 truncate">
             {song.artist || t("common.unknownArtist")}
           </span>
