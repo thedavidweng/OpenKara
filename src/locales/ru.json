@@ -937,6 +937,7 @@
       "statusFailed": "Не удалось импортировать",
       "likedEmpty": "Нет понравившихся треков",
       "playlistsEmpty": "Нет плейлистов",
+      "playlistTracksEmpty": "В этом плейлисте нет песен",
       "resultsEmpty": "Нет результатов по запросу «{{query}}»",
       "playlistEmpty": "В этом плейлисте нет треков",
       "loadFailed": "Не удалось загрузить этот список.",

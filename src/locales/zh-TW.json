@@ -935,6 +935,7 @@
       "statusFailed": "匯入失敗",
       "likedEmpty": "沒有喜歡的歌曲",
       "playlistsEmpty": "沒有歌單",
+      "playlistTracksEmpty": "這個歌單裡沒有歌曲",
       "resultsEmpty": "沒有「{{query}}」的搜尋結果",
       "playlistEmpty": "這個歌單裡沒有歌曲",
       "loadFailed": "無法載入此清單。",

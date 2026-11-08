@@ -32,20 +32,25 @@ export function SourceActionDialog({
     onDismiss: onCancel,
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-scrim)] p-4">
       <div
         ref={dialog}
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
         aria-labelledby="source-action-dialog-title"
-        className="w-full max-w-md space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-[var(--color-text)]"
+        className="w-full max-w-md space-y-4 rounded-xl bg-popover p-5 text-popover-foreground shadow-[var(--shadow-dialog)] ring-1 ring-foreground/10 outline-none"
       >
-        <h3 id="source-action-dialog-title" className="font-semibold">
+        <h3
+          id="source-action-dialog-title"
+          className="text-[15px] font-semibold"
+        >
           {title}
         </h3>
-        <div className="space-y-3 text-sm">{children}</div>
-        <div className="flex justify-end gap-2">
+        <div className="space-y-3 text-muted-foreground [&_strong]:text-foreground">
+          {children}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
           <button
             ref={cancel}
             className={sourceActionButton}

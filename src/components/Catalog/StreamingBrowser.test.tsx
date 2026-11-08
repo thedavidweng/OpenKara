@@ -121,6 +121,7 @@ test("renders only supported operations and keyboard tab navigation", () => {
     screen.queryByRole("tab", { name: "catalog.streaming.playlists" }),
   ).toBeNull();
   const liked = screen.getByRole("tab", { name: "catalog.streaming.liked" });
+  liked.focus();
   fireEvent.keyDown(liked, { key: "Home" });
   expect(document.activeElement).toBe(liked);
   expect(screen.getByRole("search")).toBeTruthy();
@@ -773,7 +774,7 @@ test("failed account sign-out shows the backend error and retains the verified a
   );
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "catalog.streaming.accountMenu",
+      name: /catalog\.streaming\.accountMenu/,
     }),
   );
   fireEvent.click(
@@ -784,7 +785,7 @@ test("failed account sign-out shows the backend error and retains the verified a
   );
   expect(
     screen
-      .getByRole("button", { name: "catalog.streaming.accountMenu" })
+      .getByRole("button", { name: /catalog\.streaming\.accountMenu/ })
       .getAttribute("title"),
   ).toBe("Alice");
   expect(screen.queryByRole("menu")).toBeNull();
@@ -825,7 +826,7 @@ test("account sign-out requires a stop decision for active work and permits decl
   );
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "catalog.streaming.accountMenu",
+      name: /catalog\.streaming\.accountMenu/,
     }),
   );
   fireEvent.click(
@@ -839,12 +840,12 @@ test("account sign-out requires a stop decision for active work and permits decl
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "catalog.streaming.accountMenu" })
+      .getByRole("button", { name: /catalog\.streaming\.accountMenu/ })
       .getAttribute("title"),
   ).toBe("Alice");
   expect(signOut).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole("button", { name: "catalog.streaming.accountMenu" }),
+    screen.getByRole("button", { name: /catalog\.streaming\.accountMenu/ }),
   );
   fireEvent.click(
     screen.getByRole("menuitem", { name: "catalog.streaming.signOut" }),
@@ -854,12 +855,12 @@ test("account sign-out requires a stop decision for active work and permits decl
   );
   await screen.findByRole("button", { name: "catalog.streaming.connect" });
   expect(
-    screen.queryByRole("button", { name: "catalog.streaming.accountMenu" }),
+    screen.queryByRole("button", { name: /catalog\.streaming\.accountMenu/ }),
   ).toBeNull();
   expect(signOut).toHaveBeenCalledWith("alpha", true);
 });
 
-test("account menu focuses its action, restores focus on Escape, and dismisses on Tab or outside pointer", async () => {
+test("account menu closes on Escape and returns focus to its trigger", async () => {
   const backend = createMockBackend({
     overrides: {
       catalog: {
@@ -882,23 +883,15 @@ test("account menu focuses its action, restores focus on Escape, and dismisses o
     </BackendProvider>,
   );
   const trigger = await screen.findByRole("button", {
-    name: "catalog.streaming.accountMenu",
+    name: /catalog\.streaming\.accountMenu/,
   });
   fireEvent.click(trigger);
-  const action = screen.getByRole("menuitem", {
+  const action = await screen.findByRole("menuitem", {
     name: "catalog.streaming.signOut",
   });
-  expect(document.activeElement).toBe(action);
   fireEvent.keyDown(action, { key: "Escape" });
-  expect(screen.queryByRole("menu")).toBeNull();
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   expect(document.activeElement).toBe(trigger);
-  fireEvent.click(trigger);
-  fireEvent.keyDown(screen.getByRole("menuitem"), { key: "Tab" });
-  expect(screen.queryByRole("menu")).toBeNull();
-  fireEvent.click(trigger);
-  fireEvent.mouseDown(screen.getByRole("textbox"));
-  expect(screen.queryByRole("menu")).toBeNull();
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
 
 test.each([

@@ -935,6 +935,7 @@
       "statusFailed": "取り込み失敗",
       "likedEmpty": "お気に入りの曲はありません",
       "playlistsEmpty": "プレイリストはありません",
+      "playlistTracksEmpty": "このプレイリストには曲がありません",
       "resultsEmpty": "「{{query}}」の検索結果はありません",
       "playlistEmpty": "このプレイリストには曲がありません",
       "loadFailed": "このリストを読み込めませんでした。",

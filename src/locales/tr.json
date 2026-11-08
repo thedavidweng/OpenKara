@@ -935,6 +935,7 @@
       "statusFailed": "Aktarma başarısız",
       "likedEmpty": "Beğenilen şarkı yok",
       "playlistsEmpty": "Çalma listesi yok",
+      "playlistTracksEmpty": "Bu çalma listesinde şarkı yok",
       "resultsEmpty": "“{{query}}” için sonuç yok",
       "playlistEmpty": "Bu çalma listesinde şarkı yok",
       "loadFailed": "Bu liste yüklenemedi.",

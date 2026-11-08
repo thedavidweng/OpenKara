@@ -1,4 +1,69 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Base UI state variants used by the shadcn/ui components (from shadcn/tailwind.css). */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+/* Dark is the default theme; light applies only with data-theme="light". */
+@custom-variant dark (&:where(:root:not([data-theme="light"]) *));
 
 /*
  * The marketing site imports the real React application as an interactive
@@ -972,4 +1037,30 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+/*
+ * shadcn/ui (Base UI) semantic colors, mapped onto OpenKara's theme tokens so
+ * components follow both themes. `inline` keeps these names out of :root:
+ * existing `var(--color-accent)` and friends still read the OpenKara values.
+ */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-background: var(--color-surface);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-surface-muted);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-sidebar);
+  --color-popover-foreground: var(--color-text);
+  --color-primary: var(--color-control-primary);
+  --color-primary-foreground: var(--color-control-primary-foreground);
+  --color-secondary: var(--color-hover);
+  --color-secondary-foreground: var(--color-text);
+  --color-muted: var(--color-surface-muted);
+  --color-muted-foreground: var(--color-text-dim);
+  --color-accent: var(--color-hover);
+  --color-accent-foreground: var(--color-text);
+  --color-destructive: var(--color-destructive);
+  --color-border: var(--color-border);
+  --color-input: var(--color-border-light);
+  --color-ring: var(--color-focus-ring);
 }

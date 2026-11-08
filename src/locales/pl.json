@@ -937,6 +937,7 @@
       "statusFailed": "Import nie powiódł się",
       "likedEmpty": "Brak polubionych utworów",
       "playlistsEmpty": "Brak playlist",
+      "playlistTracksEmpty": "Ta playlista nie zawiera utworów",
       "resultsEmpty": "Brak wyników dla „{{query}}”",
       "playlistEmpty": "Ta playlista nie zawiera utworów",
       "loadFailed": "Nie udało się wczytać tej listy.",

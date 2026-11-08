@@ -935,6 +935,7 @@
       "statusFailed": "Nhập thất bại",
       "likedEmpty": "Chưa có bài hát nào được thích",
       "playlistsEmpty": "Chưa có danh sách phát",
+      "playlistTracksEmpty": "Danh sách phát này không có bài hát",
       "resultsEmpty": "Không có kết quả cho “{{query}}”",
       "playlistEmpty": "Danh sách phát này không có bài hát",
       "loadFailed": "Không thể tải danh sách này.",

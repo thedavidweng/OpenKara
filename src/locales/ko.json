@@ -935,6 +935,7 @@
       "statusFailed": "가져오기 실패",
       "likedEmpty": "좋아요 표시한 곡이 없습니다",
       "playlistsEmpty": "재생목록이 없습니다",
+      "playlistTracksEmpty": "이 플레이리스트에 노래가 없습니다",
       "resultsEmpty": "“{{query}}” 검색 결과가 없습니다",
       "playlistEmpty": "이 재생목록에는 곡이 없습니다",
       "loadFailed": "이 목록을 불러오지 못했습니다.",

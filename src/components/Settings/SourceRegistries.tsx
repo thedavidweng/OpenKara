@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -120,7 +121,7 @@ export function SourceRegistries() {
           </span>
         </button>
         {failing ? (
-          <span className="text-xs text-[var(--color-text-dim)]">
+          <span className="text-[12px] text-[var(--color-text-dim)]">
             {t("settings.streaming.registries.failing")}
           </span>
         ) : null}
@@ -130,11 +131,11 @@ export function SourceRegistries() {
           id="source-registries-panel"
           className="space-y-3 border-b border-[var(--color-border)] pb-4"
         >
-          <p className="text-xs text-[var(--color-text-dim)]">
+          <p className="text-[12px] text-[var(--color-text-dim)]">
             {t("settings.streaming.registries.description")}
           </p>
           {loadError ? (
-            <p role="alert" className="text-xs">
+            <p role="alert" className="text-[12px]">
               {loadError}
             </p>
           ) : null}
@@ -153,10 +154,10 @@ export function SourceRegistries() {
                     <h4 className="font-semibold">{entry.display_name}</h4>
                     {entry.official ? <OfficialBadge /> : null}
                   </div>
-                  <p className="break-all text-xs text-[var(--color-text-dim)]">
+                  <p className="break-all text-[12px] text-[var(--color-text-dim)]">
                     {entry.url}
                   </p>
-                  <p className="text-xs text-[var(--color-text-dim)]">
+                  <p className="text-[12px] text-[var(--color-text-dim)]">
                     {t("settings.streaming.registries.refreshed")}:{" "}
                     {entry.refreshed_at
                       ? new Intl.DateTimeFormat(i18n.language, {
@@ -177,7 +178,7 @@ export function SourceRegistries() {
                 )}
               </header>
               {entry.last_error ? (
-                <p role="alert" className="text-xs">
+                <p role="alert" className="text-[12px]">
                   {entry.last_error.message}
                 </p>
               ) : null}
@@ -191,16 +192,15 @@ export function SourceRegistries() {
               if (trimmed) setAddTarget(trimmed);
             }}
           >
-            <label className="flex-1 text-xs">
+            <label className="flex-1 text-[12px]">
               <span className="mb-1 block">
                 {t("settings.streaming.registries.urlLabel")}
               </span>
-              <input
+              <Input
                 type="text"
                 value={url}
                 placeholder={t("settings.streaming.registries.urlPlaceholder")}
                 onChange={(event) => setUrl(event.target.value)}
-                className="min-h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs"
               />
             </label>
             <button
@@ -214,7 +214,7 @@ export function SourceRegistries() {
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="text-xs">
+        <p role="alert" className="text-[12px]">
           {error}
         </p>
       ) : null}

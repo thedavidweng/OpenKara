@@ -936,6 +936,7 @@
       "statusFailed": "Error al importar",
       "likedEmpty": "No hay canciones que te gusten",
       "playlistsEmpty": "No hay listas de reproducción",
+      "playlistTracksEmpty": "Esta lista no tiene canciones",
       "resultsEmpty": "Sin resultados para «{{query}}»",
       "playlistEmpty": "Esta lista no tiene canciones",
       "loadFailed": "No se pudo cargar esta lista.",

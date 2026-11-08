@@ -935,6 +935,7 @@
       "statusFailed": "Impor gagal",
       "likedEmpty": "Tidak ada lagu yang disukai",
       "playlistsEmpty": "Tidak ada playlist",
+      "playlistTracksEmpty": "Playlist ini tidak berisi lagu",
       "resultsEmpty": "Tidak ada hasil untuk “{{query}}”",
       "playlistEmpty": "Playlist ini tidak berisi lagu",
       "loadFailed": "Daftar ini tidak dapat dimuat.",

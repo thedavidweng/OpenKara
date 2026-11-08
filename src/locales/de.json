@@ -935,6 +935,7 @@
       "statusFailed": "Import fehlgeschlagen",
       "likedEmpty": "Keine gelikten Titel",
       "playlistsEmpty": "Keine Playlists",
+      "playlistTracksEmpty": "Diese Playlist enthält keine Songs",
       "resultsEmpty": "Keine Ergebnisse für „{{query}}“",
       "playlistEmpty": "Diese Playlist enthält keine Titel",
       "loadFailed": "Diese Liste konnte nicht geladen werden.",

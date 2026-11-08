@@ -935,6 +935,7 @@
       "statusFailed": "Importeren mislukt",
       "likedEmpty": "Geen gelikete nummers",
       "playlistsEmpty": "Geen afspeellijsten",
+      "playlistTracksEmpty": "Deze afspeellijst bevat geen nummers",
       "resultsEmpty": "Geen resultaten voor “{{query}}”",
       "playlistEmpty": "Deze afspeellijst bevat geen nummers",
       "loadFailed": "Deze lijst kon niet worden geladen.",
