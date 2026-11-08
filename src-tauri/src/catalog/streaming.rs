@@ -40,6 +40,10 @@ pub trait StreamingSource: Send + Sync {
         remote_track_id: &str,
         progress: &dyn ResolveProgress,
     ) -> Result<StreamingResolveOutcome, CatalogError>;
+    /// Cover image bytes for a track, used when its imported file has none.
+    fn artwork(&self, _remote_track_id: &str) -> Option<Vec<u8>> {
+        None
+    }
     /// A URL the track can be streamed from without importing it, or the
     /// reason it cannot be played in full.
     fn preview(&self, _remote_track_id: &str) -> Result<StreamingPreviewOutcome, CatalogError> {
@@ -122,6 +126,11 @@ impl<S: StreamingSource> StreamingSource for GatedStreamingSource<S> {
         self.require_enabled()?;
         self.inner.preview(remote_track_id)
     }
+
+    fn artwork(&self, remote_track_id: &str) -> Option<Vec<u8>> {
+        self.require_enabled().ok()?;
+        self.inner.artwork(remote_track_id)
+    }
 }
 
 #[derive(Clone)]
@@ -147,6 +156,7 @@ struct FakeInner {
     tracks: HashMap<String, FakeTrackSpec>,
     playlists: Vec<StreamingPlaylistSummary>,
     playlist_tracks: HashMap<String, Vec<String>>,
+    artwork: HashMap<String, Vec<u8>>,
 }
 
 pub struct FakeStreamingSource {
@@ -165,6 +175,7 @@ impl FakeStreamingSource {
                 tracks: HashMap::new(),
                 playlists: Vec::new(),
                 playlist_tracks: HashMap::new(),
+                artwork: HashMap::new(),
             }),
         }
     }
@@ -172,6 +183,11 @@ impl FakeStreamingSource {
     pub fn insert_track(&self, spec: FakeTrackSpec) {
         let mut inner = self.inner.lock().expect("fake source lock");
         inner.tracks.insert(spec.remote_track_id.clone(), spec);
+    }
+
+    pub fn set_artwork(&self, remote_track_id: &str, cover: Vec<u8>) {
+        let mut inner = self.inner.lock().expect("fake source lock");
+        inner.artwork.insert(remote_track_id.to_owned(), cover);
     }
 
     pub fn insert_playlist(&self, summary: StreamingPlaylistSummary, track_ids: Vec<String>) {
@@ -239,6 +255,11 @@ impl FakeStreamingSource {
 }
 
 impl StreamingSource for FakeStreamingSource {
+    fn artwork(&self, remote_track_id: &str) -> Option<Vec<u8>> {
+        let inner = self.inner.lock().expect("fake source lock");
+        inner.artwork.get(remote_track_id).cloned()
+    }
+
     fn source_id(&self) -> &str {
         &self.source_id
     }

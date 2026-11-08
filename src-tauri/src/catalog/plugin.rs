@@ -468,6 +468,18 @@ impl StreamingSource for PluginStreamingSource {
     fn source_id(&self) -> &str {
         &self.source_id
     }
+    fn artwork(&self, remote_track_id: &str) -> Option<Vec<u8>> {
+        let key = self
+            .cache
+            .get(&self.source_id, remote_track_id)?
+            .cover_url?;
+        tauri::async_runtime::block_on(super::artwork::load(
+            &self.artwork,
+            &self.host,
+            &self.data_root,
+            &key,
+        ))
+    }
     fn session(&self) -> Result<StreamingSessionSnapshot, CatalogError> {
         let owner = self
             .host

@@ -4,7 +4,7 @@ mod ingest;
 mod preview;
 mod types;
 
-pub use cover::extract_embedded_cover_art_from_connection;
+pub use cover::{extract_embedded_cover_art_from_connection, set_cover_art};
 pub use expand::collect_expandable_import_paths;
 pub use preview::{display_audio_format, inspect_import_candidate};
 pub use types::{

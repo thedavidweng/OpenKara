@@ -13,7 +13,7 @@ use super::types::{
 use crate::cache::{self, lyrics as lyrics_cache, waveforms};
 use crate::hash;
 use crate::library::import::{
-    import_songs_from_paths, inspect_import_candidate, ImportCandidateDetails,
+    import_songs_from_paths, inspect_import_candidate, set_cover_art, ImportCandidateDetails,
 };
 use crate::library::playlist;
 use crate::library_root::LibraryRoot;
@@ -216,6 +216,7 @@ pub fn advance_import_session<S: StreamingSource>(
                         &paused.identity,
                         &paused.incoming_path,
                     )?;
+                    apply_source_details(connection, library, source, &paused.item, &hash);
                     add_to_playlist_if_needed(connection, session, &hash)?;
                     session.report(
                         &paused.item.remote_track_id,
@@ -372,6 +373,7 @@ fn process_item<S: StreamingSource>(
                             KeepOrReplace::Replace => {
                                 let hash =
                                     apply_replace(connection, library, &identity, &file.path)?;
+                                apply_source_details(connection, library, source, &item, &hash);
                                 add_to_playlist_if_needed(connection, session, &hash)?;
                                 session.report(
                                     &item.remote_track_id,
@@ -406,6 +408,7 @@ fn process_item<S: StreamingSource>(
             }
 
             let imported = import_file(connection, library, &file.path)?;
+            apply_source_details(connection, library, source, &item, &imported);
             stamp_identity(connection, &identity, &imported)?;
             add_to_playlist_if_needed(connection, session, &imported)?;
             session.report(
@@ -419,6 +422,38 @@ fn process_item<S: StreamingSource>(
             Ok(ItemOutcome::Continue)
         }
     }
+}
+
+/// Streaming downloads often carry no tags or cover, so a freshly imported
+/// song takes the title and artist the user picked it by, and the source's
+/// artwork when the file has none. Neither step fails the import.
+fn apply_source_details<S: StreamingSource>(
+    connection: &Connection,
+    library: &LibraryRoot,
+    source: &S,
+    item: &StreamingImportItem,
+    song_hash: &str,
+) {
+    let Ok(Some(song)) = cache::get_song_by_hash(connection, song_hash) else {
+        return;
+    };
+    let title = given(&item.title).or(song.title.as_deref());
+    let artist = given(&item.artist).or(song.artist.as_deref());
+    if let Err(error) = cache::update_song_title_artist(connection, song_hash, title, artist) {
+        tracing::warn!(song = song_hash, %error, "could not store source title and artist");
+    }
+    if song.has_cover_art {
+        return;
+    }
+    if let Some(cover) = source.artwork(&item.remote_track_id) {
+        if let Err(error) = set_cover_art(connection, library, &song, &cover) {
+            tracing::warn!(song = song_hash, error = %error.message, "could not store source artwork");
+        }
+    }
+}
+
+fn given(value: &str) -> Option<&str> {
+    Some(value.trim()).filter(|value| !value.is_empty())
 }
 
 fn import_file(
@@ -771,6 +806,41 @@ mod tests {
                 path: copy_into(copies, kind, file),
             },
         });
+    }
+
+    #[test]
+    fn an_untagged_import_takes_the_source_title_artist_and_artwork() {
+        let (_tmp, library, mut connection, source, copies) = setup();
+        add_tone_track(&source, &copies, "plain", 7);
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .expect("png");
+        source.set_artwork("plain", png);
+        // The tone file has no tags: the import keeps what the user picked.
+
+        let result = run_streaming_import(
+            &mut connection,
+            &library,
+            &source,
+            StreamingImportRequest {
+                source_id: "fixture".to_owned(),
+                items: vec![StreamingImportItem {
+                    remote_track_id: "plain".to_owned(),
+                    title: "Source Title".to_owned(),
+                    artist: "Source Artist".to_owned(),
+                }],
+                playlist: None,
+            },
+            |_| panic!("no conflict"),
+        )
+        .expect("import");
+        let song = cache::get_song_by_hash(&connection, &result.imported_song_ids[0])
+            .expect("query")
+            .expect("song");
+        assert!(song.has_cover_art);
+        assert_eq!(song.title.as_deref(), Some("Source Title"));
+        assert_eq!(song.artist.as_deref(), Some("Source Artist"));
     }
 
     #[test]
