@@ -24,8 +24,9 @@ describe("formatDuration", () => {
     expect(formatDuration(61999)).toBe("1:01");
   });
 
-  test("formats large durations", () => {
-    expect(formatDuration(3600000)).toBe("60:00");
+  test("formats an hour or more with hours", () => {
+    expect(formatDuration(3600000)).toBe("1:00:00");
+    expect(formatDuration(26779000)).toBe("7:26:19");
   });
 });
 
