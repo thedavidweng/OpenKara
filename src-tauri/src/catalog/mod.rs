@@ -1,4 +1,6 @@
 #[cfg(feature = "streaming-sources")]
+pub mod artwork;
+#[cfg(feature = "streaming-sources")]
 mod credentials;
 #[cfg(feature = "streaming-sources")]
 mod identity;

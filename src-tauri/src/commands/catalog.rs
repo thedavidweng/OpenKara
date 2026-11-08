@@ -32,20 +32,23 @@ pub(crate) fn source(
     app: &AppHandle,
     source_id: &str,
 ) -> CommandResult<catalog::PluginStreamingSource> {
-    app.asset_protocol_scope()
-        .allow_directory(app_data_dir(app)?.join("source-artwork"), true)
-        .map_err(|_| internal_error("could not allow managed source artwork"))?;
     catalog::PluginStreamingSource::open(
         app.state::<SourceHost>().inner().clone(),
         source_id.to_owned(),
         app_data_dir(app)?,
     )
     .map(|source| {
-        source.with_cache(
-            app.state::<Arc<catalog::TrackMetadataCache>>()
-                .inner()
-                .clone(),
-        )
+        source
+            .with_cache(
+                app.state::<Arc<catalog::TrackMetadataCache>>()
+                    .inner()
+                    .clone(),
+            )
+            .with_artwork(
+                app.state::<Arc<catalog::artwork::ArtworkRegistry>>()
+                    .inner()
+                    .clone(),
+            )
     })
     .map_err(Into::into)
 }

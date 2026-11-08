@@ -236,7 +236,7 @@ export interface StreamingTrack {
   duration_ms: number | null;
   refusal: ImportRefusal | null;
   library_song_id: string | null;
-  /** Host-managed artwork resource URL. */
+  /** Host artwork key; `StreamingCover` loads it through the `source-art` protocol. */
   cover_url: string | null;
   /** Normalized 12-character ISRC, or null. */
   isrc: string | null;

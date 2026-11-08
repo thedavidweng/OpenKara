@@ -110,6 +110,15 @@ pub fn run() {
     #[cfg(feature = "streaming-sources")]
     let builder = builder
         .manage(std::sync::Arc::new(catalog::TrackMetadataCache::default()))
+        .manage(std::sync::Arc::new(
+            catalog::artwork::ArtworkRegistry::default(),
+        ))
+        .register_asynchronous_uri_scheme_protocol(
+            catalog::artwork::SCHEME,
+            |context, request, responder| {
+                catalog::artwork::serve(context.app_handle(), request, responder)
+            },
+        )
         .manage(commands::catalog::SourceAuthentication::default())
         .plugin(tauri_plugin_deep_link::init());
     let builder = builder

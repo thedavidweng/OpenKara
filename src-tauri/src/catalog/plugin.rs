@@ -1,10 +1,10 @@
+use super::artwork::ArtworkRegistry;
 use super::credentials;
 use super::streaming::{ResolveProgress, StreamingSource};
 use super::types::*;
 use crate::source_host::{Cancellation, HostError, ResourceDescriptor, SourceHost};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -144,6 +144,7 @@ pub struct PluginStreamingSource {
     source_id: String,
     data_root: PathBuf,
     cache: Arc<TrackMetadataCache>,
+    artwork: Arc<ArtworkRegistry>,
     cancellation: Cancellation,
 }
 impl PluginStreamingSource {
@@ -158,11 +159,16 @@ impl PluginStreamingSource {
             source_id,
             data_root,
             cache: Arc::new(TrackMetadataCache::default()),
+            artwork: Arc::new(ArtworkRegistry::default()),
             cancellation: Cancellation::new(),
         })
     }
     pub fn with_cache(mut self, cache: Arc<TrackMetadataCache>) -> Self {
         self.cache = cache;
+        self
+    }
+    pub fn with_artwork(mut self, artwork: Arc<ArtworkRegistry>) -> Self {
+        self.artwork = artwork;
         self
     }
     pub fn with_cancellation(mut self, cancellation: Cancellation) -> Self {
@@ -287,37 +293,8 @@ impl PluginStreamingSource {
             .map_err(|_| CatalogError::Internal("could not save source session".into()))?;
         Ok(session)
     }
-    fn artwork(
-        &self,
-        descriptor: Option<ResourceDescriptor>,
-    ) -> Result<Option<String>, CatalogError> {
-        let Some(descriptor) = descriptor else {
-            return Ok(None);
-        };
-        let bytes = match tauri::async_runtime::block_on(self.host.load_resource(
-            &self.source_id,
-            descriptor,
-            self.cancellation.clone(),
-        )) {
-            Ok(bytes) => bytes,
-            Err(error) if error.code == "cancelled" => return Err(CatalogError::Cancelled),
-            Err(_) => return Ok(None),
-        };
-        let path = self
-            .data_root
-            .join("source-artwork")
-            .join(&self.source_id)
-            .join(format!(
-                "{}.img",
-                crate::hash::hex_lower(Sha256::digest(&bytes))
-            ));
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|_| CatalogError::Internal("could not cache source artwork".into()))?;
-        }
-        std::fs::write(&path, bytes)
-            .map_err(|_| CatalogError::Internal("could not cache source artwork".into()))?;
-        Ok(Some(path.to_string_lossy().into_owned()))
+    fn artwork(&self, descriptor: Option<ResourceDescriptor>) -> Option<String> {
+        descriptor.map(|descriptor| self.artwork.register(&self.source_id, descriptor))
     }
     fn track(&self, track: Track) -> Result<StreamingTrack, CatalogError> {
         if track.id.is_empty() || track.title.is_empty() {
@@ -339,7 +316,7 @@ impl PluginStreamingSource {
             duration_ms: track.duration_ms,
             refusal,
             library_song_id: None,
-            cover_url: self.artwork(track.artwork)?,
+            cover_url: self.artwork(track.artwork),
             isrc: track.isrc.and_then(|isrc| normalize_isrc(&isrc)),
         })
     }
@@ -395,7 +372,7 @@ impl PluginStreamingSource {
                     remote_id: p.id,
                     name: p.name,
                     track_count: p.track_count,
-                    cover_url: self.artwork(p.artwork)?,
+                    cover_url: self.artwork(p.artwork),
                 })
             })
             .collect::<Result<Vec<_>, CatalogError>>()?;
@@ -421,7 +398,7 @@ impl PluginStreamingSource {
             remote_id: page.playlist.id,
             name: page.playlist.name,
             tracks: self.tracks_from(page.items)?,
-            cover_url: self.artwork(page.playlist.artwork)?,
+            cover_url: self.artwork(page.playlist.artwork),
             creator: None,
             description: page.playlist.description,
             track_count: page.playlist.track_count,

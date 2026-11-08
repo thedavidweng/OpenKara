@@ -125,14 +125,17 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
     let root = directory.path().to_owned();
     let worker_host = host.clone();
     let metadata = cache.clone();
+    let worker_artwork = Arc::new(artwork::ArtworkRegistry::default());
     tauri::async_runtime::spawn_blocking(move || {
-        let official=PluginStreamingSource::open(worker_host.clone(),"official".into(),root.clone()).unwrap().with_cache(metadata.clone());
+        let official=PluginStreamingSource::open(worker_host.clone(),"official".into(),root.clone()).unwrap().with_cache(metadata.clone()).with_artwork(worker_artwork.clone());
         let challenge=PluginStreamingSource::open(worker_host.clone(),"challenge".into(),root.clone()).unwrap().with_cache(metadata.clone());
         assert!(!official.session().unwrap().signed_in);
         assert!(!challenge.session().unwrap().signed_in);
         let public=official.track_page("search",json!({"query":"public","cursor":null})).unwrap();
         assert_eq!(public.tracks[0].remote_track_id,"1");
-        assert!(public.tracks[0].cover_url.is_none());
+        // Listings carry an artwork key at once; unreachable artwork fails only when loaded.
+        let cover=public.tracks[0].cover_url.clone().expect("the fixture lists artwork");
+        assert!(tauri::async_runtime::block_on(artwork::load(&worker_artwork,&worker_host,&root,&cover)).is_none());
         assert!(official.tracks(&["1".into()]).is_err());
         assert_eq!(official.import_tracks(&["1".into()]).unwrap()[0].title,"Official fixture 1");
         let public_media=official.resolve("1",&NoResolveProgress).unwrap();

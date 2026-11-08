@@ -77,7 +77,7 @@ Web sign-in uses host-controlled windows and declared cookie capture. Credential
 
 ## Catalog pages and resources
 
-`StreamingTrack` contains `source_id`, `remote_track_id`, `title`, `artist`, nullable `album`, `duration_ms`, `refusal`, `library_song_id`, `cover_url`, and nullable `isrc` (normalized, 12 characters). Artwork URLs are host-managed resource handles. The frontend must not append upstream image-resize parameters or infer provider origins.
+`StreamingTrack` contains `source_id`, `remote_track_id`, `title`, `artist`, nullable `album`, `duration_ms`, `refusal`, `library_song_id`, `cover_url`, and nullable `isrc` (normalized, 12 characters). `cover_url` is a host artwork key, not a URL: a listing returns as soon as its source answers, and the webview loads each image through the `source-art` protocol, which serves the on-disk cache or downloads the artwork with `load_resource` under the source's resource origins. Descriptor headers stay in the host. The frontend must not append upstream image-resize parameters or infer provider origins.
 
 `StreamingTrackListing` is `{tracks:StreamingTrack[],next_cursor:string|null}`. `StreamingPlaylistSummary` contains `source_id`, `remote_id`, `name`, nullable `track_count`, and nullable `cover_url`. `StreamingPlaylistListing` is `{items:StreamingPlaylistSummary[],next_cursor:string|null}`. `StreamingPlaylistDetail` contains `source_id`, `remote_id`, `name`, `tracks`, nullable `cover_url`, `description`, `track_count`, `creator`, `updated_at_ms`, and `next_cursor`.
 

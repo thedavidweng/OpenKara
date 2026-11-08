@@ -406,6 +406,8 @@ RFC 3339 `expires_at` returns `media_expired` before a request. Preview uses
 these signals for its existing bounded descriptor refresh. File downloads and
 artwork reject unsuccessful responses.
 
+Source requests and resource downloads share one pooled HTTP client, so repeated calls reuse their TLS connection; its resolver refuses any name that resolves to a non-public address.
+
 Descriptors contain `url`, `headers`, and optional `expires_at`. The host checks
 HTTPS, exact declared media/resource origin, no userinfo, and the case-insensitive
 Referer/User-Agent/Cookie header allowlist. It rejects CR/LF and duplicate header
