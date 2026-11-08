@@ -682,7 +682,10 @@ mod tests {
             .err()
             .expect("missing library must fail");
 
-        assert!(err.message.contains("no library configured"));
+        assert_eq!(
+            err.code,
+            crate::commands::error::ErrorCode::LibraryUnavailable
+        );
     }
 
     #[test]
