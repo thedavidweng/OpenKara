@@ -3,6 +3,7 @@ import { Music2 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface StreamingCoverProps {
+  /** Host artwork key, served by the `source-art` protocol. */
   url: string | null;
   /** Requested thumbnail edge in CSS pixels (doubled for dense displays). */
   size: number;
@@ -28,7 +29,7 @@ export function StreamingCover({
 }: StreamingCoverProps) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
-  const src = failed || !url ? null : convertFileSrc(url);
+  const src = failed || !url ? null : convertFileSrc(url, "source-art");
 
   return (
     <div className={`relative aspect-square shrink-0 ${className}`}>

@@ -26,6 +26,42 @@ pub(crate) fn origin(value: &str) -> HostResult<String> {
     }
     Ok(url.origin().ascii_serialization())
 }
+/// Resolves names for the shared source client and refuses any non-public
+/// address, so a pooled connection never reaches the local network.
+struct PublicResolver;
+impl reqwest::dns::Resolve for PublicResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let addresses: Vec<SocketAddr> = tokio::time::timeout(
+                Duration::from_secs(15),
+                tokio::net::lookup_host((host.as_str(), 0)),
+            )
+            .await??
+            .collect();
+            if addresses.is_empty() || addresses.iter().any(|address| !public(address.ip())) {
+                return Err("source host resolves to a non-public address".into());
+            }
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// One pooled client for every source request, so repeated calls to the same
+/// service reuse their TLS connection. Cookies travel as explicit headers.
+fn shared_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(15))
+            .dns_resolver(Arc::new(PublicResolver))
+            .build()
+            .expect("source HTTP client builds")
+    });
+    &CLIENT
+}
+
 pub(crate) fn invalid() -> HostError {
     HostError::new(
         "invalid_resource",
@@ -203,39 +239,34 @@ async fn send(
             .and_then(|upstreams| upstreams.get(&url.origin().ascii_serialization()));
         #[cfg(not(test))]
         let upstream: Option<&String> = None;
-        let builder = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(15))
-            .timeout(outgoing.timeout);
-        let (builder, target) = if let Some(upstream) = upstream {
-            let query = url
-                .query()
-                .map(|query| format!("?{query}"))
-                .unwrap_or_default();
-            let target =
-                Url::parse(&format!("{upstream}{}{query}", url.path())).map_err(|_| invalid())?;
-            (builder, target)
-        } else {
-            if let Ok(ip) = hostname.trim_matches(['[', ']']).parse::<IpAddr>() {
-                if !test_loopback && !public(ip) {
-                    return Err(invalid());
-                }
-            }
-            let addresses: Vec<SocketAddr> = tokio::select! {
-                _=cancellation.cancelled()=>return Err(HostError::new("cancelled","Source download cancelled.")),
-                resolved=tokio::time::timeout(Duration::from_secs(15),tokio::net::lookup_host((hostname.trim_matches(['[',']']),url.port_or_known_default().ok_or_else(invalid)?)))=>resolved.map_err(|_|HostError::new("network","Source DNS lookup timed out. Check the network, then retry."))?.map_err(|_|HostError::new("network","Cannot resolve source download. Check the network, then retry."))?.collect(),
-            };
-            if addresses.is_empty()
-                || (!test_loopback && addresses.iter().any(|address| !public(address.ip())))
-            {
+        if let Ok(ip) = hostname.trim_matches(['[', ']']).parse::<IpAddr>() {
+            if !test_loopback && !public(ip) {
                 return Err(invalid());
             }
-            (builder.resolve_to_addrs(&hostname, &addresses), url.clone())
+        }
+        let (client, target) = if upstream.is_none() && !test_loopback {
+            (shared_client().clone(), url.clone())
+        } else {
+            let builder = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(15));
+            let target = match upstream {
+                Some(upstream) => {
+                    let query = url
+                        .query()
+                        .map(|query| format!("?{query}"))
+                        .unwrap_or_default();
+                    Url::parse(&format!("{upstream}{}{query}", url.path()))
+                        .map_err(|_| invalid())?
+                }
+                None => url.clone(),
+            };
+            let client = builder
+                .build()
+                .map_err(|_| HostError::new("network", "Cannot prepare source download."))?;
+            (client, target)
         };
-        let client = builder
-            .build()
-            .map_err(|_| HostError::new("network", "Cannot prepare source download."))?;
         let mut values = outgoing.headers.clone();
         if let Some(stored) = outgoing.cookies.and_then(|jar| jar.cookies(&url)) {
             let merged = match values.get(COOKIE).and_then(|value| value.to_str().ok()) {
@@ -250,6 +281,7 @@ async fn send(
         }
         let mut request = client
             .request(outgoing.method.clone(), target)
+            .timeout(outgoing.timeout)
             .headers(values);
         if let Some(body) = &outgoing.body {
             request = request.body(body.clone());
@@ -575,4 +607,16 @@ pub(crate) async fn read_bounded(
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod resolver_tests {
+    use super::*;
+    use reqwest::dns::Resolve;
+
+    #[tokio::test]
+    async fn the_shared_client_refuses_local_addresses() {
+        let local = PublicResolver.resolve("localhost".parse().unwrap()).await;
+        assert!(local.is_err());
+    }
 }
