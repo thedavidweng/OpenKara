@@ -238,49 +238,64 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </div>
           {sources
             .filter((source) => source.enabled && source.installed_version)
-            .map((source) => (
-              <button
-                key={source.source_id}
-                type="button"
-                aria-current={
-                  catalogView === "streaming" &&
-                  activeSourceId === source.source_id
-                    ? "page"
-                    : undefined
-                }
-                onClick={() => {
-                  setActiveSource(source.source_id);
-                  setActivePlaylist(null);
-                }}
-                className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${catalogView === "streaming" && activeSourceId === source.source_id ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)]" : "border border-transparent hover:bg-[var(--sidebar-row-overlay-bg)]"}`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <Music2 size={14} aria-hidden="true" className="shrink-0" />
-                  <span className="truncate">{source.name}</span>
-                </span>
-                {sourceStates[source.source_id]?.session?.signed_in &&
-                !sourceStates[source.source_id]?.session?.expired ? (
-                  <span
-                    role="img"
-                    aria-label={t("catalog.streaming.signedIn")}
-                    className="ml-2 size-2 shrink-0 rounded-full bg-[var(--color-success)]"
-                  />
-                ) : !source.loaded || source.state !== "ready" ? (
-                  <span className="ml-2 flex shrink-0">
-                    <Tooltip label={t("catalog.streaming.unavailable")}>
+            .map((source) => {
+              const signedIn =
+                sourceStates[source.source_id]?.session?.signed_in &&
+                !sourceStates[source.source_id]?.session?.expired;
+              const unavailable =
+                !signedIn && (!source.loaded || source.state !== "ready");
+              const row = (
+                <button
+                  key={source.source_id}
+                  type="button"
+                  aria-current={
+                    catalogView === "streaming" &&
+                    activeSourceId === source.source_id
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setActiveSource(source.source_id);
+                    setActivePlaylist(null);
+                  }}
+                  className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${catalogView === "streaming" && activeSourceId === source.source_id ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)]" : "border border-transparent hover:bg-[var(--sidebar-row-overlay-bg)]"}`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Music2 size={14} aria-hidden="true" className="shrink-0" />
+                    <span className="truncate">{source.name}</span>
+                  </span>
+                  {signedIn ? (
+                    <span
+                      role="img"
+                      aria-label={t("catalog.streaming.signedIn")}
+                      className="ml-2 size-2 shrink-0 rounded-full bg-[var(--color-success)]"
+                    />
+                  ) : unavailable ? (
+                    <span className="ml-2 flex shrink-0">
                       <TriangleAlert
                         size={13}
                         aria-hidden="true"
                         className="text-[var(--color-warning)]"
                       />
-                    </Tooltip>
-                    <span className="sr-only">
-                      {t("catalog.streaming.unavailable")}
+                      <span className="sr-only">
+                        {t("catalog.streaming.unavailable")}
+                      </span>
                     </span>
-                  </span>
-                ) : null}
-              </button>
-            ))}
+                  ) : null}
+                </button>
+              );
+              return unavailable ? (
+                <Tooltip
+                  key={source.source_id}
+                  label={t("catalog.streaming.unavailable")}
+                  anchorClassName="flex w-full"
+                >
+                  {row}
+                </Tooltip>
+              ) : (
+                row
+              );
+            })}
           {youtubeSourceEnabled ? (
             <button
               type="button"

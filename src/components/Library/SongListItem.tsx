@@ -397,6 +397,12 @@ export function SongListItem({
         )}
         {sepState === "completed" && (
           <span
+            role="img"
+            aria-label={t(
+              separationStatus?.drums_path
+                ? "sidebar.fourStem"
+                : "sidebar.twoStem",
+            )}
             className={`inline-flex size-5 items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] text-[10px] font-semibold leading-none ${
               separationStatus?.drums_path
                 ? "text-[var(--color-accent)]"
