@@ -15,6 +15,7 @@ describe("streaming-utils", () => {
 
   test("formatDuration renders m:ss and a dash when unknown", () => {
     expect(formatDuration(65000)).toBe("1:05");
+    expect(formatDuration(40364000)).toBe("11:12:44");
     expect(formatDuration(null)).toBe("—");
   });
 

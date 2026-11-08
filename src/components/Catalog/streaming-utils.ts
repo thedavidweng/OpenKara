@@ -1,3 +1,4 @@
+import { formatDuration as formatClock } from "@/lib/format";
 /** First user-perceived character, so emoji and CJK names render whole. */
 export function firstGrapheme(text: string): string {
   const trimmed = text.trim();
@@ -15,10 +16,7 @@ export function firstGrapheme(text: string): string {
 /** m:ss for a duration in milliseconds; an em dash when unknown. */
 export function formatDuration(durationMs: number | null): string {
   if (durationMs == null || durationMs < 0) return "—";
-  const totalSeconds = Math.round(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  return formatClock(Math.round(durationMs / 1000) * 1000);
 }
 
 /** Localized medium date for a millisecond timestamp; null when unknown. */
