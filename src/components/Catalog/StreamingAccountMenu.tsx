@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, LogOut, UserRound } from "lucide-react";
-import { firstGrapheme } from "@/components/Catalog/streaming-utils";
+import {
+  firstGrapheme,
+  visibleName,
+} from "@/components/Catalog/streaming-utils";
 import { useCatalogStore } from "@/stores/catalog-store";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
@@ -19,7 +22,7 @@ export function StreamingAccountMenu({ name }: { name: string }) {
     s.sources.find((item) => item.source_id === s.activeSourceId),
   );
   const [confirmStop, setConfirmStop] = useState(false);
-  const displayName = name.trim();
+  const displayName = visibleName(name) ?? "";
 
   return (
     <>

@@ -1,4 +1,5 @@
 import { buttonVariants } from "@/components/ui/button-variants";
+import { visibleName } from "@/components/Catalog/streaming-utils";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
@@ -245,9 +246,9 @@ export function StreamingSources() {
           session?.expired
             ? t("catalog.streaming.sessionExpired")
             : session?.signed_in
-              ? session.display_name?.trim()
+              ? visibleName(session.display_name)
                 ? t("settings.streaming.signedInAs", {
-                    name: session.display_name.trim(),
+                    name: visibleName(session.display_name),
                   })
                 : t("catalog.streaming.signedIn")
               : null,

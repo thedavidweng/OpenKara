@@ -1,4 +1,9 @@
 import { formatDuration as formatClock } from "@/lib/format";
+/** The trimmed name, or null when it has no visible character. */
+export function visibleName(name: string | null | undefined): string | null {
+  return name && /[^\p{Cc}\p{Cf}\p{Z}]/u.test(name) ? name.trim() : null;
+}
+
 /** First user-perceived character, so emoji and CJK names render whole. */
 export function firstGrapheme(text: string): string {
   const trimmed = text.trim();
