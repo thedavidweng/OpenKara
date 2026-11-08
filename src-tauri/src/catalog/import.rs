@@ -216,13 +216,7 @@ pub fn advance_import_session<S: StreamingSource>(
                         &paused.identity,
                         &paused.incoming_path,
                     )?;
-                    attach_artwork(
-                        connection,
-                        library,
-                        source,
-                        &paused.item.remote_track_id,
-                        &hash,
-                    );
+                    apply_source_details(connection, library, source, &paused.item, &hash);
                     add_to_playlist_if_needed(connection, session, &hash)?;
                     session.report(
                         &paused.item.remote_track_id,
@@ -379,13 +373,7 @@ fn process_item<S: StreamingSource>(
                             KeepOrReplace::Replace => {
                                 let hash =
                                     apply_replace(connection, library, &identity, &file.path)?;
-                                attach_artwork(
-                                    connection,
-                                    library,
-                                    source,
-                                    &item.remote_track_id,
-                                    &hash,
-                                );
+                                apply_source_details(connection, library, source, &item, &hash);
                                 add_to_playlist_if_needed(connection, session, &hash)?;
                                 session.report(
                                     &item.remote_track_id,
@@ -420,13 +408,7 @@ fn process_item<S: StreamingSource>(
             }
 
             let imported = import_file(connection, library, &file.path)?;
-            attach_artwork(
-                connection,
-                library,
-                source,
-                &item.remote_track_id,
-                &imported,
-            );
+            apply_source_details(connection, library, source, &item, &imported);
             stamp_identity(connection, &identity, &imported)?;
             add_to_playlist_if_needed(connection, session, &imported)?;
             session.report(
@@ -442,27 +424,36 @@ fn process_item<S: StreamingSource>(
     }
 }
 
-/// Streaming downloads rarely embed a cover, so an imported song without one
-/// takes the source's artwork for the track. A missing cover never fails the
-/// import.
-fn attach_artwork<S: StreamingSource>(
+/// Streaming downloads often carry no tags or cover, so a freshly imported
+/// song takes the title and artist the user picked it by, and the source's
+/// artwork when the file has none. Neither step fails the import.
+fn apply_source_details<S: StreamingSource>(
     connection: &Connection,
     library: &LibraryRoot,
     source: &S,
-    remote_track_id: &str,
+    item: &StreamingImportItem,
     song_hash: &str,
 ) {
     let Ok(Some(song)) = cache::get_song_by_hash(connection, song_hash) else {
         return;
     };
+    let title = given(&item.title).or(song.title.as_deref());
+    let artist = given(&item.artist).or(song.artist.as_deref());
+    if let Err(error) = cache::update_song_title_artist(connection, song_hash, title, artist) {
+        tracing::warn!(song = song_hash, %error, "could not store source title and artist");
+    }
     if song.has_cover_art {
         return;
     }
-    if let Some(cover) = source.artwork(remote_track_id) {
+    if let Some(cover) = source.artwork(&item.remote_track_id) {
         if let Err(error) = set_cover_art(connection, library, &song, &cover) {
             tracing::warn!(song = song_hash, error = %error.message, "could not store source artwork");
         }
     }
+}
+
+fn given(value: &str) -> Option<&str> {
+    Some(value.trim()).filter(|value| !value.is_empty())
 }
 
 fn import_file(
@@ -818,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn an_import_without_embedded_art_takes_the_source_artwork() {
+    fn an_untagged_import_takes_the_source_title_artist_and_artwork() {
         let (_tmp, library, mut connection, source, copies) = setup();
         add_tone_track(&source, &copies, "plain", 7);
         let mut png = Vec::new();
@@ -826,6 +817,7 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
             .expect("png");
         source.set_artwork("plain", png);
+        // The tone file has no tags: the import keeps what the user picked.
 
         let result = run_streaming_import(
             &mut connection,
@@ -835,8 +827,8 @@ mod tests {
                 source_id: "fixture".to_owned(),
                 items: vec![StreamingImportItem {
                     remote_track_id: "plain".to_owned(),
-                    title: "plain".to_owned(),
-                    artist: "Artist".to_owned(),
+                    title: "Source Title".to_owned(),
+                    artist: "Source Artist".to_owned(),
                 }],
                 playlist: None,
             },
@@ -847,6 +839,8 @@ mod tests {
             .expect("query")
             .expect("song");
         assert!(song.has_cover_art);
+        assert_eq!(song.title.as_deref(), Some("Source Title"));
+        assert_eq!(song.artist.as_deref(), Some("Source Artist"));
     }
 
     #[test]
