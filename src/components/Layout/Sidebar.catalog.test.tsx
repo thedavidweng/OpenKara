@@ -225,6 +225,16 @@ describe("Sidebar catalog source rows", () => {
     expect(sourceRow().textContent).toContain("Alpha");
   });
 
+  test("keeps the unavailable message out of the source name's width", async () => {
+    catalogState.sources[0].state = "error" as SourceSnapshot["state"];
+    await renderSidebar(root);
+    const row = sourceRow();
+    expect(row.querySelector(".sr-only")?.textContent).toBe(
+      "catalog.streaming.unavailable",
+    );
+    expect(row.querySelector(".truncate")?.textContent).toBe("Alpha");
+  });
+
   test("treats an expired session as signed out", async () => {
     catalogState.sourceStates.alpha.session = {
       signed_in: true,

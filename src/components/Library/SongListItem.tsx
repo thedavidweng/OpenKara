@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, X } from "lucide-react";
+import { Layers, Loader2, RotateCw, X } from "lucide-react";
+import { Tooltip } from "@/components/Overlay/Tooltip";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -25,6 +26,9 @@ import { SongEditDialog } from "./SongEditDialog";
 import { SongPropertiesDialog } from "./SongPropertiesDialog";
 import { songDisplayTitle } from "@/lib/song-display";
 import type { RevealTargets, Song } from "@/types/ipc";
+
+const songActionClassName =
+  "inline-flex size-7 items-center justify-center rounded-md border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-selected-bg)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus-ring)] disabled:cursor-default disabled:opacity-50";
 
 interface SongListItemProps {
   song: Song;
@@ -108,11 +112,17 @@ export function SongListItem({
   const sepState = separationStatus?.state ?? "idle";
   const uploadRunning = uploadStatus?.state === "running";
   const showBatchSongProgress = batchActive && sepState === "running";
-  const isMediaG = song.media_g_container != null;
   const canSeparateSong = songCanBeSeparated(song);
   const modelPreparing = useBootstrapStore(
     (s) => s.status?.state === "pending" || s.status?.state === "downloading",
   );
+  const preparingNoteId = useId();
+  const progressPercent =
+    sepState === "running"
+      ? (separationStatus?.percent ?? 0)
+      : uploadRunning
+        ? (uploadStatus?.percent ?? 0)
+        : null;
   const mediaGBadgeLabel =
     song.media_g_container === "paired"
       ? "CDG"
@@ -295,104 +305,21 @@ export function SongListItem({
       />
 
       <div className="relative z-10 pointer-events-none flex min-w-0 flex-1 flex-col justify-center">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-            {isCurrentPlaying ? (
-              <div className="flex w-3 shrink-0 justify-center">
-                <span className="inline-flex h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-              </div>
-            ) : isCurrentLoading ? (
-              <div className="flex w-3 shrink-0 justify-center">
-                <Loader2 size={10} className="animate-spin" />
-              </div>
-            ) : (
-              <div className="w-3 shrink-0" />
-            )}
-            <span className="truncate text-[15px] font-semibold">
-              {songDisplayTitle(song)}
-            </span>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            {mediaGBadgeLabel && (
-              <span className="inline-flex h-[14px] items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] text-[var(--color-text-dim)]">
-                {mediaGBadgeLabel}
-              </span>
-            )}
-            {sepState === "idle" && canSeparateSong && (
-              <button
-                type="button"
-                onClick={handleSeparate}
-                disabled={modelPreparing}
-                title={modelPreparing ? t("library.modelPreparing") : undefined}
-                className={`pointer-events-auto min-h-[24px] min-w-[24px] rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
-                  isSelected
-                    ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
-                    : "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)]"
-                }`}
-                data-native-overlay-surface="song-action"
-              >
-                {t("library.separate")}
-              </button>
-            )}
-            {sepState === "running" && (
-              <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
-                <Loader2 size={10} className="animate-spin" />
-                <span>{separationStatus?.percent ?? 0}%</span>
-                {!batchActive && (
-                  <button
-                    type="button"
-                    onClick={handleCancelSeparation}
-                    title={t("library.cancelSeparation")}
-                    aria-label={t("library.cancelSeparation")}
-                    className="pointer-events-auto inline-flex min-h-[24px] min-w-[24px] items-center justify-center motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
-                    data-native-overlay-surface="song-action"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            )}
-            {uploadRunning && sepState !== "running" && (
-              <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
-                <Loader2 size={10} className="animate-spin" />
-                <span>{uploadStatus?.percent ?? 0}%</span>
-              </div>
-            )}
-            {sepState === "completed" && (
-              <span className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-dim)]">
-                <span
-                  className={`inline-flex h-[14px] min-w-[14px] items-center justify-center rounded text-[9px] font-semibold leading-none ${
-                    separationStatus?.drums_path
-                      ? "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-accent)]"
-                      : "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-text-dim)]"
-                  }`}
-                >
-                  {separationStatus?.drums_path ? "4" : "2"}
-                </span>
-                {formatDuration(song.duration_ms)}
-              </span>
-            )}
-            {sepState === "failed" && canSeparateSong && (
-              <button
-                type="button"
-                onClick={handleSeparate}
-                className="pointer-events-auto min-h-[24px] min-w-[24px] text-[10px] text-[var(--color-destructive)]"
-              >
-                {t("common.retry")}
-              </button>
-            )}
-            {(isMediaG ||
-              !canSeparateSong ||
-              (sepState !== "idle" &&
-                sepState !== "running" &&
-                sepState !== "completed" &&
-                sepState !== "failed")) && (
-              <span className="text-[11px] text-[var(--color-text-dim)]">
-                {formatDuration(song.duration_ms)}
-              </span>
-            )}
-          </div>
+        <div className="flex min-w-0 items-center gap-2">
+          {isCurrentPlaying ? (
+            <div className="flex w-3 shrink-0 justify-center">
+              <span className="inline-flex h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+            </div>
+          ) : isCurrentLoading ? (
+            <div className="flex w-3 shrink-0 justify-center">
+              <Loader2 size={10} className="animate-spin" />
+            </div>
+          ) : (
+            <div className="w-3 shrink-0" />
+          )}
+          <span className="truncate text-[15px] font-semibold">
+            {songDisplayTitle(song)}
+          </span>
         </div>
 
         {showBatchSongProgress && (
@@ -408,13 +335,99 @@ export function SongListItem({
           </div>
         )}
 
-        <div className="flex pl-5">
-          <span className="truncate text-[12px] text-[var(--color-text-dim)]">
+        <div className="flex items-center gap-2 pl-5 text-[12px] text-[var(--color-text-dim)]">
+          <span className="min-w-0 flex-1 truncate">
             {song.artist || t("common.unknownArtist")}
           </span>
+          {mediaGBadgeLabel && (
+            <span className="inline-flex h-[14px] shrink-0 items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em]">
+              {mediaGBadgeLabel}
+            </span>
+          )}
+          {progressPercent != null ? (
+            <span className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums">
+              <Loader2 size={10} className="animate-spin" />
+              {progressPercent}%
+            </span>
+          ) : (
+            <span className="shrink-0 text-[11px] tabular-nums">
+              {formatDuration(song.duration_ms)}
+            </span>
+          )}
         </div>
       </div>
 
+      <div className="pointer-events-none relative z-10 flex size-7 shrink-0 items-center justify-center">
+        {sepState === "idle" && canSeparateSong && (
+          <div className="pointer-events-auto">
+            <Tooltip
+              label={
+                modelPreparing
+                  ? t("library.modelPreparing")
+                  : t("library.separate")
+              }
+            >
+              <button
+                type="button"
+                onClick={handleSeparate}
+                disabled={modelPreparing}
+                aria-label={t("library.separate")}
+                aria-describedby={modelPreparing ? preparingNoteId : undefined}
+                className={songActionClassName}
+                data-native-overlay-surface="song-action"
+              >
+                <Layers size={13} aria-hidden="true" />
+              </button>
+            </Tooltip>
+            {modelPreparing && (
+              <span id={preparingNoteId} className="sr-only">
+                {t("library.modelPreparing")}
+              </span>
+            )}
+          </div>
+        )}
+        {sepState === "running" && !batchActive && (
+          <div className="pointer-events-auto">
+            <Tooltip label={t("library.cancelSeparation")}>
+              <button
+                type="button"
+                onClick={handleCancelSeparation}
+                aria-label={t("library.cancelSeparation")}
+                className={songActionClassName}
+                data-native-overlay-surface="song-action"
+              >
+                <X size={13} aria-hidden="true" />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        {sepState === "completed" && (
+          <span
+            className={`inline-flex size-5 items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] text-[10px] font-semibold leading-none ${
+              separationStatus?.drums_path
+                ? "text-[var(--color-accent)]"
+                : "text-[var(--color-text-dim)]"
+            }`}
+          >
+            {separationStatus?.drums_path ? "4" : "2"}
+          </span>
+        )}
+        {sepState === "failed" && canSeparateSong && (
+          <div className="pointer-events-auto">
+            <Tooltip label={t("common.retry")}>
+              <button
+                type="button"
+                onClick={handleSeparate}
+                aria-label={t("common.retry")}
+                className={`${songActionClassName} text-[var(--color-destructive)] hover:text-[var(--color-destructive)]`}
+                data-native-overlay-surface="song-action"
+              >
+                <RotateCw size={13} aria-hidden="true" />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+      </div>
       {editDialogOpen && (
         <SongEditDialog song={song} onClose={() => setEditDialogOpen(false)} />
       )}
