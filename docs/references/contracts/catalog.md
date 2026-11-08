@@ -195,6 +195,8 @@ track details. A public import does not gain a sign-in requirement from an
 optional protected detail method. Missing requested track details fail explicitly;
 the host does not report omitted identities as imported. Failed or rejected
 artwork remains unavailable artwork after host validation, not a failed track.
+A newly imported or replaced song takes the source's title and artist, and the
+source's artwork when its file embeds none.
 
 Official-page completion retains the source/challenge terminal result for polling
 after the host closes its window and releases active work. New sign-in and
