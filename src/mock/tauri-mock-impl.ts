@@ -23,6 +23,10 @@ export interface MockData {
       display_name: string;
       root_path: string;
     }>;
+    active_library_unavailable?: {
+      path: string;
+      reason: "not_found" | "not_openable";
+    } | null;
   };
   activeLibrary: {
     id: string;
@@ -176,6 +180,7 @@ export function createTauriMock(data: any): TauriMockResult {
   let transportGeneration = 0;
   let rotationState = { ...data.rotationState };
   let settingsSnapshot = { ...data.settings };
+  const libraryRegistry = clone(data.libraryRegistry);
   const sourceSnapshots = ["demo-web", "demo-plugin"].map<SourceSnapshot>(
     (source_id, index) => ({
       source_id,
@@ -408,6 +413,8 @@ export function createTauriMock(data: any): TauriMockResult {
           }
         : null,
       update,
+      installable_version: candidate.version,
+      required_host_version: null,
     };
   }
   function marketPackageOf(registryId: string, packageId: string) {
@@ -902,7 +909,42 @@ export function createTauriMock(data: any): TauriMockResult {
   }
 
   const COMMANDS: Record<string, any> = {
-    get_library_registry: data.libraryRegistry,
+    get_library_registry: () => libraryRegistry,
+    switch_library: (args: any) => {
+      if (libraryRegistry.active_library_unavailable) {
+        const missing = libraryRegistry.libraries.find(
+          (library: any) => library.id === libraryRegistry.active_library_id,
+        );
+        if (missing && missing.id === args.libraryId) {
+          throw {
+            code: "internal",
+            message: "library folder is still missing",
+            retryable: true,
+            fallback: "retry",
+          };
+        }
+      }
+      libraryRegistry.active_library_id = args.libraryId;
+      libraryRegistry.active_library_unavailable = null;
+      return libraryRegistry;
+    },
+    open_library: (args: any) => {
+      libraryRegistry.libraries.push({
+        id: args.path,
+        kind: "local",
+        display_name: String(args.path).split("/").pop(),
+        root_path: args.path,
+      });
+      libraryRegistry.active_library_id = args.path;
+      libraryRegistry.active_library_unavailable = null;
+      return libraryRegistry;
+    },
+    remove_library: (args: any) => {
+      libraryRegistry.libraries = libraryRegistry.libraries.filter(
+        (library: any) => library.id !== args.libraryId,
+      );
+      return libraryRegistry;
+    },
     get_settings: () => settingsSnapshot,
     get_window_shell_state: data.windowShellState,
     get_library_path: data.libraryPath,
@@ -1870,7 +1912,6 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     restart_app: undefined,
     create_library: undefined,
-    open_library: undefined,
     batch_separate: undefined,
     cancel_remote_auth: undefined,
   };

@@ -141,3 +141,47 @@ test("declining active-work interruption leaves the source enabled", () => {
   ).toBeTruthy();
   expect(disable).not.toHaveBeenCalled();
 });
+
+test("Sign in opens the source and starts its sign-in", async () => {
+  const source = {
+    source_id: "web",
+    registry_id: null,
+    package_id: null,
+    owner_binding: "test/web",
+    name: "Web",
+    description: "A source",
+    license: "MIT",
+    installed_version: "1.0.0",
+    available_version: "1.0.0",
+    staged_version: null,
+    pinned_version: null,
+    enabled: true,
+    loaded: true,
+    running: true,
+    state: "ready" as const,
+    progress: null,
+    last_error: null,
+    active_work: [],
+    manifest: { authentication: { flow: "web" } },
+  } as unknown as Parameters<
+    ReturnType<typeof useCatalogStore.getState>["applySources"]
+  >[0][number];
+  const openSignIn = vi.fn().mockResolvedValue(undefined);
+  useCatalogStore.setState({
+    sources: [source],
+    sourceStates: {},
+    sourcesStatus: "ready",
+    sourcesError: null,
+    openSignIn,
+  });
+  render(
+    <BackendProvider backend={createMockBackend()}>
+      <StreamingSources />
+    </BackendProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "catalog.streaming.connect" }),
+  );
+  await waitFor(() => expect(openSignIn).toHaveBeenCalledWith("web"));
+  expect(useCatalogStore.getState().activeSourceId).toBe("web");
+});

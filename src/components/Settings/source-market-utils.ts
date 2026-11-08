@@ -1,4 +1,9 @@
-import type { MarketVersion, RegistryStatus } from "@/types/ipc";
+import type {
+  MarketPackage,
+  MarketVersion,
+  RegistryStatus,
+  SourceSnapshot,
+} from "@/types/ipc";
 
 export const sourceActionButton =
   "min-h-9 rounded-full border border-[var(--color-border)] px-4 text-xs focus-visible:outline-2 disabled:opacity-50";
@@ -9,6 +14,15 @@ export const sourceRow =
 export const sourceDetails =
   "text-xs [&_summary]:cursor-pointer [&_summary]:text-[var(--color-text-dim)] [&_summary]:select-none";
 
+export function isInstalledSource(source: SourceSnapshot): boolean {
+  return (
+    !!source.installed_version ||
+    source.state === "installing" ||
+    source.state === "cancelling" ||
+    source.state === "update_required"
+  );
+}
+
 export function isOfficialRegistry(
   registries: RegistryStatus[],
   registryId: string | null,
@@ -18,12 +32,15 @@ export function isOfficialRegistry(
   );
 }
 
+/** The readable part of a failure; host messages start with their error code. */
 export function errorMessage(failure: unknown): string {
-  return failure instanceof Error
-    ? failure.message
-    : typeof failure === "object" && failure !== null && "message" in failure
-      ? String(failure.message)
-      : String(failure);
+  const message =
+    failure instanceof Error
+      ? failure.message
+      : typeof failure === "object" && failure !== null && "message" in failure
+        ? String(failure.message)
+        : String(failure);
+  return message.replace(/^[a-z_]+: /, "");
 }
 
 function versionParts(version: string): {
@@ -102,4 +119,13 @@ export function marketErrorCode(error: unknown): MarketErrorCode | null {
     if ((RECOGNIZED_HOST_CODES as readonly string[]).includes(candidate))
       return candidate as MarketErrorCode;
   return null;
+}
+
+/** The newest version of a package that this OpenKara can install. */
+export function installableVersion(pkg: MarketPackage): MarketVersion | null {
+  return (
+    pkg.versions.find(
+      (version) => version.version === pkg.installable_version,
+    ) ?? null
+  );
 }

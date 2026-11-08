@@ -345,7 +345,7 @@
       "notIncluded": "Questa build di OpenKara non include le fonti di streaming.",
       "refresh": "Cerca aggiornamenti",
       "trustNotice": "Le fonti di streaming girano in una sandbox e possono contattare solo le origini dichiarate. Controlla origini e funzioni dichiarate prima di installare.",
-      "empty": "Nessuna fonte installata. Installane una qui sotto.",
+      "empty": "Nessuna fonte installata. Trovane una in Scopri.",
       "license": "Licenza",
       "installed": "Versione installata",
       "notInstalled": "Non installata",
@@ -410,7 +410,6 @@
         "failing": "aggiornamento non riuscito"
       },
       "market": {
-        "title": "Fonti disponibili",
         "emptyNoRegistries": "Aggiungi un registro di fonti per sfogliare i pacchetti.",
         "empty": "Nessun’altra fonte da installare.",
         "registry": "Registro",
@@ -424,7 +423,10 @@
         "pinned": "Bloccata su {{version}}",
         "updateTo": "Aggiorna a {{version}}",
         "versions": "Tutte le versioni",
+        "needsHost": "Richiede OpenKara {{version}}",
+        "incompatible": "Non compatibile con questa versione di OpenKara",
         "install": "Installa",
+        "replace": "Sostituisci",
         "installTitle": "Installa {{name}}",
         "installBody": "Controlla cosa può fare questo pacchetto prima di installarlo. Gira in una sandbox e può contattare solo le origini dichiarate.",
         "installConfirm": "Installa pacchetto",
@@ -433,15 +435,22 @@
         "addedOrigins": "Nuove origini",
         "addedCapabilities": "Nuove funzioni",
         "consentConfirm": "Consenti e aggiorna",
-        "replaceTitle": "Sostituisci {{sourceId}}",
-        "replaceBody": "{{current}} fornisce già la fonte {{sourceId}}. Sostituirla disconnette il vecchio pacchetto, rimuove le sue credenziali salvate e installa {{name}} disattivato.",
+        "replaceTitle": "Sostituire {{name}}?",
+        "replaceBody": "{{current}} da {{currentRegistry}} è installato. Sostituirlo con la versione di {{registry}} ti disconnette, elimina le credenziali salvate e installa la nuova versione disattivata.",
         "replaceConfirm": "Sostituisci e installa"
       },
       "official": "Ufficiale",
       "details": "Dettagli",
       "updateAll": "Aggiorna tutto ({{count}})",
       "autoUpdateNotice": "Le fonti ufficiali si aggiornano da sole quando l’aggiornamento non richiede nuovi accessi. Gli altri aggiornamenti attendono la tua conferma.",
-      "signedInAs": "Accesso come {{name}}"
+      "signedInAs": "Accesso come {{name}}",
+      "tabsLabel": "Viste delle fonti di streaming",
+      "tabs": {
+        "installed": "Installate ({{count}})",
+        "discover": "Scopri"
+      },
+      "updateAvailable": "Aggiornamento disponibile",
+      "open": "Apri"
     },
     "title": "Preferenze",
     "library": {
@@ -796,6 +805,14 @@
       "description": "Attiva un’origine musicale o video. Entrambe restano disattivate finché non le scegli.",
       "youtube": "YouTube",
       "youtubeDescription": "Incolla un link pubblico di video o playlist nella coda. OpenKara non scarica l’audio di YouTube."
+    },
+    "pagesLabel": "Sezioni delle preferenze",
+    "pages": {
+      "library": "Libreria",
+      "onlineSources": "Origini online",
+      "separation": "Separazione",
+      "playback": "Riproduzione",
+      "general": "Generale"
     }
   },
   "bootstrap": {
@@ -838,7 +855,19 @@
     "confirmRemoveSinger": "Rimuovi cantante",
     "confirmRemoveSingerMessage": "Questo cantante è assegnato a canzoni nella coda. Rimuovendolo verranno rimosse dalla coda anche quelle canzoni."
   },
+  "libraryRecovery": {
+    "title": "Impossibile trovare la tua libreria",
+    "descriptionNotFound": "OpenKara non trova questa cartella. Potrebbe essere stata spostata, rinominata o trovarsi su un disco non collegato.",
+    "descriptionNotOpenable": "La cartella esiste, ma OpenKara non riesce ad aprirla come libreria.",
+    "retry": "Riprova",
+    "retryDescription": "Usalo dopo aver ricollegato il disco.",
+    "locate": "Individua libreria…",
+    "locateDescription": "Scegli la cartella se è stata spostata o rinominata.",
+    "otherLibraries": "Apri un'altra libreria",
+    "dialogTitleLocate": "Individua la tua libreria karaoke"
+  },
   "errors": {
+    "library_unavailable": "Nessuna libreria aperta",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

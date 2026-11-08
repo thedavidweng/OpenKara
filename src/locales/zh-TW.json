@@ -344,7 +344,7 @@
       "notIncluded": "此 OpenKara 版本不包含串流來源。",
       "refresh": "檢查更新",
       "trustNotice": "串流來源在沙盒中執行，只能存取其宣告的位址。安裝前請檢視它宣告的位址和功能。",
-      "empty": "尚未安裝任何來源。可在下方安裝。",
+      "empty": "尚未安裝任何來源。可在「探索」中尋找。",
       "license": "授權條款",
       "installed": "已安裝版本",
       "notInstalled": "未安裝",
@@ -409,7 +409,6 @@
         "failing": "重新整理失敗"
       },
       "market": {
-        "title": "可安裝的來源",
         "emptyNoRegistries": "新增來源註冊表以瀏覽套件。",
         "empty": "沒有更多可安裝的來源。",
         "registry": "註冊表",
@@ -423,7 +422,10 @@
         "pinned": "已固定到 {{version}}",
         "updateTo": "更新到 {{version}}",
         "versions": "所有版本",
+        "needsHost": "需要 OpenKara {{version}}",
+        "incompatible": "與目前版本的 OpenKara 不相容",
         "install": "安裝",
+        "replace": "取代",
         "installTitle": "安裝 {{name}}",
         "installBody": "安裝前請先查看此套件能做什麼。它在沙盒中執行，只能存取它宣告的位址。",
         "installConfirm": "安裝套件",
@@ -432,15 +434,22 @@
         "addedOrigins": "新增位址",
         "addedCapabilities": "新增功能",
         "consentConfirm": "允許並更新",
-        "replaceTitle": "取代 {{sourceId}}",
-        "replaceBody": "{{current}} 已提供來源 {{sourceId}}。取代會讓舊套件登出、刪除其已儲存的串流憑證，並以停用狀態安裝 {{name}}。",
+        "replaceTitle": "要取代 {{name}} 嗎？",
+        "replaceBody": "已安裝來自 {{currentRegistry}} 的 {{current}}。改用 {{registry}} 提供的版本會登出、刪除已儲存的憑證，新版本安裝後處於停用狀態。",
         "replaceConfirm": "取代並安裝"
       },
       "official": "官方",
       "details": "詳細資訊",
       "updateAll": "全部更新（{{count}}）",
       "autoUpdateNotice": "官方來源的更新若不需要新增權限，會自動安裝。其他更新需要你確認。",
-      "signedInAs": "已登入：{{name}}"
+      "signedInAs": "已登入：{{name}}",
+      "tabsLabel": "串流來源檢視",
+      "tabs": {
+        "installed": "已安裝（{{count}}）",
+        "discover": "探索"
+      },
+      "updateAvailable": "有可用更新",
+      "open": "開啟"
     },
     "title": "偏好設定",
     "library": {
@@ -795,6 +804,14 @@
       "description": "開啟音樂或影片來源。未選擇前兩者都保持關閉。",
       "youtube": "YouTube",
       "youtubeDescription": "把公開影片或播放清單連結加入佇列。OpenKara 不會下載 YouTube 音訊。"
+    },
+    "pagesLabel": "偏好設定分區",
+    "pages": {
+      "library": "資料庫",
+      "onlineSources": "線上來源",
+      "separation": "分離",
+      "playback": "播放",
+      "general": "一般"
     }
   },
   "bootstrap": {
@@ -837,7 +854,19 @@
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "這位歌手已被指派到佇列中的歌曲。移除歌手時，也會將這些歌曲從佇列中移除。"
   },
+  "libraryRecovery": {
+    "title": "找不到你的曲庫",
+    "descriptionNotFound": "OpenKara 找不到這個資料夾。它可能已被移動、重新命名，或位於未連接的磁碟上。",
+    "descriptionNotOpenable": "該資料夾存在，但 OpenKara 無法將其當作曲庫開啟。",
+    "retry": "重試",
+    "retryDescription": "重新連接磁碟後點這裡。",
+    "locate": "尋找曲庫…",
+    "locateDescription": "如果資料夾被移動或重新命名，請重新選擇它。",
+    "otherLibraries": "開啟其他曲庫",
+    "dialogTitleLocate": "尋找你的卡拉OK曲庫"
+  },
   "errors": {
+    "library_unavailable": "沒有開啟的曲庫",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

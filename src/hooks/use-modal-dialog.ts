@@ -8,6 +8,7 @@ const FOCUSABLE_SELECTOR = [
   "select:not([disabled])",
   "textarea:not([disabled])",
   "[contenteditable='true']",
+  "details > summary:first-of-type",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
@@ -28,8 +29,11 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
     container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
   ).filter(
     (element) =>
-      !element.hasAttribute("hidden") &&
-      element.getAttribute("aria-hidden") !== "true",
+      element.getAttribute("tabindex") !== "-1" &&
+      !element.closest("[hidden], [aria-hidden='true'], [inert]") &&
+      // Content of a closed <details> is not rendered; its summary is.
+      (element.tagName === "SUMMARY" ||
+        !element.closest("details:not([open])")),
   );
 }
 
@@ -102,18 +106,15 @@ export function useModalDialog({
       const currentIndex = activeElement
         ? focusable.indexOf(activeElement)
         : -1;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      if (event.shiftKey) {
-        if (currentIndex <= 0) {
-          event.preventDefault();
-          last.focus({ preventScroll: true });
-        }
-      } else if (currentIndex === -1 || currentIndex === focusable.length - 1) {
-        event.preventDefault();
-        first.focus({ preventScroll: true });
-      }
+      // WebKit skips buttons on Tab unless the system setting asks for
+      // them, so the dialog moves focus itself instead of trusting the
+      // browser between its first and last controls.
+      event.preventDefault();
+      const count = focusable.length;
+      const next = event.shiftKey
+        ? focusable[currentIndex <= 0 ? count - 1 : currentIndex - 1]
+        : focusable[currentIndex === -1 ? 0 : (currentIndex + 1) % count];
+      next.focus();
     };
 
     document.addEventListener("keydown", handleKeyDown);

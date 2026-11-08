@@ -344,7 +344,7 @@
       "notIncluded": "Bu OpenKara sürümü Akış Kaynaklarını içermiyor.",
       "refresh": "Güncellemeleri denetle",
       "trustNotice": "Akış kaynakları korumalı alanda çalışır ve yalnızca bildirdikleri adreslere bağlanabilir. Yüklemeden önce bildirilen adresleri ve yetenekleri incele.",
-      "empty": "Henüz yüklü kaynak yok. Aşağıdan bir tane yükle.",
+      "empty": "Henüz yüklü kaynak yok. Keşfet sekmesinden bir tane bul.",
       "license": "Lisans",
       "installed": "Yüklü sürüm",
       "notInstalled": "Yüklü değil",
@@ -409,7 +409,6 @@
         "failing": "yenileme başarısız"
       },
       "market": {
-        "title": "Kullanılabilir Kaynaklar",
         "emptyNoRegistries": "Paketlere göz atmak için bir Kaynak Dizini ekleyin.",
         "empty": "Yüklenecek başka kaynak yok.",
         "registry": "Dizin",
@@ -423,7 +422,10 @@
         "pinned": "{{version}} sürümüne sabitlendi",
         "updateTo": "{{version}} sürümüne güncelle",
         "versions": "Tüm sürümler",
+        "needsHost": "OpenKara {{version}} gerekir",
+        "incompatible": "OpenKara'nın bu sürümüyle uyumlu değil",
         "install": "Yükle",
+        "replace": "Değiştir",
         "installTitle": "{{name}} paketini yükle",
         "installBody": "Yüklemeden önce bu paketin neler yapabileceğini inceleyin. Korumalı alanda çalışır ve yalnızca bildirdiği kaynaklara bağlanabilir.",
         "installConfirm": "Paketi yükle",
@@ -432,15 +434,22 @@
         "addedOrigins": "Yeni kaynaklar",
         "addedCapabilities": "Yeni yetenekler",
         "consentConfirm": "İzin ver ve güncelle",
-        "replaceTitle": "{{sourceId}} kaynağını değiştir",
-        "replaceBody": "{{current}} zaten {{sourceId}} kaynağını sağlıyor. Değiştirirseniz eski paketin oturumu kapatılır, kayıtlı kimlik bilgileri silinir ve {{name}} devre dışı olarak yüklenir.",
+        "replaceTitle": "{{name}} değiştirilsin mi?",
+        "replaceBody": "{{currentRegistry}} kaynağından {{current}} yüklü. {{registry}} sürümüyle değiştirmek oturumunuzu kapatır, kayıtlı kimlik bilgilerini siler ve yeni sürümü kapalı olarak yükler.",
         "replaceConfirm": "Değiştir ve yükle"
       },
       "official": "Resmî",
       "details": "Ayrıntılar",
       "updateAll": "Tümünü güncelle ({{count}})",
       "autoUpdateNotice": "Resmî kaynaklar, güncelleme yeni erişim gerektirmiyorsa kendiliğinden güncellenir. Diğer güncellemeler onayını bekler.",
-      "signedInAs": "{{name}} olarak oturum açıldı"
+      "signedInAs": "{{name}} olarak oturum açıldı",
+      "tabsLabel": "Akış kaynağı görünümleri",
+      "tabs": {
+        "installed": "Yüklü ({{count}})",
+        "discover": "Keşfet"
+      },
+      "updateAvailable": "Güncelleme var",
+      "open": "Aç"
     },
     "title": "Tercihler",
     "library": {
@@ -795,6 +804,14 @@
       "description": "Bir müzik veya video kaynağını açın. Siz seçene kadar ikisi de kapalı kalır.",
       "youtube": "YouTube",
       "youtubeDescription": "Herkese açık bir video veya oynatma listesi bağlantısını kuyruğa yapıştırın. OpenKara YouTube sesini indirmez."
+    },
+    "pagesLabel": "Tercih bölümleri",
+    "pages": {
+      "library": "Kütüphane",
+      "onlineSources": "Çevrimiçi kaynaklar",
+      "separation": "Ayrıştırma",
+      "playback": "Oynatma",
+      "general": "Genel"
     }
   },
   "bootstrap": {
@@ -837,7 +854,19 @@
     "confirmRemoveSinger": "Şarkıcıyı Kaldır",
     "confirmRemoveSingerMessage": "Bu şarkıcı, kuyruktaki şarkılara atanmış. Şarkıcıyı kaldırmak, bu şarkıları da kuyruktan kaldırır."
   },
+  "libraryRecovery": {
+    "title": "Kitaplığınız bulunamadı",
+    "descriptionNotFound": "OpenKara bu klasörü bulamadı. Taşınmış, yeniden adlandırılmış veya bağlı olmayan bir sürücüde olabilir.",
+    "descriptionNotOpenable": "Klasör var, ancak OpenKara onu kitaplık olarak açamıyor.",
+    "retry": "Yeniden dene",
+    "retryDescription": "Sürücüyü yeniden bağladıktan sonra kullanın.",
+    "locate": "Kitaplığı bul…",
+    "locateDescription": "Klasör taşındıysa veya yeniden adlandırıldıysa onu seçin.",
+    "otherLibraries": "Başka bir kitaplık aç",
+    "dialogTitleLocate": "Karaoke Kitaplığınızı bulun"
+  },
   "errors": {
+    "library_unavailable": "Açık kitaplık yok",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

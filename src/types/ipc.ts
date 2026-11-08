@@ -1,4 +1,5 @@
 export type ErrorCode =
+  | "library_unavailable"
   | "database_unavailable"
   | "remote_repository_unavailable"
   | "remote_contention"
@@ -183,6 +184,8 @@ export interface MarketPackage {
   versions: MarketVersion[];
   installed: MarketInstall | null;
   update: MarketUpdate | null;
+  installable_version: string | null;
+  required_host_version: string | null;
 }
 export interface AuthChallenge {
   source_id: string;
@@ -489,9 +492,15 @@ export type RegisteredLibrary =
   | LocalLibraryRegistration
   | RemoteLibraryRegistration;
 
+export interface ActiveLibraryUnavailable {
+  path: string;
+  reason: "not_found" | "not_openable";
+}
+
 export interface LibraryRegistrySnapshot {
   active_library_id: string | null;
   libraries: RegisteredLibrary[];
+  active_library_unavailable: ActiveLibraryUnavailable | null;
 }
 
 export interface DeleteLibraryResult {

@@ -67,6 +67,8 @@ const listing = (id: string): MarketPackage => ({
     added_capabilities: [],
     requires_consent: false,
   },
+  installable_version: "1.1.0",
+  required_host_version: null,
 });
 
 function setup(sources: SourceSnapshot[], market: MarketPackage[] = []) {

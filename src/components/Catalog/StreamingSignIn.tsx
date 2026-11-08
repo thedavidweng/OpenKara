@@ -39,7 +39,7 @@ export function StreamingSignIn({
       className={
         compact
           ? "text-sm"
-          : "mx-auto flex max-w-md flex-col items-center gap-3 py-8 text-center"
+          : "mx-auto my-6 flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-8 text-center"
       }
     >
       {!compact ? (

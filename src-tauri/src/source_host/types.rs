@@ -367,6 +367,10 @@ pub struct MarketPackage {
     pub versions: Vec<MarketVersion>,
     pub installed: Option<MarketInstall>,
     pub update: Option<MarketUpdate>,
+    /// The newest version this host can install, if any.
+    pub installable_version: Option<String>,
+    /// When no version is installable, the lowest host version that runs one.
+    pub required_host_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

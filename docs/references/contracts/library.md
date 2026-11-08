@@ -45,6 +45,12 @@
 36. `rename_library(library_id: String, display_name: String) -> LibraryRegistrySnapshot` — 重命名资料库显示名
 37. `delete_library(library_id: String) -> LibraryRegistrySnapshot` — 永久删除资料库（本地删除文件，远程删除 provider 内容）
 
+**Missing active library:**
+
+43. `LibraryRegistrySnapshot` has the field `active_library_unavailable: { path: String, reason: "not_found" | "not_openable" } | null`. The field is not null only when `get_library_registry` finds a registered active library and the app has no open library. `path` is the working copy root of the active library. `not_found` means the path does not exist. `not_openable` means the path exists but OpenKara cannot open it as a library. All other commands return the field as null.
+44. When the field is not null, the UI shows a recovery screen. The screen names `path`. It offers Try again (`switch_library` with the active id), Locate (`open_library` with the chosen folder, then `remove_library` for the stale entry when the active id changed), Create new library (`create_library`), and a switch to each other registered library (`switch_library`). The UI does not load the song list, the player state, or the model status until a library is open.
+45. A library command that runs while no library is open fails with `CommandError` code `library_unavailable`, `retryable: false`, and fallback `show_empty_state`.
+
 **Online Sources / Streaming Import (issue #418):**
 
 38. `streaming_track_identities` maps Streaming Track Identity `(source, remote_track_id)` to `songs.hash`. It does not replace `songs.hash` as the file primary key.

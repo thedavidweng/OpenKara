@@ -198,6 +198,7 @@ describe("SettingsLibrarySection interactions", () => {
     const deleteLibrary = vi.fn(async () => ({
       registry: {
         active_library_id: null,
+        active_library_unavailable: null,
         libraries: [],
       },
       remote_repository_deleted: null,

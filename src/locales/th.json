@@ -344,7 +344,7 @@
       "notIncluded": "OpenKara บิลด์นี้ไม่มีแหล่งสตรีม",
       "refresh": "ตรวจหาอัปเดต",
       "trustNotice": "แหล่งสตรีมมิงทำงานในแซนด์บ็อกซ์และเชื่อมต่อได้เฉพาะ origin ที่ประกาศไว้ ตรวจสอบ origin และความสามารถที่ประกาศไว้ก่อนติดตั้ง",
-      "empty": "ยังไม่ได้ติดตั้งแหล่งที่มา ติดตั้งได้จากด้านล่าง",
+      "empty": "ยังไม่ได้ติดตั้งแหล่งที่มา ลองดูในแท็บค้นหา",
       "license": "ใบอนุญาต",
       "installed": "เวอร์ชันที่ติดตั้ง",
       "notInstalled": "ยังไม่ได้ติดตั้ง",
@@ -409,7 +409,6 @@
         "failing": "รีเฟรชไม่สำเร็จ"
       },
       "market": {
-        "title": "แหล่งที่มาที่ติดตั้งได้",
         "emptyNoRegistries": "เพิ่มรีจิสทรีแหล่งที่มาเพื่อเรียกดูแพ็กเกจ",
         "empty": "ไม่มีแหล่งที่มาอื่นให้ติดตั้ง",
         "registry": "รีจิสทรี",
@@ -423,7 +422,10 @@
         "pinned": "ตรึงไว้ที่ {{version}}",
         "updateTo": "อัปเดตเป็น {{version}}",
         "versions": "ทุกเวอร์ชัน",
+        "needsHost": "ต้องใช้ OpenKara {{version}}",
+        "incompatible": "ใช้ไม่ได้กับ OpenKara เวอร์ชันนี้",
         "install": "ติดตั้ง",
+        "replace": "แทนที่",
         "installTitle": "ติดตั้ง {{name}}",
         "installBody": "ตรวจสอบสิ่งที่แพ็กเกจนี้ทำได้ก่อนติดตั้ง แพ็กเกจทำงานในแซนด์บ็อกซ์และติดต่อได้เฉพาะต้นทางที่ประกาศไว้",
         "installConfirm": "ติดตั้งแพ็กเกจ",
@@ -432,15 +434,22 @@
         "addedOrigins": "ต้นทางใหม่",
         "addedCapabilities": "ความสามารถใหม่",
         "consentConfirm": "อนุญาตและอัปเดต",
-        "replaceTitle": "แทนที่ {{sourceId}}",
-        "replaceBody": "{{current}} ให้บริการแหล่งที่มา {{sourceId}} อยู่แล้ว การแทนที่จะออกจากระบบแพ็กเกจเดิม ลบข้อมูลรับรองที่บันทึกไว้ และติดตั้ง {{name}} ในสถานะปิดใช้งาน",
+        "replaceTitle": "แทนที่ {{name}} ไหม",
+        "replaceBody": "ติดตั้ง {{current}} จาก {{currentRegistry}} อยู่แล้ว การแทนที่ด้วยเวอร์ชันจาก {{registry}} จะออกจากระบบ ลบข้อมูลรับรองที่บันทึกไว้ และติดตั้งเวอร์ชันใหม่โดยปิดไว้",
         "replaceConfirm": "แทนที่และติดตั้ง"
       },
       "official": "ทางการ",
       "details": "รายละเอียด",
       "updateAll": "อัปเดตทั้งหมด ({{count}})",
       "autoUpdateNotice": "แหล่งที่มาทางการจะอัปเดตเองเมื่อการอัปเดตไม่ต้องการสิทธิ์เข้าถึงใหม่ การอัปเดตอื่นจะรอให้คุณยืนยัน",
-      "signedInAs": "ลงชื่อเข้าใช้ในชื่อ {{name}}"
+      "signedInAs": "ลงชื่อเข้าใช้ในชื่อ {{name}}",
+      "tabsLabel": "มุมมองแหล่งสตรีมมิง",
+      "tabs": {
+        "installed": "ติดตั้งแล้ว ({{count}})",
+        "discover": "ค้นหา"
+      },
+      "updateAvailable": "มีอัปเดต",
+      "open": "เปิด"
     },
     "title": "การตั้งค่า",
     "library": {
@@ -795,6 +804,14 @@
       "description": "เปิดแหล่งเพลงหรือวิดีโอ ทั้งสองจะปิดอยู่จนกว่าคุณจะเลือก",
       "youtube": "YouTube",
       "youtubeDescription": "วางลิงก์วิดีโอหรือเพลย์ลิสต์สาธารณะลงในคิว OpenKara ไม่ดาวน์โหลดเสียง YouTube"
+    },
+    "pagesLabel": "หมวดการตั้งค่า",
+    "pages": {
+      "library": "คลัง",
+      "onlineSources": "แหล่งออนไลน์",
+      "separation": "การแยกเสียง",
+      "playback": "การเล่น",
+      "general": "ทั่วไป"
     }
   },
   "bootstrap": {
@@ -837,7 +854,19 @@
     "confirmRemoveSinger": "ลบนักร้อง",
     "confirmRemoveSingerMessage": "นักร้องคนนี้ถูกกำหนดให้กับเพลงในคิว การลบออกจะลบเพลงเหล่านั้นออกจากคิวด้วย"
   },
+  "libraryRecovery": {
+    "title": "ไม่พบคลังเพลงของคุณ",
+    "descriptionNotFound": "OpenKara ไม่พบโฟลเดอร์นี้ อาจถูกย้าย เปลี่ยนชื่อ หรืออยู่ในไดรฟ์ที่ไม่ได้เชื่อมต่อ",
+    "descriptionNotOpenable": "มีโฟลเดอร์นี้อยู่ แต่ OpenKara เปิดเป็นคลังเพลงไม่ได้",
+    "retry": "ลองอีกครั้ง",
+    "retryDescription": "ใช้หลังจากเชื่อมต่อไดรฟ์อีกครั้ง",
+    "locate": "ค้นหาคลังเพลง…",
+    "locateDescription": "เลือกโฟลเดอร์หากถูกย้ายหรือเปลี่ยนชื่อ",
+    "otherLibraries": "เปิดคลังเพลงอื่น",
+    "dialogTitleLocate": "ระบุตำแหน่งคลังเพลงคาราโอเกะของคุณ"
+  },
   "errors": {
+    "library_unavailable": "ไม่มีคลังเพลงที่เปิดอยู่",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

@@ -344,7 +344,7 @@
       "notIncluded": "此 OpenKara 版本不包含流媒体源。",
       "refresh": "检查更新",
       "trustNotice": "流媒体源在沙盒中运行，只能访问其声明的地址。安装前请查看它声明的地址和功能。",
-      "empty": "尚未安装任何源。可在下方安装。",
+      "empty": "尚未安装任何源。可在“发现”中查找。",
       "license": "许可证",
       "installed": "已安装版本",
       "notInstalled": "未安装",
@@ -409,7 +409,6 @@
         "failing": "刷新失败"
       },
       "market": {
-        "title": "可安装的源",
         "emptyNoRegistries": "添加源注册表以浏览软件包。",
         "empty": "没有更多可安装的源。",
         "registry": "注册表",
@@ -423,7 +422,10 @@
         "pinned": "已固定到 {{version}}",
         "updateTo": "更新到 {{version}}",
         "versions": "所有版本",
+        "needsHost": "需要 OpenKara {{version}}",
+        "incompatible": "与当前版本的 OpenKara 不兼容",
         "install": "安装",
+        "replace": "替换",
         "installTitle": "安装 {{name}}",
         "installBody": "安装前请先查看此软件包能做什么。它在沙盒中运行，只能访问它声明的地址。",
         "installConfirm": "安装软件包",
@@ -432,15 +434,22 @@
         "addedOrigins": "新增地址",
         "addedCapabilities": "新增能力",
         "consentConfirm": "允许并更新",
-        "replaceTitle": "替换 {{sourceId}}",
-        "replaceBody": "{{current}} 已提供源 {{sourceId}}。替换会使旧软件包退出登录、删除其已保存的流媒体凭据，并以停用状态安装 {{name}}。",
+        "replaceTitle": "替换 {{name}}？",
+        "replaceBody": "已安装来自 {{currentRegistry}} 的 {{current}}。改用 {{registry}} 提供的版本会退出登录、删除已保存的凭据，新版本安装后处于停用状态。",
         "replaceConfirm": "替换并安装"
       },
       "official": "官方",
       "details": "详情",
       "updateAll": "全部更新（{{count}}）",
       "autoUpdateNotice": "官方源的更新若不需要新增权限，会自动安装。其他更新需要你确认。",
-      "signedInAs": "已登录：{{name}}"
+      "signedInAs": "已登录：{{name}}",
+      "tabsLabel": "流媒体源视图",
+      "tabs": {
+        "installed": "已安装（{{count}}）",
+        "discover": "发现"
+      },
+      "updateAvailable": "有可用更新",
+      "open": "打开"
     },
     "title": "偏好设置",
     "library": {
@@ -795,6 +804,14 @@
     "lyricsBlurInactive": {
       "enable": "模糊非当前歌词",
       "description": "虚化当前句以外的歌词。卡拉OK需要提前看清后面几行时请保持关闭。"
+    },
+    "pagesLabel": "偏好设置分区",
+    "pages": {
+      "library": "资料库",
+      "onlineSources": "在线来源",
+      "separation": "分离",
+      "playback": "播放",
+      "general": "通用"
     }
   },
   "bootstrap": {
@@ -837,7 +854,19 @@
     "confirmRemoveSinger": "移除歌手",
     "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },
+  "libraryRecovery": {
+    "title": "找不到你的曲库",
+    "descriptionNotFound": "OpenKara 找不到这个文件夹。它可能已被移动、重命名，或位于未连接的磁盘上。",
+    "descriptionNotOpenable": "该文件夹存在，但 OpenKara 无法将其作为曲库打开。",
+    "retry": "重试",
+    "retryDescription": "重新连接磁盘后点这里。",
+    "locate": "定位曲库…",
+    "locateDescription": "如果文件夹被移动或重命名，请重新选择它。",
+    "otherLibraries": "打开其他曲库",
+    "dialogTitleLocate": "定位你的卡拉OK曲库"
+  },
   "errors": {
+    "library_unavailable": "没有打开的曲库",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

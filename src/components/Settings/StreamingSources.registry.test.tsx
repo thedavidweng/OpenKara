@@ -83,6 +83,8 @@ const registryPackage: MarketPackage = {
     added_capabilities: ["preview"],
     requires_consent: true,
   },
+  installable_version: "1.1.0",
+  required_host_version: null,
 };
 
 function preset(overrides: {

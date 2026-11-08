@@ -344,7 +344,7 @@
       "notIncluded": "この OpenKara ビルドにはストリーミングソースが含まれていません。",
       "refresh": "アップデートを確認",
       "trustNotice": "ストリーミングソースはサンドボックスで動作し、宣言したオリジンにのみ接続できます。インストール前に宣言されたオリジンと機能を確認してください。",
-      "empty": "インストール済みのソースはありません。下からインストールできます。",
+      "empty": "インストール済みのソースはありません。「探す」から見つけられます。",
       "license": "ライセンス",
       "installed": "インストール済みバージョン",
       "notInstalled": "未インストール",
@@ -409,7 +409,6 @@
         "failing": "更新に失敗"
       },
       "market": {
-        "title": "利用可能なソース",
         "emptyNoRegistries": "ソースレジストリを追加してパッケージを探します。",
         "empty": "インストールできるソースはほかにありません。",
         "registry": "レジストリ",
@@ -423,7 +422,10 @@
         "pinned": "{{version}} に固定",
         "updateTo": "{{version}} に更新",
         "versions": "すべてのバージョン",
+        "needsHost": "OpenKara {{version}} が必要です",
+        "incompatible": "このバージョンの OpenKara には対応していません",
         "install": "インストール",
+        "replace": "置き換え",
         "installTitle": "{{name}} をインストール",
         "installBody": "インストール前に、このパッケージができることを確認してください。サンドボックス内で実行され、宣言したオリジンにのみ接続できます。",
         "installConfirm": "パッケージをインストール",
@@ -432,15 +434,22 @@
         "addedOrigins": "新しいオリジン",
         "addedCapabilities": "新しい機能",
         "consentConfirm": "許可して更新",
-        "replaceTitle": "{{sourceId}} を置き換え",
-        "replaceBody": "{{current}} はすでにソース {{sourceId}} を提供しています。置き換えると、古いパッケージはサインアウトされ、保存済みの認証情報が削除され、{{name}} が無効の状態でインストールされます。",
+        "replaceTitle": "{{name}} を置き換えますか？",
+        "replaceBody": "{{currentRegistry}} の {{current}} がインストールされています。{{registry}} の版に置き換えるとサインアウトし、保存済みの認証情報を削除し、新しい版はオフの状態でインストールされます。",
         "replaceConfirm": "置き換えてインストール"
       },
       "official": "公式",
       "details": "詳細",
       "updateAll": "すべて更新（{{count}}）",
       "autoUpdateNotice": "公式ソースの更新は、新しいアクセスが不要なら自動でインストールされます。その他の更新は確認が必要です。",
-      "signedInAs": "{{name}} としてサインイン中"
+      "signedInAs": "{{name}} としてサインイン中",
+      "tabsLabel": "ストリーミングソースの表示",
+      "tabs": {
+        "installed": "インストール済み（{{count}}）",
+        "discover": "探す"
+      },
+      "updateAvailable": "アップデートあり",
+      "open": "開く"
     },
     "title": "環境設定",
     "library": {
@@ -795,6 +804,14 @@
       "description": "音楽または動画の提供元をオンにします。選ぶまでどちらもオフのままです。",
       "youtube": "YouTube",
       "youtubeDescription": "公開動画またはプレイリストのリンクをキューに貼り付けます。OpenKara は YouTube 音声をダウンロードしません。"
+    },
+    "pagesLabel": "環境設定のセクション",
+    "pages": {
+      "library": "ライブラリ",
+      "onlineSources": "オンラインソース",
+      "separation": "分離",
+      "playback": "再生",
+      "general": "一般"
     }
   },
   "bootstrap": {
@@ -837,7 +854,19 @@
     "confirmRemoveSinger": "シンガーを削除",
     "confirmRemoveSingerMessage": "このシンガーはキュー内の曲に割り当てられています。削除すると、それらの曲もキューから削除されます。"
   },
+  "libraryRecovery": {
+    "title": "ライブラリが見つかりません",
+    "descriptionNotFound": "OpenKara はこのフォルダを見つけられませんでした。移動、名前変更、または接続されていないドライブにある可能性があります。",
+    "descriptionNotOpenable": "フォルダは存在しますが、OpenKara はライブラリとして開けません。",
+    "retry": "再試行",
+    "retryDescription": "ドライブを再接続したらこちらを使ってください。",
+    "locate": "ライブラリを探す…",
+    "locateDescription": "フォルダを移動または名前変更した場合は選び直してください。",
+    "otherLibraries": "別のライブラリを開く",
+    "dialogTitleLocate": "カラオケライブラリの場所を選択"
+  },
   "errors": {
+    "library_unavailable": "開いているライブラリがありません",
     "streaming_source_unavailable": "Source unavailable",
     "streaming_unsupported_operation": "Operation not supported",
     "streaming_source_not_found": "Source not found",

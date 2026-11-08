@@ -56,6 +56,8 @@ const freshPackage: MarketPackage = {
   ],
   installed: null,
   update: null,
+  installable_version: "1.0.0",
+  required_host_version: null,
 };
 
 const webPackage: MarketPackage = {
@@ -88,6 +90,8 @@ const webPackage: MarketPackage = {
     added_capabilities: ["preview"],
     requires_consent: true,
   },
+  installable_version: "1.1.0",
+  required_host_version: null,
 };
 
 const clonePackage: MarketPackage = {
@@ -160,11 +164,17 @@ test("install confirms the declared origins before installing", async () => {
     registry_id: "demo",
     package_id: "demo-fresh",
   });
+  const setStreamingSourceEnabled = vi.fn().mockResolvedValue(webSnapshot);
   const listSourceMarket = vi.fn().mockResolvedValue([]);
   const listStreamingSources = vi.fn().mockResolvedValue([]);
   const backend = createMockBackend({
     overrides: {
-      catalog: { installMarketPackage, listSourceMarket, listStreamingSources },
+      catalog: {
+        installMarketPackage,
+        setStreamingSourceEnabled,
+        listSourceMarket,
+        listStreamingSources,
+      },
     },
   });
   preset([freshPackage]);
@@ -191,6 +201,11 @@ test("install confirms the declared origins before installing", async () => {
     ),
   );
   await waitFor(() => expect(listSourceMarket).toHaveBeenCalled());
+  expect(setStreamingSourceEnabled).toHaveBeenCalledWith(
+    "fresh-source",
+    true,
+    false,
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -208,7 +223,7 @@ test("installing a package whose source id is taken asks to replace the holder",
   preset([clonePackage], [webSnapshot]);
   renderMarket(backend);
   fireEvent.click(
-    screen.getByRole("button", { name: "settings.streaming.market.install" }),
+    screen.getByRole("button", { name: "settings.streaming.market.replace" }),
   );
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("settings.streaming.market.replaceBody");
@@ -302,7 +317,32 @@ test("install errors surface the message naming each failed download URL", async
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("https://a.demo.test/pkg.tgz");
     expect(alert.textContent).toContain("https://b.demo.test/pkg.tgz");
+    expect(alert.textContent).not.toContain("invalid_package");
   });
+});
+
+test("a package this OpenKara cannot run names the version it needs", () => {
+  preset([
+    {
+      ...freshPackage,
+      installable_version: null,
+      required_host_version: "0.21.0",
+    },
+    {
+      ...freshPackage,
+      package_id: "future",
+      name: "Future",
+      installable_version: null,
+      required_host_version: null,
+    },
+  ]);
+  renderMarket();
+  const card = screen.getByRole("article", { name: "Fresh Library" });
+  expect(card.querySelector("button:not(details button)")).toBeNull();
+  expect(card.textContent).toContain("settings.streaming.market.needsHost");
+  expect(screen.getByRole("article", { name: "Future" }).textContent).toContain(
+    "settings.streaming.market.incompatible",
+  );
 });
 
 test("without registries the market explains how to add packages", () => {

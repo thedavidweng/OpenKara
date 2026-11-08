@@ -42,6 +42,7 @@ struct Version {
     resource_origins: Option<Vec<String>>,
     media_origins: Option<Vec<String>>,
     capabilities: Option<Vec<String>>,
+    minimum_host_version: Option<&'static str>,
 }
 impl Version {
     fn new(version: &'static str) -> Self {
@@ -53,6 +54,7 @@ impl Version {
             resource_origins: None,
             media_origins: None,
             capabilities: None,
+            minimum_host_version: None,
         }
     }
 }
@@ -78,6 +80,9 @@ fn manifest(source_id: &str, package_id: &str, version: &Version) -> SourceManif
     }
     if let Some(origins) = &version.media_origins {
         manifest.media_origins = origins.clone();
+    }
+    if let Some(minimum) = version.minimum_host_version {
+        manifest.minimum_host_version = minimum.into();
     }
     manifest.authentication = json!({"flow":"none"});
     manifest.requires_authentication = vec![];
@@ -748,6 +753,24 @@ async fn protocol_major_mismatches_are_incompatible_and_registry_disagreement_is
 }
 
 #[tokio::test]
+async fn the_market_says_which_host_a_package_needs() {
+    let fixture = Fixture::new(&[
+        Version {
+            minimum_host_version: Some("99.1.0"),
+            ..Version::new("2.0.0")
+        },
+        Version {
+            minimum_host_version: Some("99.0.0"),
+            ..Version::new("1.0.0")
+        },
+    ])
+    .await;
+    let package = fixture.host.market().remove(0);
+    assert_eq!(package.installable_version, None);
+    assert_eq!(package.required_host_version.as_deref(), Some("99.0.0"));
+}
+
+#[tokio::test]
 async fn the_market_lists_packages_with_identity_and_update_status() {
     let fixture = Fixture::new(&[Version::new("1.0.0")]).await;
     let mut other = MockRegistry::new("org.example.other", "other").await;
@@ -771,6 +794,8 @@ async fn the_market_lists_packages_with_identity_and_update_status() {
     assert!(package.versions[0].size > 0);
     assert_eq!(package.installed, None);
     assert_eq!(package.update, None);
+    assert_eq!(package.installable_version.as_deref(), Some("1.0.0"));
+    assert_eq!(package.required_host_version, None);
     assert_eq!(
         market
             .iter()

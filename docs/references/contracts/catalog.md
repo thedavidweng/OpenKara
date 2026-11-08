@@ -33,7 +33,7 @@ The source boundary is specified in [Streaming Source protocol 2.0](streaming-so
 
 `streaming_sources_supported()` returns `false` in a build without the `streaming-sources` feature (see the [build feature](source-host.md#build-feature)). That build registers no other Streaming Source command and emits no Streaming Source event.
 
-`RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), nullable `last_error`, and `official`. The official registry is always listed first; `remove_source_registry` refuses it with `invalid_registry`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), and nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package only after the new one is downloaded, verified, and passes its describe check, and its saved session never carries over.
+`RegistryStatus` contains `url`, `registry_id`, `display_name`, `homepage`, nullable `refreshed_at` (Unix milliseconds of the last successful fetch), nullable `last_error`, and `official`. The official registry is always listed first; `remove_source_registry` refuses it with `invalid_registry`. Removing a registry removes its packages from the market; installed packages keep working but cannot update. `MarketPackage` contains `registry_id`, `package_id`, `source_id`, `name`, `description`, `license`, `versions` (`version`, `size`, `resource_origins`, `media_origins`, `capabilities`), nullable `installed` (`version`, `pinned_version`), nullable `update` (`version`, `added_origins`, `added_capabilities`, `requires_consent`), nullable `installable_version` (the newest version this host can install), and nullable `required_host_version` (when no version is installable, the lowest host version that can run a version with a supported protocol major). An install or update that adds origins or capabilities fails with `consent_required` until retried with `consent=true`; one that only removes them does not. Installing a package whose source id another package holds fails with `source_id_taken` until retried with `replace=true`; a confirmed replacement removes the previous package only after the new one is downloaded, verified, and passes its describe check, and its saved session never carries over.
 
 On launch the host retires installs that ran on the removed Node runtime. A retired source keeps its snapshot with state `update_required`, null `installed_version` and `available_version`, and `last_error.code` `replacement_required`; install and retry return that code. The application deletes its saved session and the Node runtime and package files, and keeps library songs, Streaming Track Identities and Playlist Origin Stamps. Installing a registry package with the same source id replaces it; nothing carries over and the user signs in again. `get_source_replacement_notice()` returns each retired source as `RetiredSource` (`source_id`, `name`, `version`) until `dismiss_source_replacement_notice()` hides the notice for good.
 
@@ -140,6 +140,15 @@ native Video Source. A failed source refresh keeps existing snapshots usable.
 The local-library view is separate from the active source id. A valid source
 id such as `library` does not alias local-library navigation.
 
+Preferences shows one page at a time from a section nav. The Online Sources
+page has the YouTube preference and a Streaming Sources area with an
+Installed tab and a Discover tab; Discover holds the market and a Registries
+disclosure. An installed row shows its status, an update, open or sign-in, and
+enable or disable action, and keeps origins, pin, sign-out and uninstall under
+Details. Settings never hosts the sign-in challenge: Open and Sign in close
+Preferences and select the source's browser view. Any sidebar navigation
+closes Preferences.
+
 Settings lists the added Source Registries with their last fetch error and
 offers add and remove. Adding a registry, whether by a pasted URL or by an
 `openkara://add-registry` link, first shows a confirmation that names the URL
@@ -148,7 +157,9 @@ refusal of a registry id conflict (`invalid_registry`) stays visible. Removing
 a registry explains that installed sources keep working but cannot update.
 The market lists each package with its registry, package id, source id,
 license, versions, capabilities, and declared origins. Install confirms the
-declared origins and capabilities first. An update whose entry carries
+declared origins and capabilities first; after a successful first install the
+frontend enables the source with `set_streaming_source_enabled`, because the
+confirmation is the user's consent to run it. An update whose entry carries
 `requires_consent` opens a review that names `added_origins` and
 `added_capabilities` before the update runs with consent. Installing a package
 whose source id another installed package holds opens a replacement

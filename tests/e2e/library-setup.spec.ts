@@ -1,4 +1,6 @@
+import { MISSING_LIBRARY_MOCK_DATA } from "@/mock/tauri-mock-data";
 import { test, expect } from "./fixtures/base-test";
+import { createTauriMockScript } from "./fixtures/tauri-mock";
 
 /**
  * Library setup flow UI smoke tests.
@@ -86,5 +88,65 @@ test.describe("Library setup", () => {
       timeout: 5000,
     });
     await expect(page.getByText(/open.*existing/i).first()).toBeVisible();
+  });
+
+  test.describe("missing active library", () => {
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(
+        createTauriMockScript(MISSING_LIBRARY_MOCK_DATA),
+      );
+    });
+
+    test("names the missing path and loads nothing from the library", async ({
+      page,
+      tauriMock,
+    }) => {
+      await page.goto("/");
+
+      await expect(
+        page.getByRole("heading", { name: "Your library could not be found" }),
+      ).toBeVisible();
+      await expect(page.getByText("/Users/demo/Music/OpenKara")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /Try again/ }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /Locate library/ }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /Create new library/ }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Backup Library" }),
+      ).toBeVisible();
+
+      const commands = (await tauriMock.getInvokeCalls()).map(
+        (call) => call.cmd,
+      );
+      expect(commands).not.toContain("get_library");
+      await expect(page.getByText(/Internal Error/)).toHaveCount(0);
+    });
+
+    test("keeps the recovery screen when the folder is still missing", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: /Try again/ }).click();
+
+      await expect(page.getByRole("alert")).toContainText("still missing");
+      await expect(
+        page.getByRole("heading", { name: "Your library could not be found" }),
+      ).toBeVisible();
+    });
+
+    test("opens another registered library", async ({ page }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: "Backup Library" }).click();
+
+      await expect(
+        page.getByRole("heading", { name: "Your library could not be found" }),
+      ).toHaveCount(0);
+      await expect(page.getByText("All Tracks")).toBeVisible();
+    });
   });
 });

@@ -54,9 +54,10 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const setYoutubeLinkOpen = useCatalogStore((s) => s.setYoutubeLinkOpen);
   const youtubeShortcut = getShortcutDisplay(APP_SHORTCUTS.openYoutubeLink);
   const catalogView = useCatalogStore((s) => s.activeView);
-  const setCatalogView = useCatalogStore((s) => s.setActiveView);
+  const closeSettings = useSettingsStore((s) => s.close);
+  const navigateCatalogView = useCatalogStore((s) => s.setActiveView);
   const activeSourceId = useCatalogStore((s) => s.activeSourceId);
-  const setActiveSource = useCatalogStore((s) => s.setActiveSource);
+  const navigateToSource = useCatalogStore((s) => s.setActiveSource);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
 
@@ -65,7 +66,21 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId);
   const loadPlaylists = usePlaylistStore((s) => s.loadPlaylists);
   const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
-  const setActivePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
+  const navigatePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
+  // The Preferences overlay covers the main area only, so any sidebar
+  // navigation dismisses it.
+  const setCatalogView: typeof navigateCatalogView = (view) => {
+    closeSettings();
+    navigateCatalogView(view);
+  };
+  const setActiveSource: typeof navigateToSource = (id) => {
+    closeSettings();
+    navigateToSource(id);
+  };
+  const setActivePlaylist: typeof navigatePlaylist = (id) => {
+    closeSettings();
+    navigatePlaylist(id);
+  };
 
   useEffect(() => {
     if (previewMode) {
