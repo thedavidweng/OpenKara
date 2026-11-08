@@ -174,9 +174,11 @@ export function StreamingSources() {
       );
   };
   const installed = sources.filter(isInstalledSource);
-  const openSource = (source: SourceSnapshot) => {
+  const openSource = (source: SourceSnapshot, signIn: boolean) => {
     useSettingsStore.getState().close();
-    useCatalogStore.getState().setActiveSource(source.source_id);
+    const store = useCatalogStore.getState();
+    store.setActiveSource(source.source_id);
+    if (signIn) void store.openSignIn(source.source_id);
   };
   const toggleEnabled = (source: SourceSnapshot) =>
     source.enabled
@@ -309,7 +311,9 @@ export function StreamingSources() {
                     source.state === "ready" ? (
                       <button
                         className={rowButton}
-                        onClick={() => openSource(source)}
+                        onClick={() =>
+                          openSource(source, !signedIn && hasSignIn(source))
+                        }
                       >
                         {signedIn || !hasSignIn(source)
                           ? t("settings.streaming.open")
