@@ -990,7 +990,7 @@
       "loadMore": "Load more",
       "importLoaded": "Import loaded songs",
       "scanCode": "Scan to sign in",
-      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "unavailable": "Nguồn không khả dụng. Bạn có thể quản lý trong Tùy chọn.",
       "noOperations": "This source has no supported browsing operations.",
       "signedIn": "Signed in",
       "playableMatch": {

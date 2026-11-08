@@ -29,6 +29,7 @@ interface TooltipProps {
   shortcut?: string;
   delayDuration?: number;
   disabled?: boolean;
+  anchorClassName?: string;
 }
 
 export function Tooltip({
@@ -37,6 +38,7 @@ export function Tooltip({
   shortcut,
   delayDuration,
   disabled = false,
+  anchorClassName = "-m-1 inline-flex p-1",
 }: TooltipProps) {
   const coordinator = useTooltipDelayCoordinator();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -203,7 +205,7 @@ export function Tooltip({
     <>
       <span
         ref={anchorRef}
-        className="-m-1 inline-flex p-1"
+        className={anchorClassName}
         onMouseEnter={() => {
           coordinator.cancelClose();
           getScheduleController().scheduleShow(showTooltip);

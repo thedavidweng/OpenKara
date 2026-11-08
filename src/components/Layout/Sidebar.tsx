@@ -8,12 +8,14 @@ import {
   Link2,
   ListMusic,
   Music2,
+  TriangleAlert,
 } from "lucide-react";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { InputDialog } from "@/components/Settings/InputDialog";
 import { SearchBox } from "@/components/Library/SearchBox";
 import { SongList } from "@/components/Library/SongList";
 import { SortModeSelector } from "@/components/Library/SortModeSelector";
+import { Tooltip } from "@/components/Overlay/Tooltip";
 import { songCanBeSeparated } from "@/lib/song-media";
 import {
   batchSeparationInProgress,
@@ -185,16 +187,16 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
           >
-            <span className="flex items-center gap-2">
+            <span className="flex min-w-0 items-center gap-2">
               <Folder
                 size={14}
-                className="text-[var(--color-accent)]"
+                className="shrink-0 text-[var(--color-accent)]"
                 fill="currentColor"
                 fillOpacity={0.2}
               />
-              <span>{t("sidebar.allTracks")}</span>
+              <span className="truncate">{t("sidebar.allTracks")}</span>
             </span>
-            <span className="text-[11px] text-[var(--color-text-dim)]">
+            <span className="ml-2 shrink-0 text-[11px] tabular-nums text-[var(--color-text-dim)]">
               {songs.length}
             </span>
           </button>
@@ -213,11 +215,14 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
           >
-            <span className="flex items-center gap-2">
-              <CheckCircle2 size={14} className="text-[var(--color-accent)]" />
-              <span>{t("sidebar.separated")}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <CheckCircle2
+                size={14}
+                className="shrink-0 text-[var(--color-accent)]"
+              />
+              <span className="truncate">{t("sidebar.separated")}</span>
             </span>
-            <span className="text-[11px] text-[var(--color-text-dim)]">
+            <span className="ml-2 shrink-0 text-[11px] tabular-nums text-[var(--color-text-dim)]">
               {separatedCount}
             </span>
           </button>
@@ -233,40 +238,64 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </div>
           {sources
             .filter((source) => source.enabled && source.installed_version)
-            .map((source) => (
-              <button
-                key={source.source_id}
-                type="button"
-                aria-current={
-                  catalogView === "streaming" &&
-                  activeSourceId === source.source_id
-                    ? "page"
-                    : undefined
-                }
-                onClick={() => {
-                  setActiveSource(source.source_id);
-                  setActivePlaylist(null);
-                }}
-                className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${catalogView === "streaming" && activeSourceId === source.source_id ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)]" : "border border-transparent hover:bg-[var(--sidebar-row-overlay-bg)]"}`}
-              >
-                <span className="flex items-center gap-2">
-                  <Music2 size={14} aria-hidden="true" />
-                  <span>{source.name}</span>
-                </span>
-                {sourceStates[source.source_id]?.session?.signed_in &&
-                !sourceStates[source.source_id]?.session?.expired ? (
-                  <span
-                    role="img"
-                    aria-label={t("catalog.streaming.signedIn")}
-                    className="size-2 rounded-full bg-[var(--color-success)]"
-                  />
-                ) : !source.loaded || source.state !== "ready" ? (
-                  <span className="text-[11px] text-[var(--color-warning)]">
-                    {t("catalog.streaming.unavailable")}
+            .map((source) => {
+              const signedIn =
+                sourceStates[source.source_id]?.session?.signed_in &&
+                !sourceStates[source.source_id]?.session?.expired;
+              const unavailable =
+                !signedIn && (!source.loaded || source.state !== "ready");
+              const row = (
+                <button
+                  key={source.source_id}
+                  type="button"
+                  aria-current={
+                    catalogView === "streaming" &&
+                    activeSourceId === source.source_id
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setActiveSource(source.source_id);
+                    setActivePlaylist(null);
+                  }}
+                  className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${catalogView === "streaming" && activeSourceId === source.source_id ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)]" : "border border-transparent hover:bg-[var(--sidebar-row-overlay-bg)]"}`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Music2 size={14} aria-hidden="true" className="shrink-0" />
+                    <span className="truncate">{source.name}</span>
                   </span>
-                ) : null}
-              </button>
-            ))}
+                  {signedIn ? (
+                    <span
+                      role="img"
+                      aria-label={t("catalog.streaming.signedIn")}
+                      className="ml-2 size-2 shrink-0 rounded-full bg-[var(--color-success)]"
+                    />
+                  ) : unavailable ? (
+                    <span className="ml-2 flex shrink-0">
+                      <TriangleAlert
+                        size={13}
+                        aria-hidden="true"
+                        className="text-[var(--color-warning)]"
+                      />
+                      <span className="sr-only">
+                        {t("catalog.streaming.unavailable")}
+                      </span>
+                    </span>
+                  ) : null}
+                </button>
+              );
+              return unavailable ? (
+                <Tooltip
+                  key={source.source_id}
+                  label={t("catalog.streaming.unavailable")}
+                  anchorClassName="flex w-full"
+                >
+                  {row}
+                </Tooltip>
+              ) : (
+                row
+              );
+            })}
           {youtubeSourceEnabled ? (
             <button
               type="button"
@@ -277,11 +306,14 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               onClick={() => setYoutubeLinkOpen(!youtubeLinkOpen)}
               className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]`}
             >
-              <span className="flex items-center gap-2">
-                <Link2 size={14} className="text-[var(--color-accent)]" />
-                <span>{t("sidebar.youtubeLink")}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <Link2
+                  size={14}
+                  className="shrink-0 text-[var(--color-accent)]"
+                />
+                <span className="truncate">{t("sidebar.youtubeLink")}</span>
               </span>
-              <span className="text-[11px] text-[var(--color-text-dim)]">
+              <span className="ml-2 shrink-0 text-[11px] text-[var(--color-text-dim)]">
                 {youtubeShortcut}
               </span>
             </button>
@@ -327,7 +359,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
                     : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                 }`}
               >
-                <span className="flex items-center gap-2 truncate">
+                <span className="flex min-w-0 items-center gap-2">
                   <ListMusic
                     size={14}
                     className="text-[var(--color-text-dim)] shrink-0"

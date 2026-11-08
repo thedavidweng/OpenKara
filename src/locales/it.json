@@ -993,7 +993,7 @@
       "loadMore": "Load more",
       "importLoaded": "Import loaded songs",
       "scanCode": "Scan to sign in",
-      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "unavailable": "Sorgente non disponibile. Puoi gestirla nelle Preferenze.",
       "noOperations": "This source has no supported browsing operations.",
       "signedIn": "Signed in",
       "playableMatch": {

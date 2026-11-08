@@ -991,7 +991,7 @@
       "loadMore": "Load more",
       "importLoaded": "Import loaded songs",
       "scanCode": "Scan to sign in",
-      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "unavailable": "Bron niet beschikbaar. Beheer deze in Voorkeuren.",
       "noOperations": "This source has no supported browsing operations.",
       "signedIn": "Signed in",
       "playableMatch": {

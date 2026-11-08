@@ -991,7 +991,7 @@
       "loadMore": "Load more",
       "importLoaded": "Import loaded songs",
       "scanCode": "Scan to sign in",
-      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "unavailable": "Kaynak kullanılamıyor. Tercihler'den yönetebilirsiniz.",
       "noOperations": "This source has no supported browsing operations.",
       "signedIn": "Signed in",
       "playableMatch": {

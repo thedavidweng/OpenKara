@@ -990,7 +990,7 @@
       "loadMore": "Load more",
       "importLoaded": "Import loaded songs",
       "scanCode": "Scan to sign in",
-      "unavailable": "Source unavailable. Open Settings to manage it.",
+      "unavailable": "音源無法使用，可在偏好設定中管理。",
       "noOperations": "This source has no supported browsing operations.",
       "signedIn": "Signed in",
       "playableMatch": {
