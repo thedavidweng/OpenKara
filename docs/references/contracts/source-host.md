@@ -231,7 +231,8 @@ returns `incompatible_plugin` and stops the source. Other operations have the
 30-second operation deadline. Each source has a 64 MiB memory limit and a
 1 MiB script stack limit. When a source passes a deadline or a limit, the host
 stops the source and returns `source_unavailable` to all of its pending calls.
-The next call starts the source fresh, with no delay. After four consecutive
+The next call starts the source fresh, with no delay. A stop at a limit does
+not set the source's `last_error`. After four consecutive
 failed starts the source returns `source_unavailable` until Retry or an update.
 
 ### Host API

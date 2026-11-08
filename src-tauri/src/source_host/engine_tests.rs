@@ -271,6 +271,16 @@ async fn memory_and_stack_blow_ups_stop_the_source_even_when_caught() {
             "{cursor}"
         );
         assert!(!fixture.host.snapshot("engine").unwrap().running);
+        fixture.host.maintain().await;
+        assert!(
+            fixture
+                .host
+                .snapshot("engine")
+                .unwrap()
+                .last_error
+                .is_none(),
+            "a stop at a limit is reported by its request, not kept on the source"
+        );
     }
     assert_eq!(
         fixture.playlists("engine", "warm").await.unwrap()["calls"],
