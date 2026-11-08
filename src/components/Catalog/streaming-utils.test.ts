@@ -3,6 +3,7 @@ import {
   firstGrapheme,
   formatDuration,
   formatUpdated,
+  visibleName,
 } from "./streaming-utils";
 
 describe("streaming-utils", () => {
@@ -15,6 +16,7 @@ describe("streaming-utils", () => {
 
   test("formatDuration renders m:ss and a dash when unknown", () => {
     expect(formatDuration(65000)).toBe("1:05");
+    expect(formatDuration(40364000)).toBe("11:12:44");
     expect(formatDuration(null)).toBe("—");
   });
 
@@ -23,4 +25,10 @@ describe("streaming-utils", () => {
     expect(formatUpdated(null)).toBeNull();
     expect(formatUpdated(0)).toBeNull();
   });
+});
+
+test("visibleName drops names made only of invisible characters", () => {
+  expect(visibleName("  Alice ")).toBe("Alice");
+  expect(visibleName("\u200b\u3000")).toBeNull();
+  expect(visibleName(null)).toBeNull();
 });

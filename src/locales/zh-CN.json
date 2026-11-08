@@ -935,6 +935,7 @@
       "statusFailed": "导入失败",
       "likedEmpty": "没有喜欢的歌曲",
       "playlistsEmpty": "没有歌单",
+      "playlistTracksEmpty": "这个歌单里没有歌曲",
       "resultsEmpty": "没有“{{query}}”的搜索结果",
       "playlistEmpty": "这个歌单里没有歌曲",
       "loadFailed": "无法加载此列表。",

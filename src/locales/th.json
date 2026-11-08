@@ -935,6 +935,7 @@
       "statusFailed": "นำเข้าไม่สำเร็จ",
       "likedEmpty": "ยังไม่มีเพลงที่ถูกใจ",
       "playlistsEmpty": "ยังไม่มีเพลย์ลิสต์",
+      "playlistTracksEmpty": "เพลย์ลิสต์นี้ไม่มีเพลง",
       "resultsEmpty": "ไม่พบผลลัพธ์สำหรับ “{{query}}”",
       "playlistEmpty": "เพลย์ลิสต์นี้ไม่มีเพลง",
       "loadFailed": "โหลดรายการนี้ไม่สำเร็จ",

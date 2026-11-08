@@ -1,3 +1,4 @@
+import { buttonVariants } from "@/components/ui/button-variants";
 import type {
   MarketPackage,
   MarketVersion,
@@ -5,14 +6,12 @@ import type {
   SourceSnapshot,
 } from "@/types/ipc";
 
-export const sourceActionButton =
-  "min-h-9 rounded-full border border-[var(--color-border)] px-4 text-xs focus-visible:outline-2 disabled:opacity-50";
-export const sourcePrimaryButton =
-  "min-h-9 rounded-full bg-[var(--color-accent)] px-4 text-xs font-medium text-[var(--color-on-accent)] hover:bg-[var(--color-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
+export const sourceActionButton = buttonVariants({ variant: "outline" });
+export const sourcePrimaryButton = buttonVariants();
 export const sourceRow =
-  "space-y-2 rounded-xl border border-[var(--color-border)] p-4";
+  "space-y-2 rounded-xl border border-border bg-card p-4";
 export const sourceDetails =
-  "text-xs [&_summary]:cursor-pointer [&_summary]:text-[var(--color-text-dim)] [&_summary]:select-none";
+  "text-[12px] [&_summary]:cursor-pointer [&_summary]:text-muted-foreground [&_summary]:select-none";
 
 export function isInstalledSource(source: SourceSnapshot): boolean {
   return (

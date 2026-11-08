@@ -70,6 +70,20 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@base-ui/react/-/react-1.9.0.tgz",
+    "sha512": "4bc092628b004812ada4bf125947d2efcac51257cb8a3882800ee81ce2b6da3089f791542ec6322b004d14e82e76dd1103effbc8d73b17cd5b3af4274606c189",
+    "dest-filename": "@base-ui__react-1.9.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@base-ui/utils/-/utils-0.5.0.tgz",
+    "sha512": "758186704b6d8e46223286b99c79bcbcb689d9472e4d6c68dc1140c0e61779183fabb51556f03a71a70421712cdc58017cad421ad5b5a6d125aacef0b31fadf4",
+    "dest-filename": "@base-ui__utils-0.5.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@bcoe/v8-coverage/-/v8-coverage-1.0.2.tgz",
     "sha512": "eb300193f10203f418482435346895c306d07ab50267e4d06e9eb843702099f36fbab1c7d23f13b576b5a9b4a15c0eaaaa4a408f85795bca4fea62ded6670ca8",
     "dest-filename": "@bcoe__v8-coverage-1.0.2.tgz",
@@ -192,6 +206,34 @@
     "url": "https://registry.npmjs.org/@exodus/bytes/-/bytes-1.16.0.tgz",
     "sha512": "21ca56f38b849f737b113b4d64c9712a17e5e8f79cf2b50d18e4c1b566cad452a1271205029b59c95aef5515418a6009c490a07373f17a9c64756586e035737c",
     "dest-filename": "@exodus__bytes-1.16.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@floating-ui/core/-/core-1.8.0.tgz",
+    "sha512": "d02219e62b69b3ff31ec11bc744221b39dc1bc2507d8f0a8a20b5a930453badf80ae6e7cb09a2827402e6612f0d87258211e5c30b34f0524bbdbcb0f868da485",
+    "dest-filename": "@floating-ui__core-1.8.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@floating-ui/dom/-/dom-1.8.0.tgz",
+    "sha512": "c974abcde1d905365a74b3a57f28429091cd78b2671d19d1227c1d678d0bed989a02dac1c28625b03ad7defe7307552d93b08b7f370e5675555a85c4932ec27a",
+    "dest-filename": "@floating-ui__dom-1.8.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@floating-ui/react-dom/-/react-dom-2.1.9.tgz",
+    "sha512": "2438c41460a9226c43080ec924abe203433df91b6625d8f49bf35553920c8012be026668b80410efffb618b1f41975d8d18330f685cf07c84a75b3d883940b62",
+    "dest-filename": "@floating-ui__react-dom-2.1.9.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@floating-ui/utils/-/utils-0.2.12.tgz",
+    "sha512": "1e90a8f2d996ccb55a779b36775f44840cf9ceaaeb43ab3af6a77a9a83cc42f90eb92c034f562045f59256e7387a79eaae0bf7387a6988e18c43ba02d77c88c3",
+    "dest-filename": "@floating-ui__utils-0.2.12.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1652,6 +1694,27 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/class-variance-authority/-/class-variance-authority-0.7.1.tgz",
+    "sha512": "29afbd4ebbadbfb1bc33a593e927a2456cfbf762b9a84a881841b35ca84013ac4e58063aa4f1fc53ef48637a0232fea4a9398bb2fed787fdb0d918a091e3ccb2",
+    "dest-filename": "class-variance-authority-0.7.1.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
+    "sha512": "7989b441606d52b0566561b4777f3a386030d7a67df793e2395a3607b6e35926c779d1a5e5ed1959aabae6438681448d7ac1080e407d2126d383f24af5d84264",
+    "dest-filename": "clsx-2.1.1.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/cn/-/cn-0.5.2.tgz",
+    "sha512": "c26d7413a8ae277eeb00b3b0dc3fb771f6975d948b34c876bb1a509f774d202a9f24ce7dc97aa06c0f7ff488b3d79e63e6460d2dd2ba5ab78d756dcd42dc7739",
+    "dest-filename": "cn-0.5.2.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz",
     "sha512": "2afa78e7d1eb576144275080b22d4abbe318de46ac1f5f53172913cf6c5698c7aae9b936354dd75ef7c9f90eb59b4c64b56c2dfb51d261fdc966c4e6b3769126",
     "dest-filename": "convert-source-map-2.0.0.tgz",
@@ -2296,6 +2359,13 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/reselect/-/reselect-5.3.0.tgz",
+    "sha512": "5c6a0b791015cd44dc275aa4c4f4210c9c8867977acf3643f674fb00464e69a53d51b59c961c9c1259a13be543e5b15e2eece13c168e576a170bcb86df9652a6",
+    "dest-filename": "reselect-5.3.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/resolve-pkg-maps/-/resolve-pkg-maps-1.0.0.tgz",
     "sha512": "b1e4b64e3dba4c154e0b6348736ace7b6cb664eede7f1213b4b65c1923a71c734e43b0a489405fc34230d9c93ac642213f02e128d2d2f013be844a6781096acf",
     "dest-filename": "resolve-pkg-maps-1.0.0.tgz",
@@ -2467,6 +2537,13 @@
     "url": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
     "sha512": "a0916ef781d06fe29576e49440bef09e99aa9df98bb0e03f9c087a6fa107d30084a0ad3f98f79753a737c0a0d5f373243ae1cf447b525ca294f7d2016b34bfdb",
     "dest-filename": "tslib-2.8.1.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/tw-animate-css/-/tw-animate-css-1.4.0.tgz",
+    "sha512": "edbce23a546a1f4849c7cd21ff799b89c2d6ee8f2a2ec1f9f9168b476b7e3873370f426558638340a4387316caed696f994c69723e8a82ee842aa8eb1857b741",
+    "dest-filename": "tw-animate-css-1.4.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {

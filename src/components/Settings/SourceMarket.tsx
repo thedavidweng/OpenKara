@@ -34,10 +34,10 @@ export function AddedAccessReview({
     <>
       {addedOrigins.length ? (
         <div>
-          <h4 className="text-xs font-semibold">
+          <h4 className="text-[12px] font-semibold">
             {t("settings.streaming.market.addedOrigins")}
           </h4>
-          <ul className="text-xs">
+          <ul className="text-[12px]">
             {addedOrigins.map((origin) => (
               <li key={origin} className="break-all">
                 {origin}
@@ -48,10 +48,10 @@ export function AddedAccessReview({
       ) : null}
       {addedCapabilities.length ? (
         <div>
-          <h4 className="text-xs font-semibold">
+          <h4 className="text-[12px] font-semibold">
             {t("settings.streaming.market.addedCapabilities")}
           </h4>
-          <ul className="text-xs">
+          <ul className="text-[12px]">
             {addedCapabilities.map((capability) => (
               <li key={capability}>{capability}</li>
             ))}
@@ -157,13 +157,13 @@ export function SourceMarket() {
   return (
     <div className="space-y-3">
       {loadError ? (
-        <p role="alert" className="text-xs">
+        <p role="alert" className="text-[12px]">
           {loadError}
         </p>
       ) : null}
       {status === "loading" ? <p role="status">{t("common.loading")}</p> : null}
       {status === "ready" && available.length === 0 ? (
-        <p className="text-xs text-[var(--color-text-dim)]">
+        <p className="text-[12px] text-[var(--color-text-dim)]">
           {t(
             registriesStatus === "ready" && registries.length === 0
               ? "settings.streaming.market.emptyNoRegistries"
@@ -189,10 +189,10 @@ export function SourceMarket() {
                   <h4 className="font-semibold">{pkg.name}</h4>
                   {official ? <OfficialBadge /> : null}
                 </div>
-                <p className="text-xs text-[var(--color-text-dim)]">
+                <p className="text-[12px] text-[var(--color-text-dim)]">
                   {pkg.description}
                 </p>
-                <p className="text-xs text-[var(--color-text-dim)]">
+                <p className="text-[12px] text-[var(--color-text-dim)]">
                   {[
                     latest
                       ? `${latest.version} · ${formatBytes(latest.size)}`
@@ -216,7 +216,7 @@ export function SourceMarket() {
                   )}
                 </button>
               ) : (
-                <p className="max-w-48 text-right text-xs text-[var(--color-text-dim)]">
+                <p className="max-w-48 text-right text-[12px] text-[var(--color-text-dim)]">
                   {pkg.required_host_version
                     ? t("settings.streaming.market.needsHost", {
                         version: pkg.required_host_version,
@@ -226,7 +226,7 @@ export function SourceMarket() {
               )}
             </div>
             {errors[key] ? (
-              <p role="alert" className="text-xs">
+              <p role="alert" className="text-[12px]">
                 {errors[key]}
               </p>
             ) : null}
@@ -288,7 +288,7 @@ export function SourceMarket() {
               >
                 <p>{t("settings.streaming.market.installBody")}</p>
                 {latest ? (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12px]">
                     <dt>{t("settings.streaming.market.version")}</dt>
                     <dd>
                       {latest.version} · {formatBytes(latest.size)}

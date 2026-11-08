@@ -1,11 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { firstGrapheme } from "@/components/Catalog/streaming-utils";
+import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import {
+  firstGrapheme,
+  visibleName,
+} from "@/components/Catalog/streaming-utils";
 import { useCatalogStore } from "@/stores/catalog-store";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
-
-const focusRing =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function StreamingAccountMenu({ name }: { name: string }) {
   const { t } = useTranslation();
@@ -14,69 +22,46 @@ export function StreamingAccountMenu({ name }: { name: string }) {
     s.sources.find((item) => item.source_id === s.activeSourceId),
   );
   const [confirmStop, setConfirmStop] = useState(false);
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const itemRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    itemRef.current?.focus();
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        setOpen(false);
-        triggerRef.current?.focus();
-      } else if (event.key === "Tab") {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  const displayName = visibleName(name) ?? "";
 
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        aria-label={t("catalog.streaming.accountMenu")}
-        title={name}
-        className={`flex size-9 items-center justify-center rounded-full bg-[var(--color-surface-muted)] text-[13px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-ghost-hover)] ${focusRing}`}
-      >
-        <span aria-hidden="true">{firstGrapheme(name)}</span>
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          aria-label={t("catalog.streaming.accountMenu")}
-          className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-1 shadow-[var(--shadow-popover)]"
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              className="h-9 max-w-64 gap-2 pl-1"
+              title={displayName || undefined}
+            />
+          }
         >
-          <button
-            ref={itemRef}
-            type="button"
-            role="menuitem"
+          <span
+            aria-hidden="true"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[13px] font-semibold"
+          >
+            {displayName ? (
+              firstGrapheme(displayName)
+            ) : (
+              <UserRound className="size-4" />
+            )}
+          </span>
+          {displayName ? <span className="truncate">{displayName}</span> : null}
+          <span className="sr-only">{t("catalog.streaming.accountMenu")}</span>
+          <ChevronDown aria-hidden="true" className="text-muted-foreground" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-40">
+          <DropdownMenuItem
             onClick={() => {
-              setOpen(false);
               if (source?.active_work.length) setConfirmStop(true);
               else void signOut();
             }}
-            className={`w-full rounded-md px-3 py-2 text-left text-[13px] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)] ${focusRing}`}
           >
+            <LogOut />
             {t("catalog.streaming.signOut")}
-          </button>
-        </div>
-      ) : null}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {confirmStop && source ? (
         <ConfirmationDialog
           title={t("catalog.streaming.signOut")}
@@ -92,6 +77,6 @@ export function StreamingAccountMenu({ name }: { name: string }) {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }

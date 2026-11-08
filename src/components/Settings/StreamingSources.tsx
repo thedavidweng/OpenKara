@@ -1,3 +1,5 @@
+import { buttonVariants } from "@/components/ui/button-variants";
+import { visibleName } from "@/components/Catalog/streaming-utils";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
@@ -18,10 +20,8 @@ import {
   sourceRow,
 } from "./source-market-utils";
 
-const rowButton =
-  "min-h-9 min-w-20 rounded-full border border-[var(--color-border)] px-4 text-xs focus-visible:outline-2 disabled:opacity-50";
-const rowPrimaryButton =
-  "min-h-9 min-w-20 rounded-full bg-[var(--color-accent)] px-4 text-xs font-medium text-[var(--color-on-accent)] hover:bg-[var(--color-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
+const rowButton = buttonVariants({ variant: "outline", className: "min-w-20" });
+const rowPrimaryButton = buttonVariants({ className: "min-w-20" });
 
 const hasSignIn = (source: SourceSnapshot) => {
   const auth = source.manifest?.authentication;
@@ -193,7 +193,7 @@ export function StreamingSources() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 flex-1 basis-56 text-xs text-[var(--color-text-dim)]">
+        <p className="min-w-0 flex-1 basis-56 text-[12px] text-[var(--color-text-dim)]">
           {t("settings.streaming.autoUpdateNotice")}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -222,13 +222,13 @@ export function StreamingSources() {
         </div>
       </div>
       {error ? (
-        <p role="alert" className="text-xs">
+        <p role="alert" className="text-[12px]">
           {error}
         </p>
       ) : null}
       {status === "loading" ? <p role="status">{t("common.loading")}</p> : null}
       {status === "ready" && installed.length === 0 ? (
-        <p className="text-xs text-[var(--color-text-dim)]">
+        <p className="text-[12px] text-[var(--color-text-dim)]">
           {t("settings.streaming.empty")}
         </p>
       ) : null}
@@ -246,9 +246,9 @@ export function StreamingSources() {
           session?.expired
             ? t("catalog.streaming.sessionExpired")
             : session?.signed_in
-              ? session.display_name
+              ? visibleName(session.display_name)
                 ? t("settings.streaming.signedInAs", {
-                    name: session.display_name,
+                    name: visibleName(session.display_name),
                   })
                 : t("catalog.streaming.signedIn")
               : null,
@@ -269,7 +269,7 @@ export function StreamingSources() {
                     <OfficialBadge />
                   ) : null}
                 </div>
-                <p className="truncate text-xs text-[var(--color-text-dim)]">
+                <p className="truncate text-[12px] text-[var(--color-text-dim)]">
                   {summary.join(" · ")}
                 </p>
               </header>
@@ -346,7 +346,7 @@ export function StreamingSources() {
                 aria-valuenow={
                   source.progress.total ? source.progress.completed : undefined
                 }
-                className="text-xs text-[var(--color-text-dim)]"
+                className="text-[12px] text-[var(--color-text-dim)]"
               >
                 {source.progress.phase}
                 {source.progress.total
@@ -355,34 +355,34 @@ export function StreamingSources() {
               </div>
             ) : null}
             {source.staged_version ? (
-              <p role="status" className="text-xs">
+              <p role="status" className="text-[12px]">
                 {t("settings.streaming.staged", {
                   version: source.staged_version,
                 })}
               </p>
             ) : null}
             {sessions[source.source_id]?.errors.auth ? (
-              <p role="alert" className="text-xs">
+              <p role="alert" className="text-[12px]">
                 {sessions[source.source_id].errors.auth}
               </p>
             ) : null}
             {source.last_error ? (
-              <p role="alert" className="text-xs">
+              <p role="alert" className="text-[12px]">
                 {source.last_error.message}
               </p>
             ) : null}
             {registryRemoved(source) ? (
-              <p className="text-xs text-[var(--color-text-dim)]">
+              <p className="text-[12px] text-[var(--color-text-dim)]">
                 {t("settings.streaming.registryRemoved")}
               </p>
             ) : null}
             {errors[source.source_id] ? (
-              <p role="alert" className="text-xs">
+              <p role="alert" className="text-[12px]">
                 {errors[source.source_id]}
               </p>
             ) : null}
             {source.active_work.length > 0 ? (
-              <p className="text-xs">
+              <p className="text-[12px]">
                 {t("settings.streaming.activeWork")}:{" "}
                 {source.active_work
                   .map((work) => t(`settings.streaming.work.${work.kind}`))

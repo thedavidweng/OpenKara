@@ -27,6 +27,7 @@
       "statusFailed": "Import failed",
       "likedEmpty": "No liked songs",
       "playlistsEmpty": "No playlists",
+      "playlistTracksEmpty": "This playlist has no songs",
       "resultsEmpty": "No results for “{{query}}”",
       "playlistEmpty": "This playlist has no songs",
       "loadFailed": "Couldn't load this list.",

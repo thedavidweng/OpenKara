@@ -936,6 +936,7 @@
       "statusFailed": "Importazione non riuscita",
       "likedEmpty": "Nessun brano che ti piace",
       "playlistsEmpty": "Nessuna playlist",
+      "playlistTracksEmpty": "Questa playlist non contiene brani",
       "resultsEmpty": "Nessun risultato per «{{query}}»",
       "playlistEmpty": "Questa playlist non contiene brani",
       "loadFailed": "Impossibile caricare questo elenco.",

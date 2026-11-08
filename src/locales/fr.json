@@ -936,6 +936,7 @@
       "statusFailed": "Échec de l’importation",
       "likedEmpty": "Aucun titre liké",
       "playlistsEmpty": "Aucune playlist",
+      "playlistTracksEmpty": "Cette playlist ne contient aucun titre",
       "resultsEmpty": "Aucun résultat pour « {{query}} »",
       "playlistEmpty": "Cette playlist ne contient aucun titre",
       "loadFailed": "Impossible de charger cette liste.",

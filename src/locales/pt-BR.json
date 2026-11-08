@@ -936,6 +936,7 @@
       "statusFailed": "Falha ao importar",
       "likedEmpty": "Nenhuma música curtida",
       "playlistsEmpty": "Nenhuma playlist",
+      "playlistTracksEmpty": "Esta playlist não tem músicas",
       "resultsEmpty": "Nenhum resultado para “{{query}}”",
       "playlistEmpty": "Esta playlist não tem músicas",
       "loadFailed": "Não foi possível carregar esta lista.",

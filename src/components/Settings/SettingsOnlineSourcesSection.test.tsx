@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -64,10 +65,7 @@ describe("SettingsOnlineSourcesSection", () => {
     expect(container.textContent).toContain("Source management");
     expect(container.textContent).not.toContain("Source market");
 
-    const discover = container.querySelector<HTMLElement>(
-      '[role="tab"][id$="-discover"]',
-    );
-    await user.click(discover!);
+    await user.click(within(container).getByRole("tab", { name: "Discover" }));
 
     expect(container.textContent).not.toContain("Source management");
     expect(container.textContent).toContain("Registry management");
@@ -128,10 +126,8 @@ describe("SettingsOnlineSourcesSection", () => {
       );
     });
 
-    const youtube = container.querySelector<HTMLInputElement>(
-      '[data-testid="online-source-youtube"]',
-    );
-    expect(youtube?.checked).toBe(false);
+    const youtube = within(container).getByRole("switch", { name: "YouTube" });
+    expect(youtube.getAttribute("aria-checked")).toBe("false");
   });
 
   test("enabling youtube writes the video source flag", async () => {

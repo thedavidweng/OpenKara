@@ -6,11 +6,11 @@ import { useSettings } from "./SettingsController.context";
 import { SourceMarket } from "./SourceMarket";
 import { SourceRegistries } from "./SourceRegistries";
 import { StreamingSources } from "./StreamingSources";
-import { SettingsTabList, SettingsTabPanel } from "./SettingsTabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { isInstalledSource } from "./source-market-utils";
 
 type SourcesTab = "installed" | "discover";
-const TABS_ID = "streaming-sources";
 
 export function SettingsOnlineSourcesSection() {
   const { t } = useTranslation();
@@ -35,16 +35,12 @@ export function SettingsOnlineSourcesSection() {
       <div className="space-y-4">
         <div className="space-y-2">
           <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
+            <Switch
               checked={settings.youtubeSourceEnabled}
-              onChange={(event) =>
-                void preferences.set({
-                  youtubeSourceEnabled: event.target.checked,
-                })
+              onCheckedChange={(checked) =>
+                void preferences.set({ youtubeSourceEnabled: checked })
               }
               disabled={isInitializing}
-              className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
               data-testid="online-source-youtube"
             />
             <span className="text-[13px] text-[var(--color-text)]">
@@ -62,52 +58,39 @@ export function SettingsOnlineSourcesSection() {
         ) : null}
         {sourcesSupported ? (
           <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
-            <h3 className="text-sm font-semibold">
+            <h3 className="text-[13px] font-semibold">
               {t("settings.streaming.title")}
             </h3>
-            <SettingsTabList
-              idPrefix={TABS_ID}
-              label={t("settings.streaming.tabsLabel")}
+            <Tabs
               value={tab}
-              onChange={setTab}
-              className="flex gap-1 border-b border-[var(--color-border)]"
-              tabs={[
-                {
-                  id: "installed",
-                  label: t("settings.streaming.tabs.installed", {
-                    count: sources.filter(isInstalledSource).length,
-                  }),
-                },
-                {
-                  id: "discover",
-                  label: t("settings.streaming.tabs.discover"),
-                },
-              ]}
-              tabClassName={(selected) =>
-                `-mb-px min-h-9 border-b-2 px-3 text-xs focus-visible:outline-2 ${
-                  selected
-                    ? "border-[var(--color-accent)] font-semibold text-[var(--color-text)]"
-                    : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-                }`
-              }
-            />
-            <SettingsTabPanel
-              idPrefix={TABS_ID}
-              value={tab}
-              className="space-y-3"
+              onValueChange={(value) => setTab(value as SourcesTab)}
+              className="gap-3"
             >
-              {tab === "installed" ? (
+              <TabsList
+                variant="line"
+                activateOnFocus
+                aria-label={t("settings.streaming.tabsLabel")}
+              >
+                <TabsTrigger value="installed" className="px-3">
+                  {t("settings.streaming.tabs.installed", {
+                    count: sources.filter(isInstalledSource).length,
+                  })}
+                </TabsTrigger>
+                <TabsTrigger value="discover" className="px-3">
+                  {t("settings.streaming.tabs.discover")}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="installed" className="space-y-3">
                 <StreamingSources />
-              ) : (
-                <>
-                  <p className="text-xs text-[var(--color-text-dim)]">
-                    {t("settings.streaming.trustNotice")}
-                  </p>
-                  <SourceRegistries />
-                  <SourceMarket />
-                </>
-              )}
-            </SettingsTabPanel>
+              </TabsContent>
+              <TabsContent value="discover" className="space-y-3">
+                <p className="text-[12px] text-muted-foreground">
+                  {t("settings.streaming.trustNotice")}
+                </p>
+                <SourceRegistries />
+                <SourceMarket />
+              </TabsContent>
+            </Tabs>
           </div>
         ) : null}
       </div>
