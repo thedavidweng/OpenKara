@@ -245,9 +245,9 @@ export function StreamingSources() {
           session?.expired
             ? t("catalog.streaming.sessionExpired")
             : session?.signed_in
-              ? session.display_name
+              ? session.display_name?.trim()
                 ? t("settings.streaming.signedInAs", {
-                    name: session.display_name,
+                    name: session.display_name.trim(),
                   })
                 : t("catalog.streaming.signedIn")
               : null,
