@@ -17,7 +17,7 @@ jobs:
     # thedavidweng-release GitHub App token, so release PRs and tags start
     # other workflows (PR checks, tag-push releases) like any other push.
     permissions: {}
-    uses: thedavidweng/.github/.github/workflows/release-please.yml@main
+    uses: thedavidweng/.github/.github/workflows/release-please.yml@3fd36efd68b432c860c8290d09c7a3c14674a209 # ci/release-please-app (thedavidweng/.github#1)
     with:
       app-id: ${{ vars.RELEASE_APP_ID }}
     secrets:
