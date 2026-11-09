@@ -64,7 +64,7 @@ jobs:
           path-to-document: https://github.com/thedavidweng/OpenKara/blob/cc7a3e1b7e24d9bbe10c2fc9f6b39ff84328d2f1/CLA.md
           path-to-signatures: signatures/version1/cla.json
           branch: cla-signatures
-          allowlist: thedavidweng,dependabot[bot],github-actions[bot]
+          allowlist: thedavidweng,dependabot[bot],github-actions[bot],thedavidweng-release[bot]
           custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
           # Keep this prompt in sync with signingInstructions in the result step
           # below; tests/ci/cla-workflow-contract.test.ts checks both.

@@ -13,35 +13,15 @@ permissions: {}
 jobs:
   release-please:
     name: Release Please
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write # create tags, releases, and release-please release PR commits
-      pull-requests: write # open and update the running release PR
-      actions: write # dispatch required checks for the release PR
-    outputs:
-      release_created: ${{ steps.rp.outputs.release_created }}
-      tag_name: ${{ steps.rp.outputs.tag_name }}
-      version: ${{ steps.rp.outputs.version }}
-      sha: ${{ steps.rp.outputs.sha }}
-    steps:
-      - id: rp
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-      - name: Dispatch release PR checks
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.head.ref | startswith("release-please--branches--main--"))) | [.number, .head.ref] | @tsv' |
-          while IFS=$'\t' read -r number branch; do
-            gh workflow run ci.yml --ref "$branch" -f "pull_request=$number"
-            gh workflow run packaging.yml --ref "$branch" -f "pull_request=$number"
-          done
+    # Token, action pins and outputs live in the shared workflow; it mints a
+    # thedavidweng-release GitHub App token, so release PRs and tags start
+    # other workflows (PR checks, tag-push releases) like any other push.
+    permissions: {}
+    uses: thedavidweng/.github/.github/workflows/release-please.yml@main
+    with:
+      app-id: ${{ vars.RELEASE_APP_ID }}
+    secrets:
+      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   # release-please bumps package.json and CHANGELOG.md in its release PR.
   # The native manifests (src-tauri/Cargo.toml, Cargo.lock, tauri.conf.json)
