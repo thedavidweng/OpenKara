@@ -26,8 +26,11 @@ The Release Please workflow:
 4. Applies `.github/release-notes-installation.md`. The template includes
    Homebrew and WinGet install commands.
 5. Dispatches the [`Release` workflow](../.github/workflows/release.yml)
-   with `workflow_dispatch`. Tag pushes from `GITHUB_TOKEN` do not start
-   other workflows, so this explicit dispatch is required.
+   with `workflow_dispatch`. release-please now runs with a
+   `thedavidweng-release` GitHub App token, so its tag push also starts
+   `release.yml`, but that run skips itself: the tag still points at the
+   commit before the native-manifest sync. The dispatched run is the one
+   that ships.
 
 The Release workflow then:
 

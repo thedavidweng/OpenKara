@@ -24,6 +24,12 @@ env:
 jobs:
   prepare-release:
     name: Prepare release
+    # release-please's tag push now comes from the thedavidweng-release App,
+    # and App tag pushes start workflows. Skip that run: the tag still points
+    # at release-please's commit, before sync-native-versions, and the
+    # ensure-tag-and-dispatch-release job in release-please.yml dispatches the
+    # real release run after it rebinds the draft.
+    if: ${{ github.event_name != 'push' || github.actor != 'thedavidweng-release[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
