@@ -28,8 +28,8 @@ pub(crate) use credentials::store_legacy_session;
 pub use credentials::{clear_retired_sessions, clear_session, load_credentials, store_session};
 #[cfg(feature = "streaming-sources")]
 pub use identity::{
-    annotate_library_songs, lookup_playable_match, lookup_playlist_id, lookup_song_hash,
-    remember_playable_match, StreamingTrackIdentity,
+    annotate_library_songs, identities_for_song, lookup_playable_match, lookup_playlist_id,
+    lookup_song_hash, remember_playable_match, StreamingTrackIdentity,
 };
 #[cfg(feature = "streaming-sources")]
 pub use import::{

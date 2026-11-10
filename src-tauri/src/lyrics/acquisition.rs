@@ -3,12 +3,11 @@ use super::{
     error::LyricsError,
     fetch::{
         accepts_as_timed, fetch_lyrics_for_song_local, has_word_tokens, lookup_query_from_song,
-        offset_ms_for_raw, LyricsFetchResult, LyricsSource, OnlineLyricsResult,
-        TimedLyricsProvider,
+        offset_ms_for_raw, parse_lyrics_auto, LyricsFetchResult, LyricsSource, OnlineLyricsResult,
+        TimedLyricsProvider, TrackLyrics,
     },
     lrcapi::LrcApiClient,
     lrclib::{LrcLibClient, LyricsLookupQuery},
-    ttml_parser,
 };
 use crate::{
     cache::{self, lyrics::LyricsCacheEntry},
@@ -46,6 +45,7 @@ pub struct LyricsAcquisition<'a> {
     amll: &'a AmllClient,
     lrclib: &'a LrcLibClient,
     lrcapi: &'a LrcApiClient,
+    track: Option<&'a dyn TrackLyrics>,
 }
 
 impl<'a> LyricsAcquisition<'a> {
@@ -54,10 +54,18 @@ impl<'a> LyricsAcquisition<'a> {
             amll,
             lrclib,
             lrcapi,
+            track: None,
         }
     }
 
-    /// Run cache → embedded → TTML → LYS → LRC → AMLL → LRCLIB → LrcApi.
+    /// Adds the lyrics of the song's own Streaming Source track to the chain.
+    pub fn with_track(mut self, track: Option<&'a dyn TrackLyrics>) -> Self {
+        self.track = track;
+        self
+    }
+
+    /// Run cache → embedded → TTML → LYS → LRC → Streaming Source → AMLL →
+    /// LRCLIB → LrcApi.
     ///
     /// This method does not write SQLite. Callers must pass its result to a
     /// `PublishChanges::apply` mutation before the result becomes durable.
@@ -122,7 +130,8 @@ impl<'a> LyricsAcquisition<'a> {
 
     /// Fetch lyrics from Online Lyrics Sources with an explicit overwrite intent.
     ///
-    /// Word-timed Upgrade of Line-timed Lyrics from an Online Lyrics Source calls AMLL only.
+    /// Word-timed Upgrade of Line-timed Lyrics from an Online Lyrics Source calls
+    /// the song's Streaming Source, then AMLL.
     /// `user_replace` and unsynced embedded / absent use the full chain.
     pub fn fetch_online(
         &self,
@@ -145,7 +154,7 @@ impl<'a> LyricsAcquisition<'a> {
                     if is_word_timed_probe_fresh(entry) {
                         return Ok(OnlineLyricsResult::NotApplicable);
                     }
-                    return Ok(self.fetch_amll_query(&query));
+                    return Ok(self.fetch_word_timed_upgrade(&query, &entry.source));
                 }
                 if !matches!(entry.source, LyricsSource::Embedded | LyricsSource::Absent) {
                     return Ok(OnlineLyricsResult::NotApplicable);
@@ -170,6 +179,38 @@ impl<'a> LyricsAcquisition<'a> {
         }
     }
 
+    /// The song's Streaming Source first, unless it supplied the current
+    /// lyrics, then AMLL. Only Word-timed Lyrics count as found.
+    fn fetch_word_timed_upgrade(
+        &self,
+        query: &LyricsLookupQuery,
+        current: &LyricsSource,
+    ) -> OnlineLyricsResult {
+        let track = self
+            .track
+            .filter(|_| !matches!(current, LyricsSource::Streaming(_)));
+        let mut track_error = None;
+        if let Some(track) = track {
+            match track.fetch() {
+                Ok(Some(raw)) if is_word_timed(&raw) => {
+                    return OnlineLyricsResult::Found(LyricsFetchResult {
+                        source: LyricsSource::Streaming(track.source_id().to_owned()),
+                        raw_lrc: raw,
+                        word_timed_checked_at: None,
+                    })
+                }
+                Ok(_) => {}
+                Err(error) => track_error = Some(error),
+            }
+        }
+        match (self.fetch_amll_query(query), track_error) {
+            (OnlineLyricsResult::WordTimedProbeMiss, Some(error)) => {
+                OnlineLyricsResult::Unavailable(error)
+            }
+            (result, _) => result,
+        }
+    }
+
     /// Full provider chain for a track that is not in the library. Nothing
     /// is cached or persisted.
     pub fn fetch_for_query(&self, query: &LyricsLookupQuery) -> OnlineLyricsResult {
@@ -177,11 +218,14 @@ impl<'a> LyricsAcquisition<'a> {
     }
 
     fn fetch_online_query(&self, query: &LyricsLookupQuery) -> OnlineLyricsResult {
-        let providers = [
-            TimedLyricsProvider::Amll(self.amll),
-            TimedLyricsProvider::LrcLib(self.lrclib),
-            TimedLyricsProvider::LrcApi(self.lrcapi),
-        ];
+        let mut providers: Vec<_> = self
+            .track
+            .map(TimedLyricsProvider::Track)
+            .into_iter()
+            .collect();
+        providers.push(TimedLyricsProvider::Amll(self.amll));
+        providers.push(TimedLyricsProvider::LrcLib(self.lrclib));
+        providers.push(TimedLyricsProvider::LrcApi(self.lrcapi));
         super::fetch::fetch_online_timed_lyrics(&providers, query)
     }
 
@@ -368,8 +412,17 @@ fn unchanged_option(entry: Option<&LyricsCacheEntry>) -> LyricsPersistenceResult
 fn is_online_line_timed_source(source: &LyricsSource) -> bool {
     matches!(
         source,
-        LyricsSource::LrcLib | LyricsSource::LrcApi | LyricsSource::LrcApiTtml
+        LyricsSource::LrcLib
+            | LyricsSource::LrcApi
+            | LyricsSource::LrcApiTtml
+            | LyricsSource::Streaming(_)
     )
+}
+
+fn is_word_timed(raw: &str) -> bool {
+    parse_lyrics_auto(raw)
+        .map(|lines| has_word_tokens(&lines))
+        .unwrap_or(false)
 }
 
 fn may_automatic_upgrade_replace(
@@ -379,10 +432,10 @@ fn may_automatic_upgrade_replace(
     match current {
         None | Some(LyricsSource::Absent) | Some(LyricsSource::Embedded) => true,
         Some(src) if is_online_line_timed_source(src) => {
-            incoming.source == LyricsSource::Amll
-                && ttml_parser::parse_ttml(&incoming.raw_lrc)
-                    .map(|lines| has_word_tokens(&lines))
-                    .unwrap_or(false)
+            matches!(
+                incoming.source,
+                LyricsSource::Amll | LyricsSource::Streaming(_)
+            ) && is_word_timed(&incoming.raw_lrc)
         }
         Some(_) => false,
     }
@@ -976,5 +1029,177 @@ mod tests {
             .expect("protected skip");
         assert!(matches!(fetched, OnlineLyricsResult::NotApplicable));
         search.assert();
+    }
+
+    #[derive(Debug)]
+    struct FixedTrackLyrics(Option<&'static str>, bool);
+    impl TrackLyrics for FixedTrackLyrics {
+        fn source_id(&self) -> &str {
+            "fixture"
+        }
+        fn fetch(&self) -> anyhow::Result<Option<String>> {
+            if self.1 {
+                anyhow::bail!("source offline");
+            }
+            Ok(self.0.map(str::to_owned))
+        }
+    }
+
+    const SOURCE_WORD_TTML: &str = r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:01.500">Hel</span><span begin="00:01.500" end="00:02.000">lo</span></p></div></body></tt>"#;
+    const SOURCE_LINE_LRC: &str = "[00:01.00]Hello\n";
+
+    fn amll_miss() -> (mockito::ServerGuard, AmllClient) {
+        let mut server = mockito::Server::new();
+        server
+            .mock("GET", "/v1/lyrics/search")
+            .match_query(mockito::Matcher::Any)
+            .with_status(404)
+            .create();
+        let amll = AmllClient::new(server.url());
+        (server, amll)
+    }
+
+    fn upgrade_with(track: &FixedTrackLyrics) -> (Connection, OnlineLyricsResult) {
+        let connection = connection();
+        seed_lrclib(&connection, 0);
+        let (_server, amll) = amll_miss();
+        let lrclib = LrcLibClient::new("http://127.0.0.1:9");
+        let lrcapi = LrcApiClient::new("http://127.0.0.1:9");
+        let result = LyricsAcquisition::new(&amll, &lrclib, &lrcapi)
+            .with_track(Some(track))
+            .fetch_online(
+                &connection,
+                "song",
+                LyricsOnlineFetchIntent::AutomaticUpgrade,
+            )
+            .expect("upgrade fetch");
+        (connection, result)
+    }
+
+    #[test]
+    fn word_timed_upgrade_takes_source_lyrics_when_amll_misses() {
+        let (connection, result) = upgrade_with(&FixedTrackLyrics(Some(SOURCE_WORD_TTML), false));
+        assert!(matches!(
+            &result,
+            OnlineLyricsResult::Found(found) if found.source == LyricsSource::Streaming("fixture".into())
+        ));
+        LyricsAcquisition::persist_online_result(
+            &connection,
+            "song",
+            result,
+            LyricsOnlineFetchIntent::AutomaticUpgrade,
+        )
+        .expect("persist");
+        let cached = cache::lyrics::get_lyrics_cache_entry(&connection, "song")
+            .expect("cache lookup")
+            .expect("entry");
+        assert_eq!(cached.source, LyricsSource::Streaming("fixture".into()));
+    }
+
+    #[test]
+    fn word_timed_upgrade_ignores_line_timed_source_lyrics() {
+        let (connection, result) = upgrade_with(&FixedTrackLyrics(Some(SOURCE_LINE_LRC), false));
+        assert!(matches!(result, OnlineLyricsResult::WordTimedProbeMiss));
+        LyricsAcquisition::persist_online_result(
+            &connection,
+            "song",
+            result,
+            LyricsOnlineFetchIntent::AutomaticUpgrade,
+        )
+        .expect("persist");
+        assert_lrclib_not_wiped(&connection, 0);
+    }
+
+    #[test]
+    fn word_timed_upgrade_source_failure_is_not_a_miss() {
+        let (_connection, result) = upgrade_with(&FixedTrackLyrics(None, true));
+        assert!(matches!(result, OnlineLyricsResult::Unavailable(_)));
+    }
+
+    #[test]
+    fn full_chain_asks_the_source_before_amll() {
+        let mut server = mockito::Server::new();
+        let search = server
+            .mock("GET", "/v1/lyrics/search")
+            .match_query(mockito::Matcher::Any)
+            .expect(0)
+            .create();
+        let amll = AmllClient::new(server.url());
+        let lrclib = LrcLibClient::new("http://127.0.0.1:9");
+        let lrcapi = LrcApiClient::new("http://127.0.0.1:9");
+        let track = FixedTrackLyrics(Some(SOURCE_LINE_LRC), false);
+        let result = LyricsAcquisition::new(&amll, &lrclib, &lrcapi)
+            .with_track(Some(&track))
+            .fetch_for_query(&query());
+        assert!(matches!(
+            result,
+            OnlineLyricsResult::Found(found)
+                if found.source == LyricsSource::Streaming("fixture".into())
+        ));
+        search.assert();
+    }
+
+    fn query() -> LyricsLookupQuery {
+        LyricsLookupQuery {
+            track_name: "Song".to_owned(),
+            artist_name: "Artist".to_owned(),
+            album_name: None,
+            duration_seconds: None,
+        }
+    }
+
+    fn full_chain_with_every_provider_missing(
+        track: Option<&FixedTrackLyrics>,
+    ) -> OnlineLyricsResult {
+        let mut server = mockito::Server::new();
+        server
+            .mock("GET", "/v1/lyrics/search")
+            .match_query(mockito::Matcher::Any)
+            .with_status(404)
+            .create();
+        server
+            .mock("GET", "/api/get")
+            .match_query(mockito::Matcher::Any)
+            .with_status(404)
+            .create();
+        server
+            .mock("GET", "/jsonapi")
+            .match_query(mockito::Matcher::Any)
+            .with_body(r#"{"message":"未找到歌词"}"#)
+            .create();
+        let amll = AmllClient::new(server.url());
+        let lrclib = LrcLibClient::new(server.url());
+        let lrcapi = LrcApiClient::new(server.url());
+        LyricsAcquisition::new(&amll, &lrclib, &lrcapi)
+            .with_track(track.map(|track| track as _))
+            .fetch_for_query(&query())
+    }
+
+    #[test]
+    fn unavailable_source_keeps_a_full_miss_out_of_the_negative_cache() {
+        assert!(matches!(
+            full_chain_with_every_provider_missing(None),
+            OnlineLyricsResult::DefiniteMissing
+        ));
+        assert!(matches!(
+            full_chain_with_every_provider_missing(Some(&FixedTrackLyrics(None, true))),
+            OnlineLyricsResult::Unavailable(_)
+        ));
+        assert!(matches!(
+            full_chain_with_every_provider_missing(Some(&FixedTrackLyrics(None, false))),
+            OnlineLyricsResult::DefiniteMissing
+        ));
+    }
+
+    #[test]
+    fn streaming_source_serializes_with_its_source_id() {
+        assert_eq!(
+            serde_json::to_value(LyricsSource::Streaming("netease".into())).unwrap(),
+            serde_json::json!("streaming:netease")
+        );
+        assert_eq!(
+            serde_json::to_value(LyricsSource::LrcLib).unwrap(),
+            serde_json::json!("lrc_lib")
+        );
     }
 }

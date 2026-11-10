@@ -89,11 +89,13 @@ fn fetch_preview_lyrics(
             .filter(|ms| *ms >= 1_000)
             .map(|ms| ms / 1_000),
     };
+    let track_lyrics = source_track_lyrics(app_handle, source_id, remote_track_id);
     let acquisition = LyricsAcquisition::new(
         &state.amll_client,
         &state.lrclib_client,
         &state.lrcapi_client,
-    );
+    )
+    .with_track(track_lyrics.as_ref().map(|track| track as _));
     match acquisition.fetch_for_query(&query) {
         lyrics::fetch::OnlineLyricsResult::Found(found) => {
             payload_from_fetched(song_id.clone(), &found)
@@ -103,6 +105,91 @@ fn fetch_preview_lyrics(
     }
 }
 
+/// `source` is `None` while the installed source is disabled or not ready;
+/// the lookup then fails, so a miss elsewhere writes no negative cache.
+#[cfg(feature = "streaming-sources")]
+struct SourceTrackLyrics {
+    source: Option<crate::catalog::PluginStreamingSource>,
+    source_id: String,
+    track_id: String,
+}
+#[cfg(feature = "streaming-sources")]
+impl std::fmt::Debug for SourceTrackLyrics {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SourceTrackLyrics")
+            .field("source_id", &self.source_id)
+            .field("track_id", &self.track_id)
+            .finish()
+    }
+}
+#[cfg(feature = "streaming-sources")]
+impl lyrics::fetch::TrackLyrics for SourceTrackLyrics {
+    fn source_id(&self) -> &str {
+        &self.source_id
+    }
+    fn fetch(&self) -> anyhow::Result<Option<String>> {
+        let Some(source) = &self.source else {
+            anyhow::bail!("streaming source is unavailable");
+        };
+        source
+            .lyrics(&self.track_id)
+            .map_err(|_| anyhow::anyhow!("streaming source lyrics are unavailable"))
+    }
+}
+
+#[cfg(feature = "streaming-sources")]
+fn source_track_lyrics(
+    app_handle: &AppHandle,
+    source_id: &str,
+    track_id: &str,
+) -> Option<SourceTrackLyrics> {
+    use tauri::Manager;
+    let snapshot = app_handle
+        .try_state::<crate::source_host::SourceHost>()?
+        .snapshot(source_id)
+        .ok()?;
+    let declares_lyrics = snapshot
+        .manifest
+        .is_some_and(|manifest| manifest.capabilities.iter().any(|value| value == "lyrics"));
+    if snapshot.installed_version.is_none() || !declares_lyrics {
+        return None;
+    }
+    let source = (snapshot.enabled && snapshot.loaded)
+        .then(|| crate::commands::catalog::source(app_handle, source_id).ok())
+        .flatten();
+    Some(SourceTrackLyrics {
+        source,
+        source_id: source_id.to_owned(),
+        track_id: track_id.to_owned(),
+    })
+}
+
+/// The lyrics lookup of the first Streaming Source that holds one of the
+/// song's Streaming Track Identities and declares `lyrics`.
+#[cfg(feature = "streaming-sources")]
+fn song_track_lyrics(
+    app_handle: &AppHandle,
+    connection: &Connection,
+    song_id: &str,
+) -> Option<Box<dyn lyrics::fetch::TrackLyrics>> {
+    crate::catalog::identities_for_song(connection, song_id)
+        .ok()?
+        .iter()
+        .find_map(|identity| {
+            source_track_lyrics(app_handle, &identity.source, &identity.remote_track_id)
+        })
+        .map(|track| Box::new(track) as _)
+}
+#[cfg(not(feature = "streaming-sources"))]
+fn song_track_lyrics(
+    _app_handle: &AppHandle,
+    _connection: &Connection,
+    _song_id: &str,
+) -> Option<Box<dyn lyrics::fetch::TrackLyrics>> {
+    None
+}
+
 fn fetch_lyrics_on_thread(
     state: &AppState,
     app_handle: &AppHandle,
@@ -110,11 +197,13 @@ fn fetch_lyrics_on_thread(
 ) -> CommandResult<LyricsPayload> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    let track_lyrics = song_track_lyrics(app_handle, &connection, song_id);
     let acquisition = LyricsAcquisition::new(
         &state.amll_client,
         &state.lrclib_client,
         &state.lrcapi_client,
-    );
+    )
+    .with_track(track_lyrics.as_deref());
     let acquired = acquisition.acquire(&connection, &library_root, song_id)?;
 
     match acquired {
@@ -586,11 +675,13 @@ fn fetch_lyrics_online_on_thread(
 ) -> CommandResult<LyricsPayload> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
+    let track_lyrics = song_track_lyrics(app_handle, &connection, song_id);
     let acquisition = LyricsAcquisition::new(
         &state.amll_client,
         &state.lrclib_client,
         &state.lrcapi_client,
-    );
+    )
+    .with_track(track_lyrics.as_deref());
     let online_result = acquisition.fetch_online(&connection, song_id, intent)?;
     let should_publish = !matches!(
         online_result,

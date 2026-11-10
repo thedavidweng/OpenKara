@@ -30,7 +30,7 @@ fn workflow_manifest(registry: &RegistryFixture, id: &str, web: bool) -> SourceM
     if web {
         manifest
             .capabilities
-            .extend(["search", "liked_tracks", "preview"].map(str::to_owned));
+            .extend(["search", "liked_tracks", "preview", "lyrics"].map(str::to_owned));
     } else {
         manifest
             .capabilities
@@ -138,6 +138,9 @@ async fn installed_sources_keep_auth_pages_metadata_and_shared_import_isolated()
         assert!(tauri::async_runtime::block_on(artwork::load(&worker_artwork,&worker_host,&root,&cover)).is_none());
         assert!(official.tracks(&["1".into()]).is_err());
         assert_eq!(official.import_tracks(&["1".into()]).unwrap()[0].title,"Official fixture 1");
+        assert_eq!(official.lyrics("1").unwrap().as_deref(),Some("[00:01.00]Official fixture 1\n"));
+        assert_eq!(official.lyrics("2").unwrap(),None);
+        assert!(challenge.lyrics("1").is_err(),"a source without the lyrics capability is never asked");
         let public_media=official.resolve("1",&NoResolveProgress).unwrap();
         match public_media{super::types::StreamingResolveOutcome::File(file)=>std::fs::remove_file(file.path).unwrap(),_=>panic!("accepted public import media")};
         let start=official.request("auth.start",json!({})).unwrap();

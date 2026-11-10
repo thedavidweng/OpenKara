@@ -183,7 +183,9 @@ song. It follows the fixed source order and records the winning source.
 
 **Online Lyrics Source (在线歌词源)**:
 A network lyrics lookup in **Lyrics Acquisition**. AMLL, LRCLIB, and LrcApi
-are online lyrics sources. It is not an **Online Source**.
+are online lyrics sources. The **Streaming Source** behind a song's
+**Streaming Track Identity** is also an online lyrics source when it
+declares `lyrics`. It is not an **Online Source**.
 _Avoid_: Online Source, online source, catalog, scrobbler, provider
 
 **Word-timed Lyrics (逐字歌词)**:

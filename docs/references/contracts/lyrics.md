@@ -1,6 +1,6 @@
 # 歌词契约
 
-覆盖歌词 IPC：AMLL client、LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset / import_lyrics_files` 命令。
+覆盖歌词 IPC：Streaming Source 歌词、AMLL client、LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset / import_lyrics_files` 命令。
 
 ## 接口
 
@@ -8,7 +8,7 @@
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
 3. `set_lyrics_font_step(step: i8) -> AppSettings`
 4. `save_manual_lyrics(song_id: String, text: String) -> LyricsPayload`
-5. 抓取优先顺序固定为 `cache -> embedded -> sidecar TTML -> sidecar LYS -> sidecar LRC -> AMLL -> LRCLIB -> LrcApi`
+5. 抓取优先顺序固定为 `cache -> embedded -> sidecar TTML -> sidecar LYS -> sidecar LRC -> Streaming Source -> AMLL -> LRCLIB -> LrcApi`
 6. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
 7. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
 8. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
@@ -76,11 +76,12 @@
    - 同名 sidecar `.ttml`
    - 同名 sidecar `.lys`
    - 同名 sidecar `.lrc`
+   - 歌曲的 Streaming Source：歌曲有该 source 的 Streaming Track Identity，且 source 已安装并声明 `lyrics` capability 时，调用 `lyrics.get {track_id}`（见 [protocol](./streaming-source-protocol.md#lyrics)）。返回的 TTML 或 LRC 能解析出 timed lines 时命中，来源记为 `streaming:<source_id>`
    - AMLL `GET /v1/lyrics/search` then `GET /v1/lyrics/get`；仅在自信匹配且 TTML 含 word tokens 时命中
    - LRCLIB `GET /api/get`
    - LrcApi `GET /jsonapi`；优先用 `lrc`，没有 synced LRC 时可用 `lrc_ttml`
 4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始歌词文本、来源和 `offset_ms = offset_ms_for_raw(raw)` 写入 SQLite（LRC `[offset:]`，可选 TTML 声明 offset，否则 0）。命令返回值从 cache 行重建，因此 payload 的 `offset_ms` 与磁盘一致。
-5. 在线 provider 的请求失败不会被当作确定缺失；后端会继续尝试后续 provider，并且不会写入 negative cache
+5. 在线 provider 的请求失败不会被当作确定缺失；后端会继续尝试后续 provider，并且不会写入 negative cache。已安装并声明 `lyrics`、但被禁用或没有可运行 release 的 Streaming Source 按请求失败处理
 6. 如果所有来源都 miss，命令仍然成功返回；只是 `lines = []`、`source = null`
 7. 如果歌曲不存在、文件读取失败或歌词解析失败，命令返回 `CommandError`
 
@@ -99,18 +100,18 @@
 
 1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar。Provider 集合取决于 `intent` 和当前 cache 行（见下表）
 2. `intent` 必须为 `automatic_upgrade` 或 `user_replace`
-3. 完整在线链顺序固定为 `AMLL -> LRCLIB -> LrcApi`。Word-timed Upgrade 路径（`automatic_upgrade` 且当前行为 `lrc_lib` / `lrc_api` / `lrc_api_ttml`）只调用 AMLL
+3. 完整在线链顺序固定为 `Streaming Source -> AMLL -> LRCLIB -> LrcApi`。Streaming Source 只在歌曲有对应 Streaming Track Identity 时参与。Word-timed Upgrade 路径（`automatic_upgrade` 且当前行为 `lrc_lib` / `lrc_api` / `lrc_api_ttml` / `streaming:<source_id>`）先调用歌曲的 Streaming Source（当前行就来自该 source 时跳过），再调用 AMLL；只接受 Word-timed Lyrics
 4. `user_replace` 只有在完整链中全部 provider 都确定缺失时，才写入 7 天 `absent` 负缓存并返回空 payload。Word-timed Upgrade miss 返回当前缓存 payload，不得写入 `absent`，改为盖 `word_timed_checked_at` 戳
-5. `automatic_upgrade` 可以用任意 timed 在线结果替换 `embedded` 或 `absent`。它只能用 word-timed `amll` 替换 `lrc_lib` / `lrc_api` / `lrc_api_ttml`。`user_replace` 可以替换任何现有行
+5. `automatic_upgrade` 可以用任意 timed 在线结果替换 `embedded` 或 `absent`。它只能用 word-timed `amll` 或 word-timed `streaming:<source_id>` 替换 `lrc_lib` / `lrc_api` / `lrc_api_ttml` / Line-timed `streaming:<source_id>`。`user_replace` 可以替换任何现有行
 6. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
-7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache。429 / 5xx / timeout 不盖 probe 戳
+7. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`，不写入 negative cache。429 / 5xx / timeout 不盖 probe 戳。Upgrade 路径中 Streaming Source 失败且 AMLL miss 时同样返回 `CommandError`，不盖 probe 戳
 
-| Intent                                                        | Online providers       | May replace             |
-| ------------------------------------------------------------- | ---------------------- | ----------------------- |
-| `automatic_upgrade` + current Online Lyrics Source Line-timed | AMLL only              | Only Word-timed `amll`  |
-| `automatic_upgrade` + `embedded` / `absent` / no row          | AMLL → LRCLIB → LrcApi | Any timed online winner |
-| `automatic_upgrade` + manual / sidecar / `amll`               | None (no HTTP)         | Nothing                 |
-| `user_replace`                                                | AMLL → LRCLIB → LrcApi | Any existing row        |
+| Intent                                                        | Online providers                          | May replace                                      |
+| ------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
+| `automatic_upgrade` + current Online Lyrics Source Line-timed | Streaming Source → AMLL                   | Only Word-timed `amll` / `streaming:<source_id>` |
+| `automatic_upgrade` + `embedded` / `absent` / no row          | Streaming Source → AMLL → LRCLIB → LrcApi | Any timed online winner                          |
+| `automatic_upgrade` + manual / sidecar / `amll`               | None (no HTTP)                            | Nothing                                          |
+| `user_replace`                                                | Streaming Source → AMLL → LRCLIB → LrcApi | Any existing row                                 |
 
 Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command still returns the current cache row.
 
@@ -231,20 +232,21 @@ Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command s
 
 ### Shared type: `LyricsSource`
 
-| Serialized value | Meaning                                           |
-| ---------------- | ------------------------------------------------- |
-| `lrc_lib`        | LRCLIB timed LRC                                  |
-| `lrc_api`        | LrcApi timed LRC                                  |
-| `lrc_api_ttml`   | LrcApi TTML payload                               |
-| `amll`           | AMLL native TTML that parsed as Word-timed Lyrics |
-| `embedded`       | Audio tag embedded lyrics                         |
-| `sidecar`        | Same-name `.lrc` sidecar                          |
-| `sidecar_ttml`   | Same-name `.ttml` sidecar                         |
-| `sidecar_lys`    | Same-name `.lys` sidecar                          |
-| `manual`         | User-saved manual LRC/plain text                  |
-| `manual_ttml`    | User-saved manual TTML                            |
-| `manual_lys`     | User-saved manual LYS                             |
-| `absent`         | Negative cache (all sources miss, 7-day TTL)      |
+| Serialized value        | Meaning                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| `lrc_lib`               | LRCLIB timed LRC                                                 |
+| `lrc_api`               | LrcApi timed LRC                                                 |
+| `lrc_api_ttml`          | LrcApi TTML payload                                              |
+| `amll`                  | AMLL native TTML that parsed as Word-timed Lyrics                |
+| `streaming:<source_id>` | `lyrics.get` result of the song's Streaming Source (TTML or LRC) |
+| `embedded`              | Audio tag embedded lyrics                                        |
+| `sidecar`               | Same-name `.lrc` sidecar                                         |
+| `sidecar_ttml`          | Same-name `.ttml` sidecar                                        |
+| `sidecar_lys`           | Same-name `.lys` sidecar                                         |
+| `manual`                | User-saved manual LRC/plain text                                 |
+| `manual_ttml`           | User-saved manual TTML                                           |
+| `manual_lys`            | User-saved manual LYS                                            |
+| `absent`                | Negative cache (all sources miss, 7-day TTL)                     |
 
 ### Shared type: `LyricLine`
 
@@ -279,7 +281,7 @@ Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command s
    - `offset_ms`
    - `fetched_at`
    - `word_timed_checked_at`（nullable Unix seconds；Word-timed Upgrade probe，7 天 TTL，不出现在 `LyricsPayload`）
-2. 当 embedded、sidecar 和全部在线 provider（AMLL、LRCLIB、LrcApi）都确定缺失时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
+2. 当 embedded、sidecar 和全部在线 provider（歌曲的 Streaming Source、AMLL、LRCLIB、LrcApi）都确定缺失时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
 3. 负缓存行有 7 天 TTL（`NEGATIVE_CACHE_TTL_SECS`）。超过 TTL 后，`fetch_lyrics` / `fetch_lyrics_online` 会跳过缓存重新执行完整查找链，以便发现后续被添加到 AMLL/LRCLIB/LrcAPI 的歌词
 4. 网络错误（非 definitive miss）不会写入负缓存
 5. `source` 序列化值固定为：
@@ -287,6 +289,7 @@ Probe-fresh upgrade is `NotApplicable`: persist unchanged, no publish. Command s
    - `lrc_api`
    - `lrc_api_ttml`
    - `amll`（IPC 与 SQLite 均为 `amll`）
+   - `streaming:<source_id>`（IPC 与 SQLite 相同，例如 `streaming:netease`）
    - `embedded`
    - `sidecar`
    - `sidecar_ttml`

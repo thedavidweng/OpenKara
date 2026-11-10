@@ -544,12 +544,12 @@ jobs:
           persist-credentials: false
 
       - name: jactionlint
-        uses: jdx/jactionlint@a65ab044e916760429068fe5794b8306abdfcbb9 # v2.3.0
+        uses: jdx/jactionlint@baa8d685e2b27ff5821558c9eeabb2051c1da61b # v2.4.0
         with:
           profile: default
 
       - name: zizmor
-        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
           persona: pedantic
           min-severity: low
@@ -629,7 +629,7 @@ jobs:
       # Prebuilt binary rather than `cargo install`, which rebuilt cargo-shear
       # from source on every run of a job whose actual work takes seconds.
       - name: Install cargo-shear
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-shear@1.14.0
 
@@ -718,7 +718,7 @@ jobs:
         run: cargo clippy --all-targets --no-default-features -- -D warnings
 
       - name: Install nextest
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: nextest
 
@@ -810,7 +810,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Install nextest
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: nextest
 

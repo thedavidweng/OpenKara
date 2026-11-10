@@ -1,7 +1,7 @@
 # ADR 0027 — Upgrade Line-timed Lyrics from an Online Lyrics Source only on a confident AMLL match
 
 Date: 2026-08-13
-Status: accepted
+Status: accepted; amended by 0049
 
 ## Context
 
