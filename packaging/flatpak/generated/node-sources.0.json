@@ -1155,9 +1155,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/plugin-notification/-/plugin-notification-2.7.0.tgz",
-    "sha512": "92074708f498ff71888b88125ae2df777cb9e79534930ccfd0f9a75234feb068603bb45d00cea0a058c3a9ac9168a0bcc80e681188bbc36367037a10c488e577",
-    "dest-filename": "@tauri-apps__plugin-notification-2.7.0.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/plugin-notification/-/plugin-notification-2.8.0.tgz",
+    "sha512": "041f4a9367a688d1f2323210af793fc9ef11283d9125e38f0a33393992c5fb8fe93ba29f8e5f51b645f885509ed6faa06c0c791e31d78dfd0ef2bb5d5b617677",
+    "dest-filename": "@tauri-apps__plugin-notification-2.8.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1890,9 +1890,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/i18next/-/i18next-26.5.12.tgz",
-    "sha512": "bd3b7cb5cdf2e5ac6853bc304d883cbe3a482cbc8fdf76b91b218901523b143471d57b9e631655224715792b687edad59c033fa36f212af2b4b2c96e70323d69",
-    "dest-filename": "i18next-26.5.12.tgz",
+    "url": "https://registry.npmjs.org/i18next/-/i18next-26.7.1.tgz",
+    "sha512": "717fb745155ccde97f5769023130027244864a9aa0b5660403a6de5cd6159acedd390887a2374f6070f6ea54f820a8a635ea065ab2efb4f8237ed6d1be664957",
+    "dest-filename": "i18next-26.7.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2044,9 +2044,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.61.0.tgz",
-    "sha512": "bf64903cf3cd8e7afe06584bf52a6ece6a39c91fa12e47ed7ee1381378dac5d34f8121f484928f70b2413fbc80b5af3b8d034fb121114b9f4f263089fc2a2b04",
-    "dest-filename": "lucide-react-1.61.0.tgz",
+    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.66.0.tgz",
+    "sha512": "f338db8bf52cf844d7a9f07099717f147ad6188a8e744eb34f5c9475124b415a29b68992901d3374559520cebaeedf4af1d8d60da5dd90192a8b6a954ee0cd8b",
+    "dest-filename": "lucide-react-1.66.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2240,9 +2240,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-17.1.9.tgz",
-    "sha512": "3a062a207d775c73e559369a23bf790f3fa4d8074a9d770ec4d4159dfef9d13f088f44d85a9d6762f5d1a68241ba53ea9729363806e7d4f338b452a2223fdbc8",
-    "dest-filename": "react-i18next-17.1.9.tgz",
+    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-17.1.13.tgz",
+    "sha512": "67184e4a5c8a48a3ed6d434f2f060c984df0ddb8687348da64967a6dcef018e4fa70b6eb6ecfffea6d351f108bb457528c7bc5a70170a0f871c732251d2b3d73",
+    "dest-filename": "react-i18next-17.1.13.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
