@@ -228,6 +228,13 @@ async function resolveMedia(params) {
   return { kind: "media", media: answer.body.media };
 }
 
+function lyricsGet(params) {
+  const track = tracks.find((item) => item.id === params.track_id);
+  if (!track) throw fault("not_found");
+  if (track.id !== "1") return { lyrics: null };
+  return { lyrics: { format: "lrc", text: `[00:01.00]${track.title}\n` } };
+}
+
 export default {
   describe,
   "session.restore": restore,
@@ -242,4 +249,5 @@ export default {
   search,
   liked_tracks: search,
   "media.resolve": resolveMedia,
+  "lyrics.get": lyricsGet,
 };

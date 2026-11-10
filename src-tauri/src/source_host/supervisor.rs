@@ -114,6 +114,7 @@ impl SourceHost {
             "playlists" => Some("playlists"),
             "playlist.tracks" => Some("playlist_tracks"),
             "tracks.get" => Some("track_details"),
+            "lyrics.get" => Some("lyrics"),
             "media.resolve" => Some(if params["purpose"] == "preview" {
                 "preview"
             } else {

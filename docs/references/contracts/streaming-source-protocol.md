@@ -1,4 +1,4 @@
-# Streaming Source protocol 2.1
+# Streaming Source protocol 2.2
 
 Status: implemented host contract for protocol major 2 on the `openkara-js`
 runtime. See the [source host](source-host.md) for registry distribution,
@@ -90,6 +90,11 @@ keeps working and can omit fields that minor 1 added.
 
 `Track` has the optional field `isrc: string | null`.
 
+### Changes in 2.2
+
+The optional `lyrics` capability adds the method `lyrics.get`. See
+[Lyrics](#lyrics).
+
 ## Package and identity
 
 A registry package is an npm-style gzip tarball. Every member sits under a
@@ -105,7 +110,7 @@ scripts. A listed version is at most 32 MiB of archive bytes.
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `package_id`, `publisher`, `source_id`    | Stable package, publisher, and source identity. The source id is lowercase ASCII `[a-z][a-z0-9_-]{0,63}`.                        |
 | `version`, `minimum_host_version`         | SemVer strings. The host uses SemVer ordering.                                                                                   |
-| `protocol`                                | `{ "majors": [2], "minor": 1 }`. The majors list is nonempty.                                                                    |
+| `protocol`                                | `{ "majors": [2], "minor": 2 }`. The majors list is nonempty.                                                                    |
 | `runtime`                                 | `{ "kind": "openkara-js", "major": 1 }` for the embedded engine.                                                                 |
 | `entry`, `name`, `description`, `license` | Relative `.mjs` entry, plain display text, SPDX expression. No HTML or executable presentation.                                  |
 | `capabilities`                            | Known capability strings listed below.                                                                                           |
@@ -153,6 +158,7 @@ can serve public operations; authentication is not a universal gate.
 | `track_details`   | `tracks.get`      | `track_ids: string[]` (1–100)           | `{items: Track[], missing_ids: string[]}`       |
 | `preview`         | `media.resolve`   | `track_id: string, purpose: "preview"`  | `Resolution`                                    |
 | `import`          | `media.resolve`   | `track_id: string, purpose: "import"`   | `Resolution`                                    |
+| `lyrics`          | `lyrics.get`      | `track_id: string`                      | `{lyrics: Lyrics \| null}`                      |
 
 A method or purpose without its capability returns
 `unsupported_operation`, even when the session is signed out. Hosts show
@@ -279,6 +285,24 @@ host handles downloads and temporary files, and re-resolves expired URLs
 through the bounded preview refresh path. A resolution never writes a
 library row. Import uses the one shared host job and the normal Library
 Decisions.
+
+### Lyrics
+
+`Lyrics` is `{format: "ttml" | "lrc", text: string}`. Use `ttml` for
+Word-timed Lyrics and `lrc` for Line-timed Lyrics. The source converts the
+service format to one of these two. The host has no parser for service
+formats. `{lyrics: null}` means that the track has no lyrics. A `ttml`
+text must start with `<`, and an `lrc` text must not. A mismatch is an
+`internal` error.
+
+The host asks a source for lyrics only for a library song with a Streaming
+Track Identity from that source, or for an Online Preview of that source.
+It asks the source before AMLL, LRCLIB, and LrcApi. A text that does not
+parse as timed lyrics is a miss. A source that fails, or that is installed
+but disabled or not loaded, keeps a miss on every later Online Lyrics
+Source out of the negative cache. See the
+[lyrics contract](lyrics.md) and
+[ADR 0049](../../adr/0049-let-a-streaming-source-supply-lyrics-for-its-own-tracks.md).
 
 ## Cancellation and errors
 

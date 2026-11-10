@@ -32,6 +32,17 @@ pub enum LyricsSource {
     ManualLys,
     /// Internal negative-cache marker — not exposed via IPC.
     Absent,
+    /// Lyrics that a Streaming Source returned for its own track. Holds the
+    /// source id and serializes as `streaming:<source_id>`.
+    #[serde(untagged, serialize_with = "serialize_streaming")]
+    Streaming(String),
+}
+
+fn serialize_streaming<S: serde::Serializer>(
+    source_id: &str,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    serializer.serialize_str(&format!("streaming:{source_id}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,8 +55,17 @@ pub struct LyricsFetchResult {
     pub word_timed_checked_at: Option<i64>,
 }
 
+/// Lyrics for one known track, looked up by its identity rather than by a
+/// title search. The Streaming Source behind a song implements it.
+pub trait TrackLyrics: Send + Sync + std::fmt::Debug {
+    fn source_id(&self) -> &str;
+    /// TTML or LRC text, or `None` when the track has no lyrics.
+    fn fetch(&self) -> Result<Option<String>>;
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum TimedLyricsProvider<'a> {
+    Track(&'a dyn TrackLyrics),
     Amll(&'a AmllClient),
     LrcLib(&'a LrcLibClient),
     LrcApi(&'a LrcApiClient),
@@ -69,6 +89,7 @@ impl TimedLyricsProvider<'_> {
     fn source(self) -> LyricsSource {
         match self {
             Self::Amll(_) => LyricsSource::Amll,
+            Self::Track(track) => LyricsSource::Streaming(track.source_id().to_owned()),
             Self::LrcLib(_) => LyricsSource::LrcLib,
             Self::LrcApi(_) => LyricsSource::LrcApi,
         }
@@ -77,6 +98,7 @@ impl TimedLyricsProvider<'_> {
     pub(crate) fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
         match self {
             Self::Amll(client) => client.fetch_by_track(query).map_err(Into::into),
+            Self::Track(track) => track.fetch(),
             Self::LrcLib(client) => client
                 .fetch_by_track(query)
                 .map(|result| {
@@ -146,6 +168,9 @@ pub(crate) fn accepts_as_timed(source: &LyricsSource, raw: &str) -> bool {
                 .map(|lines| !lines.is_empty())
                 .unwrap_or(false)
         }
+        LyricsSource::Streaming(_) if looks_like_ttml(raw) => ttml_parser::parse_ttml(raw)
+            .map(|lines| !lines.is_empty())
+            .unwrap_or(false),
         _ => has_timed_lines(raw),
     }
 }

@@ -22,6 +22,29 @@ pub fn lookup_song_hash(
         .map_err(|error| CatalogError::Internal(error.to_string()))
 }
 
+/// Every Streaming Track Identity that points at the library song.
+pub fn identities_for_song(
+    connection: &Connection,
+    song_hash: &str,
+) -> Result<Vec<StreamingTrackIdentity>, CatalogError> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT source, remote_track_id FROM streaming_track_identities \
+             WHERE song_hash = ?1 ORDER BY source, remote_track_id",
+        )
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    let rows = statement
+        .query_map([song_hash], |row| {
+            Ok(StreamingTrackIdentity {
+                source: row.get(0)?,
+                remote_track_id: row.get(1)?,
+            })
+        })
+        .map_err(|error| CatalogError::Internal(error.to_string()))?;
+    rows.collect::<Result<_, _>>()
+        .map_err(|error| CatalogError::Internal(error.to_string()))
+}
+
 /// Fills `library_song_id` from the persisted Streaming Track Identity, or
 /// from the identity of the track's remembered Playable Match.
 pub fn annotate_library_songs(

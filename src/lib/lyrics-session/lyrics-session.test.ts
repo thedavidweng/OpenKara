@@ -379,6 +379,25 @@ describe("LyricsSession automatic upgrade", () => {
     expect(state.lines[0]?.words?.[0]?.text).toBe("Hello");
   });
 
+  test("applies word-timed lyrics from the song's streaming source", async () => {
+    harness.lyrics.fetchLyricsOnline.mockResolvedValue(
+      payload({
+        lines: [
+          line(500, "Hello", [{ time_ms: 500, end_ms: 900, text: "Hello" }]),
+        ],
+        source: "streaming:netease",
+        offsetMs: 0,
+      }),
+    );
+
+    await load(
+      harness,
+      payload({ lines: [line(500, "Line A")], source: "lrc_lib" }),
+    );
+
+    expect(harness.session.getState().source).toBe("streaming:netease");
+  });
+
   test("skips lyrics that carry any timing at all", async () => {
     await load(
       harness,

@@ -1,7 +1,7 @@
 # ADR 0026 — Put AMLL first among Online Lyrics Sources
 
 Date: 2026-08-13
-Status: accepted
+Status: accepted; amended by 0049
 
 ## Context
 
