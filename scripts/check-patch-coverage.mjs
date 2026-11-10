@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Local gate mirroring Codecov patch status (codecov.yml → coverage.status.patch).
+ * Optional helper only. Pre-push and CI do not enforce a coverage percentage.
  *
  * Compares executable lines touched by the branch (vs origin/main by default)
  * against coverage/lcov.info and fails if patch coverage is below the target.
