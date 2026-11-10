@@ -6632,14 +6632,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/tauri-plugin-notification/tauri-plugin-notification-2.7.0.crate",
-    "sha256": "b939d7b19c8af1381a72ef8474b3aba2b56c1ddac2c23f0c8e96abbcf86b198b",
-    "dest": "cargo/vendor/tauri-plugin-notification-2.7.0"
+    "url": "https://static.crates.io/crates/tauri-plugin-notification/tauri-plugin-notification-2.8.0.crate",
+    "sha256": "5bc6c194a95a535abdfbe3bc1af9a43935b8b9b29c216b8e71af8b59132703cf",
+    "dest": "cargo/vendor/tauri-plugin-notification-2.8.0"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"b939d7b19c8af1381a72ef8474b3aba2b56c1ddac2c23f0c8e96abbcf86b198b\",\"files\":{}}",
-    "dest": "cargo/vendor/tauri-plugin-notification-2.7.0",
+    "contents": "{\"package\":\"5bc6c194a95a535abdfbe3bc1af9a43935b8b9b29c216b8e71af8b59132703cf\",\"files\":{}}",
+    "dest": "cargo/vendor/tauri-plugin-notification-2.8.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
