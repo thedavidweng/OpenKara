@@ -124,9 +124,12 @@ test.describe("Themes and motion accessibility", () => {
       const dialog = page.getByRole("dialog", { name: "Preferences" });
       await expect(dialog).toBeVisible();
 
-      const language = dialog.locator("select").filter({
-        has: page.locator("option[value='zh-CN']"),
-      });
+      // Language lives on the General page; Preferences opens on Library
+      // (or Online Sources when a registry is linked), so the <select> is
+      // not mounted until that tab is selected.
+      await dialog.getByRole("tab", { name: "General" }).click();
+      const language = dialog.locator("#settings-language");
+      await expect(language).toBeVisible();
       await language.selectOption("zh-CN");
       await page.keyboard.press("Escape");
 
