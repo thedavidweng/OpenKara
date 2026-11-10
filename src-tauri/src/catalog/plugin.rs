@@ -440,6 +440,30 @@ impl PluginStreamingSource {
             })
             .collect()
     }
+    /// The track's lyrics as TTML or LRC text, or `None` when it has none.
+    pub fn lyrics(&self, id: &str) -> Result<Option<String>, CatalogError> {
+        #[derive(Deserialize)]
+        struct Answer {
+            lyrics: Option<SourceLyrics>,
+        }
+        #[derive(Deserialize)]
+        struct SourceLyrics {
+            format: String,
+            text: String,
+        }
+        let answer: Answer = decode(self.request("lyrics.get", json!({ "track_id": id }))?)?;
+        let Some(lyrics) = answer.lyrics else {
+            return Ok(None);
+        };
+        let markup = lyrics.text.trim_start().starts_with('<');
+        match lyrics.format.as_str() {
+            "ttml" if markup => Ok(Some(lyrics.text)),
+            "lrc" if !markup => Ok(Some(lyrics.text)),
+            _ => Err(CatalogError::Internal(
+                "source returned invalid domain data".into(),
+            )),
+        }
+    }
     fn resolution(&self, id: &str, purpose: &str) -> Result<Resolution, CatalogError> {
         decode(self.request("media.resolve", json!({"track_id":id,"purpose":purpose}))?)
     }

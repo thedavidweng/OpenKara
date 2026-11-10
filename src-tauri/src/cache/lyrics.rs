@@ -29,7 +29,7 @@ pub fn upsert_lyrics_cache_entry(
         params![
             entry.song_hash,
             entry.lrc,
-            serialize_source(&entry.source),
+            serialize_source(&entry.source).as_ref(),
             entry.offset_ms,
             entry.fetched_at,
             entry.word_timed_checked_at,
@@ -98,8 +98,9 @@ pub fn delete_all_lyrics_cache_entries(connection: &Connection) -> rusqlite::Res
     connection.execute("DELETE FROM lyrics", [])
 }
 
-fn serialize_source(source: &LyricsSource) -> &'static str {
-    match source {
+fn serialize_source(source: &LyricsSource) -> std::borrow::Cow<'static, str> {
+    let token = match source {
+        LyricsSource::Streaming(source_id) => return format!("streaming:{source_id}").into(),
         LyricsSource::LrcLib => "lrclib",
         LyricsSource::LrcApi => "lrc_api",
         LyricsSource::LrcApiTtml => "lrc_api_ttml",
@@ -112,7 +113,8 @@ fn serialize_source(source: &LyricsSource) -> &'static str {
         LyricsSource::ManualTtml => "manual_ttml",
         LyricsSource::ManualLys => "manual_lys",
         LyricsSource::Absent => "absent",
-    }
+    };
+    token.into()
 }
 
 fn deserialize_source(source: &str) -> Result<LyricsSource> {
@@ -129,6 +131,9 @@ fn deserialize_source(source: &str) -> Result<LyricsSource> {
         "manual_ttml" => Ok(LyricsSource::ManualTtml),
         "manual_lys" => Ok(LyricsSource::ManualLys),
         "absent" => Ok(LyricsSource::Absent),
+        other if other.starts_with("streaming:") && other.len() > "streaming:".len() => Ok(
+            LyricsSource::Streaming(other["streaming:".len()..].to_owned()),
+        ),
         other => Err(anyhow!("unknown lyrics source {other}"))
             .with_context(|| format!("failed to deserialize lyrics source {source}")),
     }
@@ -263,6 +268,7 @@ mod tests {
             LyricsSource::LrcApi,
             LyricsSource::LrcApiTtml,
             LyricsSource::Amll,
+            LyricsSource::Streaming("netease".into()),
             LyricsSource::Embedded,
             LyricsSource::Sidecar,
             LyricsSource::SidecarTtml,
@@ -275,7 +281,7 @@ mod tests {
 
         for source in &sources {
             let serialized = serialize_source(source);
-            let deserialized = deserialize_source(serialized)
+            let deserialized = deserialize_source(&serialized)
                 .unwrap_or_else(|_| panic!("deserialize {serialized}"));
             assert_eq!(&deserialized, source);
         }

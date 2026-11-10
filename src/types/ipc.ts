@@ -898,6 +898,7 @@ export type LyricsSource =
   | "lrc_api"
   | "lrc_api_ttml"
   | "amll"
+  | `streaming:${string}`
   | "embedded"
   | "sidecar"
   | "sidecar_ttml"

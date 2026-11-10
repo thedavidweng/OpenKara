@@ -36,11 +36,18 @@ const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
     "sidecar_lys",
   ]);
 
-const ONLINE_LINE_TIMED_SOURCES: ReadonlySet<LyricsSource> = new Set([
-  "lrc_lib",
-  "lrc_api",
-  "lrc_api_ttml",
-]);
+const isStreamingSource = (source: LyricsSource) =>
+  source.startsWith("streaming:");
+
+const isOnlineLineTimedSource = (source: LyricsSource) =>
+  source === "lrc_lib" ||
+  source === "lrc_api" ||
+  source === "lrc_api_ttml" ||
+  isStreamingSource(source);
+
+/** Sources whose Word-timed Lyrics may replace Line-timed online lyrics. */
+const isWordTimedUpgradeSource = (source: LyricsSource) =>
+  source === "amll" || isStreamingSource(source);
 
 const INITIAL_DATA: LyricsData = {
   songId: null,
@@ -397,7 +404,7 @@ export class LyricsSession {
     if (source !== null && AUTO_UPGRADE_PROTECTED_SOURCES.has(source)) {
       return false;
     }
-    if (source !== null && ONLINE_LINE_TIMED_SOURCES.has(source)) {
+    if (source !== null && isOnlineLineTimedSource(source)) {
       return !hasWordTokens(lines);
     }
     return isUnsynced(lines);
@@ -429,10 +436,11 @@ export class LyricsSession {
       }
       if (
         preUpgradeSource !== null &&
-        ONLINE_LINE_TIMED_SOURCES.has(preUpgradeSource) &&
+        isOnlineLineTimedSource(preUpgradeSource) &&
         (currentSource === null ||
-          !ONLINE_LINE_TIMED_SOURCES.has(currentSource) ||
-          online.source !== "amll" ||
+          !isOnlineLineTimedSource(currentSource) ||
+          online.source === null ||
+          !isWordTimedUpgradeSource(online.source) ||
           !hasWordTokens(online.lines))
       ) {
         return;
