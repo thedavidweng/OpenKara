@@ -28,7 +28,7 @@
             "onnxruntime-1.31.1-aarch64-unknown-linux-gnu",
             "onnxruntime-1.31.1-x86_64-unknown-linux-gnu",
             "onnxruntime-1.31.1-x86_64-pc-windows-msvc",
-            "onnxruntime-1.31.1-x86_64-apple-darwin"
+            "onnxruntime-1.31.1-x86_64-apple-darwin-5f3374942523c271"
           ],
           "format": "onnx",
           "input_semantics": "spectral=[1,2,2,2048,336] contract-v1 spec(mix); mix=[1,2,343980] stereo 44.1 kHz waveform",
@@ -106,7 +106,7 @@
             "onnxruntime-1.31.1-aarch64-unknown-linux-gnu",
             "onnxruntime-1.31.1-x86_64-unknown-linux-gnu",
             "onnxruntime-1.31.1-x86_64-pc-windows-msvc",
-            "onnxruntime-1.31.1-x86_64-apple-darwin"
+            "onnxruntime-1.31.1-x86_64-apple-darwin-5f3374942523c271"
           ],
           "format": "onnx",
           "input_semantics": "spectral=[1,2,2,2048,336] contract-v1 spec(mix); mix=[1,2,343980] stereo 44.1 kHz waveform",
@@ -969,15 +969,15 @@
       },
       {
         "arch": "x86_64",
-        "archive_digest": "ef6030ae4e5c53121af86755b09e5ee35483ce5a9aacdd4a97487f774557b166",
-        "artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin",
-        "byte_size": 8606425,
+        "archive_digest": "5f3374942523c271e2c59e560dae6125cdcd145822e006690aa291da26130ba2",
+        "artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin-5f3374942523c271",
+        "byte_size": 8596060,
         "deprecation": {
           "deprecated": false,
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
-        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-03-002/onnxruntime-1.31.1-openkara-x86_64-apple-darwin.tar.gz",
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-04-001/onnxruntime-1.31.1-openkara-x86_64-apple-darwin.tar.gz",
         "extracted_file_digests": {
           "onnxruntime-osx-x64-1.31.1/LICENSE": {
             "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
@@ -988,8 +988,8 @@
             "size": 338088
           },
           "onnxruntime-osx-x64-1.31.1/build-manifest.json": {
-            "sha256": "a91c6eabb2721f0f0d31e475341df917457bc1ddba099cf8d420bf57d934f3e8",
-            "size": 2826
+            "sha256": "d7e4e07a57fc00c85ed2775f624632dbd076e614524f0df54360d43ea0f5df9f",
+            "size": 2825
           },
           "onnxruntime-osx-x64-1.31.1/include/onnxruntime_c_api.h": {
             "sha256": "43d584f596ef66820421317df32a79a95fc1d39ee46cb3971a870c08d8ba4baa",
@@ -1004,8 +1004,8 @@
             "size": 2775
           },
           "onnxruntime-osx-x64-1.31.1/lib/libonnxruntime.1.31.1.dylib": {
-            "sha256": "05af20facd8b92565490f6935d181001926cf2118957c2791e61b58c7ddc4fe1",
-            "size": 28393856
+            "sha256": "e861d6316a185c74d32f19069ca1a8083a7604f717467f8b9761f8ac323a5ad1",
+            "size": 28369576
           }
         },
         "filename": "onnxruntime-1.31.1-openkara-x86_64-apple-darwin.tar.gz",
@@ -1013,7 +1013,7 @@
         "os": "macos",
         "runtime": {
           "companion_files": [],
-          "deployment_target": "10.15",
+          "deployment_target": "14.0",
           "execution_providers": [
             "cpu"
           ],
@@ -1078,7 +1078,7 @@
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin-5f3374942523c271",
       "status": "supported",
       "target_triple": "x86_64-apple-darwin"
     },
@@ -1120,19 +1120,19 @@
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.31.1-x86_64-apple-darwin-5f3374942523c271",
       "status": "supported",
       "target_triple": "x86_64-apple-darwin"
     }
   ],
-  "created_at": "2026-11-03T23:19:13Z",
-  "generation": 15,
+  "created_at": "2026-11-04T05:26:30Z",
+  "generation": 16,
   "producer": {
-    "commit_sha": "8a13192b7fdd8a9a3cf9c9b35e622d8d89d90967",
+    "commit_sha": "dd1c69735d53ea889f9ad52933e78971044a8f7c",
     "repo": "thedavidweng/openkara-models",
     "run_id": "manual",
     "workflow": "Intel macOS runtime"
   },
-  "release_id": "2026-11-03-002",
+  "release_id": "2026-11-04-001",
   "schema_version": "openkara.catalog/release-v2"
 }
