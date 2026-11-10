@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.0](https://github.com/thedavidweng/OpenKara/compare/v0.20.0...v0.21.0) (2026-11-10)
+
+
+### Features
+
+* **lyrics:** ask a song's Streaming Source for its lyrics ([#715](https://github.com/thedavidweng/OpenKara/issues/715)) ([48caefb](https://github.com/thedavidweng/OpenKara/commit/48caefbeaa09d323ae8df00a498b35ec07b950d7))
+* **search:** search the library and every Streaming Source at once ([#694](https://github.com/thedavidweng/OpenKara/issues/694)) ([70759ea](https://github.com/thedavidweng/OpenKara/commit/70759ead8e79e3405a08840cc502d8184bbf163a))
+* **sources:** add optional ISRC to streaming tracks (protocol 2.1) ([#695](https://github.com/thedavidweng/OpenKara/issues/695)) ([3eb9a25](https://github.com/thedavidweng/OpenKara/commit/3eb9a25372e3c4c731bb4a20ee206d8dea33808c))
+* **sources:** import a playable version from another source after confirmation ([#696](https://github.com/thedavidweng/OpenKara/issues/696)) ([11d94da](https://github.com/thedavidweng/OpenKara/commit/11d94da88fe20a9b50dafa1791f27408fd049416))
+* **sources:** include the official Source Registry and auto-update its sources ([#692](https://github.com/thedavidweng/OpenKara/issues/692)) ([f3a62d9](https://github.com/thedavidweng/OpenKara/commit/f3a62d9a8340f4c6b7d7bc6981919949daab138f))
+* **sources:** let a web sign-in accept one of several cookie names ([#703](https://github.com/thedavidweng/OpenKara/issues/703)) ([43fe3f1](https://github.com/thedavidweng/OpenKara/commit/43fe3f12d2887b85b4f8e725b7d57ab035b985c6))
+* **sources:** match playable versions for a whole streaming playlist ([#697](https://github.com/thedavidweng/OpenKara/issues/697)) ([c5343ea](https://github.com/thedavidweng/OpenKara/commit/c5343ea641816113602b6986f09b1655e78b6556))
+* **ui:** adopt shadcn/ui on Base UI for the source screens ([#701](https://github.com/thedavidweng/OpenKara/issues/701)) ([68b5da4](https://github.com/thedavidweng/OpenKara/commit/68b5da4e947d7a6e43aced3dd52ab15440793d6c))
+* **website:** load interactive preview on scroll ([#691](https://github.com/thedavidweng/OpenKara/issues/691)) ([3cc416b](https://github.com/thedavidweng/OpenKara/commit/3cc416b690dfea94de9b2e21cd9903f4e6e24e01))
+
+
+### Bug Fixes
+
+* dispatch checks for new release pull requests ([#686](https://github.com/thedavidweng/OpenKara/issues/686)) ([e734889](https://github.com/thedavidweng/OpenKara/commit/e73488952afc34fdbd8aaf189815936205b36414))
+* route CI checks by changed paths ([#678](https://github.com/thedavidweng/OpenKara/issues/678)) ([7bce4d3](https://github.com/thedavidweng/OpenKara/commit/7bce4d3b1c19858e3a2b1af5c01e7e29bd164dab))
+* **sidebar:** keep source names and song titles readable beside row status ([#707](https://github.com/thedavidweng/OpenKara/issues/707)) ([1e504dd](https://github.com/thedavidweng/OpenKara/commit/1e504dd077c754f17573a9f81e83ed0e00cceb73))
+* **sources:** do not keep a limit stop as a source error ([#706](https://github.com/thedavidweng/OpenKara/issues/706)) ([c2723e9](https://github.com/thedavidweng/OpenKara/commit/c2723e9683b0a657eea7354ac03b6fe9e30624a5))
+* **sources:** give imported streaming songs the source's title, artist and cover ([#705](https://github.com/thedavidweng/OpenKara/issues/705)) ([46b34a2](https://github.com/thedavidweng/OpenKara/commit/46b34a227f65d95fd359d8c4d5eec6dbd4768c71))
+* **sources:** keep the current package when its replacement fails ([#704](https://github.com/thedavidweng/OpenKara/issues/704)) ([837f44e](https://github.com/thedavidweng/OpenKara/commit/837f44e36e84c419f6bd7e84ffe05fd3cd383599))
+* **sources:** rework Streaming Source settings, sign-in and missing-library recovery ([#699](https://github.com/thedavidweng/OpenKara/issues/699)) ([9c8d565](https://github.com/thedavidweng/OpenKara/commit/9c8d5655ff95316a3d1fc5788ce06e271abe1ef2))
+* **website:** restore preview start button layout ([#690](https://github.com/thedavidweng/OpenKara/issues/690)) ([e26fc2b](https://github.com/thedavidweng/OpenKara/commit/e26fc2b679cbcf6407f4e3f6ecab8f2734cf1be5))
+
+
+### Performance
+
+* **sources:** return listings before artwork loads and reuse connections ([#702](https://github.com/thedavidweng/OpenKara/issues/702)) ([39502ae](https://github.com/thedavidweng/OpenKara/commit/39502ae3981cf727f47a786147ab9e8acbb9c8e6))
+
 ## [0.20.0](https://github.com/thedavidweng/OpenKara/compare/v0.19.2...v0.20.0) (2026-11-03)
 
 
