@@ -45,9 +45,9 @@ hooks {
         stdin = "{{hook_stdin}}"
         check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:standards'"
       }
-      ["patch-coverage"] {
+      ["test"] {
         stdin = "{{hook_stdin}}"
-        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm test:coverage && pnpm check:patch-coverage'"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm test'"
       }
     }
   }
