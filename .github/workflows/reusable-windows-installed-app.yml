@@ -665,6 +665,9 @@ jobs:
 
       - name: Run Windows desktop UIA E2E
         if: ${{ inputs.run_keyboard_uia }}
+        # A healthy keyboard run takes a few minutes. Cap it so a stuck run
+        # still leaves time for the report and evidence steps below.
+        timeout-minutes: 20
         shell: pwsh
         env:
           OPENKARA_WINDOWS_INSTALL_DIR: ${{ runner.temp }}/OpenKara-clean-install

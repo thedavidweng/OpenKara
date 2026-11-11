@@ -384,6 +384,45 @@ function Wait-For-UiReady {
     throw "WebView UI did not reach main shell within ${TimeoutMs}ms ($lastObservation)"
 }
 
+# Each probe run gets a wall-clock budget. The probe ends itself with exit code
+# 124 when a UIA call blocks past that budget; the harness kills it a little
+# later as a backstop, so a hung UIA provider fails the step instead of
+# stalling the CI job until its timeout.
+$script:ProbeBudgetSlackMs = 45000
+$script:ProbeKillGraceMs = 15000
+
+function Invoke-ProbeProcess {
+    param([object[]]$Arguments, [int]$TimeoutMs)
+
+    $budgetMs = [Math]::Max($TimeoutMs, 0) + $script:ProbeBudgetSlackMs
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($script:ProbePath)
+    foreach ($argument in @($Arguments) + @("--budget", $budgetMs)) {
+        $startInfo.ArgumentList.Add([string]$argument)
+    }
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $probe = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $stdoutTask = $probe.StandardOutput.ReadToEndAsync()
+        $stderrTask = $probe.StandardError.ReadToEndAsync()
+        if (-not $probe.WaitForExit($budgetMs + $script:ProbeKillGraceMs)) {
+            try { $probe.Kill($true) } catch { }
+            [void]$probe.WaitForExit(5000)
+            throw "AccessibilityProbe did not exit within $($budgetMs + $script:ProbeKillGraceMs)ms and was killed: $($stderrTask.Result.Trim())"
+        }
+        $probe.WaitForExit()
+        return [PSCustomObject]@{
+            ExitCode = $probe.ExitCode
+            Output = (@($stdoutTask.Result.Trim(), $stderrTask.Result.Trim()) | Where-Object { $_ }) -join " "
+        }
+    } finally {
+        $probe.Dispose()
+    }
+}
+
 function Get-UiTree {
     param([int]$ProcessId, [string]$WindowTitle = "", [int]$TimeoutMs = $ProbeTimeoutMs, [IntPtr]$WindowHandle = $script:mainWindowHandle)
 
@@ -395,9 +434,9 @@ function Get-UiTree {
         $argList += @("--window-handle", $WindowHandle.ToInt32())
     }
 
-    & $script:ProbePath @argList
-    if ($LASTEXITCODE -ne 0) {
-        throw "AccessibilityProbe exited with code $LASTEXITCODE"
+    $result = Invoke-ProbeProcess -Arguments $argList -TimeoutMs $TimeoutMs
+    if ($result.ExitCode -ne 0) {
+        throw "AccessibilityProbe exited with code $($result.ExitCode): $($result.Output)"
     }
     if (-not (Test-Path -Path $snapshotPath -PathType Leaf)) {
         throw "AccessibilityProbe did not produce a snapshot at $snapshotPath"
@@ -451,8 +490,9 @@ function Invoke-ProbeAction {
         $argList += @("--key", $Key)
     }
 
-    $output = & $script:ProbePath @argList 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-ProbeProcess -Arguments $argList -TimeoutMs $TimeoutMs
+    $output = $result.Output
+    $exitCode = $result.ExitCode
     if ($exitCode -ne 0) {
         throw "AccessibilityProbe $Action failed (exit $exitCode): $output"
     }
@@ -785,6 +825,7 @@ function Wait-For-Condition {
         try {
             $tree = Get-UiTree -ProcessId $script:process.Id -WindowHandle $WindowHandle
         } catch {
+            Write-Warning "Wait-For-Condition probe failed: $_"
             $tree = $null
         }
         if ($null -ne $tree -and (& $Condition $tree)) {
