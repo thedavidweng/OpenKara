@@ -21,6 +21,13 @@ class Program
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
+    [DllImport("kernel32.dll", EntryPoint = "GetCurrentProcess")]
+    private static extern IntPtr GetCurrentProcessHandle();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -31,6 +38,18 @@ class Program
 
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+    // Exit code when the probe overruns its wall-clock budget. A UIA call into
+    // a busy or hung provider can block indefinitely, so the watchdog ends the
+    // process instead of letting the caller wait until the CI job times out.
+    private const int ExitBudgetExceeded = 124;
+    // Default for manual runs only. scripts/ci/run-windows-desktop-e2e.ps1
+    // always passes --budget and sets its kill deadline from that same value.
+    private const int DefaultBudgetSlackMs = 45000;
+
+    private static volatile string s_phase = "starting";
+    private static volatile string s_lastElement = string.Empty;
+    private static int s_walkedNodes;
 
     private const int INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
@@ -113,6 +132,7 @@ class Program
         string? valueText = null;
         string? keyName = null;
         int timeoutMs = 0;
+        int? budgetMs = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -156,6 +176,15 @@ class Program
                 }
                 timeoutMs = timeout;
             }
+            else if (arg == "--budget" && i + 1 < args.Length)
+            {
+                if (!int.TryParse(args[++i], out int budget) || budget <= 0)
+                {
+                    Console.Error.WriteLine("Invalid budget value.");
+                    return 1;
+                }
+                budgetMs = budget;
+            }
             else if (arg == "--action" && i + 1 < args.Length)
             {
                 action = args[++i].Trim().ToLowerInvariant();
@@ -185,8 +214,8 @@ class Program
                 Console.Error.WriteLine($"Unknown or incomplete argument: {arg}");
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
-                    "[--output <path>] [--timeout <ms>] [--window-title <title>] [--window-handle <handle>] " +
-                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] " +
+                    "[--output <path>] [--timeout <ms>] [--budget <ms>] [--window-title <title>] [--window-handle <handle>] " +
+                    "[--action snapshot|set-focus|invoke|toggle|select|set-value|press-key|click|double-click] " +
                     "[--name <substring>] [--automation-id <id>] [--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
             }
@@ -199,13 +228,13 @@ class Program
             return 1;
         }
 
-        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click"))
+        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "press-key" or "click" or "double-click"))
         {
             Console.Error.WriteLine($"Unsupported action: {action}");
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "click" or "double-click")
+        if (action is "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "click" or "double-click")
         {
             if (string.IsNullOrWhiteSpace(targetName) && string.IsNullOrWhiteSpace(automationIdFilter))
             {
@@ -226,6 +255,8 @@ class Program
             return 1;
         }
 
+        StartWatchdog(budgetMs ?? Math.Max(timeoutMs, 0) + DefaultBudgetSlackMs);
+
         if (processId is null && !string.IsNullOrWhiteSpace(processName))
         {
             var matched = Process.GetProcessesByName(processName!);
@@ -242,6 +273,7 @@ class Program
         }
 
         // System file pickers may live outside the app process. Allow title-only lookup.
+        s_phase = "find-window";
         var root = FindWindow(processId, timeoutMs, windowTitle, windowHandle);
         if (root is null)
         {
@@ -249,11 +281,12 @@ class Program
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click")
+        if (action is "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "press-key" or "click" or "double-click")
         {
             AutomationElement? target = null;
             if (!string.IsNullOrWhiteSpace(targetName) || !string.IsNullOrWhiteSpace(automationIdFilter))
             {
+                s_phase = "find-target";
                 target = FindNamedElement(root, targetName ?? string.Empty, controlTypeFilter, automationIdFilter);
                 if (target is null)
                 {
@@ -273,6 +306,7 @@ class Program
                 target = root;
             }
 
+            s_phase = action;
             try
             {
                 if (action == "set-focus")
@@ -299,6 +333,16 @@ class Program
                     }
                     ((TogglePattern)pattern).Toggle();
                     Console.WriteLine($"toggle ok: {Describe(target)}");
+                }
+                else if (action == "select")
+                {
+                    if (!target!.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object? pattern) || pattern is null)
+                    {
+                        Console.Error.WriteLine($"Element does not support SelectionItem: {Describe(target)}");
+                        return 3;
+                    }
+                    ((SelectionItemPattern)pattern).Select();
+                    Console.WriteLine($"select ok: {Describe(target)}");
                 }
                 else if (action is "click" or "double-click")
                 {
@@ -387,6 +431,7 @@ class Program
             }
         }
 
+        s_phase = "walk";
         var nodes = new List<Node>();
         Walk(root, string.Empty, string.Empty, 0, nodes);
 
@@ -416,6 +461,30 @@ class Program
         }
 
         return 0;
+    }
+
+    private static void StartWatchdog(int budgetMs)
+    {
+        var started = Stopwatch.StartNew();
+        var watchdog = new System.Threading.Thread(() =>
+        {
+            System.Threading.Thread.Sleep(budgetMs);
+            string last = s_lastElement;
+            Console.Error.WriteLine(
+                $"AccessibilityProbe exceeded its {budgetMs}ms budget after {started.ElapsedMilliseconds}ms " +
+                $"during '{s_phase}': walked {System.Threading.Volatile.Read(ref s_walkedNodes)} element(s)" +
+                (last.Length == 0 ? "." : $", last element {last}."));
+            Console.Error.Flush();
+            // Environment.Exit waits on the main thread, which is the one stuck
+            // in the UIA call, so end the process outright.
+            TerminateProcess(GetCurrentProcessHandle(), ExitBudgetExceeded);
+            Environment.Exit(ExitBudgetExceeded);
+        })
+        {
+            IsBackground = true,
+            Name = "probe-watchdog",
+        };
+        watchdog.Start();
     }
 
     private static string Describe(AutomationElement element)
@@ -663,6 +732,8 @@ class Program
 
         string segment = $"{controlType}[{index}]";
         string path = parentPath.Length == 0 ? $"/{segment}" : $"{parentPath}/{segment}";
+        System.Threading.Interlocked.Increment(ref s_walkedNodes);
+        s_lastElement = $"{path} name='{name}'";
 
         var node = new Node
         {

@@ -384,6 +384,56 @@ function Wait-For-UiReady {
     throw "WebView UI did not reach main shell within ${TimeoutMs}ms ($lastObservation)"
 }
 
+# Each probe run gets a wall-clock budget. The probe ends itself with exit code
+# 124 when a UIA call blocks past that budget; the harness kills it a little
+# later as a backstop, so a hung UIA provider fails the step instead of
+# stalling the CI job until its timeout.
+$script:ProbeBudgetSlackMs = 45000
+$script:ProbeKillGraceMs = 15000
+
+function Invoke-ProbeProcess {
+    param([object[]]$Arguments, [int]$TimeoutMs)
+
+    $budgetMs = [Math]::Max($TimeoutMs, 0) + $script:ProbeBudgetSlackMs
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($script:ProbePath)
+    foreach ($argument in @($Arguments) + @("--budget", $budgetMs)) {
+        $startInfo.ArgumentList.Add([string]$argument)
+    }
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $probe = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $stdoutTask = $probe.StandardOutput.ReadToEndAsync()
+        $stderrTask = $probe.StandardError.ReadToEndAsync()
+        if (-not $probe.WaitForExit($budgetMs + $script:ProbeKillGraceMs)) {
+            $message = "AccessibilityProbe did not exit within $($budgetMs + $script:ProbeKillGraceMs)ms"
+            try {
+                $probe.Kill($true)
+            } catch {
+                $message += "; killing it failed: $_"
+            }
+            if (-not $probe.WaitForExit(5000)) {
+                $message += "; it was still running after the kill"
+            }
+            # Wait only briefly for stderr: an unfinished read must not block the harness.
+            if ($stderrTask.Wait(2000) -and $stderrTask.IsCompletedSuccessfully) {
+                $message += ": $($stderrTask.Result.Trim())"
+            }
+            throw $message
+        }
+        $probe.WaitForExit()
+        return [PSCustomObject]@{
+            ExitCode = $probe.ExitCode
+            Output = (@($stdoutTask.Result.Trim(), $stderrTask.Result.Trim()) | Where-Object { $_ }) -join " "
+        }
+    } finally {
+        $probe.Dispose()
+    }
+}
+
 function Get-UiTree {
     param([int]$ProcessId, [string]$WindowTitle = "", [int]$TimeoutMs = $ProbeTimeoutMs, [IntPtr]$WindowHandle = $script:mainWindowHandle)
 
@@ -395,9 +445,9 @@ function Get-UiTree {
         $argList += @("--window-handle", $WindowHandle.ToInt32())
     }
 
-    & $script:ProbePath @argList
-    if ($LASTEXITCODE -ne 0) {
-        throw "AccessibilityProbe exited with code $LASTEXITCODE"
+    $result = Invoke-ProbeProcess -Arguments $argList -TimeoutMs $TimeoutMs
+    if ($result.ExitCode -ne 0) {
+        throw "AccessibilityProbe exited with code $($result.ExitCode): $($result.Output)"
     }
     if (-not (Test-Path -Path $snapshotPath -PathType Leaf)) {
         throw "AccessibilityProbe did not produce a snapshot at $snapshotPath"
@@ -410,7 +460,7 @@ function Get-UiTree {
 function Invoke-ProbeAction {
     param(
         [int]$ProcessId,
-        [ValidateSet("set-focus", "invoke", "toggle", "set-value", "press-key", "click", "double-click")]
+        [ValidateSet("set-focus", "invoke", "toggle", "select", "set-value", "press-key", "click", "double-click")]
         [string]$Action,
         [string]$Name = "",
         [string]$AutomationId = "",
@@ -451,8 +501,9 @@ function Invoke-ProbeAction {
         $argList += @("--key", $Key)
     }
 
-    $output = & $script:ProbePath @argList 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-ProbeProcess -Arguments $argList -TimeoutMs $TimeoutMs
+    $output = $result.Output
+    $exitCode = $result.ExitCode
     if ($exitCode -ne 0) {
         throw "AccessibilityProbe $Action failed (exit $exitCode): $output"
     }
@@ -730,6 +781,42 @@ function Find-Settings-Overlay {
     }
 }
 
+# Theme choices are radio buttons. Matching on name alone also hits the
+# window's title-bar "System" menu item, and focusing that opens the system
+# menu, after which UI Automation calls into the WebView stop returning.
+function Test-ThemeOption {
+    param($n)
+    return $n.controlType -eq "RadioButton" -and
+        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
+}
+
+# Preferences is split into pages behind a vertical tab list; select one and
+# wait until its tab reports selected.
+function Open-SettingsPage {
+    param([string]$Page)
+
+    $tabId = "settings-pages-tab-$Page"
+    $selected = {
+        param($t)
+        $tab = Find-ElementByAutomationId -Tree $t -AutomationId $tabId
+        return ($null -ne $tab -and $tab.isSelected -eq $true)
+    }
+
+    $tree = Get-UiTree -ProcessId $script:process.Id
+    if (& $selected $tree) { return $tree }
+
+    try {
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action "select" -AutomationId $tabId -ControlType "TabItem" | Out-Null
+    } catch {
+        Write-Warning "Selecting settings tab '$Page' failed, clicking it instead: $_"
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId $tabId -ControlType "TabItem" | Out-Null
+    }
+
+    $tree = Wait-For-Condition -Condition $selected -TimeoutMs $StepTimeoutMs
+    if ($null -eq $tree) { throw "Settings page '$Page' did not open" }
+    return $tree
+}
+
 function Find-Upgrade-Confirmation {
     param([array]$Tree)
     $byId = Find-ElementByAutomationId -Tree $Tree -AutomationId "upgrade-confirmation"
@@ -785,6 +872,7 @@ function Wait-For-Condition {
         try {
             $tree = Get-UiTree -ProcessId $script:process.Id -WindowHandle $WindowHandle
         } catch {
+            Write-Warning "Wait-For-Condition probe failed: $_"
             $tree = $null
         }
         if ($null -ne $tree -and (& $Condition $tree)) {
@@ -1923,19 +2011,14 @@ function Invoke-StepAction {
             "open-appearance" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                $tree = Get-UiTree -ProcessId $script:process.Id
+                # Appearance lives on the General page; Preferences opens on Library.
+                $tree = Open-SettingsPage -Page "general"
                 $hasAppearance = ($null -ne (Find-ElementByName -Tree $tree -Name "Appearance"))
-                $hasThemeOptions = ($null -ne (Find-Element -Tree $tree -Predicate {
-                    param($n)
-                    $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                }))
+                $hasThemeOptions = ($null -ne (Find-Element -Tree $tree -Predicate ${function:Test-ThemeOption}))
 
                 if (-not $hasAppearance -or -not $hasThemeOptions) {
                     # Try to tab into the theme radio options, which scrolls the Appearance section into view.
-                    Tab-To-Element -Predicate {
-                        param($n)
-                        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                    } -MaxTabs 40 -TimeoutMs $StepTimeoutMs | Out-Null
+                    Tab-To-Element -Predicate ${function:Test-ThemeOption} -MaxTabs 40 -TimeoutMs $StepTimeoutMs | Out-Null
                     $tree = Get-UiTree -ProcessId $script:process.Id
                 }
 
@@ -1947,10 +2030,7 @@ function Invoke-StepAction {
                     $app = Find-ElementByName -Tree $t -Name "Appearance"
                     if ($null -eq $app) { return "Appearance section was not found" }
 
-                    $options = Find-Element -Tree $t -Predicate {
-                        param($n)
-                        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                    }
+                    $options = Find-Element -Tree $t -Predicate ${function:Test-ThemeOption}
                     if ($null -eq $options) { return "Appearance section found but theme options are missing" }
 
                     if ($null -ne $settingsPanel -and $null -ne $app.path -and $app.path.StartsWith($settingsPanel.path + "/", [System.StringComparison]::Ordinal)) {
@@ -1964,7 +2044,8 @@ function Invoke-StepAction {
             "verify-model-runtime-status" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                $tree = Get-UiTree -ProcessId $script:process.Id
+                # Runtime and model status live on the Separation page.
+                $tree = Open-SettingsPage -Page "separation"
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
                     $runtimeText = Find-ElementByRegex -Tree $t -Pattern "(Ready|Missing|required|v\d+\.\d+|Downloaded|Not downloaded|Downloading)"
@@ -2303,3 +2384,6 @@ Write-Host "Windows desktop E2E report written to $reportPath"
 if ($script:overallStatus -eq "failed") {
     exit 1
 }
+# Callers check $LASTEXITCODE, which otherwise still holds the exit code of
+# the last native command the run happened to start.
+exit 0
