@@ -42,6 +42,11 @@ Omit `--output` to print the JSON to `stdout`.
 Use `--window-handle <handle>` with `--process-id` when multiple app windows
 share a title. Snapshots include each node's process ID and native window handle.
 
+Every run has a wall-clock budget: `--budget <ms>`, or `--timeout` plus 45
+seconds when omitted. A UI Automation call into a busy provider can block
+without returning, so when the budget runs out the probe prints the phase it
+was in and the last element it read to `stderr` and exits with code `124`.
+
 Set keyboard focus on a named control (substring match):
 
 ```powershell
@@ -52,6 +57,12 @@ Invoke a named control:
 
 ```powershell
 OpenKara.AccessibilityProbe --process-id 12345 --action invoke --name "Play" --control-type Button
+```
+
+Select a tab or other selectable item (SelectionItemPattern):
+
+```powershell
+OpenKara.AccessibilityProbe --process-id 12345 --action select --automation-id settings-pages-tab-general --control-type TabItem
 ```
 
 Toggle a named control (`aria-pressed` / TogglePattern):

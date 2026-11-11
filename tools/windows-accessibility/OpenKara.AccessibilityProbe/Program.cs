@@ -21,6 +21,13 @@ class Program
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
+    [DllImport("kernel32.dll", EntryPoint = "GetCurrentProcess")]
+    private static extern IntPtr GetCurrentProcessHandle();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -206,7 +213,7 @@ class Program
                 Console.Error.WriteLine(
                     "Usage: OpenKara.AccessibilityProbe --process-id <id> | --process-name <name> " +
                     "[--output <path>] [--timeout <ms>] [--budget <ms>] [--window-title <title>] [--window-handle <handle>] " +
-                    "[--action snapshot|set-focus|invoke|toggle|set-value|press-key|click|double-click] " +
+                    "[--action snapshot|set-focus|invoke|toggle|select|set-value|press-key|click|double-click] " +
                     "[--name <substring>] [--automation-id <id>] [--control-type <type>] [--value <text>] [--key <name>]");
                 return 1;
             }
@@ -219,13 +226,13 @@ class Program
             return 1;
         }
 
-        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click"))
+        if (action is not ("snapshot" or "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "press-key" or "click" or "double-click"))
         {
             Console.Error.WriteLine($"Unsupported action: {action}");
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "click" or "double-click")
+        if (action is "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "click" or "double-click")
         {
             if (string.IsNullOrWhiteSpace(targetName) && string.IsNullOrWhiteSpace(automationIdFilter))
             {
@@ -272,7 +279,7 @@ class Program
             return 1;
         }
 
-        if (action is "set-focus" or "invoke" or "toggle" or "set-value" or "press-key" or "click" or "double-click")
+        if (action is "set-focus" or "invoke" or "toggle" or "select" or "set-value" or "press-key" or "click" or "double-click")
         {
             AutomationElement? target = null;
             if (!string.IsNullOrWhiteSpace(targetName) || !string.IsNullOrWhiteSpace(automationIdFilter))
@@ -324,6 +331,16 @@ class Program
                     }
                     ((TogglePattern)pattern).Toggle();
                     Console.WriteLine($"toggle ok: {Describe(target)}");
+                }
+                else if (action == "select")
+                {
+                    if (!target!.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object? pattern) || pattern is null)
+                    {
+                        Console.Error.WriteLine($"Element does not support SelectionItem: {Describe(target)}");
+                        return 3;
+                    }
+                    ((SelectionItemPattern)pattern).Select();
+                    Console.WriteLine($"select ok: {Describe(target)}");
                 }
                 else if (action is "click" or "double-click")
                 {
@@ -456,6 +473,9 @@ class Program
                 $"during '{s_phase}': walked {System.Threading.Volatile.Read(ref s_walkedNodes)} element(s)" +
                 (last.Length == 0 ? "." : $", last element {last}."));
             Console.Error.Flush();
+            // Environment.Exit waits on the main thread, which is the one stuck
+            // in the UIA call, so end the process outright.
+            TerminateProcess(GetCurrentProcessHandle(), ExitBudgetExceeded);
             Environment.Exit(ExitBudgetExceeded);
         })
         {

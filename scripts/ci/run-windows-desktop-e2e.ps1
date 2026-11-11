@@ -449,7 +449,7 @@ function Get-UiTree {
 function Invoke-ProbeAction {
     param(
         [int]$ProcessId,
-        [ValidateSet("set-focus", "invoke", "toggle", "set-value", "press-key", "click", "double-click")]
+        [ValidateSet("set-focus", "invoke", "toggle", "select", "set-value", "press-key", "click", "double-click")]
         [string]$Action,
         [string]$Name = "",
         [string]$AutomationId = "",
@@ -768,6 +768,42 @@ function Find-Settings-Overlay {
         $n.name -and $n.name.Equals("Preferences", [System.StringComparison]::OrdinalIgnoreCase) -and
         $n.isOffscreen -eq $false
     }
+}
+
+# Theme choices are radio buttons. Matching on name alone also hits the
+# window's title-bar "System" menu item, and focusing that opens the system
+# menu, after which UI Automation calls into the WebView stop returning.
+function Test-ThemeOption {
+    param($n)
+    return $n.controlType -eq "RadioButton" -and
+        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
+}
+
+# Preferences is split into pages behind a vertical tab list; select one and
+# wait until its tab reports selected.
+function Open-SettingsPage {
+    param([string]$Page)
+
+    $tabId = "settings-pages-tab-$Page"
+    $selected = {
+        param($t)
+        $tab = Find-ElementByAutomationId -Tree $t -AutomationId $tabId
+        return ($null -ne $tab -and $tab.isSelected -eq $true)
+    }
+
+    $tree = Get-UiTree -ProcessId $script:process.Id
+    if (& $selected $tree) { return $tree }
+
+    try {
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action "select" -AutomationId $tabId -ControlType "TabItem" | Out-Null
+    } catch {
+        Write-Warning "Selecting settings tab '$Page' failed, clicking it instead: $_"
+        Invoke-ProbeAction -ProcessId $script:process.Id -Action "click" -AutomationId $tabId -ControlType "TabItem" | Out-Null
+    }
+
+    $tree = Wait-For-Condition -Condition $selected -TimeoutMs $StepTimeoutMs
+    if ($null -eq $tree) { throw "Settings page '$Page' did not open" }
+    return $tree
 }
 
 function Find-Upgrade-Confirmation {
@@ -1964,19 +2000,14 @@ function Invoke-StepAction {
             "open-appearance" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                $tree = Get-UiTree -ProcessId $script:process.Id
+                # Appearance lives on the General page; Preferences opens on Library.
+                $tree = Open-SettingsPage -Page "general"
                 $hasAppearance = ($null -ne (Find-ElementByName -Tree $tree -Name "Appearance"))
-                $hasThemeOptions = ($null -ne (Find-Element -Tree $tree -Predicate {
-                    param($n)
-                    $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                }))
+                $hasThemeOptions = ($null -ne (Find-Element -Tree $tree -Predicate ${function:Test-ThemeOption}))
 
                 if (-not $hasAppearance -or -not $hasThemeOptions) {
                     # Try to tab into the theme radio options, which scrolls the Appearance section into view.
-                    Tab-To-Element -Predicate {
-                        param($n)
-                        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                    } -MaxTabs 40 -TimeoutMs $StepTimeoutMs | Out-Null
+                    Tab-To-Element -Predicate ${function:Test-ThemeOption} -MaxTabs 40 -TimeoutMs $StepTimeoutMs | Out-Null
                     $tree = Get-UiTree -ProcessId $script:process.Id
                 }
 
@@ -1988,10 +2019,7 @@ function Invoke-StepAction {
                     $app = Find-ElementByName -Tree $t -Name "Appearance"
                     if ($null -eq $app) { return "Appearance section was not found" }
 
-                    $options = Find-Element -Tree $t -Predicate {
-                        param($n)
-                        $n.name -and ($n.name -eq "Light" -or $n.name -eq "Dark" -or $n.name -eq "System")
-                    }
+                    $options = Find-Element -Tree $t -Predicate ${function:Test-ThemeOption}
                     if ($null -eq $options) { return "Appearance section found but theme options are missing" }
 
                     if ($null -ne $settingsPanel -and $null -ne $app.path -and $app.path.StartsWith($settingsPanel.path + "/", [System.StringComparison]::Ordinal)) {
@@ -2005,7 +2033,8 @@ function Invoke-StepAction {
             "verify-model-runtime-status" {
                 if ($null -eq $script:process) { throw "Application has not been launched" }
 
-                $tree = Get-UiTree -ProcessId $script:process.Id
+                # Runtime and model status live on the Separation page.
+                $tree = Open-SettingsPage -Page "separation"
                 $assertion = Assert-Step -StepId $stepId -Expected $Step.assertion -Tree $tree -Check {
                     param($t)
                     $runtimeText = Find-ElementByRegex -Tree $t -Pattern "(Ready|Missing|required|v\d+\.\d+|Downloaded|Not downloaded|Downloading)"
