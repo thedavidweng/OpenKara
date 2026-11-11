@@ -43,6 +43,8 @@ class Program
     // a busy or hung provider can block indefinitely, so the watchdog ends the
     // process instead of letting the caller wait until the CI job times out.
     private const int ExitBudgetExceeded = 124;
+    // Default for manual runs only. scripts/ci/run-windows-desktop-e2e.ps1
+    // always passes --budget and sets its kill deadline from that same value.
     private const int DefaultBudgetSlackMs = 45000;
 
     private static volatile string s_phase = "starting";

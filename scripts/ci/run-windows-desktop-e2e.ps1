@@ -409,9 +409,20 @@ function Invoke-ProbeProcess {
         $stdoutTask = $probe.StandardOutput.ReadToEndAsync()
         $stderrTask = $probe.StandardError.ReadToEndAsync()
         if (-not $probe.WaitForExit($budgetMs + $script:ProbeKillGraceMs)) {
-            try { $probe.Kill($true) } catch { }
-            [void]$probe.WaitForExit(5000)
-            throw "AccessibilityProbe did not exit within $($budgetMs + $script:ProbeKillGraceMs)ms and was killed: $($stderrTask.Result.Trim())"
+            $message = "AccessibilityProbe did not exit within $($budgetMs + $script:ProbeKillGraceMs)ms"
+            try {
+                $probe.Kill($true)
+            } catch {
+                $message += "; killing it failed: $_"
+            }
+            if (-not $probe.WaitForExit(5000)) {
+                $message += "; it was still running after the kill"
+            }
+            # Wait only briefly for stderr: an unfinished read must not block the harness.
+            if ($stderrTask.Wait(2000) -and $stderrTask.IsCompletedSuccessfully) {
+                $message += ": $($stderrTask.Result.Trim())"
+            }
+            throw $message
         }
         $probe.WaitForExit()
         return [PSCustomObject]@{
