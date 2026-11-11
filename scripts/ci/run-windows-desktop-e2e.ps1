@@ -2373,3 +2373,6 @@ Write-Host "Windows desktop E2E report written to $reportPath"
 if ($script:overallStatus -eq "failed") {
     exit 1
 }
+# Callers check $LASTEXITCODE, which otherwise still holds the exit code of
+# the last native command the run happened to start.
+exit 0
