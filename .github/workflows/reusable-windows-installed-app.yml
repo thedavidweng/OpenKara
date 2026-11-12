@@ -792,6 +792,19 @@ jobs:
           }
           Write-Host "Uninstall removed OpenKara.exe; user-library marker preserved at $marker"
 
+      - name: Collect OpenKara app logs
+        if: always()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:LOCALAPPDATA "com.openkara.desktop\logs"
+          if (Test-Path -Path $logs -PathType Container) {
+            $dest = Join-Path $env:RUNNER_TEMP "openkara-app-logs"
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Copy-Item -Path (Join-Path $logs "*") -Destination $dest -Recurse -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "No OpenKara app logs at $logs"
+          }
+
       - name: Upload clean-install smoke reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -809,6 +822,8 @@ jobs:
             ${{ runner.temp }}/OpenKara-clean-install/**/OpenKara.exe
             ${{ runner.temp }}/desktop-e2e/desktop-e2e-report.json
             ${{ runner.temp }}/desktop-e2e/uia-tree-*.json
+            ${{ runner.temp }}/display-matrix/**/*.json
+            ${{ runner.temp }}/openkara-app-logs/**
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days }}
 
