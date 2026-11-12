@@ -2178,8 +2178,12 @@ function Invoke-StepAction {
                     # window is gone and the process is stuck in shutdown, before killing it.
                     try {
                         $script:process.Refresh()
-                        $windowHandle = [int64]$script:process.MainWindowHandle
-                        $hangState = " State at timeout: main window handle=$windowHandle, title='$($script:process.MainWindowTitle)', responding=$($script:process.Responding), threads=$($script:process.Threads.Count)."
+                        $targetHandle = [IntPtr]$script:mainWindowHandle
+                        $targetExists = ($targetHandle -ne [IntPtr]::Zero) -and [OpenKaraWin32]::IsWindow($targetHandle)
+                        $targetVisible = $targetExists -and [OpenKaraWin32]::IsWindowVisible($targetHandle)
+                        # Process.Responding is only meaningful when the process still owns a main window.
+                        $responding = if ([int64]$script:process.MainWindowHandle -ne 0) { "$($script:process.Responding)" } else { "unavailable (no main window)" }
+                        $hangState = " State at timeout: targeted window $([int64]$targetHandle) exists=$targetExists, visible=$targetVisible; responding=$responding; threads=$($script:process.Threads.Count)."
                     } catch {
                         $hangState = " State at timeout unavailable: $($_.Exception.Message)"
                     }
