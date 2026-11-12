@@ -2172,7 +2172,18 @@ function Invoke-StepAction {
                 if (-not (Close-Settings-Overlay)) { throw "Settings overlay did not close before Alt+F4" }
                 Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
                 $exited = $script:process.WaitForExit($StepTimeoutMs)
+                $hangState = ""
                 if (-not $exited) {
+                    # Record whether the window survived Alt+F4 (key not delivered) or the
+                    # window is gone and the process is stuck in shutdown, before killing it.
+                    try {
+                        $script:process.Refresh()
+                        $windowHandle = [int64]$script:process.MainWindowHandle
+                        $hangState = " State at timeout: main window handle=$windowHandle, title='$($script:process.MainWindowTitle)', responding=$($script:process.Responding), threads=$($script:process.Threads.Count)."
+                    } catch {
+                        $hangState = " State at timeout unavailable: $($_.Exception.Message)"
+                    }
+                    Write-Host "Close timed out.$hangState"
                     Stop-Process -InputObject $script:process -Force -ErrorAction SilentlyContinue
                 }
 
@@ -2180,7 +2191,7 @@ function Invoke-StepAction {
                     param($t)
                     if (-not $exited) {
                         $closeElapsed = [int]([DateTime]::UtcNow - $closeStarted).TotalSeconds
-                        return "Application did not exit in ${closeElapsed}s. Alt+F4 targeted the main window handle $script:mainWindowHandle."
+                        return "Application did not exit in ${closeElapsed}s. Alt+F4 targeted the main window handle $script:mainWindowHandle.$hangState"
                     }
                     return $true
                 }
