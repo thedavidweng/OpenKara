@@ -173,11 +173,29 @@ jobs:
           # Product build uses automation-smoke only (CLI on openkara). Do not
           # enable automation-driver: Tauri would pack that second binary into
           # the DMG. Driver is a separate CI artifact in the next step.
-          if [ "${RELEASE_BUILD}" = "true" ]; then
-            pnpm tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
-          else
-            pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
-          fi
+          build_dmg() {
+            if [ "${RELEASE_BUILD}" = "true" ]; then
+              pnpm tauri build --ci --bundles app,dmg --target "${TAURI_TARGET}" --features automation-smoke --config src-tauri/tauri.release.conf.json -- --bin openkara
+            else
+              pnpm tauri build --ci --bundles dmg --target "${TAURI_TARGET}" --features automation-smoke --no-sign -- --bin openkara
+            fi
+          }
+          # bundle_dmg.sh sometimes fails on hosted macOS runners because
+          # hdiutil cannot eject the interstitial image ("Resource busy")
+          # while the OS still holds it (nightly run 43418885952). Retry
+          # once on that error only; beforeBundleCommand detaches leftovers
+          # and the Rust build is reused, so the retry only redoes bundling.
+          for attempt in 1 2; do
+            log="${RUNNER_TEMP}/tauri-build-${attempt}.log"
+            if build_dmg 2>&1 | tee "$log"; then
+              break
+            fi
+            if [ "$attempt" = 2 ] || ! grep -Fq 'Resource busy' "$log"; then
+              exit 1
+            fi
+            echo "::warning::bundle_dmg.sh hit hdiutil 'Resource busy'; retrying the bundle once"
+            sleep 10
+          done
 
       - name: Notarize and verify macOS release artifacts
         if: ${{ inputs.release_build }}
