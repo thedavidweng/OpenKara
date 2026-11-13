@@ -1,6 +1,16 @@
+import type { Locator } from "@playwright/test";
 import { E2E_MOCK_DATA } from "@/mock/tauri-mock-data";
 import { createTauriMockScript } from "../fixtures/tauri-mock";
 import { expect, test } from "./fixtures/accessibility-test";
+
+// Modal dialogs move focus to their initial element on the next animation
+// frame. Moving focus before that lands races it, so wait for focus to enter
+// the dialog first.
+async function waitForInitialFocus(dialog: Locator) {
+  await expect
+    .poll(() => dialog.evaluate((el) => el.contains(document.activeElement)))
+    .toBe(true);
+}
 
 test("source registries and the market work from the keyboard", async ({
   page,
@@ -83,6 +93,7 @@ test("the preferences page nav and source tabs work from the keyboard", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await waitForInitialFocus(dialog);
   const library = dialog.getByRole("tab", { name: "Library" });
   await library.focus();
   await page.keyboard.press("ArrowDown");
@@ -311,6 +322,7 @@ test("a track without audio finds a playable version from the keyboard", async (
 
   await page.keyboard.press("Enter");
   await expect(dialog).toBeVisible();
+  await waitForInitialFocus(dialog);
   await dialog.getByRole("button", { name: "Import", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
@@ -352,6 +364,7 @@ test("a playlist finds playable versions for its songs from the keyboard", async
 
   await page.keyboard.press("Enter");
   await expect(dialog).toBeVisible();
+  await waitForInitialFocus(dialog);
   await dialog.getByRole("button", { name: "Import", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(dialog.getByRole("status")).toContainText("Imported");
