@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.1](https://github.com/thedavidweng/OpenKara/compare/v0.21.0...v0.21.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ci:** stop the Windows UIA smoke from hanging on Preferences ([1ee3322](https://github.com/thedavidweng/OpenKara/commit/1ee3322377ec54c48e0a5dd4b97642211a5e005f))
+
 ## [0.21.0](https://github.com/thedavidweng/OpenKara/compare/v0.20.0...v0.21.0) (2026-11-10)
 
 
