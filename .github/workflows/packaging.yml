@@ -370,6 +370,24 @@ jobs:
       - name: Disk report (pre-build)
         run: df -h
 
+      - name: Copy preinstalled Flatpak runtimes into the writable layer
+        run: |
+          # The image ships the GNOME SDK in its read-only overlayfs layers.
+          # `--install-deps-from=flathub` updates those runtimes whenever
+          # Flathub has a newer commit, and renaming directories that live in
+          # a lower layer fails with "Invalid cross-device link" (EXDEV),
+          # which then crashes flatpak-builder. Copying each installation into
+          # the container's upper layer first makes those renames local.
+          # `cp -a` keeps the OSTree hardlinks inside each installation.
+          set -euo pipefail
+          for dir in /var/lib/flatpak "$HOME/.local/share/flatpak"; do
+            [ -d "$dir" ] || continue
+            du -sh "$dir"
+            cp -a "$dir" "$dir.rw"
+            rm -rf "$dir"
+            mv "$dir.rw" "$dir"
+          done
+
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8
         with:
