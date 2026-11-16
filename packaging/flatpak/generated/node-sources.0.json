@@ -427,13 +427,6 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxc-project/runtime/-/runtime-0.155.0.tgz",
-    "sha512": "55b5bdada733192e5967514cba75016077b8b95fd1ebce2a9500a831d1379f9253d4f72a42cbe6169318905f000fe5b4e1f04b180aba4ebed8b139348e3bc304",
-    "dest-filename": "@oxc-project__runtime-0.155.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@oxc-project/runtime/-/runtime-0.157.0.tgz",
     "sha512": "b2b9d4927c15a238b925d994ebae290385f28c12579a0c4ff2b5a59d9845a2fcf0e97431688086580b927197652e620723e65173b5a07a20b6094445e2d02ccd",
     "dest-filename": "@oxc-project__runtime-0.157.0.tgz",
@@ -1491,23 +1484,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-core/-/vite-plus-core-1.4.0.tgz",
-    "sha512": "2d319709d679f2a24a7ee08e99fd219d939503ae1e3a0cc340ea98a48fbbd6d3f193fd1c1aa3d08580c641066812f34b027d46d8ba3880a69db10756c5bf7d59",
-    "dest-filename": "@voidzero-dev__vite-plus-core-1.4.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-core/-/vite-plus-core-1.5.0.tgz",
     "sha512": "5ead2d5709e4abd218803ed981df4887cbaf5fce073899602a1e0f54da5c4f8219d407c6c0d9251318451cb21cd0456df66996bd379bb821281e8dfd5f27abd2",
     "dest-filename": "@voidzero-dev__vite-plus-core-1.5.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-arm64/-/vite-plus-darwin-arm64-1.4.0.tgz",
-    "sha512": "e487b7be7ac5ac5e46154fb45616cbbb2a129a7cddf26e3606f6cb8e770c3a601be83d6c12ae20dfb765c4f89570912a213334b78cc59cb90d485e1802593415",
-    "dest-filename": "@voidzero-dev__vite-plus-darwin-arm64-1.4.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1519,23 +1498,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-x64/-/vite-plus-darwin-x64-1.4.0.tgz",
-    "sha512": "bda47b17e8b1ffdd44c9c2585ce436e0dcf0e3bd14d76c772fe60b6dbb6e4701c3316ebb7c26e15f3716fa8b594bcab8791748cc4700e6cbeff4ff2472c69190",
-    "dest-filename": "@voidzero-dev__vite-plus-darwin-x64-1.4.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-x64/-/vite-plus-darwin-x64-1.5.0.tgz",
     "sha512": "9a361894abe046c8d554363864213f61a9a1c2fd9ba5882c8f432694c946c0ce4baaa62912ce57541973600ba0447fb4215b7ce873a6bbba5e98eea8739d2493",
     "dest-filename": "@voidzero-dev__vite-plus-darwin-x64-1.5.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-gnu/-/vite-plus-linux-arm64-gnu-1.4.0.tgz",
-    "sha512": "e7cfcf66ba7e7f71f2ea41552aa6eb6557a78e8e6dd35dab4ce8114a03282723a12635c11eabce461f6507d1888a9f6bf666a858ddf54756b8e286cf5fd303ee",
-    "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-gnu-1.4.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1547,23 +1512,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-musl/-/vite-plus-linux-arm64-musl-1.4.0.tgz",
-    "sha512": "223d3cbcfaf11b5276df04159b42ed2cfad07afbf8b68b3c4e2acffe3193a504264008183a99887ccaf1f0117ebce18c9dc388a3e90a69ca788cf56685cb5f86",
-    "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-musl-1.4.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-musl/-/vite-plus-linux-arm64-musl-1.5.0.tgz",
     "sha512": "2203458e823d5d5027934d158410b55cce14b59464acaa5d0d41eeb14d4944025a17ee05f00f6ab61d5e086327aba423f720df6af4b19b64db1bd73c543723ab",
     "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-musl-1.5.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-gnu/-/vite-plus-linux-x64-gnu-1.4.0.tgz",
-    "sha512": "45b336d58e5c4b1e567ac68557f4b0a36d8946f8a68cee8d0c8b682f9c0d23a3536bdf3b724eefd7d1c19a9f95e2790e0851db31dc707e1c802c3c34cb4eb110",
-    "dest-filename": "@voidzero-dev__vite-plus-linux-x64-gnu-1.4.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1575,13 +1526,6 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-musl/-/vite-plus-linux-x64-musl-1.4.0.tgz",
-    "sha512": "43ea7e609ced126aa3268ba64e63da050fcf131dde16188d4d04e7e7ef398240548917b190543c03ce93305c5b29582b25b8803a5b64ac9466551851b39434b0",
-    "dest-filename": "@voidzero-dev__vite-plus-linux-x64-musl-1.4.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-musl/-/vite-plus-linux-x64-musl-1.5.0.tgz",
     "sha512": "f7ad91cb760c7a49009927a88523c08b2729508cb7a09ba36a15d3a86b1b871ac9e8a2d842000b460b94bad57937db97eda72d8403c3a9dc327062b3a0316048",
     "dest-filename": "@voidzero-dev__vite-plus-linux-x64-musl-1.5.0.tgz",
@@ -1589,23 +1533,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-arm64-msvc/-/vite-plus-win32-arm64-msvc-1.4.0.tgz",
-    "sha512": "3cb195a2ff1ce3f41fbde38cfc06236039603024344b10a6269dfddaa060c5a4973f49c483ac8fe219f952d9e1c6f96e8471335644dfdabd50dcb36565123b93",
-    "dest-filename": "@voidzero-dev__vite-plus-win32-arm64-msvc-1.4.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-arm64-msvc/-/vite-plus-win32-arm64-msvc-1.5.0.tgz",
     "sha512": "83da5e88031aa0466017ff57f4744d23e124fd66b4b9b8c9f7508038d1364713f0c169fb6f37acf32f8384a1e197490ebd4c6717141ec9f7974ef8c8920985f4",
     "dest-filename": "@voidzero-dev__vite-plus-win32-arm64-msvc-1.5.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-x64-msvc/-/vite-plus-win32-x64-msvc-1.4.0.tgz",
-    "sha512": "0d81bbc03b0c2cbb36ffef2a7dec8b49c768321f9a3cce0865a9e854f48db7c7cc79e5d1d864228990ca734a991ca37df9871d0862b51cb01d300192cb02afb0",
-    "dest-filename": "@voidzero-dev__vite-plus-win32-x64-msvc-1.4.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
