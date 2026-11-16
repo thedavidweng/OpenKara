@@ -50,6 +50,10 @@ export default defineConfig(async () => ({
       "react/globals": "off",
       "react/set-state-in-effect": "off",
       "react/incompatible-library": "off",
+      // Vite+ 1.5 turned this on. Every hit is an effect-local `let`
+      // (cancelled flags, unlisten handles, rAF bookkeeping) reassigned in the
+      // effect's own cleanup or callbacks, not render-scope state.
+      "react/immutability": "off",
       "jsx-a11y/prefer-tag-over-role": "off",
     },
     ignorePatterns: [
