@@ -936,7 +936,7 @@ mod tests {
         let snapshot = snapshot_from_inventory(&empty_inventory());
         assert_eq!(snapshot.state, RuntimeBootstrapState::Missing);
         assert!(!snapshot.restart_required);
-        assert_eq!(snapshot.version, "v1.31.1");
+        assert_eq!(snapshot.version, "v1.32.0");
         assert_eq!(
             snapshot.target_triple,
             catalog::current_target_triple().to_owned()

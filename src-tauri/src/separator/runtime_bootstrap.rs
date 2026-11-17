@@ -1128,6 +1128,6 @@ mod tests {
             runtime_library_path(runtime.extracted_file_digests.keys().map(String::as_str))
                 .is_some()
         );
-        assert_eq!(runtime.runtime.ort_c_api_level, "31");
+        assert_eq!(runtime.runtime.ort_c_api_level, "32");
     }
 }
