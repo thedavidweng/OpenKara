@@ -1098,11 +1098,11 @@ mod tests {
     }
 
     #[test]
-    fn every_runtime_in_embedded_snapshot_records_api_level_31() {
+    fn every_runtime_in_embedded_snapshot_records_api_level_32() {
         for runtime in &embedded_catalog().manifest.artifacts.runtimes {
             assert_eq!(
-                runtime.runtime.ort_c_api_level, "31",
-                "runtime {} must record ORT C API level 31",
+                runtime.runtime.ort_c_api_level, "32",
+                "runtime {} must record ORT C API level 32",
                 runtime.artifact_id
             );
         }
