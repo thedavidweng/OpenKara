@@ -449,7 +449,8 @@
         "discover": "Ontdekken"
       },
       "updateAvailable": "Update beschikbaar",
-      "open": "Openen"
+      "open": "Openen",
+      "moreActions": "Meer acties voor {{name}}"
     },
     "title": "Voorkeuren",
     "library": {

@@ -136,10 +136,16 @@ test("update all installs every update that needs no consent", async () => {
 
 test("enable, disable and pin call the host directly", async () => {
   const catalog = setup([snapshot("on"), snapshot("off", { enabled: false })]);
-  const [disable] = screen.getAllByRole("button", {
-    name: "settings.streaming.disable",
-  });
-  fireEvent.click(disable);
+  const openMenu = (name: string) =>
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `settings.streaming.moreActions ${JSON.stringify({ name })}`,
+      }),
+    );
+  openMenu("on");
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "settings.streaming.disable" }),
+  );
   await waitFor(() =>
     expect(catalog.setStreamingSourceEnabled).toHaveBeenCalledWith(
       "on",
@@ -159,8 +165,9 @@ test("enable, disable and pin call the host directly", async () => {
       false,
     ),
   );
+  openMenu("on");
   fireEvent.click(
-    screen.getAllByRole("button", { name: "settings.streaming.pin" })[0],
+    await screen.findByRole("menuitem", { name: "settings.streaming.pin" }),
   );
   await waitFor(() =>
     expect(catalog.pinStreamingSource).toHaveBeenCalledWith("on", "1.0.0"),
@@ -222,7 +229,9 @@ test("rows summarize state, account, staged and pinned versions", () => {
   expect(expired.textContent).toContain("settings.streaming.staged");
   const named = screen.getByRole("article", { name: "named" });
   expect(named.textContent).toContain("settings.streaming.signedInAs");
-  expect(named.textContent).toContain("settings.streaming.unpin · 1.0.0");
+  expect(named.textContent).toContain(
+    'settings.streaming.market.pinned {"version":"1.0.0"}',
+  );
   expect(named.textContent).toContain("settings.streaming.loadedNotReady");
   expect(screen.getByRole("article", { name: "plain" }).textContent).toContain(
     "—",

@@ -64,7 +64,10 @@ test("uninstall requires an explicit credential choice and active-work stop deci
     </BackendProvider>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "settings.streaming.uninstall" }),
+    screen.getByRole("button", { name: "settings.streaming.moreActions" }),
+  );
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "settings.streaming.uninstall" }),
   );
   expect(screen.getByRole("dialog").textContent).toContain(
     "settings.streaming.stopWorkBody",
@@ -129,7 +132,10 @@ test("declining active-work interruption leaves the source enabled", () => {
     </BackendProvider>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "settings.streaming.disable" }),
+    screen.getByRole("button", { name: "settings.streaming.moreActions" }),
+  );
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: "settings.streaming.disable" }),
   );
   expect(screen.getByRole("dialog").textContent).toContain(
     "settings.streaming.work.import",
@@ -137,7 +143,7 @@ test("declining active-work interruption leaves the source enabled", () => {
   fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(
-    screen.getByRole("button", { name: "settings.streaming.disable" }),
+    screen.getByRole("button", { name: "settings.streaming.moreActions" }),
   ).toBeTruthy();
   expect(disable).not.toHaveBeenCalled();
 });

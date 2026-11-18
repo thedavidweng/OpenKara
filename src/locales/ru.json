@@ -451,7 +451,8 @@
         "discover": "Каталог"
       },
       "updateAvailable": "Доступно обновление",
-      "open": "Открыть"
+      "open": "Открыть",
+      "moreActions": "Другие действия для {{name}}"
     },
     "title": "Настройки",
     "library": {

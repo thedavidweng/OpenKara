@@ -449,7 +449,8 @@
         "discover": "探索"
       },
       "updateAvailable": "有可用更新",
-      "open": "開啟"
+      "open": "開啟",
+      "moreActions": "{{name}} 的更多動作"
     },
     "title": "偏好設定",
     "library": {

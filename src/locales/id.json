@@ -449,7 +449,8 @@
         "discover": "Jelajahi"
       },
       "updateAvailable": "Pembaruan tersedia",
-      "open": "Buka"
+      "open": "Buka",
+      "moreActions": "Tindakan lain untuk {{name}}"
     },
     "title": "Preferensi",
     "library": {

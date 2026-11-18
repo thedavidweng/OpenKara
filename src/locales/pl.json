@@ -451,7 +451,8 @@
         "discover": "Odkrywaj"
       },
       "updateAvailable": "Dostępna aktualizacja",
-      "open": "Otwórz"
+      "open": "Otwórz",
+      "moreActions": "Więcej działań dla {{name}}"
     },
     "title": "Preferencje",
     "library": {

@@ -450,7 +450,8 @@
         "discover": "Descobrir"
       },
       "updateAvailable": "Atualização disponível",
-      "open": "Abrir"
+      "open": "Abrir",
+      "moreActions": "Mais ações para {{name}}"
     },
     "title": "Preferências",
     "library": {

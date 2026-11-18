@@ -292,27 +292,27 @@ export function SettingsLibrarySection() {
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 @lg:flex-row">
         <button
           onClick={() =>
             void libraryActions.create(t("setup.dialogTitleCreate"))
           }
           disabled={isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] whitespace-nowrap text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Plus size={12} /> {t("settings.library.newLibrary")}
         </button>
         <button
           onClick={() => void libraryActions.open(t("setup.dialogTitleOpen"))}
           disabled={isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] whitespace-nowrap text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <FolderOpen size={12} /> {t("settings.library.openLibrary")}
         </button>
         <button
           onClick={() => setRemoteWizard({ purpose: "add" })}
           disabled={isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] whitespace-nowrap text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Globe size={12} /> {t("settings.library.addRemoteLibrary")}
         </button>

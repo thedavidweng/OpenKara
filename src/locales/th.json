@@ -449,7 +449,8 @@
         "discover": "ค้นหา"
       },
       "updateAvailable": "มีอัปเดต",
-      "open": "เปิด"
+      "open": "เปิด",
+      "moreActions": "การดำเนินการเพิ่มเติมสำหรับ {{name}}"
     },
     "title": "การตั้งค่า",
     "library": {

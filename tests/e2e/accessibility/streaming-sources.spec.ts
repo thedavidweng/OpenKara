@@ -54,9 +54,17 @@ test("source registries and the market work from the keyboard", async ({
   await dialog.getByRole("tab", { name: /^Installed/ }).click();
   const installedFresh = dialog.getByRole("article", { name: "Fresh Library" });
   await expect(installedFresh).toContainText("Ready");
-  await expect(
-    installedFresh.getByRole("button", { name: "Disable" }),
-  ).toBeVisible();
+  const more = installedFresh.getByRole("button", {
+    name: "More actions for Fresh Library",
+  });
+  await more.press("Enter");
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem", { name: "Disable" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Uninstall" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await a11y.axeCheck();
 
   const web = dialog.getByRole("article", { name: "Web Library" });
   await web.getByRole("button", { name: "Update to 1.1.0" }).click();

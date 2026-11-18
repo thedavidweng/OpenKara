@@ -449,7 +449,8 @@
         "discover": "둘러보기"
       },
       "updateAvailable": "업데이트 있음",
-      "open": "열기"
+      "open": "열기",
+      "moreActions": "{{name}} 추가 작업"
     },
     "title": "환경설정",
     "library": {

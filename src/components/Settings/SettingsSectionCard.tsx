@@ -16,7 +16,7 @@ export function SettingsSectionCard({
   const isDanger = tone === "danger";
 
   return (
-    <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+    <section className="@container space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="space-y-1">
         <label
           className={`text-[13px] font-semibold tracking-tight break-words ${

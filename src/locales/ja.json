@@ -449,7 +449,8 @@
         "discover": "探す"
       },
       "updateAvailable": "アップデートあり",
-      "open": "開く"
+      "open": "開く",
+      "moreActions": "{{name}} のその他の操作"
     },
     "title": "環境設定",
     "library": {

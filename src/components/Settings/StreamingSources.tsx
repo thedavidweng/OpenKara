@@ -1,5 +1,26 @@
 import { buttonVariants } from "@/components/ui/button-variants";
 import { visibleName } from "@/components/Catalog/streaming-utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  ArrowUpRight,
+  Download,
+  Ellipsis,
+  LogIn,
+  LogOut,
+  Pin,
+  PinOff,
+  Power,
+  PowerOff,
+  RefreshCw,
+  RotateCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
@@ -20,8 +41,9 @@ import {
   sourceRow,
 } from "./source-market-utils";
 
-const rowButton = buttonVariants({ variant: "outline", className: "min-w-20" });
-const rowPrimaryButton = buttonVariants({ className: "min-w-20" });
+const rowButton = buttonVariants({ variant: "outline" });
+const rowPrimaryButton = buttonVariants();
+const rowMenuButton = buttonVariants({ variant: "ghost", size: "icon" });
 
 const hasSignIn = (source: SourceSnapshot) => {
   const auth = source.manifest?.authentication;
@@ -192,17 +214,18 @@ export function StreamingSources() {
         );
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 flex-1 basis-56 text-[12px] text-[var(--color-text-dim)]">
+      <div className="flex items-center gap-3">
+        <p className="min-w-0 flex-1 text-[12px] text-[var(--color-text-dim)]">
           {t("settings.streaming.autoUpdateNotice")}
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 gap-2">
           {updatable.length > 1 ? (
             <button
               className={sourcePrimaryButton}
               disabled={busy !== null}
               onClick={() => void updateAll()}
             >
+              <Download aria-hidden="true" data-icon="inline-start" />
               {t("settings.streaming.updateAll", { count: updatable.length })}
             </button>
           ) : null}
@@ -217,6 +240,7 @@ export function StreamingSources() {
               })()
             }
           >
+            <RefreshCw aria-hidden="true" data-icon="inline-start" />
             {t("settings.streaming.refresh")}
           </button>
         </div>
@@ -242,6 +266,11 @@ export function StreamingSources() {
         const summary = [
           t(`settings.streaming.states.${source.state}`),
           source.installed_version,
+          source.pinned_version
+            ? t("settings.streaming.market.pinned", {
+                version: source.pinned_version,
+              })
+            : null,
           update ? t("settings.streaming.updateAvailable") : null,
           session?.expired
             ? t("catalog.streaming.sessionExpired")
@@ -259,10 +288,13 @@ export function StreamingSources() {
             aria-label={source.name}
             className={sourceRow}
           >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <header className="min-w-0 flex-1 basis-48">
+            <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center">
+              <header className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="min-w-0 truncate font-semibold">
+                  <h4
+                    className="min-w-0 truncate font-semibold"
+                    title={source.name}
+                  >
                     {source.name}
                   </h4>
                   {isOfficialRegistry(registries, source.registry_id) ? (
@@ -273,7 +305,7 @@ export function StreamingSources() {
                   {summary.join(" · ")}
                 </p>
               </header>
-              <div className="ml-auto flex flex-wrap justify-end gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {working ? (
                   <button
                     className={rowButton}
@@ -284,6 +316,7 @@ export function StreamingSources() {
                       )
                     }
                   >
+                    <X aria-hidden="true" data-icon="inline-start" />
                     {t("common.cancel")}
                   </button>
                 ) : (
@@ -296,6 +329,19 @@ export function StreamingSources() {
                         disabled={pending || !source.available_version}
                         onClick={() => installOrUpdate(source)}
                       >
+                        {source.last_error &&
+                        !update &&
+                        source.installed_version ? (
+                          <RotateCw
+                            aria-hidden="true"
+                            data-icon="inline-start"
+                          />
+                        ) : (
+                          <Download
+                            aria-hidden="true"
+                            data-icon="inline-start"
+                          />
+                        )}
                         {!source.installed_version
                           ? t("settings.streaming.install")
                           : source.last_error && !update
@@ -304,6 +350,16 @@ export function StreamingSources() {
                                 version:
                                   update?.version ?? source.available_version,
                               })}
+                      </button>
+                    ) : null}
+                    {source.installed_version && !source.enabled ? (
+                      <button
+                        className={rowButton}
+                        disabled={pending}
+                        onClick={() => toggleEnabled(source)}
+                      >
+                        <Power aria-hidden="true" data-icon="inline-start" />
+                        {t("settings.streaming.enable")}
                       </button>
                     ) : null}
                     {source.enabled &&
@@ -315,23 +371,96 @@ export function StreamingSources() {
                           openSource(source, !signedIn && hasSignIn(source))
                         }
                       >
-                        {signedIn || !hasSignIn(source)
-                          ? t("settings.streaming.open")
-                          : t("catalog.streaming.connect")}
+                        {signedIn || !hasSignIn(source) ? (
+                          <>
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              data-icon="inline-start"
+                            />
+                            {t("settings.streaming.open")}
+                          </>
+                        ) : (
+                          <>
+                            <LogIn
+                              aria-hidden="true"
+                              data-icon="inline-start"
+                            />
+                            {t("catalog.streaming.connect")}
+                          </>
+                        )}
                       </button>
                     ) : null}
                     {source.installed_version ? (
-                      <button
-                        className={rowButton}
-                        disabled={pending}
-                        onClick={() => toggleEnabled(source)}
-                      >
-                        {t(
-                          source.enabled
-                            ? "settings.streaming.disable"
-                            : "settings.streaming.enable",
-                        )}
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          className={rowMenuButton}
+                          aria-label={t("settings.streaming.moreActions", {
+                            name: source.name,
+                          })}
+                        >
+                          <Ellipsis aria-hidden="true" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-auto min-w-44"
+                        >
+                          {source.enabled ? (
+                            <DropdownMenuItem
+                              disabled={pending}
+                              onClick={() => toggleEnabled(source)}
+                            >
+                              <PowerOff aria-hidden="true" />
+                              {t("settings.streaming.disable")}
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem
+                            disabled={pending}
+                            onClick={() =>
+                              void run(source, () =>
+                                catalog.pinStreamingSource(
+                                  source.source_id,
+                                  source.pinned_version
+                                    ? null
+                                    : source.installed_version,
+                                ),
+                              )
+                            }
+                          >
+                            {source.pinned_version ? (
+                              <PinOff aria-hidden="true" />
+                            ) : (
+                              <Pin aria-hidden="true" />
+                            )}
+                            {t(
+                              source.pinned_version
+                                ? "settings.streaming.unpin"
+                                : "settings.streaming.pin",
+                            )}
+                          </DropdownMenuItem>
+                          {signedIn ? (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                source.active_work.length
+                                  ? decide(source, "signOut")
+                                  : void useCatalogStore
+                                      .getState()
+                                      .signOut(source.source_id)
+                              }
+                            >
+                              <LogOut aria-hidden="true" />
+                              {t("catalog.streaming.signOut")}
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={pending}
+                            onClick={() => decide(source, "uninstall")}
+                          >
+                            <Trash2 aria-hidden="true" />
+                            {t("settings.streaming.uninstall")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ) : null}
                   </>
                 )}
@@ -420,52 +549,6 @@ export function StreamingSources() {
                       )}
                     </dd>
                   </dl>
-                  <div className="flex flex-wrap gap-2">
-                    {signedIn ? (
-                      <button
-                        className={sourceActionButton}
-                        onClick={() =>
-                          source.active_work.length
-                            ? decide(source, "signOut")
-                            : void useCatalogStore
-                                .getState()
-                                .signOut(source.source_id)
-                        }
-                      >
-                        {t("catalog.streaming.signOut")}
-                      </button>
-                    ) : null}
-                    <button
-                      className={sourceActionButton}
-                      disabled={pending}
-                      onClick={() =>
-                        void run(source, () =>
-                          catalog.pinStreamingSource(
-                            source.source_id,
-                            source.pinned_version
-                              ? null
-                              : source.installed_version,
-                          ),
-                        )
-                      }
-                    >
-                      {t(
-                        source.pinned_version
-                          ? "settings.streaming.unpin"
-                          : "settings.streaming.pin",
-                      )}
-                      {source.pinned_version
-                        ? ` · ${source.pinned_version}`
-                        : ""}
-                    </button>
-                    <button
-                      className={`${sourceActionButton} text-[var(--color-destructive)]`}
-                      disabled={pending || working}
-                      onClick={() => decide(source, "uninstall")}
-                    >
-                      {t("settings.streaming.uninstall")}
-                    </button>
-                  </div>
                 </div>
               </details>
             ) : null}

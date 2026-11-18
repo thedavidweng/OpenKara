@@ -449,7 +449,8 @@
         "discover": "Entdecken"
       },
       "updateAvailable": "Update verfügbar",
-      "open": "Öffnen"
+      "open": "Öffnen",
+      "moreActions": "Weitere Aktionen für {{name}}"
     },
     "title": "Einstellungen",
     "library": {
