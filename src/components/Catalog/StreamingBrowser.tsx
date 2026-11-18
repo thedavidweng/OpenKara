@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, Download, Loader2, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { APP_SHORTCUTS, matchesShortcut } from "@/lib/app-shortcuts";
@@ -48,6 +48,8 @@ export function StreamingBrowser() {
           : "playlists"
         : "search";
   const available = sourceAllows(source, operation, state.session);
+  const canSearch = sourceAllows(source, "search", state.session);
+  const searchHintId = useId();
   const ready =
     !!source?.installed_version &&
     source.enabled &&
@@ -248,53 +250,65 @@ export function StreamingBrowser() {
           <>
             {available && challengeId ? signInCardElement : null}
             {capabilities.includes("search") ? (
-              <form
-                role="search"
-                className="mb-4 flex gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void state.search(draft);
-                }}
-              >
-                <div className="relative min-w-0 flex-1">
-                  <Search
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    ref={input}
-                    aria-label={t("catalog.streaming.searchPlaceholder")}
-                    placeholder={t("catalog.streaming.searchPlaceholder")}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    className="h-9 pl-8 pr-9"
-                  />
-                  {draft ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("catalog.streaming.clearSearch")}
-                      className="absolute right-0.5 top-1/2 -translate-y-1/2"
-                      onClick={() => {
-                        setDraft("");
-                        state.clearSearch();
-                        input.current?.focus();
-                      }}
-                    >
-                      <X />
-                    </Button>
-                  ) : null}
-                </div>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  size="lg"
-                  disabled={!sourceAllows(source, "search", state.session)}
+              <div className="mb-4 space-y-1.5">
+                <form
+                  role="search"
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void state.search(draft);
+                  }}
                 >
-                  {t("catalog.streaming.search")}
-                </Button>
-              </form>
+                  <div className="relative min-w-0 flex-1">
+                    <Search
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      ref={input}
+                      aria-label={t("catalog.streaming.searchPlaceholder")}
+                      placeholder={t("catalog.streaming.searchPlaceholder")}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      disabled={!canSearch}
+                      aria-describedby={canSearch ? undefined : searchHintId}
+                      className="h-9 pl-8 pr-9"
+                    />
+                    {draft ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("catalog.streaming.clearSearch")}
+                        className="absolute right-0.5 top-1/2 -translate-y-1/2"
+                        onClick={() => {
+                          setDraft("");
+                          state.clearSearch();
+                          input.current?.focus();
+                        }}
+                      >
+                        <X />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    size="lg"
+                    disabled={!canSearch}
+                  >
+                    {t("catalog.streaming.search")}
+                  </Button>
+                </form>
+                {canSearch ? null : (
+                  <p
+                    id={searchHintId}
+                    className="text-[12px] text-muted-foreground"
+                  >
+                    {t("globalSearch.signInToSearch", { name: source?.name })}
+                  </p>
+                )}
+              </div>
             ) : null}
             {active ? (
               <Tabs
