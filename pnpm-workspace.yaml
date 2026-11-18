@@ -7,6 +7,13 @@ overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"
 
+auditConfig:
+  # picomatch <=4.0.7 ReDoS (GHSA-fc5q-39xc-vjpf) has no patched release yet.
+  # picomatch is dev-only (fdir, tinyglobby, knip, vitest) and
+  # never sees untrusted globs. Remove this entry once a fixed version ships.
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
+
 onlyBuiltDependencies:
   - esbuild
 
