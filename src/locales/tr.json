@@ -449,7 +449,8 @@
         "discover": "Keşfet"
       },
       "updateAvailable": "Güncelleme var",
-      "open": "Aç"
+      "open": "Aç",
+      "moreActions": "{{name}} için diğer işlemler"
     },
     "title": "Tercihler",
     "library": {

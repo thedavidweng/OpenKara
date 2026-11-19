@@ -30,16 +30,13 @@ export function SettingsTabList<T extends string>({
   className,
   tabClassName,
 }: SettingsTabListProps<T>) {
-  const [previous, next] =
-    orientation === "vertical"
-      ? ["ArrowUp", "ArrowDown"]
-      : ["ArrowLeft", "ArrowRight"];
-
+  // Both arrow axes move focus: a narrow container lays the vertical
+  // settings nav out as a row.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>, index: number) => {
     const target =
-      event.key === previous
+      event.key === "ArrowUp" || event.key === "ArrowLeft"
         ? (index - 1 + tabs.length) % tabs.length
-        : event.key === next
+        : event.key === "ArrowDown" || event.key === "ArrowRight"
           ? (index + 1) % tabs.length
           : event.key === "Home"
             ? 0

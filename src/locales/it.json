@@ -450,7 +450,8 @@
         "discover": "Scopri"
       },
       "updateAvailable": "Aggiornamento disponibile",
-      "open": "Apri"
+      "open": "Apri",
+      "moreActions": "Altre azioni per {{name}}"
     },
     "title": "Preferenze",
     "library": {

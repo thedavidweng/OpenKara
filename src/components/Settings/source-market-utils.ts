@@ -9,7 +9,7 @@ import type {
 export const sourceActionButton = buttonVariants({ variant: "outline" });
 export const sourcePrimaryButton = buttonVariants();
 export const sourceRow =
-  "space-y-2 rounded-xl border border-border bg-card p-4";
+  "@container space-y-2 rounded-xl border border-border bg-card p-4";
 export const sourceDetails =
   "text-[12px] [&_summary]:cursor-pointer [&_summary]:text-muted-foreground [&_summary]:select-none";
 

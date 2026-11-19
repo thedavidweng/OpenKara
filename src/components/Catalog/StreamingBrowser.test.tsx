@@ -417,6 +417,28 @@ test("a valid source named library is distinct from local library navigation", (
   );
 });
 
+test("a source that needs sign-in to search says so instead of a silent disabled button", () => {
+  const fixture = source("locked", ["search"]);
+  if (!fixture.manifest) throw new Error("Fixture requires a manifest");
+  fixture.manifest.requires_authentication = ["search"];
+  store.getState().applySources([fixture]);
+  store.getState().setActiveSource("locked");
+  render(<StreamingBrowser />);
+  const input = screen.getByRole("textbox") as HTMLInputElement;
+  expect(input.disabled).toBe(true);
+  expect(
+    document.getElementById(input.getAttribute("aria-describedby") ?? "")
+      ?.textContent,
+  ).toBe("globalSearch.signInToSearch");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "catalog.streaming.search",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
 test("protected playlist detail keeps Back available to return to public playlists", async () => {
   const fixture = source("alpha", ["playlists", "playlist_tracks"]);
   if (!fixture.manifest) throw new Error("Fixture requires a manifest");

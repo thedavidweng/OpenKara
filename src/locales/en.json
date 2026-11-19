@@ -587,7 +587,8 @@
         "discover": "Discover"
       },
       "updateAvailable": "Update available",
-      "open": "Open"
+      "open": "Open",
+      "moreActions": "More actions for {{name}}"
     },
     "title": "Preferences",
     "library": {

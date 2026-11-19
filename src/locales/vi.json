@@ -449,7 +449,8 @@
         "discover": "Khám phá"
       },
       "updateAvailable": "Có bản cập nhật",
-      "open": "Mở"
+      "open": "Mở",
+      "moreActions": "Thao tác khác cho {{name}}"
     },
     "title": "Tùy chọn",
     "library": {

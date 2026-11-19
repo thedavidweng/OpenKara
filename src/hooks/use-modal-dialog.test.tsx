@@ -128,4 +128,32 @@ describe("useModalDialog", () => {
 
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
+
+  test("leaves Tab to an open portalled menu", async () => {
+    function Harness() {
+      const dialogRef = useRef<HTMLDivElement>(null);
+      useModalDialog({ dialogRef, onDismiss: vi.fn() });
+      return (
+        <>
+          <div ref={dialogRef} role="dialog" tabIndex={-1}>
+            <button>Before</button>
+            <button aria-haspopup="menu" aria-expanded="true">
+              Menu
+            </button>
+            <button>After</button>
+          </div>
+          <div role="menu">
+            <button role="menuitem">Item</button>
+          </div>
+        </>
+      );
+    }
+
+    render(<Harness />);
+    const item = screen.getByRole("menuitem", { name: "Item" });
+    item.focus();
+
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(item);
+  });
 });
