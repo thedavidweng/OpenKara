@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.1](https://github.com/thedavidweng/OpenKara/compare/v0.21.0...v0.21.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **ci:** ignore unpatched dev-only picomatch ReDoS advisory ([2eac599](https://github.com/thedavidweng/OpenKara/commit/2eac5999ad27b67d17f19f39734319839a93a783))
+* **ci:** keep Flatpak runtime updates off read-only image layers ([ac841d5](https://github.com/thedavidweng/OpenKara/commit/ac841d5083efa02797880c97beedcbb3e9723e20))
+* **ci:** stop the Windows UIA smoke from hanging on Preferences ([1ee3322](https://github.com/thedavidweng/OpenKara/commit/1ee3322377ec54c48e0a5dd4b97642211a5e005f))
+* **settings:** keep Preferences and source actions from wrapping ([#733](https://github.com/thedavidweng/OpenKara/issues/733)) ([bc6afb4](https://github.com/thedavidweng/OpenKara/commit/bc6afb41f8b76dfdb1fc6b60b7b4ffd4253a1e69))
+
 ## [0.21.0](https://github.com/thedavidweng/OpenKara/compare/v0.20.0...v0.21.0) (2026-11-10)
 
 
