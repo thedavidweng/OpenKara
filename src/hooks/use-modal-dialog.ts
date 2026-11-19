@@ -103,6 +103,15 @@ export function useModalDialog({
       }
 
       const activeElement = document.activeElement as HTMLElement | null;
+      // An open menu is portalled outside the dialog. Its own focus
+      // manager closes it and moves Tab on from the control that opened it.
+      if (
+        activeElement &&
+        !dialog.contains(activeElement) &&
+        dialog.querySelector("[aria-haspopup][aria-expanded='true']")
+      ) {
+        return;
+      }
       const currentIndex = activeElement
         ? focusable.indexOf(activeElement)
         : -1;

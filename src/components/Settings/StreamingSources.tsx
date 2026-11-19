@@ -214,11 +214,11 @@ export function StreamingSources() {
         );
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <p className="min-w-0 flex-1 text-[12px] text-[var(--color-text-dim)]">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="min-w-48 flex-1 text-[12px] text-[var(--color-text-dim)]">
           {t("settings.streaming.autoUpdateNotice")}
         </p>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex flex-wrap gap-2">
           {updatable.length > 1 ? (
             <button
               className={sourcePrimaryButton}

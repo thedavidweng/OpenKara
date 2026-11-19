@@ -107,3 +107,35 @@ test("every installed source action works from the keyboard", async ({
     dialog.getByRole("article", { name: "Plugin Library" }),
   ).toContainText("1.1.0");
 });
+
+test("Preferences tabs report the axis they are laid out on, and Tab leaves a source menu in order", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const dialog = await openSources(page);
+  const pages = dialog.getByRole("tablist", { name: "Preferences sections" });
+  await expect(pages).toHaveAttribute("aria-orientation", "vertical");
+  await page.setViewportSize({ width: 680, height: 800 });
+  await expect(pages).toHaveAttribute("aria-orientation", "horizontal");
+
+  const card = dialog.getByRole("article", { name: "Plugin Library" });
+  const more = card.getByRole("button", { name: /^More actions for / });
+  await more.press("Enter");
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(page.locator("#settings-close")).not.toBeFocused();
+  const follows = await more.evaluate((trigger) => {
+    const active = document.activeElement;
+    return (
+      active !== null &&
+      active !== trigger &&
+      Boolean(
+        trigger.compareDocumentPosition(active) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+    );
+  });
+  expect(follows).toBe(true);
+});

@@ -1,5 +1,11 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsAboutSection } from "./SettingsAboutSection";
 import { SettingsCrossfadeSection } from "./SettingsCrossfadeSection";
@@ -87,6 +93,23 @@ export function SettingsOverlay() {
     if (hasRegistryLink) setPage("onlineSources");
   }, [hasRegistryLink]);
 
+  // The nav is a column from the same 48rem container width as `@3xl:`.
+  const [navVertical, setNavVertical] = useState(true);
+  useLayoutEffect(() => {
+    const overlay = dialogRef.current;
+    if (!overlay || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const rem = parseFloat(
+        getComputedStyle(document.documentElement).fontSize,
+      );
+      setNavVertical(overlay.clientWidth >= 48 * rem);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(overlay);
+    return () => observer.disconnect();
+  }, []);
+
   useModalDialog({
     dialogRef,
     initialFocusRef: closeButtonRef,
@@ -128,7 +151,7 @@ export function SettingsOverlay() {
             <SettingsTabList
               idPrefix={NAV_ID}
               label={t("settings.pagesLabel")}
-              orientation="vertical"
+              orientation={navVertical ? "vertical" : "horizontal"}
               value={page}
               onChange={setPage}
               className="flex shrink-0 gap-1 overflow-x-auto @3xl:sticky @3xl:top-0 @3xl:w-44 @3xl:flex-col @3xl:overflow-visible"
