@@ -125,17 +125,6 @@ test("Preferences tabs report the axis they are laid out on, and Tab leaves a so
   await expect(page.getByRole("menu")).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("menu")).toHaveCount(0);
-  await expect(page.locator("#settings-close")).not.toBeFocused();
-  const follows = await more.evaluate((trigger) => {
-    const active = document.activeElement;
-    return (
-      active !== null &&
-      active !== trigger &&
-      Boolean(
-        trigger.compareDocumentPosition(active) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      )
-    );
-  });
-  expect(follows).toBe(true);
+  // The control right after More actions is the card's Details summary.
+  await expect(card.locator("summary", { hasText: "Details" })).toBeFocused();
 });
