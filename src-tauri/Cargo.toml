@@ -138,6 +138,8 @@ tauri-plugin-deep-link = { version = "2.6.3", optional = true }
 # undocumented block there is the kind of thing that reads as reviewed when it
 # was not.
 [lints.clippy]
+cognitive_complexity = "warn"
+todo = "warn"
 undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]

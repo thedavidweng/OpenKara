@@ -55,7 +55,74 @@ export default defineConfig(async () => ({
       // effect's own cleanup or callbacks, not render-scope state.
       "react/immutability": "off",
       "jsx-a11y/prefer-tag-over-role": "off",
+      "typescript/ban-ts-comment": "error",
+      "eslint/no-warning-comments": [
+        "error",
+        { terms: ["todo", "fixme", "xxx"], location: "start" },
+      ],
+      "eslint/complexity": ["error", { max: 50 }],
+      "eslint/max-lines": [
+        "error",
+        { max: 900, skipBlankLines: true, skipComments: true },
+      ],
     },
+    overrides: [
+      {
+        files: [
+          "**/*.{test,spec}.{ts,tsx}",
+          "tests/**",
+          "scripts/**",
+          "fixtures/**",
+          "src/mock/**",
+          "src/lib/han-pinyin-initials.ts",
+          "src/types/ipc.ts",
+        ],
+        rules: {
+          "eslint/max-lines": "off",
+          "eslint/complexity": "off",
+        },
+      },
+      {
+        files: [
+          "src/stores/catalog-store.ts",
+          "src/lib/settings-controller/settings-controller.ts",
+        ],
+        rules: {
+          "eslint/max-lines": [
+            "error",
+            { max: 1600, skipBlankLines: true, skipComments: true },
+          ],
+        },
+      },
+      {
+        files: [
+          "src/components/Catalog/StreamingBrowser.tsx",
+          "src/components/Lyrics/LyricLine.tsx",
+          "src/components/Settings/SettingsRuntimeSection.tsx",
+          "src/components/Settings/StreamingSources.tsx",
+        ],
+        rules: {
+          "eslint/complexity": ["error", { max: 120 }],
+        },
+      },
+      {
+        files: ["src/stores/**/*.{ts,tsx}", "website/src/**/*.{ts,tsx}"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  group: ["@tauri-apps/*", "@/lib/tauri", "@/lib/tauri/*"],
+                  message:
+                    "Route platform calls through @/lib/backend instead of importing Tauri directly.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
     ignorePatterns: [
       ".claude",
       ".worktrees",

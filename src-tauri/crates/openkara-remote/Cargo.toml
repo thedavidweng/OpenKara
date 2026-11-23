@@ -30,4 +30,6 @@ tempfile = "3.27.0"
 tiny_http = "0.12.0"
 
 [lints.clippy]
+cognitive_complexity = "warn"
+todo = "warn"
 undocumented_unsafe_blocks = "warn"
