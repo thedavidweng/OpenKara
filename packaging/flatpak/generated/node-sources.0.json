@@ -371,6 +371,13 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@oxc-project/runtime/-/runtime-0.158.0.tgz",
+    "sha512": "39858194aff09d91f2a25e6392f04969d0fc29347a0c97c50d10a5aab53a9010d02877786d735900b837a9f5e4d1a165e85e65a12c4c4f6e0466eacd584e0c29",
+    "dest-filename": "@oxc-project__runtime-0.158.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.156.0.tgz",
     "sha512": "d43bb2838f1374935dca1101f179f52f7e9b4fd3efe8652d94a8c7c4ecacf3191a17fad0ab75c913e6c0bab48afc0808cf998616c6fbedc9fd3dbdb4f9609273",
     "dest-filename": "@oxc-project__types-0.156.0.tgz",
@@ -381,6 +388,13 @@
     "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.157.0.tgz",
     "sha512": "f79893a31d6a76de9619671edf1c0d3956b207239f2da600abea863e9b9be8d59b061f6cbf4186dfecf27e1f590423bf8d5bb903411623ea9023b83a7debe3c6",
     "dest-filename": "@oxc-project__types-0.157.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.158.0.tgz",
+    "sha512": "c59ebaa80e1698b6d32e5c47de6a8c77c7fd50a6da3b3393d004f015fe031ffd78a4c82952bb6ab63c98cce42681f9766b489100031b43d1b5b61ffaee34731b",
+    "dest-filename": "@oxc-project__types-0.158.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -518,317 +532,317 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-android-arm-eabi/-/binding-android-arm-eabi-0.76.0.tgz",
-    "sha512": "cfcc78922b6d40b3ecac95a67e8209c98aacda037071e19286852a00974544fc372b892490a0851e1dc2af834546f65bec33df0d2dfe25f0634a6dce23241a25",
-    "dest-filename": "@oxfmt__binding-android-arm-eabi-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-android-arm-eabi/-/binding-android-arm-eabi-0.78.0.tgz",
+    "sha512": "d71f4d3c6406e5630e393f2ca513f884f6deab007f3fd6b2c45a381140d295eea62e6b5846a13ab2e5e01ebf77fd2da79eccf2efb2e521af2496429d5ad1db33",
+    "dest-filename": "@oxfmt__binding-android-arm-eabi-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-android-arm64/-/binding-android-arm64-0.76.0.tgz",
-    "sha512": "663f5f11085048a1a3f194c1f97e2ae21a38e78e7159feeab2f269c111169c1cf90404c4158b52b4a4608b060e66fc50ece4650448128fba660f3ba58df57599",
-    "dest-filename": "@oxfmt__binding-android-arm64-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-android-arm64/-/binding-android-arm64-0.78.0.tgz",
+    "sha512": "d66b98696f5288f12af0d20f197d01db4a14c02c7a1d6882b197a6ff68d4ed4b0ece85cb4f86315aaeb26dd8702922a5d0fc807efc8cc8f17b16c2354e8ec074",
+    "dest-filename": "@oxfmt__binding-android-arm64-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-darwin-arm64/-/binding-darwin-arm64-0.76.0.tgz",
-    "sha512": "8d9cbc1a9517696a6273924f300bcb99a073f794b1d2769997a869b413cb38c898999622304ee302dea9bfca3fb6342a3cd58a6feee32b3661ad8c7a52a33931",
-    "dest-filename": "@oxfmt__binding-darwin-arm64-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-darwin-arm64/-/binding-darwin-arm64-0.78.0.tgz",
+    "sha512": "8e5e0a25da3c1eb5692e6712612ffba035cf1fc1f377a56bce05054406d8d23e9c4918dc0e4527a6e012b6e34ba2abccb59122ed1772ebc041ae20a0589732da",
+    "dest-filename": "@oxfmt__binding-darwin-arm64-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-darwin-x64/-/binding-darwin-x64-0.76.0.tgz",
-    "sha512": "539f7e6bd955a68469f5e9d185313d1acb0bdea075934f4261a811cd37ecddd7e49e8a4c615d31d311d9bfb3e5b3748d32a1e5c8747eb9f998efa09869f4282f",
-    "dest-filename": "@oxfmt__binding-darwin-x64-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-darwin-x64/-/binding-darwin-x64-0.78.0.tgz",
+    "sha512": "4703a14200108b5a95dd37ae4dfae01a409610bdde0c522a97f968e2bb76c69187ab2a2529af96e5c15b6fe33d22fc0cc106e99628b919bbf565040f4c994dba",
+    "dest-filename": "@oxfmt__binding-darwin-x64-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-freebsd-x64/-/binding-freebsd-x64-0.76.0.tgz",
-    "sha512": "2754776091cf750276450bf331d4d50d6ca2ce18a11a2446180784671b46a7adbd8f9a5c4f9ca948b4a205f968a43ee8eed9a2303fb194d7e12159a370728c55",
-    "dest-filename": "@oxfmt__binding-freebsd-x64-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-freebsd-x64/-/binding-freebsd-x64-0.78.0.tgz",
+    "sha512": "3005f2763d3598b8cc5259e6a3bb18566fbb91d05d53d3706aec764357fda0b36ab7708275e828d68328677d2a0f26501905df549644535c9157b992cf028354",
+    "dest-filename": "@oxfmt__binding-freebsd-x64-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-0.76.0.tgz",
-    "sha512": "c7da9383acc7a2a7b2ce61559488d26fd5a58597685da6b231379078379411f280e3ce0080f273edff5c84b8c330e340eb05145f4149c67547b18817e59bf4fa",
-    "dest-filename": "@oxfmt__binding-linux-arm-gnueabihf-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-0.78.0.tgz",
+    "sha512": "af3e855594625acab73b6610802a2a651c1a41068f43bd0d064b38f8a20d8e33c93a305377c83f8aaeb29d2f7ba1d7bea8a1a5857b6973fc4297c2c7cdf3a3c9",
+    "dest-filename": "@oxfmt__binding-linux-arm-gnueabihf-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-0.76.0.tgz",
-    "sha512": "df4de06da9a6ecd0e5953b6479a5fef05e436be29c481afae26a842d010583d5e09e37cb5f760108751c39f8089554d2c9b7accb8ddea1e29a8bca06af43fa50",
-    "dest-filename": "@oxfmt__binding-linux-arm-musleabihf-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-0.78.0.tgz",
+    "sha512": "9482b45c98b824fd459e1b8b8d1fc95a14071a085973e82114d9db653402f24c6c9ab916ddec7c09e17b7e9d054feac43f4366eafa026246ac2fca6855603db1",
+    "dest-filename": "@oxfmt__binding-linux-arm-musleabihf-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-0.76.0.tgz",
-    "sha512": "8f75005f3089a165fd6d92da2028fa0dfc2423fd9fce36bd46988221b20dfb609001c2a863ee521f9a5051c102be7df69909b5ecd48f13d62a4c0c18c75b1e66",
-    "dest-filename": "@oxfmt__binding-linux-arm64-gnu-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-0.78.0.tgz",
+    "sha512": "a362c92077d6dd90033a30d593973b30cd4cf028801b8dc64dce2694900adb77ce1e0aeee02be7a9679d0a8097a48b0aa24a117446bb5dd432c0f199bf504088",
+    "dest-filename": "@oxfmt__binding-linux-arm64-gnu-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm64-musl/-/binding-linux-arm64-musl-0.76.0.tgz",
-    "sha512": "a8566a595904ceec5632d5240ad1f1b27a215c79d430142bfd92311742a69424adf1d7bf6dcd656e9560a6a8dbdd0c420034071bf3b5b3725ca30701176b2a77",
-    "dest-filename": "@oxfmt__binding-linux-arm64-musl-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-arm64-musl/-/binding-linux-arm64-musl-0.78.0.tgz",
+    "sha512": "1be95469093de15a3ee1bcb277c5f6fa93d7b5def039ba5d6ef042f31ca8cd90f444e495048dd7a4d351e87102909ab8439d40c0bb891bcd5fe31fb87aabd2af",
+    "dest-filename": "@oxfmt__binding-linux-arm64-musl-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-0.76.0.tgz",
-    "sha512": "44e88089dd141f618de6530c5f625380a94e2b1d6b37ee9ad56c48b81b14de3e40dccb81f54e5791110c5bbe9705b0089a71f8e667ce0857122306fe76b71562",
-    "dest-filename": "@oxfmt__binding-linux-ppc64-gnu-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-0.78.0.tgz",
+    "sha512": "afbe8f0197fdfd9805fe20d16887fc9cbb2be31e991defe3d902e65948e8438e926b5d6a30eebc6b9bb98aec77cbcbcbcea6134bfc6d28ef4f8e331fca4e699e",
+    "dest-filename": "@oxfmt__binding-linux-ppc64-gnu-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-0.76.0.tgz",
-    "sha512": "3b277ff4e6dd336458919ef2cc5fc6caf55d6cd8097111bc0455709c0568de8a2acda7a6e04da9e5e4c8181d3d15e7100fe4391d010034e4c49c86533baac101",
-    "dest-filename": "@oxfmt__binding-linux-riscv64-gnu-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-0.78.0.tgz",
+    "sha512": "4908974edfdce1a568457909be17f863fb00d5761edd78d23036dd5f93e202cb01b87111a06b677105f3d0a2969173de8d64ca9402f899949065d1ce0a2c3b4c",
+    "dest-filename": "@oxfmt__binding-linux-riscv64-gnu-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-0.76.0.tgz",
-    "sha512": "f3a0cea663c34795331d2381f32e4794ea5800806d331fba2fbd88ca8bac371e78ab52b3eb56b2901e12728bc5622bd951a93eed6c3ab4f0548daae5bb360a2f",
-    "dest-filename": "@oxfmt__binding-linux-riscv64-musl-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-0.78.0.tgz",
+    "sha512": "54d077c05531feb02ac15356faec97c5bf9cd0752b99c4b9d543e414c0d6258f7973a4dc93abba1cec952ecaa26280bc921da61a5c1a9d89a36ff47631cbcdd0",
+    "dest-filename": "@oxfmt__binding-linux-riscv64-musl-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-0.76.0.tgz",
-    "sha512": "bbaa268e3168a0a7e71cb048fb752d05522701eb8486833f440230fce885a29d9042039a9f9cc37ea3d1ea0b8c6b296debc2fad2457e6f2d3b21ba7ceca0e3af",
-    "dest-filename": "@oxfmt__binding-linux-s390x-gnu-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-0.78.0.tgz",
+    "sha512": "d676c8d18ed25f0c767f898998ab79f0c68376301ca1a60cf74a4130675c642b135b6b5a156d7f3148b7b901913c03769fedcf95d09d3bd9be0fac7e814fe17a",
+    "dest-filename": "@oxfmt__binding-linux-s390x-gnu-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-gnu/-/binding-linux-x64-gnu-0.76.0.tgz",
-    "sha512": "2f4fe15b531d32b82cbee2c6a7d60440e60e1a3e713c76bcc1546dc9b75de5abf4dcf578a92a40ab7a727c2eec9fb50203cca74613114c06bd2abf675782c666",
-    "dest-filename": "@oxfmt__binding-linux-x64-gnu-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-gnu/-/binding-linux-x64-gnu-0.78.0.tgz",
+    "sha512": "236cf62123e3ae5dc24911797e6424367a21e3a5155351a3335574f82389c8d65c8f448334ce03acf3f6fe05c25f7f182753f604beac17655db09fa911811b25",
+    "dest-filename": "@oxfmt__binding-linux-x64-gnu-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-musl/-/binding-linux-x64-musl-0.76.0.tgz",
-    "sha512": "24d93fec768f0c98f2e648a1defaba6fbd5089fded1f1d5914008607378778dcf229a2296abe1e146c9af3d191dfdf0adabc17d1e115984ab59e904f9449249a",
-    "dest-filename": "@oxfmt__binding-linux-x64-musl-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-musl/-/binding-linux-x64-musl-0.78.0.tgz",
+    "sha512": "607b799ca285c53e12aee239ec51e7121191483ba816a36800cde6a18082960ef49a38d2dfd80105b773699bfe374a2d773bd056e1d33eede316ee6da6a0b75d",
+    "dest-filename": "@oxfmt__binding-linux-x64-musl-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-openharmony-arm64/-/binding-openharmony-arm64-0.76.0.tgz",
-    "sha512": "3032eb3903d70ee3cabcf502be93f7842ea43bbd9db18c5fa58891d3c35fe4388cef933477cf83dba2704f8b870dfd1b71f96f9461dc779f079f61e9c641d451",
-    "dest-filename": "@oxfmt__binding-openharmony-arm64-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-openharmony-arm64/-/binding-openharmony-arm64-0.78.0.tgz",
+    "sha512": "587db5941314f8b63317b68c7a8cd3665c9ce38a1ad85f88e4eb50ed1c2e89d083a00c604f2375b37e2bc743c162b8a8e7afb61bcf14f553a7609b3257b54c1d",
+    "dest-filename": "@oxfmt__binding-openharmony-arm64-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-0.76.0.tgz",
-    "sha512": "d82708083ad02aa300385bb39adb3ff0ebf988a6fe0d6fd0ad6e0c16c9766e7460f3aba8894beda94907a8d498d7d4a17a073ca411e25cc4841c38c883de28d0",
-    "dest-filename": "@oxfmt__binding-win32-arm64-msvc-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-0.78.0.tgz",
+    "sha512": "b8d42a1c9aed1c889297ca4c6e10e4b661a903586ac2575634ef246cda4d16156df81624e02dc67bc9e5260911b468ed31a9b4fb9e361b95102491ba94b78f6e",
+    "dest-filename": "@oxfmt__binding-win32-arm64-msvc-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-0.76.0.tgz",
-    "sha512": "36364b260fad429316552c9e58104a0a989bec7fee2eaf38673c42bd8e5ea87cd2688b6ecc2102180f4c062670996f1f9e40487e9a60e3d21bfff2d2086029f1",
-    "dest-filename": "@oxfmt__binding-win32-ia32-msvc-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-0.78.0.tgz",
+    "sha512": "5baa26511453dfd10704f1f867cb143c83b35958cc6e108209671f4f4b1ae9a782faf397372040266a50461e7ffca7cf0d7f7a8c994d8ad87d8b837ae70c41f9",
+    "dest-filename": "@oxfmt__binding-win32-ia32-msvc-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-x64-msvc/-/binding-win32-x64-msvc-0.76.0.tgz",
-    "sha512": "d2f08c697fea96873bb9a2810d187eeb64815bc12a9a14bb73cfda97e3f10f9f786a8e25c8459d7281265680609c23555b4ec60e983ef6e3d5ef1ead6bd9a58f",
-    "dest-filename": "@oxfmt__binding-win32-x64-msvc-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/@oxfmt/binding-win32-x64-msvc/-/binding-win32-x64-msvc-0.78.0.tgz",
+    "sha512": "afdad629e0d573b948ae3d14b3d90fd3c5bb16e7580285b211d3b8d2a9ca936d1b1e24db5bfcf6bf82e8231c5410d43215f0296de5761a5f57b04818fed63574",
+    "dest-filename": "@oxfmt__binding-win32-x64-msvc-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-arm64/-/darwin-arm64-7.0.2005.tgz",
-    "sha512": "56a0d9c5c6558e5a2734bbaebeb6953600d0b7ed677706b8c89a3c3aab0ae07621ffad5b6bd225312b4255f8bf69a22a4680e135b00a0bc81d713ad7aa76fe52",
-    "dest-filename": "@oxlint-tsgolint__darwin-arm64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-arm64/-/darwin-arm64-7.0.2006.tgz",
+    "sha512": "b9cd0c1075d95035b6dd99a8e57dbc79235e4a73f5ee32a787d1a27a1a5566a85fcbdf64b3cb29c974f92e56abded8c337ba699d037441df452ba58d91d0fe7d",
+    "dest-filename": "@oxlint-tsgolint__darwin-arm64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-x64/-/darwin-x64-7.0.2005.tgz",
-    "sha512": "e2451f2d1358a15a6fd139b78cf62bbf1c9f39cfcb99dbc50b7a4a678b4be8aee503b2bf552f35480b66c51cdb617612c9bdd2056870b2e5fe75fe277aacf1c4",
-    "dest-filename": "@oxlint-tsgolint__darwin-x64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-x64/-/darwin-x64-7.0.2006.tgz",
+    "sha512": "fb1d7fa5add2dd5302f5c89ff17293382414baa453fb0bb5231f852b9b2f5dadb16d70ae13bfb84b449f9ae4a72bf9a4f40239fb10716458482f19823d467584",
+    "dest-filename": "@oxlint-tsgolint__darwin-x64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/linux-arm64/-/linux-arm64-7.0.2005.tgz",
-    "sha512": "ae150d70fb0194abe15edadb85b05489db51051749f1f6c41cdf47e50e4de7d81bcb5f2bb86b8303b294c65ee8467533a7bf7bbb29184219010e6fb42a97cafd",
-    "dest-filename": "@oxlint-tsgolint__linux-arm64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/linux-arm64/-/linux-arm64-7.0.2006.tgz",
+    "sha512": "f74bfb1d7f26e789075e7e43a63344375f056fbc7024c4447bfc238b7512c807fda5332fedadea67770fa0b56221c233c4f2e691c61922cd63d47dd9da06d52c",
+    "dest-filename": "@oxlint-tsgolint__linux-arm64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/linux-x64/-/linux-x64-7.0.2005.tgz",
-    "sha512": "b4ab3dca29c3419387ca03347bc1099e34d4de6cc9b5d7e43993fa51dbbcda22cc78f5121ce85327dcf353f992775850c54448e0b4d14621617f30be3f3c1d34",
-    "dest-filename": "@oxlint-tsgolint__linux-x64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/linux-x64/-/linux-x64-7.0.2006.tgz",
+    "sha512": "fe4d30b04a87880e5d581258ba577755e72fe9b2212826acc69868fda164be1f3bd10a31df732e4e42941962159bf9e3031c3b5b8a6ed5afd77dade3c2e2ae3d",
+    "dest-filename": "@oxlint-tsgolint__linux-x64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/win32-arm64/-/win32-arm64-7.0.2005.tgz",
-    "sha512": "5583e7bb58237db4aff913a1bb235f32cdfcd83e33414d9945cf147379ee119a3593691ffb529f4eb83886b95687bde1f4623e7545b2a3e0d8090cd40653f071",
-    "dest-filename": "@oxlint-tsgolint__win32-arm64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/win32-arm64/-/win32-arm64-7.0.2006.tgz",
+    "sha512": "0904f9b2a70b64b3594962f3514123426a7be145fc8756a0a77649f297d192d1dbc7a81f05af1aec28eb9d1ad9f555e5c275d5929c3b9b92813bacbe4b931044",
+    "dest-filename": "@oxlint-tsgolint__win32-arm64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint-tsgolint/win32-x64/-/win32-x64-7.0.2005.tgz",
-    "sha512": "7a453cf5c4c6cbd7e9433bafc48b051eb9e83fc5e81631884603c45ba7aa818d8d6231b2f69c298c5efda34e165d130914a46b71a56a9195d450174bb2aa500f",
-    "dest-filename": "@oxlint-tsgolint__win32-x64-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/@oxlint-tsgolint/win32-x64/-/win32-x64-7.0.2006.tgz",
+    "sha512": "559b06a305dca77bd03648e819e5423937f8686ad1a5193a6c125685e7e72553ebeb3f9d5fe2caaaa1dfc1aaa716f83ae90da22695ea925456dfc60edb579ef9",
+    "dest-filename": "@oxlint-tsgolint__win32-x64-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-android-arm-eabi/-/binding-android-arm-eabi-1.91.0.tgz",
-    "sha512": "78ea895144b5302a88a1453130892ec1aa8874a687af5497600d02408f79514ac5f23c10ca5407df76c19a7aa165fbd65ca951076625c7ff926e4fdcb44ab365",
-    "dest-filename": "@oxlint__binding-android-arm-eabi-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-android-arm-eabi/-/binding-android-arm-eabi-1.93.0.tgz",
+    "sha512": "28ac3bd296c3e4fbeadc6da527e590ef55cf3230a6837eeb9127b6fa60ea0913f73e84d274332e122e143a713c241b7234cedb7a4eb5102dacd09b7b4bbbbe4a",
+    "dest-filename": "@oxlint__binding-android-arm-eabi-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-android-arm64/-/binding-android-arm64-1.91.0.tgz",
-    "sha512": "bc8254e254712b41216c1b7e891deb92ade98a8e08f95e46b21c237a2de994d8cdf8222ad16c561f3615234e89f4a37c02bde1c8d485b732408d544b64e6298e",
-    "dest-filename": "@oxlint__binding-android-arm64-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-android-arm64/-/binding-android-arm64-1.93.0.tgz",
+    "sha512": "7efaf57d351919e970471283b7ae297f6f1a2f559a5a0be2c33dd7f84fc571162fae511a847d0d102473fdcd5263e2be296999939b807fa8759109f2064a7fd8",
+    "dest-filename": "@oxlint__binding-android-arm64-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-darwin-arm64/-/binding-darwin-arm64-1.91.0.tgz",
-    "sha512": "b4bcbbe8cbabc003a942de5054c9095207b10525a107ba9dbc061bd786dcd319ed652e9fe7968a89c6d9a3167f4259806e7add957783e7e223c18f0467d4564e",
-    "dest-filename": "@oxlint__binding-darwin-arm64-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-darwin-arm64/-/binding-darwin-arm64-1.93.0.tgz",
+    "sha512": "55dbd237d2517f812ce99ce801dbc47a1f2d80a770f0be07f365a603c30c3d57cf759182c04fe7236ed9d47ad11d84213f13a1e249a7c50122a12505acebc36b",
+    "dest-filename": "@oxlint__binding-darwin-arm64-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-darwin-x64/-/binding-darwin-x64-1.91.0.tgz",
-    "sha512": "ccf78c9a302a9b9bd7c5b4e9fc9a98b9cf601926d4b8469e0809051c1e130912d395f2460fffc5931d3762f647087649ee275e2e288b71a7beddfd88dbbaa768",
-    "dest-filename": "@oxlint__binding-darwin-x64-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-darwin-x64/-/binding-darwin-x64-1.93.0.tgz",
+    "sha512": "411d55f3dd0c974606446d05fe25742bd8a01bea4e85ef9559df9a667c58f38f6b44765fdc5da0128424b39f865477f5d395fd321ffa1dd4a14cfe63b9e906da",
+    "dest-filename": "@oxlint__binding-darwin-x64-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-freebsd-x64/-/binding-freebsd-x64-1.91.0.tgz",
-    "sha512": "a6c391f7ec463179f4863e0a639336923490d67d1308c7586cf3ab6a8574890ca5ee6c36a01058194336fa66b8d26d582d5ae4b5304eb5ae058eb99c3870e1ae",
-    "dest-filename": "@oxlint__binding-freebsd-x64-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-freebsd-x64/-/binding-freebsd-x64-1.93.0.tgz",
+    "sha512": "8c37c86e2df4cd968a8bead3be2837b207be5e18bca45152807c5bd23ce8bdce2a87c1139bf8ab295f5cecdfc9b2ec2761ce6c6ef7f8202f30d6f410d082fe04",
+    "dest-filename": "@oxlint__binding-freebsd-x64-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.91.0.tgz",
-    "sha512": "d4f340d63e044f16b0bf17f3eae783c568108169173dbbf8e03599982ecb474ec6aa88c61433b059ba2c393ebf018889afbccc5c4867d9d3d6324c8514e16951",
-    "dest-filename": "@oxlint__binding-linux-arm-gnueabihf-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.93.0.tgz",
+    "sha512": "aadc59ef5e0d0ff928160547d34420c65cd98886d13e682e68f8671d15390c516daed11d3ab4a7643e14fc7d80cd7ad7919e7d7906cc0672706ee9b95e886b21",
+    "dest-filename": "@oxlint__binding-linux-arm-gnueabihf-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-1.91.0.tgz",
-    "sha512": "8dc35e3d5a5c6b7ee54db1e688f32755b3c0016d2b1fd900a038ec0efeaf112117f69cdacc8475ab94b262e735ad0cdd8c7b5cd955420cdf630e1ead1dc387c8",
-    "dest-filename": "@oxlint__binding-linux-arm-musleabihf-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-1.93.0.tgz",
+    "sha512": "e6927d36332f1fb58c52a5c1e9b4d33927a6066dfdc36728776ec7bb7f98a26fc685b4de3579587290f1d68e028013fa7e1a746071bae9335d55a526eac1e3b0",
+    "dest-filename": "@oxlint__binding-linux-arm-musleabihf-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.91.0.tgz",
-    "sha512": "4c98bbf145fa47ef6a676dd92adccde9a75f5bcddb8d8d0d5ec091301447e87ec88b368c5e665b75102d8de74c931efb6d3e3a6101f472c6b0b18f65c216bc30",
-    "dest-filename": "@oxlint__binding-linux-arm64-gnu-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.93.0.tgz",
+    "sha512": "a517feee3b5bb767c7136dd25fba81c5182705989c520b2808ad4f5488e73a4fadddae94064a6dfc6aca23df56971b0a5317edcffe67bff91f2af49c998cb093",
+    "dest-filename": "@oxlint__binding-linux-arm64-gnu-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.91.0.tgz",
-    "sha512": "3a8c252eba144f32aae4e06f6eeea27a0721f122760e2bd7142ba4ccf594470bdc261323eff3f4094187e6aac39714f52a1e3c75cc6a62aaef13ca8aeb14cb29",
-    "dest-filename": "@oxlint__binding-linux-arm64-musl-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.93.0.tgz",
+    "sha512": "cccf0577f2bcb2a1afb01709059de8559ddcb4659bb33034f08686b79805145e5172e9e9a4023f6670176e8b8006f9d6789fff4b8e0a2a57cf6670c36de8a986",
+    "dest-filename": "@oxlint__binding-linux-arm64-musl-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.91.0.tgz",
-    "sha512": "405ff919ef321a95a0e6ce1ac0c3477d52a1d563a6939f75420d3cda2e821de9d76016be5b51394705995da2943b0e0aa3b0828ea8374df05cd00ce19ea6e562",
-    "dest-filename": "@oxlint__binding-linux-ppc64-gnu-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.93.0.tgz",
+    "sha512": "eea2829ef8592835c91b6a5d6cb6b3776870e05c632476d9385aeb6f3cb2e4f7477cf2c7f6f9cd51ad657b4d40f2e22d66e60a3c13e7707f870a8122153e1280",
+    "dest-filename": "@oxlint__binding-linux-ppc64-gnu-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-1.91.0.tgz",
-    "sha512": "75796c2a5361cc9417d676a07862a7bd67b50fbb939e0db8f6140cf34086fd83d9f05fd56476f154b8489a0bab75604e9aef3a5ce7a655a94b8eb5ba40838cfd",
-    "dest-filename": "@oxlint__binding-linux-riscv64-gnu-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-1.93.0.tgz",
+    "sha512": "da982e9710ba1bc579c04ef9d0d244fdf4647fd68eea2eb2a23d74c32691d8476236d6a7e0e7a6b0eb6c4346535c6758f10dc8a139a5343dc662f8c9b2f8a462",
+    "dest-filename": "@oxlint__binding-linux-riscv64-gnu-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-1.91.0.tgz",
-    "sha512": "b739e48f956b58d4547f29a468b7097ad80c2db3fdb2e2f9a1bfe6ee3d0575b9e6e6edcb8bf133a3f61c062c62bb074bd6c834a06a724def3a22dd09e93f8bc6",
-    "dest-filename": "@oxlint__binding-linux-riscv64-musl-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-1.93.0.tgz",
+    "sha512": "c96b27e868363e7186e639720f3e7ea471a2313322cb869d69ae1644ccc383307c79f692864d493264c72014952d0321d2d61746ce02379b8908eefdaf8322e2",
+    "dest-filename": "@oxlint__binding-linux-riscv64-musl-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.91.0.tgz",
-    "sha512": "b0dbdf2e251842456c2cd520216db80046131d2776cd9d6f0315ecb0f763b901d3b42a51bd08a162b8ba779cf9158ef0fd0adc9c1e7e83d13efecaa666af2d7c",
-    "dest-filename": "@oxlint__binding-linux-s390x-gnu-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.93.0.tgz",
+    "sha512": "5829f9a65c29fdecd2d910cf40aa74fc45c4551afdfdd0dec547512a6b0c16accd339c41499d706ec8b73ee324d557e43119c8e41b9acc2b3388258c5d10ce97",
+    "dest-filename": "@oxlint__binding-linux-s390x-gnu-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.91.0.tgz",
-    "sha512": "780db9113be29a1519f3dcb905cba7358ef2bfbab01b623b57b74540053e98812a679ee00425dd204465d325ce12de37ce3b30d322b681129373eb7017bd3ac1",
-    "dest-filename": "@oxlint__binding-linux-x64-gnu-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.93.0.tgz",
+    "sha512": "1760868dbf4b024cc7f88613652cddd64950d6f939cfa52d8dac7ae1678b0720a46176d50dbb2e9fe3b2da12df5b630348a0af5be8f0cbff6577410f81d7aef8",
+    "dest-filename": "@oxlint__binding-linux-x64-gnu-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-linux-x64-musl/-/binding-linux-x64-musl-1.91.0.tgz",
-    "sha512": "e2167867d2be3a4713a401c3a144cc83ff0c32875b3346a872b97d2a71b3a7d87988aaa3ad7ada114668ad8a15093ef1a0af770801d78139ddc5106b3a31ff7c",
-    "dest-filename": "@oxlint__binding-linux-x64-musl-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-linux-x64-musl/-/binding-linux-x64-musl-1.93.0.tgz",
+    "sha512": "a657f90c4da86e3706f137fb99746e45af2d4fcaf30e4a63a9742d2a81ac2875a4a60b226a56ce375f9c0ada121144d56d05235efb809bcbd5f7edeb474c8207",
+    "dest-filename": "@oxlint__binding-linux-x64-musl-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-openharmony-arm64/-/binding-openharmony-arm64-1.91.0.tgz",
-    "sha512": "82daa7e1bd242e919ee3a421ecd1e247ceb066977e4cb69eb0ed74eaced5dd11b7debeb7541f782d6e6a3ca103257eb8a2c877c5f8e73c59f5334e3ce1b0bbc1",
-    "dest-filename": "@oxlint__binding-openharmony-arm64-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-openharmony-arm64/-/binding-openharmony-arm64-1.93.0.tgz",
+    "sha512": "2a9db226b2afa137bd15f29d3bfc702cd51bb366d84cc2b1d3e6a8403d6cd21fd3c7491282d1d27469ab93cb5329d96ea2c8c56e8f3ca9844868d217e3701f17",
+    "dest-filename": "@oxlint__binding-openharmony-arm64-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.91.0.tgz",
-    "sha512": "29022d05db321cddbc537cff6c47a4ea1f69bc6dd4aafe7ae1060ef0ad5b13f57b611660a479519df34a54f1e4938b1f60ac8fcc48c2816f3442422638bbc9a2",
-    "dest-filename": "@oxlint__binding-win32-arm64-msvc-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.93.0.tgz",
+    "sha512": "be2823707085b11e8a8e75931157da0b170c61aa44b9a2bd1596b53297b0c10d52f97b9ddefd2891f923d51c92b03e911753511c88d295049a9539ca21a8f79c",
+    "dest-filename": "@oxlint__binding-win32-arm64-msvc-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-1.91.0.tgz",
-    "sha512": "5c52aa6dbb105664e0c3e0b204abb3499b406b8e6f8a89b59da15fba52a691315d0f20da050681a84cf927ad5323c8b00729d4f85f2aeea3c3fbd9a995946112",
-    "dest-filename": "@oxlint__binding-win32-ia32-msvc-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-1.93.0.tgz",
+    "sha512": "d0eb770447bf000af6fee4217b9e6bf0298f9697ab624da6426c5dbad3abbbba14d248abe888845476f54c6dc63914657eb6bdee53c75432e18268a188accbae",
+    "dest-filename": "@oxlint__binding-win32-ia32-msvc-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.91.0.tgz",
-    "sha512": "0e6a4ad0fb611bae81733e58e09a8d6f35e5b73c8b42d837a1f629776e7e7a39bb91061433bf152f5b883ff64572ddbbf359b0532057dfb2dab453c24d5a77e4",
-    "dest-filename": "@oxlint__binding-win32-x64-msvc-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.93.0.tgz",
+    "sha512": "673cc8215b3f4249bcb6b51660a174398b9be402e5bf9d3fde0b0465b280bd6833fb23495fab91990f3248f5d4d90d3f63d9b82423a3869982f175186cf1d7e5",
+    "dest-filename": "@oxlint__binding-win32-x64-msvc-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@oxlint/plugins/-/plugins-1.91.0.tgz",
-    "sha512": "161f92381c4cbbbfe96d293ce161b804dea7a5cc71945e2358d409f92e0850dcaf495790c0e553150303fc3c7612a050d6555e0800dc27ed2bcd3d41290f5c50",
-    "dest-filename": "@oxlint__plugins-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/@oxlint/plugins/-/plugins-1.93.0.tgz",
+    "sha512": "6ca59023583d8e7f1b59466cbe16ce2df82f6b9efa15ba752b0a1335250231d4fdb654c0bd04b626489f5f552b84f3ddc8de061ef336d0786f20caaa535ca8b5",
+    "dest-filename": "@oxlint__plugins-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1001,9 +1015,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/api/-/api-2.12.4.tgz",
-    "sha512": "a5599f8acfb8cd3f07d10869df13d9c7d26eee4a73bc0eabaff3d224fcaec1fbee71343cb15b7ad4d614f4a3242bbd3750595869d1668ca0381e1c9b3ad37482",
-    "dest-filename": "@tauri-apps__api-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/api/-/api-2.12.5.tgz",
+    "sha512": "1bd40832de5fcc40fe692e108552b7c351d62caa4b2301ff327a42afdcf5ba01841e74b63919aaacb91cd2e00b3a344ae2a5c9cbee188b0f0b0e5fca89c0b51e",
+    "dest-filename": "@tauri-apps__api-2.12.5.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1358,9 +1372,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-5.1.0.tgz",
-    "sha512": "398f5a4a10501b928e230db30a8f5f0e808723d44796234727ffe733b9ba8c6838d47ca47bd24e19699e3252bbe31604aecc4ca0af26201de001e13215503b2c",
-    "dest-filename": "@vitest__coverage-v8-5.1.0.tgz",
+    "url": "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-5.1.1.tgz",
+    "sha512": "c4be0d91b571fd4aaa0c769748ecaf07caac4a82d0f9d54d191f47d8187fe20810b6668f14d3d40bd81943029978f2ce43a583720c175673ee9455bd7821edd3",
+    "dest-filename": "@vitest__coverage-v8-5.1.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1386,6 +1400,13 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@vitest/mocker/-/mocker-5.1.1.tgz",
+    "sha512": "6f63a04c1e3edc899621569f5ca6b3257c0b2b043150d9e2c7a6f7c54bd44cc87b4725e5aedce8c5f66bf1a133f7390738c012e0ae65bb74ef156a2255e55342",
+    "dest-filename": "@vitest__mocker-5.1.1.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-5.1.0.tgz",
     "sha512": "211c7999cdf40ab173c8c3678ba499290d6be7792fd38f4c72fbe4d166d6703e8f533fdb1631b8cd8bf42a8b1001ea273e91a9e56c6a60132a75239f25fbd55b",
     "dest-filename": "@vitest__pretty-format-5.1.0.tgz",
@@ -1403,6 +1424,13 @@
     "url": "https://registry.npmjs.org/@vitest/spy/-/spy-5.1.0.tgz",
     "sha512": "d833cee4e30758aac19e00be7c299342a7a6345d2089d461a779716c1991856f8cd5726b7e03e9a8da9655ebd7b67d9fdae7c3e59691d41e81eb8d5a025717e4",
     "dest-filename": "@vitest__spy-5.1.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@vitest/spy/-/spy-5.1.1.tgz",
+    "sha512": "e8af02e9a9501b5fd873cfd9236da2252ec912cc4f755ceab6a0eafbfc4ce19d26195ca47a63158cb86a332feaebf207606de4283f21292c117a7fd977223dbd",
+    "dest-filename": "@vitest__spy-5.1.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1428,9 +1456,23 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-core/-/vite-plus-core-1.6.0.tgz",
+    "sha512": "d14161d00563b776729ef464d014c2c32b02794461c990a810669b129b703b396f42357678645c7f98cf4df2c668ac20c3674a390607e2fabf3771fb594748cb",
+    "dest-filename": "@voidzero-dev__vite-plus-core-1.6.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-arm64/-/vite-plus-darwin-arm64-1.5.0.tgz",
     "sha512": "9ded02c72ea9f67a5a8d9113a671468e685777d6851d941b09551c758085dd546a056cb791d9cb04cf5e24697be531f589832dc7c24f5e7add2327131adc8c10",
     "dest-filename": "@voidzero-dev__vite-plus-darwin-arm64-1.5.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-arm64/-/vite-plus-darwin-arm64-1.6.0.tgz",
+    "sha512": "d48884f5e5ec9cb59eb1a1c42369752f7f3e08285a43cd9625ddc6a45f9477b2aeabe4f6c7c4de6d4c0b08f61ab694d20c3b3ccf6c35c8a025eeaba855985eb4",
+    "dest-filename": "@voidzero-dev__vite-plus-darwin-arm64-1.6.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1442,9 +1484,23 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-darwin-x64/-/vite-plus-darwin-x64-1.6.0.tgz",
+    "sha512": "a12b1f47500241d168eb472ebc89cae406713f1ed300acabb7b36c51a3556558f6e002ec87ed218d9491996909de517c691b70d4b87c77b6e415781071074ac5",
+    "dest-filename": "@voidzero-dev__vite-plus-darwin-x64-1.6.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-gnu/-/vite-plus-linux-arm64-gnu-1.5.0.tgz",
     "sha512": "99140a7f4056be3e33776673e275454359f3b6a09c557210148b0ecad3f0fb134f1046ef94cca14127bc903600d98652076f3a527303180591c8bf3ed2ecfbfa",
     "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-gnu-1.5.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-gnu/-/vite-plus-linux-arm64-gnu-1.6.0.tgz",
+    "sha512": "ea6daf45cb5db500e5f80450c064c5f57ea183e25a545b63e2f92f04bcbf756a6a889cec78679b2702948f2b3c42e85781c268727ddaf8dea8876eefbdf20d51",
+    "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-gnu-1.6.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1456,9 +1512,23 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-musl/-/vite-plus-linux-arm64-musl-1.6.0.tgz",
+    "sha512": "647c746f2a8f390fd6880c476df76f4e9f07202580cca8def247d9ea284bbbd64b4359cea34462e450206130262cc7cc5e0539a99b8d15015da7893938d7b78d",
+    "dest-filename": "@voidzero-dev__vite-plus-linux-arm64-musl-1.6.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-gnu/-/vite-plus-linux-x64-gnu-1.5.0.tgz",
     "sha512": "1496ad4870e2746bf7e36873ca72c70992130b74bbd9cd5977902de4a0e0c0393fd19d984aa4da5988a8b07232387afdb0604f87139b2e3a7482f7ef5a57e6a9",
     "dest-filename": "@voidzero-dev__vite-plus-linux-x64-gnu-1.5.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-gnu/-/vite-plus-linux-x64-gnu-1.6.0.tgz",
+    "sha512": "75eeffa8a64deb2ec6d8e327b02726057797c92dfd1b8af9bb28b3f2345bc5b39b8f69eac6694db38f1a1ea39a2b3aa225e4aa8a9fb3e002d8fc020097a878af",
+    "dest-filename": "@voidzero-dev__vite-plus-linux-x64-gnu-1.6.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1470,6 +1540,13 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-musl/-/vite-plus-linux-x64-musl-1.6.0.tgz",
+    "sha512": "7beffd983ca105ea0313034fb78c7cb9b1f3b53b1013d90d1c8f5c05a13463e28840f4f1795d96dce7cf1df239c9394a5ad17caf728dea421195781a16f901b3",
+    "dest-filename": "@voidzero-dev__vite-plus-linux-x64-musl-1.6.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-arm64-msvc/-/vite-plus-win32-arm64-msvc-1.5.0.tgz",
     "sha512": "83da5e88031aa0466017ff57f4744d23e124fd66b4b9b8c9f7508038d1364713f0c169fb6f37acf32f8384a1e197490ebd4c6717141ec9f7974ef8c8920985f4",
     "dest-filename": "@voidzero-dev__vite-plus-win32-arm64-msvc-1.5.0.tgz",
@@ -1477,9 +1554,23 @@
   },
   {
     "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-arm64-msvc/-/vite-plus-win32-arm64-msvc-1.6.0.tgz",
+    "sha512": "c68e076b5c439265a9f0ba25294b42b1589f7a78cadd179036e26370cb753dacc075df50651fd09fa67c137adb1639d672d4a4871478c13778df3f019316fdbc",
+    "dest-filename": "@voidzero-dev__vite-plus-win32-arm64-msvc-1.6.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
     "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-x64-msvc/-/vite-plus-win32-x64-msvc-1.5.0.tgz",
     "sha512": "fa494618aeca960fc4fa1f1bbe139e2d91d1b711efb00c3611c4fdeda8955b5ca7570c918c53cb55e14f75a79319bcfec3a1b2baed9f95aabef35aef693124b6",
     "dest-filename": "@voidzero-dev__vite-plus-win32-x64-msvc-1.5.0.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-win32-x64-msvc/-/vite-plus-win32-x64-msvc-1.6.0.tgz",
+    "sha512": "d2d0ba06fd454fa433f588a441ea4e89bb196b61c4d24c584882b58d1790876ff7741506cf6b4789be7e1b6ad0ede6e41f19b04bd8101c078c9a6d3b5df7a649",
+    "dest-filename": "@voidzero-dev__vite-plus-win32-x64-msvc-1.6.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1834,9 +1925,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/i18next/-/i18next-26.7.2.tgz",
-    "sha512": "46c398dc179a083764939d8d78948501710b436ad05c13bfb4eb9be8bf2e7b62023df47f1510d60ce7c40e0e3130f7754aa3b982855843a8bbdaa584501fcf3f",
-    "dest-filename": "i18next-26.7.2.tgz",
+    "url": "https://registry.npmjs.org/i18next/-/i18next-27.1.3.tgz",
+    "sha512": "42287912bc3c9bda893e6b8d523a1288172dbad6247e083e9a1ccb690ef16e7d98f5edadb01f1d361632301d347d47c146deafd144c58cf3c24913893e7f7725",
+    "dest-filename": "i18next-27.1.3.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2009,9 +2100,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.70.0.tgz",
-    "sha512": "8024cf3cdd4c950501b5481db14bfed020148fe5fc8627d1522441c38139bfb96f0c8388a71d0465ecdd1903128a64bca4a03a7acbee96526e6f8198af49821c",
-    "dest-filename": "lucide-react-1.70.0.tgz",
+    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.73.0.tgz",
+    "sha512": "7d53b31af88bf664df1de9c6d4f6c27c871e6afc86967a5835262bf9a1991cb47298027b0d33fa287baab74b81902280a1e9ebd54564c126c3218b76c487ac11",
+    "dest-filename": "lucide-react-1.73.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2033,6 +2124,13 @@
     "url": "https://registry.npmjs.org/magic-string/-/magic-string-1.4.3.tgz",
     "sha512": "cf5d8ec6668f184d05e3196919d8ee0147248a92e94254c0b809b21a13680fb383a58533bc37efb7151b8ccfe3c339f23f5efca23bbf2837728b6db4c0d27445",
     "dest-filename": "magic-string-1.4.3.tgz",
+    "dest": "flatpak-node/pnpm-tarballs"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/magic-string/-/magic-string-1.4.5.tgz",
+    "sha512": "a0b2c2dbe62f4147c06bebf1a2e7c4ff273589c6fceccf625c846a02847fd84844ffc71bdd217ff868b4736072d41fb9573d9edaf42d52f1e2bb5fbadd99e1fb",
+    "dest-filename": "magic-string-1.4.5.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2079,23 +2177,23 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/oxfmt/-/oxfmt-0.76.0.tgz",
-    "sha512": "628f51227f654564e6fd4f286c76d7516737f650a91055e5120805a0fc74d734b5f0e0858bb980c0c98bd39fa9d40ba7b8981290e35f7d6c811c9ce930c091b9",
-    "dest-filename": "oxfmt-0.76.0.tgz",
+    "url": "https://registry.npmjs.org/oxfmt/-/oxfmt-0.78.0.tgz",
+    "sha512": "b9a817fbbd262aa87f62ac41e8e37f964c553c7e84d59ee97cfdb1e975513cfca20c266d5faa35c4811e5c021727fdb00395625f8445b96f880109fce7225d5a",
+    "dest-filename": "oxfmt-0.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/oxlint-tsgolint/-/oxlint-tsgolint-7.0.2005.tgz",
-    "sha512": "e9c70f1aee2ee09f5bc183c75c114f79edd166b5f705ba11754ee4d78cd10c307596f3773bb27fbcf44575a11f6b5f825b1e319d040ea7872da1a17aea83b4bb",
-    "dest-filename": "oxlint-tsgolint-7.0.2005.tgz",
+    "url": "https://registry.npmjs.org/oxlint-tsgolint/-/oxlint-tsgolint-7.0.2006.tgz",
+    "sha512": "e41dd4b47ef593270f1d40b59051087df8af100b38f52526909b8764e6674d8d0d3e3e257a0a746dcb0242e72e2d5342a09cc3b9c4baf0fd82e162213fe2f2a5",
+    "dest-filename": "oxlint-tsgolint-7.0.2006.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/oxlint/-/oxlint-1.91.0.tgz",
-    "sha512": "be3cbf70165c10571887775bc54a102be6e373e41a637656a3ce9a264679600c29fc7ca2a8fedd4dd3606ef70854969f8401f9b196d3a81a78b1972270466780",
-    "dest-filename": "oxlint-1.91.0.tgz",
+    "url": "https://registry.npmjs.org/oxlint/-/oxlint-1.93.0.tgz",
+    "sha512": "d7d24cb10157f98bc46dc513150c634f086fb3421b8340fa0859de48b829c2700259c63fe8b8e1a46a643e8761d13e5a213d698cc4cb95869e045cda560ba04c",
+    "dest-filename": "oxlint-1.93.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2205,9 +2303,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-17.1.13.tgz",
-    "sha512": "67184e4a5c8a48a3ed6d434f2f060c984df0ddb8687348da64967a6dcef018e4fa70b6eb6ecfffea6d351f108bb457528c7bc5a70170a0f871c732251d2b3d73",
-    "dest-filename": "react-i18next-17.1.13.tgz",
+    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-18.0.2.tgz",
+    "sha512": "83b61f0714c30bd758744b1bdc5ee8d2946bea3835e1fd3c5391ba3770d352a4a01adfe7abb0187f6efd1124631370f2f90fd81bb38655deefb62ca5c537d5e3",
+    "dest-filename": "react-i18next-18.0.2.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2310,9 +2408,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/tinybench/-/tinybench-6.2.2.tgz",
-    "sha512": "9c8676376745a6306c8368608ad2aeee603e16fb0826e1893b0cac4678265514665a047f5323e3c098fc73f7d3fdd866f049079c5e443a88117fed19daaae298",
-    "dest-filename": "tinybench-6.2.2.tgz",
+    "url": "https://registry.npmjs.org/tinybench/-/tinybench-6.2.4.tgz",
+    "sha512": "490e768c49dc5f16cc0b326e63603f8c621b6c0bba358b01596ee0af3da9344f849f341da066a805fa64e2a0bfa2913baa251c1a61a0686233e44a07752d4ef7",
+    "dest-filename": "tinybench-6.2.4.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2450,16 +2548,16 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.5.0.tgz",
-    "sha512": "e0c2328f668b7be9f8c069e33ebde0e7a9c5d7ae1a64571df94250e7486927cf2b26fe84611440691e004218bdb37dae0f54e234faaf29edf72a5c66abb05e3a",
-    "dest-filename": "vite-plus-1.5.0.tgz",
+    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.6.0.tgz",
+    "sha512": "87a68803cd10700848081a765e06bc94f33d8ce666d95bcf9fb2ece77d42ed18c3f617abad3d6b3c350c63bd887457f55f2583985544c0ef96dc4817b5248c2d",
+    "dest-filename": "vite-plus-1.6.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/vitest/-/vitest-5.1.0.tgz",
-    "sha512": "33398d167af06bcbfc945d5b2f1c37509e04444c153956fbe55a8966650346327a125b8aff1f6d87ba936da783938d56c44d46c56aa64d771db1fa1b7c7e6c38",
-    "dest-filename": "vitest-5.1.0.tgz",
+    "url": "https://registry.npmjs.org/vitest/-/vitest-5.1.1.tgz",
+    "sha512": "b6b566cd414e4ab68265c237b9920c0f916a061e1ab45902fd7b893ff214eeab7241acb4142b3721afb4422436249c06c961bfc6b701a0935e976f8eee4119d2",
+    "dest-filename": "vitest-5.1.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
