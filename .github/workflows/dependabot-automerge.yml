@@ -16,4 +16,4 @@ jobs:
     permissions:
       contents: write # enable auto-merge
       pull-requests: write # approve and enable auto-merge
-    uses: thedavidweng/.github/.github/workflows/dependabot-automerge.yml@967ed68dc0fcd4291e1c94c3565cad0f403e5744 # v1.1.0
+    uses: thedavidweng/.github/.github/workflows/dependabot-automerge.yml@9776099353379c9054ce651ec04b5e368d24acd7 # v1.1.1
