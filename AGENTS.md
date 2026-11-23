@@ -11,5 +11,5 @@ Cross-platform Tauri 2 karaoke app with React/TypeScript UI and local AI stem se
   - [Engineering and docs](docs/agents/engineering.md).
   - [TypeScript and IPC changes](docs/agents/frontend-contracts.md).
   - [Model/runtime and platform constraints](docs/agents/platform.md).
-  - [Verification](.agents/skills/verify/SKILL.md), [delivery](.agents/skills/delivery/SKILL.md), [CI notes](.agents/skills/ci-notes/SKILL.md).
+  - [Verification](.agents/skills/verify/SKILL.md), [delivery](.agents/skills/delivery/SKILL.md), [CI notes](.agents/skills/ci-notes/SKILL.md), [operational runbooks](docs/runbooks/README.md).
   - [Domain glossary](CONTEXT.md), [domain docs](docs/agents/domain.md), [ADR index](docs/adr/), [issue tracker](docs/agents/issue-tracker.md).

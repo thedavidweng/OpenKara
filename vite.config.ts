@@ -106,7 +106,7 @@ export default defineConfig(async () => ({
         },
       },
       {
-        files: ["src/stores/**/*.{ts,tsx}", "website/src/**/*.{ts,tsx}"],
+        files: ["src/stores/**/*.{ts,tsx}"],
         rules: {
           "eslint/no-restricted-imports": [
             "error",
@@ -116,6 +116,52 @@ export default defineConfig(async () => ({
                   group: ["@tauri-apps/*", "@/lib/tauri", "@/lib/tauri/*"],
                   message:
                     "Route platform calls through @/lib/backend instead of importing Tauri directly.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ["website/src/**/*.{ts,tsx}"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  group: [
+                    "@tauri-apps/*",
+                    "@/lib/tauri",
+                    "@/lib/tauri/*",
+                    "@/runtime/*",
+                  ],
+                  message:
+                    "Keep the website preview decoupled from native Tauri APIs and desktop runtimes.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ["src/types/**/*.{ts,tsx}"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  group: [
+                    "@tauri-apps/*",
+                    "@/components/*",
+                    "@/hooks/*",
+                    "@/lib/*",
+                    "@/runtime/*",
+                    "@/stores/*",
+                  ],
+                  message:
+                    "Keep src/types pure and free of upward imports into runtime, store, or UI layers.",
                 },
               ],
             },

@@ -558,9 +558,11 @@ pub fn start_job<R: Runtime>(
     let progress_app_handle = app_handle.clone();
     let progress_statuses = Arc::clone(&statuses);
 
+    let trace = crate::logging::RequestTrace::start("separate_song");
     let cancel_flag = register_cancel_flag(&cancels, &song_id);
 
     tauri::async_runtime::spawn(async move {
+        let worker_trace = trace.clone();
         let worker_library_root = library_root.clone();
         let worker_song_id = song_id.clone();
         let worker_cancel = Arc::clone(&cancel_flag);
@@ -571,64 +573,68 @@ pub fn start_job<R: Runtime>(
         let prerequisite_catalog_cache = Arc::clone(&catalog_cache);
 
         let result = tauri::async_runtime::spawn_blocking(move || -> CommandResult<_> {
-            let mut emit_runtime = |event, snapshot| {
-                let _ = prerequisite_app_handle.emit(event, snapshot);
-            };
-            let mut emit_model = |event, snapshot| {
-                let _ = prerequisite_app_handle.emit(event, snapshot);
-            };
-            let worker_model_path = ensure_runtime_and_model_blocking(
-                &prerequisite_app_data_dir,
-                &prerequisite_runtime_status,
-                &prerequisite_catalog_cache,
-                &prerequisite_model_status,
-                &mut emit_runtime,
-                &mut emit_model,
-            )?;
+            worker_trace.in_scope(|| {
+                let mut emit_runtime = |event, snapshot| {
+                    let _ = prerequisite_app_handle.emit(event, snapshot);
+                };
+                let mut emit_model = |event, snapshot| {
+                    let _ = prerequisite_app_handle.emit(event, snapshot);
+                };
+                let worker_model_path = ensure_runtime_and_model_blocking(
+                    &prerequisite_app_data_dir,
+                    &prerequisite_runtime_status,
+                    &prerequisite_catalog_cache,
+                    &prerequisite_model_status,
+                    &mut emit_runtime,
+                    &mut emit_model,
+                )?;
 
-            run_job_blocking(
-                &worker_library_root,
-                &model_cache,
-                &worker_model_path,
-                &worker_song_id,
-                stem_mode,
-                &model_variant,
-                ep_preference,
-                &worker_cancel,
-                |percent| {
-                    report_progress_to_status_and_events(
-                        &progress_app_handle,
-                        &progress_statuses,
-                        &progress_song_id,
-                        percent,
-                    );
-                },
-            )
+                run_job_blocking(
+                    &worker_library_root,
+                    &model_cache,
+                    &worker_model_path,
+                    &worker_song_id,
+                    stem_mode,
+                    &model_variant,
+                    ep_preference,
+                    &worker_cancel,
+                    |percent| {
+                        report_progress_to_status_and_events(
+                            &progress_app_handle,
+                            &progress_statuses,
+                            &progress_song_id,
+                            percent,
+                        );
+                    },
+                )
+            })
         })
         .await;
 
-        let requested_cancel = cancel_flag.load(Ordering::Relaxed);
-        deregister_cancel_flag(&cancels, &song_id);
+        trace.in_scope(|| {
+            let requested_cancel = cancel_flag.load(Ordering::Relaxed);
+            deregister_cancel_flag(&cancels, &song_id);
 
-        // A run that finished successfully completed before cancellation could
-        // take effect, so only failures are reinterpreted as cancellations.
-        if requested_cancel && !matches!(result, Ok(Ok(_))) {
-            emit_separation_cancelled(&app_handle, &statuses, &song_id);
-            return;
-        }
+            // A run that finished successfully completed before cancellation could
+            // take effect, so only failures are reinterpreted as cancellations.
+            if requested_cancel && !matches!(result, Ok(Ok(_))) {
+                emit_separation_cancelled(&app_handle, &statuses, &song_id);
+                return;
+            }
 
-        let final_status = match result {
-            Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
-            Ok(Err(error)) => status_from_job_result(&song_id, Err(error)),
-            Err(error) => status_from_job_result(
-                &song_id,
-                Err(SeparationError::Failed(error.to_string()).into()),
-            ),
-        };
+            let final_status = match result {
+                Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
+                Ok(Err(error)) => status_from_job_result(&song_id, Err(error)),
+                Err(error) => status_from_job_result(
+                    &song_id,
+                    Err(SeparationError::Failed(error.to_string()).into()),
+                ),
+            };
 
-        let publish_handle = app_handle.clone();
-        emit_terminal_status(&app_handle, &statuses, final_status, |sid| {
-            publish_on_complete_default(&publish_handle, sid);
+            let publish_handle = app_handle.clone();
+            emit_terminal_status(&app_handle, &statuses, final_status, |sid| {
+                publish_on_complete_default(&publish_handle, sid);
+            });
         });
     });
 }

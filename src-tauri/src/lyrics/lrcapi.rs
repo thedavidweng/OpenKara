@@ -66,10 +66,17 @@ impl LrcApiClient {
         query: &LyricsLookupQuery,
     ) -> Result<Option<LrcApiLyrics>, LyricsError> {
         let url = format!("{}/jsonapi", self.base_url);
-        let mut request = self.http.get(url).query(&[
-            ("title", query.track_name.as_str()),
-            ("artist", query.artist_name.as_str()),
-        ]);
+        let mut request = self
+            .http
+            .get(url)
+            .header(
+                crate::logging::REQUEST_ID_HEADER,
+                crate::logging::active_or_new_request_id(),
+            )
+            .query(&[
+                ("title", query.track_name.as_str()),
+                ("artist", query.artist_name.as_str()),
+            ]);
 
         if let Some(album_name) = query.album_name.as_deref() {
             request = request.query(&[("album", album_name)]);
@@ -110,10 +117,17 @@ impl LrcApiClient {
         query: &LyricsLookupQuery,
     ) -> Result<Option<LrcApiLyrics>, LyricsError> {
         let url = format!("{}/jsonapi", self.base_url);
-        let mut request = self.http_async.get(url).query(&[
-            ("title", query.track_name.as_str()),
-            ("artist", query.artist_name.as_str()),
-        ]);
+        let mut request = self
+            .http_async
+            .get(url)
+            .header(
+                crate::logging::REQUEST_ID_HEADER,
+                crate::logging::active_or_new_request_id(),
+            )
+            .query(&[
+                ("title", query.track_name.as_str()),
+                ("artist", query.artist_name.as_str()),
+            ]);
 
         if let Some(album_name) = query.album_name.as_deref() {
             request = request.query(&[("album", album_name)]);

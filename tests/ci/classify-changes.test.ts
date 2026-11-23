@@ -264,6 +264,17 @@ describe("classifyFile", () => {
     expect(classifyFile(".coderabbit.yaml")).toEqual(["frontend_tooling"]);
   });
 
+  test("CODEOWNERS, devcontainer, clippy.toml, and check-duplication are mapped", () => {
+    expect(classifyFile(".github/CODEOWNERS")).toEqual(["other_workflow"]);
+    expect(classifyFile(".devcontainer/devcontainer.json")).toEqual([
+      "other_workflow",
+    ]);
+    expect(classifyFile("src-tauri/clippy.toml")).toEqual(["rust"]);
+    expect(classifyFile("scripts/check-duplication.mjs")).toEqual([
+      "frontend_tooling",
+    ]);
+  });
+
   test("unmapped file has no categories", () => {
     expect(classifyFile("new-unmapped-root-config.xyz")).toEqual([]);
   });
@@ -726,5 +737,50 @@ describe("label inputs", () => {
       event: "pull_request",
       labels: '["ci:full"]',
     });
+  });
+
+  test("classifies devcontainer, CODEOWNERS, clippy, duplication, and runbook guardrails with zero unknownFiles", () => {
+    const guardrailPaths = [
+      ".devcontainer/devcontainer.json",
+      ".github/CODEOWNERS",
+      ".github/workflows/ci.yml",
+      "AGENTS.md",
+      "docs/CI_LAYERS.md",
+      "docs/RELEASING.md",
+      "docs/agents/engineering.md",
+      "docs/runbooks/README.md",
+      "docs/runbooks/ci-and-nightly-incidents.md",
+      "docs/runbooks/release-and-post-deploy.md",
+      "docs/runbooks/security-incidents.md",
+      "hk.pkl",
+      "package.json",
+      "scripts/README.md",
+      "scripts/check-duplication.mjs",
+      "scripts/ci/classify-changes.mjs",
+      "src-tauri/Cargo.toml",
+      "src-tauri/clippy.toml",
+      "src-tauri/src/cache/mod.rs",
+      "src-tauri/src/cache/query_trace.rs",
+      "src-tauri/src/commands/lyrics.rs",
+      "src-tauri/src/commands/remote_library/mod.rs",
+      "src-tauri/src/library/songs.rs",
+      "src-tauri/src/logging.rs",
+      "src-tauri/src/lyrics/amll.rs",
+      "src-tauri/src/lyrics/lrcapi.rs",
+      "src-tauri/src/lyrics/lrclib.rs",
+      "src-tauri/src/perf.rs",
+      "src-tauri/src/services/separation.rs",
+      "src-tauri/tests/integration.rs",
+      "src-tauri/tests/phase4_lrclib.rs",
+      "src-tauri/tests/phase5_perf.rs",
+      "src-tauri/tests/query_scaling.rs",
+      "tests/ci/check-duplication.test.ts",
+      "tests/ci/classify-changes.test.ts",
+      "vite.config.ts",
+    ];
+
+    const result = pr(...guardrailPaths);
+    expect(result.unknownFiles).toEqual([]);
+    expect(result.categories).not.toContain("unknown");
   });
 });

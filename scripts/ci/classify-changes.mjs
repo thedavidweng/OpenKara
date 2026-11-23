@@ -82,6 +82,7 @@ const CATEGORY_PATTERNS = {
     "codecov.yml",
     ".coderabbit.yaml",
     "scripts/check-i18n.mjs",
+    "scripts/check-duplication.mjs",
     "scripts/generate-db-schema.mjs",
     "scripts/generate-mock-songs.mjs",
     "scripts/prepare-bundled-oauth-client.mjs",
@@ -104,6 +105,7 @@ const CATEGORY_PATTERNS = {
     // Source-tree smoke binaries compile against the production crate and
     // need the same native validation as any other Rust entry point.
     "src-tauri/examples/**",
+    "src-tauri/clippy.toml",
     "src-tauri/deny.toml",
     "rust-toolchain.toml",
     "patches/**",
@@ -174,6 +176,8 @@ const CATEGORY_PATTERNS = {
     ".github/actions/**",
     ".github/workflows/mirror.yml",
     ".github/workflows/pages.yml",
+    ".devcontainer/**",
+    ".github/CODEOWNERS",
     ".github/ISSUE_TEMPLATE/**",
     ".github/PULL_REQUEST_TEMPLATE.md",
   ],
