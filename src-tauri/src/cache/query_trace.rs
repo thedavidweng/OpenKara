@@ -19,23 +19,49 @@ impl QueryTraceReport {
     }
 }
 
+fn strip_leading_sql_comments(mut sql: &str) -> &str {
+    loop {
+        sql = sql.trim_start();
+        if let Some(rest) = sql.strip_prefix("--") {
+            sql = match rest.find('\n') {
+                Some(newline) => &rest[newline + 1..],
+                None => "",
+            };
+        } else if let Some(rest) = sql.strip_prefix("/*") {
+            sql = match rest.find("*/") {
+                Some(end) => &rest[end + 2..],
+                None => "",
+            };
+        } else {
+            return sql;
+        }
+    }
+}
+
 fn is_transaction_control_sql(sql: &str) -> bool {
-    let trimmed = sql.trim_start();
-    let upper_prefix: String = trimmed
-        .chars()
-        .take(10)
-        .map(|ch| ch.to_ascii_uppercase())
-        .collect();
-    upper_prefix.starts_with("BEGIN")
-        || upper_prefix.starts_with("COMMIT")
-        || upper_prefix.starts_with("ROLLBACK")
-        || upper_prefix.starts_with("SAVEPOINT")
-        || upper_prefix.starts_with("RELEASE")
+    let stripped = strip_leading_sql_comments(sql);
+    let keyword_len = stripped
+        .find(|ch: char| ch.is_ascii_whitespace() || ch == ';')
+        .unwrap_or(stripped.len());
+    matches!(
+        stripped[..keyword_len].to_ascii_uppercase().as_str(),
+        "BEGIN" | "COMMIT" | "END" | "ROLLBACK" | "SAVEPOINT" | "RELEASE"
+    )
+}
+
+struct TraceResetGuard<'a>(&'a mut Connection);
+
+impl Drop for TraceResetGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self
+            .0
+            .trace_v2(TraceEventCodes::empty(), None::<fn(TraceEvent<'_>)>);
+    }
 }
 
 /// Trace top-level SQL statements executed on `connection` while running `operation`.
-/// Excludes SQLite trigger subprograms (`-- ...`) and transaction/savepoint
-/// bookkeeping so the count reflects application query round-trips.
+/// Excludes synthetic SQLite trigger comments (`-- TRIGGER ...`) and
+/// transaction/savepoint bookkeeping while recording comment-prefixed SQL.
 pub fn trace_queries<T, F>(
     connection: &mut Connection,
     operation: F,
@@ -50,7 +76,7 @@ where
         TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
         Some(move |event: TraceEvent<'_>| match event {
             TraceEvent::Stmt(stmt, raw_sql) => {
-                if raw_sql.starts_with("--") {
+                if strip_leading_sql_comments(raw_sql).is_empty() {
                     return;
                 }
                 let template = stmt.sql();
@@ -75,12 +101,9 @@ where
         }),
     )?;
 
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(connection)));
-    let _ = connection.trace_v2(TraceEventCodes::empty(), None::<fn(TraceEvent<'_>)>);
-
-    let value = match outcome {
-        Ok(value) => value,
-        Err(payload) => std::panic::resume_unwind(payload),
+    let value = {
+        let guard = TraceResetGuard(connection);
+        operation(guard.0)
     };
 
     let report = captured

@@ -11,8 +11,11 @@
       "profile": "minimal"
     }
   },
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin:/home/vscode/.local/share/mise/shims"
+  },
   "onCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends binutils build-essential curl file libasound2-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf wget",
-  "postCreateCommand": "pnpm install --frozen-lockfile && ./scripts/setup.sh",
+  "postCreateCommand": "curl -fsSL https://mise.run | sh && export PATH=\"$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH\" && mise trust && MISE_YES=1 mise install hk && pnpm install --frozen-lockfile && ./scripts/setup.sh",
   "forwardPorts": [1420, 1421],
   "portsAttributes": {
     "1420": {

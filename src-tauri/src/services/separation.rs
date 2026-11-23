@@ -611,28 +611,30 @@ pub fn start_job<R: Runtime>(
         })
         .await;
 
-        let requested_cancel = cancel_flag.load(Ordering::Relaxed);
-        deregister_cancel_flag(&cancels, &song_id);
+        trace.in_scope(|| {
+            let requested_cancel = cancel_flag.load(Ordering::Relaxed);
+            deregister_cancel_flag(&cancels, &song_id);
 
-        // A run that finished successfully completed before cancellation could
-        // take effect, so only failures are reinterpreted as cancellations.
-        if requested_cancel && !matches!(result, Ok(Ok(_))) {
-            emit_separation_cancelled(&app_handle, &statuses, &song_id);
-            return;
-        }
+            // A run that finished successfully completed before cancellation could
+            // take effect, so only failures are reinterpreted as cancellations.
+            if requested_cancel && !matches!(result, Ok(Ok(_))) {
+                emit_separation_cancelled(&app_handle, &statuses, &song_id);
+                return;
+            }
 
-        let final_status = match result {
-            Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
-            Ok(Err(error)) => status_from_job_result(&song_id, Err(error)),
-            Err(error) => status_from_job_result(
-                &song_id,
-                Err(SeparationError::Failed(error.to_string()).into()),
-            ),
-        };
+            let final_status = match result {
+                Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
+                Ok(Err(error)) => status_from_job_result(&song_id, Err(error)),
+                Err(error) => status_from_job_result(
+                    &song_id,
+                    Err(SeparationError::Failed(error.to_string()).into()),
+                ),
+            };
 
-        let publish_handle = app_handle.clone();
-        emit_terminal_status(&app_handle, &statuses, final_status, |sid| {
-            publish_on_complete_default(&publish_handle, sid);
+            let publish_handle = app_handle.clone();
+            emit_terminal_status(&app_handle, &statuses, final_status, |sid| {
+                publish_on_complete_default(&publish_handle, sid);
+            });
         });
     });
 }

@@ -91,8 +91,11 @@ profilers (`samply`, `cargo-flamegraph`, Linux `perf`, macOS Instruments):
 
 ```bash
 pnpm profile:backend
-cargo flamegraph --manifest-path src-tauri/Cargo.toml --profile profiling --example local-audio-smoke
+mkdir -p output
+cargo flamegraph --manifest-path src-tauri/Cargo.toml --profile profiling --example local-audio-smoke -- test-audio output
 ```
+
+Replace `test-audio` with a directory that contains local audio files.
 
 `src-tauri/src/perf.rs` records playback lookup, probe, decode, and seek
 latencies alongside process peak RSS (`peak_rss_kb`).

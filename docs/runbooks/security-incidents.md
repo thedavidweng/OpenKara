@@ -10,19 +10,21 @@ Follow [SECURITY.md](../../SECURITY.md) for severity ratings (CVSS v3.1), respon
 
 ### Rust Advisory (`cargo deny` / `RUSTSEC-*`)
 
+Run each command from the repository root:
+
 1. Reproduce locally:
    ```bash
-   cd src-tauri && cargo deny check advisories
+   (cd src-tauri && cargo deny check advisories)
    ```
 2. Check whether a patched crate version exists and update it:
    ```bash
-   cd src-tauri && cargo update -p <crate>
+   (cd src-tauri && cargo update -p <crate>)
    ```
 3. Regenerate offline Flatpak Cargo sources whenever `src-tauri/Cargo.lock` changes:
    ```bash
    pnpm generate:flatpak-cargo-sources
    ```
-4. Run `cd src-tauri && cargo test -q` before opening the fix pull request.
+4. Run `(cd src-tauri && cargo test -q)` before opening the fix pull request.
 
 ### JavaScript Advisory (`pnpm audit`)
 
@@ -39,9 +41,10 @@ Follow [SECURITY.md](../../SECURITY.md) for severity ratings (CVSS v3.1), respon
 
 ### CodeQL Alert (`codeql.yml`)
 
-1. Inspect open code-scanning alerts:
+1. Inspect all open code-scanning alerts across every API page:
    ```bash
-   gh api repos/thedavidweng/OpenKara/code-scanning/alerts --jq '.[] | select(.state=="open") | {number, rule: .rule.id, path: .most_recent_instance.location.path}'
+   gh api --paginate repos/thedavidweng/OpenKara/code-scanning/alerts \
+     --jq '.[] | select(.state=="open") | {number, rule: .rule.id, path: .most_recent_instance.location.path}'
    ```
 2. Check `.agents/skills/ci-notes/SKILL.md` for known CodeQL patterns (for example, format `reqwest::Error` with `error.without_url()` so OAuth query tokens never reach logs).
 3. Fix real data-flow findings in code rather than suppressing rules globally.

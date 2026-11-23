@@ -8,18 +8,22 @@ OpenKara is a local-first desktop application without third-party runtime teleme
 
 ### 1. Desktop Release and Auto-Updater Feed
 
-Check the published release assets, checksums, and `tauri-plugin-updater` manifest:
+Check the published release assets, updater signatures, and asset checksums:
 
 ```bash
 gh release view --json tagName,isDraft,isPrerelease,publishedAt,assets
-curl -fsSL https://github.com/thedavidweng/OpenKara/releases/latest/download/latest.json | jq '{version, pub_date, platforms: (.platforms | keys)}'
-curl -fsSL https://github.com/thedavidweng/OpenKara/releases/latest/download/SHA256SUMS
+curl -fsSL https://github.com/thedavidweng/OpenKara/releases/latest/download/latest.json \
+  | jq -e 'select((.platforms | length) > 0 and ([.platforms[].signature] | all(type == "string" and length > 0))) | {version, pub_date, signatures: (.platforms | map_values(.signature))}'
+tmpdir="$(mktemp -d)"
+gh release download --dir "$tmpdir"
+(cd "$tmpdir" && shasum -a 256 -c SHA256SUMS)
 ```
 
 Confirm these invariants:
 
 - `isDraft` is `false` and `isPrerelease` is `false` for stable tags.
 - `latest.json` reports the expected version and carries non-empty signatures for macOS, Windows, and Linux AppImage targets.
+- Every downloaded release asset matches its entry in `SHA256SUMS`.
 - `release-evidence.json` is attached to the release and matches the published tag commit.
 - No open issue exists with the title `Release cut failed for vX.Y.Z`.
 
@@ -60,12 +64,13 @@ After `release.yml` finishes, verify downstream distribution pull requests:
 If a catalog bump regresses stem separation or execution-provider loading:
 
 1. Revert `src-tauri/catalog/stable-pointer.json` and `src-tauri/catalog/release-manifest.json` to the previous verified release ID.
-2. Validate both resolver consumers locally:
+2. Validate both resolver consumers locally. Note that when `src-tauri/generated/onnxruntime` differs from the catalog pin, `prepare-onnx-runtime.mjs` downloads the catalog archive and replaces the staging directory:
    ```bash
    node scripts/resolve-model.mjs --field file_sha256
-   node scripts/prepare-onnx-runtime.mjs --dry-run
-   pnpm render:flatpak
+   node scripts/prepare-onnx-runtime.mjs
+   version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
+   pnpm render:flatpak --version "$version" --output dist/flatpak
    ```
-3. Run `cd src-tauri && cargo test -q` and merge the revert pull request.
+3. Run `(cd src-tauri && cargo test -q)` and merge the revert pull request.
 
 See [docs/RELEASING.md](../RELEASING.md) for the full release pipeline and native manifest sync rules.

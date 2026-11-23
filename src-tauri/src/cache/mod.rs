@@ -647,9 +647,23 @@ where
         }
     }
 
+    let started_in_autocommit = connection.is_autocommit();
     connection
         .execute_batch("SAVEPOINT batch_update_songs;")
         .map_err(BatchSongUpdateError::Database)?;
+
+    let cleanup_savepoint = || -> rusqlite::Result<()> {
+        if started_in_autocommit {
+            if !connection.is_autocommit() {
+                connection.execute_batch("ROLLBACK;")?;
+            }
+            Ok(())
+        } else {
+            connection.execute_batch(
+                "ROLLBACK TO SAVEPOINT batch_update_songs; RELEASE SAVEPOINT batch_update_songs;",
+            )
+        }
+    };
 
     let outcome = (|| {
         let mut by_hash = std::collections::HashMap::with_capacity(unique_hashes.len());
@@ -681,16 +695,22 @@ where
     })();
 
     match outcome {
-        Ok(songs) => {
-            connection
-                .execute_batch("RELEASE SAVEPOINT batch_update_songs;")
-                .map_err(BatchSongUpdateError::Database)?;
-            Ok(songs)
-        }
+        Ok(songs) => match connection.execute_batch("RELEASE SAVEPOINT batch_update_songs;") {
+            Ok(()) => Ok(songs),
+            Err(release_error) => {
+                if let Err(cleanup_error) = cleanup_savepoint() {
+                    tracing::warn!(
+                        "failed to roll back batch_update_songs after release failure: {cleanup_error}"
+                    );
+                }
+                Err(BatchSongUpdateError::Database(release_error))
+            }
+        },
         Err(error) => {
-            let _ = connection.execute_batch(
-                "ROLLBACK TO SAVEPOINT batch_update_songs; RELEASE SAVEPOINT batch_update_songs;",
-            );
+            if let Err(cleanup_error) = cleanup_savepoint() {
+                tracing::warn!("failed to roll back batch_update_songs savepoint: {cleanup_error}");
+                return Err(BatchSongUpdateError::Database(cleanup_error));
+            }
             Err(error)
         }
     }

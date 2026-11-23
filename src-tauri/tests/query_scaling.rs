@@ -193,31 +193,112 @@ fn batch_song_update_rolls_back_all_rows_when_one_hash_is_missing() {
     let err = set_songs_instrumental(&conn, &ids, true)
         .expect_err("missing song should fail the batch update");
     assert!(err.message.contains("missing-song-hash"));
+    assert!(conn.is_autocommit());
 
     let songs = cache::list_songs(&conn).expect("songs should load");
     assert!(songs.iter().all(|song| !song.instrumental));
 }
 
 #[test]
-fn detect_n_plus_one_flags_per_row_lookup_loops() {
+fn batch_song_update_preserves_outer_transaction_and_rolls_back_on_release_failure() {
+    let (conn, ids, _) = seeded_connection(2);
+
+    // Nested call inside a caller-owned transaction keeps outer writes intact on batch error.
+    {
+        let tx = conn.unchecked_transaction().expect("outer tx should start");
+        let extra = make_song(99);
+        cache::upsert_song(&tx, &extra).expect("outer song insert should succeed");
+
+        let mut bad_ids = ids.clone();
+        bad_ids.push("missing-nested-song".to_owned());
+        let _ = set_songs_instrumental(&tx, &bad_ids, true)
+            .expect_err("nested missing song should fail");
+        assert!(!tx.is_autocommit());
+
+        tx.commit().expect("outer tx should commit cleanly");
+    }
+    let after_nested = cache::list_songs(&conn).expect("songs should load");
+    assert_eq!(after_nested.len(), 3);
+    assert!(after_nested.iter().all(|song| !song.instrumental));
+
+    // Standalone call whose outermost RELEASE SAVEPOINT fails (deferred FK violation)
+    // must undo the batch update and close the implicit write transaction.
+    let dir = tempfile::tempdir().expect("tempdir should create");
+    let db_path = dir.path().join("release_busy.sqlite3");
+    let writer = cache::open_database(&db_path).expect("writer db should open");
+    cache::apply_migrations(&writer).expect("migrations should apply");
+    let song = make_song(1);
+    cache::upsert_song(&writer, &song).expect("song insert should succeed");
+
+    let reader = cache::open_database(&db_path).expect("reader db should open");
+    reader
+        .execute_batch("PRAGMA busy_timeout = 0; BEGIN DEFERRED;")
+        .expect("reader tx should start");
+    let _: i64 = reader
+        .query_row("SELECT COUNT(*) FROM songs", [], |row| row.get(0))
+        .expect("reader shared lock should acquire");
+
+    writer
+        .execute_batch("PRAGMA busy_timeout = 0;")
+        .expect("writer busy_timeout should set");
+    let release_err = set_songs_instrumental(&writer, std::slice::from_ref(&song.hash), true)
+        .expect_err("standalone release blocked by reader shared lock must fail");
+    assert!(!release_err.message.is_empty());
+    assert!(
+        writer.is_autocommit(),
+        "standalone failed release must roll back and leave no open write transaction"
+    );
+
+    reader
+        .execute_batch("COMMIT;")
+        .expect("reader tx should close");
+    let reloaded = cache::get_song_by_hash(&writer, &song.hash)
+        .expect("song query should succeed")
+        .expect("song should exist");
+    assert!(
+        !reloaded.instrumental,
+        "batch writes must be undone when RELEASE SAVEPOINT fails"
+    );
+}
+
+#[test]
+fn detect_n_plus_one_flags_per_row_lookup_loops_including_comment_prefixed_sql() {
     let (mut small_conn, small_ids, _) = seeded_connection(4);
     let (mut large_conn, large_ids, _) = seeded_connection(16);
 
     let (_, small_trace) = trace_queries(&mut small_conn, |conn| {
+        conn.execute_batch(
+            "-- leading comment\nSAVEPOINT trace_comment_check; RELEASE trace_comment_check;",
+        )
+        .unwrap();
         for id in &small_ids {
-            let _ = cache::get_song_by_hash(conn, id).unwrap();
+            let _: String = conn
+                .query_row(
+                    "-- song lookup\nSELECT hash FROM songs WHERE hash = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
         }
     })
     .unwrap();
     let (_, large_trace) = trace_queries(&mut large_conn, |conn| {
         for id in &large_ids {
-            let _ = cache::get_song_by_hash(conn, id).unwrap();
+            let _: String = conn
+                .query_row(
+                    "-- song lookup\nSELECT hash FROM songs WHERE hash = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
         }
     })
     .unwrap();
 
+    assert_eq!(small_trace.statement_count(), 4);
+    assert_eq!(large_trace.statement_count(), 16);
     let diagnostic = detect_n_plus_one("per_row_lookup", 4, &small_trace, 16, &large_trace)
-        .expect("per-row lookup loop must be flagged as N+1");
+        .expect("comment-prefixed per-row lookup loop must be flagged as N+1");
     assert!(diagnostic.contains("N=4 executed 4"));
     assert!(diagnostic.contains("N=16 executed 16"));
 }

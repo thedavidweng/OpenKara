@@ -8,9 +8,10 @@ A red `main` push or `schedule` run opens or updates the GitHub issue `CI failur
 
 ## Triage Steps
 
-1. Inspect the open tracking issue and read the latest comment:
+1. Find the open tracking issue and read its comments to get the failed run ID:
    ```bash
    gh issue list --state open --search "CI failure on main/nightly in:title" --json number,title,url
+   gh issue view <issue-number> --comments
    ```
 2. List recent workflow runs on `main`:
    ```bash
@@ -60,8 +61,10 @@ If `Accept live registry streaming source on Windows` fails when `OPENKARA_LIVE_
 ## Resolution
 
 1. Land the fix on `main` through a pull request with passing checks.
-2. Dispatch the failed workflow on `main` when the failure occurred in `nightly-hardening.yml`:
+2. Check whether the job that failed in the original run executed and passed on `main`. Path-based triage can skip unaffected jobs on a `main` push, so an unrelated green run does not prove recovery.
+3. Dispatch a full workflow run on `main` when path matching skipped the failed job or when the failure occurred in `nightly-hardening.yml`:
    ```bash
+   gh workflow run ci.yml --ref main
    gh workflow run nightly-hardening.yml --ref main
    ```
-3. Confirm the new run succeeds, record the green run URL on the tracking issue, and close the issue.
+4. Confirm the originally failed job ran and passed, record the green run URL on the tracking issue, and close the issue.
