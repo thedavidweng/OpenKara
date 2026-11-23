@@ -143,7 +143,6 @@ todo = "warn"
 undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]
-filetime = "0.2.29"
 hound = "3.5.1"
 mockito = "1.7.2"
 openkara-remote = { version = "0.1.0", path = "crates/openkara-remote", features = ["testing"] }
