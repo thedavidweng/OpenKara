@@ -41,6 +41,10 @@ hooks {
         stdin = "{{hook_stdin}}"
         check = "sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm knip --no-progress'"
       }
+      ["duplication"] {
+        stdin = "{{hook_stdin}}"
+        check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:duplication'"
+      }
       ["standards-route"] {
         stdin = "{{hook_stdin}}"
         check = "sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:standards'"

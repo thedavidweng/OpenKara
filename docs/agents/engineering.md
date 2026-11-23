@@ -83,6 +83,20 @@ Use this protocol to measure build times:
 Record the before and after timings in the pull request that changes build
 behavior.
 
+## CPU and memory profiling
+
+The `profiling` Cargo profile inherits `optimized` and keeps line tables
+(`debug = "line-tables-only"`, `strip = false`) for symbolicated CPU
+profilers (`samply`, `cargo-flamegraph`, Linux `perf`, macOS Instruments):
+
+```bash
+pnpm profile:backend
+cargo flamegraph --manifest-path src-tauri/Cargo.toml --profile profiling --example local-audio-smoke
+```
+
+`src-tauri/src/perf.rs` records playback lookup, probe, decode, and seek
+latencies alongside process peak RSS (`peak_rss_kb`).
+
 ## Project skills
 
 - `.agents/skills/verify/SKILL.md` — verification commands by change type

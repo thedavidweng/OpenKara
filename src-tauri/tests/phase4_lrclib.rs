@@ -51,3 +51,28 @@ fn fetches_synced_lyrics_from_lrclib_get_endpoint() {
 
     mock.assert();
 }
+
+#[test]
+fn propagates_active_request_trace_id_header_to_lrclib() {
+    let trace = openkara_lib::logging::RequestTrace::start("fetch_lyrics");
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("GET", "/api/get")
+        .match_query(mockito::Matcher::Any)
+        .match_header(openkara_lib::logging::REQUEST_ID_HEADER, trace.trace_id())
+        .with_status(404)
+        .create();
+
+    let client = LrcLibClient::new(server.url());
+    let result = trace.in_scope(|| {
+        client.fetch_by_track(&LyricsLookupQuery {
+            track_name: "Unknown".to_owned(),
+            artist_name: "Artist".to_owned(),
+            album_name: None,
+            duration_seconds: None,
+        })
+    });
+
+    assert_eq!(result.expect("404 should return None"), None);
+    mock.assert();
+}

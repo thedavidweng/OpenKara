@@ -145,6 +145,15 @@ m4a files.
   and the E2E Tauri mock (`tests/e2e/fixtures/tauri-mock.ts`) both serialize
   from `src/mock/preview-songs.ts` so the two surfaces cannot drift apart
 
+## `check-duplication.mjs`
+
+Scans TypeScript (`src/`) and Rust (`src-tauri/src/`, `src-tauri/crates/`)
+production files for duplicated logic blocks and enforces per-block and
+repository-wide duplication limits.
+
+- **Run:** `node scripts/check-duplication.mjs` or `pnpm check:duplication`
+- **Contract tests:** `tests/ci/check-duplication.test.ts`
+
 ## `generate-db-schema.mjs`
 
 Regenerates `docs/references/generated/db-schema.md` from

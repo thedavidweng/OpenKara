@@ -60,11 +60,14 @@ fn backend_performance_report_stays_within_phase5_thresholds() {
     );
     assert!(report.playback.seek_latency_max_ms < SEEK_LATENCY_THRESHOLD_MS);
     assert!(report.lyrics_sync.jitter_budget_ms < LYRICS_JITTER_THRESHOLD_MS);
+    #[cfg(unix)]
+    assert!(report.memory.peak_rss_kb.unwrap_or(0) > 0);
 
     let report_path = unique_report_path();
     write_report_json(&report, &report_path).expect("report should write to disk");
     let contents = fs::read_to_string(&report_path).expect("report should be readable");
     assert!(contents.contains("\"lyrics_sync\""));
     assert!(contents.contains("\"playback\""));
+    assert!(contents.contains("\"memory\""));
     fs::remove_file(report_path).expect("temporary report should be removable");
 }

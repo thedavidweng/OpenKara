@@ -1,4 +1,5 @@
 pub mod lyrics;
+pub mod query_trace;
 pub mod stems;
 pub mod waveforms;
 
@@ -571,6 +572,166 @@ pub fn update_song_language(
         "UPDATE songs SET language = ?1 WHERE hash = ?2",
         params![language, hash],
     )
+}
+
+const SQLITE_BATCH_CHUNK_SIZE: usize = 500;
+
+#[derive(Debug)]
+pub enum BatchSongUpdateError {
+    Database(rusqlite::Error),
+    MissingSong(String),
+}
+
+fn placeholders(start_index: usize, count: usize) -> String {
+    (start_index..start_index + count)
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn load_songs_by_hashes_chunk(
+    connection: &Connection,
+    hashes: &[&str],
+) -> rusqlite::Result<std::collections::HashMap<String, Song>> {
+    let sql = format!(
+        "SELECT
+            hash,
+            file_path,
+            cdg_path,
+            media_g_container,
+            instrumental,
+            language,
+            audio_source_kind,
+            title,
+            artist,
+            album,
+            duration_ms,
+            cover_art,
+            imported_at,
+            original_ext,
+            artwork_thumb_path
+        FROM songs
+        WHERE hash IN ({})",
+        placeholders(1, hashes.len()),
+    );
+    let mut stmt = connection.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(hashes.iter().copied()),
+        map_song_row,
+    )?;
+    let mut map = std::collections::HashMap::with_capacity(hashes.len());
+    for row in rows {
+        let song = row?;
+        map.insert(song.hash.clone(), song);
+    }
+    Ok(map)
+}
+
+fn batch_update_songs<F>(
+    connection: &Connection,
+    song_ids: &[String],
+    mut update_chunk: F,
+) -> Result<Vec<Song>, BatchSongUpdateError>
+where
+    F: FnMut(&Connection, &[&str]) -> rusqlite::Result<usize>,
+{
+    if song_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut seen = std::collections::HashSet::with_capacity(song_ids.len());
+    let mut unique_hashes = Vec::with_capacity(song_ids.len());
+    for song_id in song_ids {
+        if seen.insert(song_id.as_str()) {
+            unique_hashes.push(song_id.as_str());
+        }
+    }
+
+    connection
+        .execute_batch("SAVEPOINT batch_update_songs;")
+        .map_err(BatchSongUpdateError::Database)?;
+
+    let outcome = (|| {
+        let mut by_hash = std::collections::HashMap::with_capacity(unique_hashes.len());
+        for chunk in unique_hashes.chunks(SQLITE_BATCH_CHUNK_SIZE) {
+            let updated =
+                update_chunk(connection, chunk).map_err(BatchSongUpdateError::Database)?;
+            let loaded = load_songs_by_hashes_chunk(connection, chunk)
+                .map_err(BatchSongUpdateError::Database)?;
+            if updated != chunk.len() || loaded.len() != chunk.len() {
+                let missing = chunk
+                    .iter()
+                    .find(|hash| !loaded.contains_key(**hash))
+                    .copied()
+                    .unwrap_or(chunk[0]);
+                return Err(BatchSongUpdateError::MissingSong(missing.to_owned()));
+            }
+            by_hash.extend(loaded);
+        }
+
+        let mut ordered = Vec::with_capacity(song_ids.len());
+        for song_id in song_ids {
+            let song = by_hash
+                .get(song_id.as_str())
+                .cloned()
+                .ok_or_else(|| BatchSongUpdateError::MissingSong(song_id.clone()))?;
+            ordered.push(song);
+        }
+        Ok(ordered)
+    })();
+
+    match outcome {
+        Ok(songs) => {
+            connection
+                .execute_batch("RELEASE SAVEPOINT batch_update_songs;")
+                .map_err(BatchSongUpdateError::Database)?;
+            Ok(songs)
+        }
+        Err(error) => {
+            let _ = connection.execute_batch(
+                "ROLLBACK TO SAVEPOINT batch_update_songs; RELEASE SAVEPOINT batch_update_songs;",
+            );
+            Err(error)
+        }
+    }
+}
+
+pub fn update_songs_instrumental_batch(
+    connection: &Connection,
+    song_ids: &[String],
+    instrumental: bool,
+) -> Result<Vec<Song>, BatchSongUpdateError> {
+    batch_update_songs(connection, song_ids, |conn, chunk| {
+        let sql = format!(
+            "UPDATE songs SET instrumental = ?1 WHERE hash IN ({})",
+            placeholders(2, chunk.len()),
+        );
+        let mut bound: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(1 + chunk.len());
+        bound.push(&instrumental);
+        for hash in chunk {
+            bound.push(hash);
+        }
+        conn.execute(&sql, bound.as_slice())
+    })
+}
+
+pub fn update_songs_language_batch(
+    connection: &Connection,
+    song_ids: &[String],
+    language: Option<&str>,
+) -> Result<Vec<Song>, BatchSongUpdateError> {
+    batch_update_songs(connection, song_ids, |conn, chunk| {
+        let sql = format!(
+            "UPDATE songs SET language = ?1 WHERE hash IN ({})",
+            placeholders(2, chunk.len()),
+        );
+        let mut bound: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(1 + chunk.len());
+        bound.push(&language);
+        for hash in chunk {
+            bound.push(hash);
+        }
+        conn.execute(&sql, bound.as_slice())
+    })
 }
 
 fn map_song_row(row: &Row<'_>) -> rusqlite::Result<Song> {

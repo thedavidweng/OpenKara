@@ -19,6 +19,7 @@ pub const LYRICS_JITTER_THRESHOLD_MS: u64 = 50;
 pub struct PerformanceReport {
     pub playback: PlaybackPerformanceReport,
     pub lyrics_sync: LyricsSyncPerformanceReport,
+    pub memory: MemoryPerformanceReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,6 +37,35 @@ pub struct PlaybackPerformanceReport {
 pub struct LyricsSyncPerformanceReport {
     pub position_event_interval_ms: u64,
     pub jitter_budget_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryPerformanceReport {
+    pub peak_rss_kb: Option<u64>,
+}
+
+/// Peak resident set size in kilobytes when reported by the host OS.
+pub fn current_peak_rss_kb() -> Option<u64> {
+    #[cfg(unix)]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+        // SAFETY: `getrusage` initializes a plain `libc::rusage` struct for `RUSAGE_SELF`.
+        let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+        if rc == 0 {
+            // SAFETY: `getrusage` returned 0, confirming `usage` was initialized.
+            let usage = unsafe { usage.assume_init() };
+            let raw = usage.ru_maxrss as u64;
+            #[cfg(target_os = "macos")]
+            return Some(raw / 1024);
+            #[cfg(not(target_os = "macos"))]
+            return Some(raw);
+        }
+        None
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 pub fn build_backend_performance_report(
@@ -66,6 +96,9 @@ pub fn build_backend_performance_report(
         lyrics_sync: LyricsSyncPerformanceReport {
             position_event_interval_ms: PLAYBACK_POSITION_POLL_INTERVAL_MS,
             jitter_budget_ms: PLAYBACK_POSITION_POLL_INTERVAL_MS,
+        },
+        memory: MemoryPerformanceReport {
+            peak_rss_kb: current_peak_rss_kb(),
         },
     })
 }

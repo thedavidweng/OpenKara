@@ -264,6 +264,17 @@ describe("classifyFile", () => {
     expect(classifyFile(".coderabbit.yaml")).toEqual(["frontend_tooling"]);
   });
 
+  test("CODEOWNERS, devcontainer, clippy.toml, and check-duplication are mapped", () => {
+    expect(classifyFile(".github/CODEOWNERS")).toEqual(["other_workflow"]);
+    expect(classifyFile(".devcontainer/devcontainer.json")).toEqual([
+      "other_workflow",
+    ]);
+    expect(classifyFile("src-tauri/clippy.toml")).toEqual(["rust"]);
+    expect(classifyFile("scripts/check-duplication.mjs")).toEqual([
+      "frontend_tooling",
+    ]);
+  });
+
   test("unmapped file has no categories", () => {
     expect(classifyFile("new-unmapped-root-config.xyz")).toEqual([]);
   });

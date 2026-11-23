@@ -225,3 +225,8 @@ WinGet manifests always use the stable public form:
 
 Do not use GitHub draft `untagged-*` download paths. Those URLs 404 for
 anonymous clients, and WinGet URL validation fails.
+
+## Post-release verification and rollback
+
+See [docs/runbooks/release-and-post-deploy.md](runbooks/release-and-post-deploy.md)
+for live updater, checksum, website deployment, and rollback procedures.

@@ -51,7 +51,9 @@ that package metadata changed only in its version field.
 A red `main` push or `schedule` run opens or comments on the open
 `CI failure on main/nightly` tracking issue (`bug` label) with links to the
 failed workflow run and failed jobs. PR failures and green runs never open or
-update tracking issues.
+update tracking issues. Follow
+[docs/runbooks/ci-and-nightly-incidents.md](runbooks/ci-and-nightly-incidents.md)
+to triage and close a tracking issue.
 
 ## Nightly
 

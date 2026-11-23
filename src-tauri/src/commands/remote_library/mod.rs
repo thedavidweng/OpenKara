@@ -174,17 +174,23 @@ pub fn mirror_local_library_to_remote(
     local_library_id: String,
     remote_library_id: String,
 ) -> CommandResult<()> {
-    remote::mirror_local_library_to_remote(
-        &state,
-        &app_handle,
-        &local_library_id,
-        &remote_library_id,
-    )
+    let trace = crate::logging::RequestTrace::start("mirror_local_library_to_remote");
+    trace.in_scope(|| {
+        remote::mirror_local_library_to_remote(
+            &state,
+            &app_handle,
+            &local_library_id,
+            &remote_library_id,
+        )
+    })
 }
 
 #[tauri::command]
 pub fn refresh_remote_repository(state: State<'_, AppState>) -> CommandResult<()> {
-    remote::RemoteRepositoryLifecycle::new(&state, &state.shell.app_data_dir).refresh()
+    let trace = crate::logging::RequestTrace::start("refresh_remote_repository");
+    trace.in_scope(|| {
+        remote::RemoteRepositoryLifecycle::new(&state, &state.shell.app_data_dir).refresh()
+    })
 }
 
 #[tauri::command]
@@ -192,7 +198,8 @@ pub fn resolve_remote_conflict(
     state: State<'_, AppState>,
     resolution: remote::ConflictResolution,
 ) -> CommandResult<()> {
-    remote::resolve_active_remote_conflict(&state, resolution)
+    let trace = crate::logging::RequestTrace::start("resolve_remote_conflict");
+    trace.in_scope(|| remote::resolve_active_remote_conflict(&state, resolution))
 }
 
 #[tauri::command]
@@ -201,7 +208,8 @@ pub fn publish_song_to_remote(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<UploadStatusSnapshot> {
-    remote::publish_song_to_remote(&state, &app_handle, song_id)
+    let trace = crate::logging::RequestTrace::start("publish_song_to_remote");
+    trace.in_scope(|| remote::publish_song_to_remote(&state, &app_handle, song_id))
 }
 
 #[tauri::command]
@@ -210,7 +218,8 @@ pub fn publish_songs_to_remote(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
-    remote::publish_songs_to_remote(&state, &app_handle, song_ids)
+    let trace = crate::logging::RequestTrace::start("publish_songs_to_remote");
+    trace.in_scope(|| remote::publish_songs_to_remote(&state, &app_handle, song_ids))
 }
 
 #[tauri::command]

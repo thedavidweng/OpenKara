@@ -363,6 +363,10 @@ jobs:
             if: needs.triage.outputs.light-only != 'true'
             run: node --run check:i18n
 
+          - name: Check duplicate code
+            if: needs.triage.outputs.light-only != 'true'
+            run: node --run check:duplication
+
           - name: knip (unused exports / dependencies)
             if: needs.triage.outputs.light-only != 'true'
             run: pnpm knip --no-progress

@@ -25,29 +25,22 @@ pub fn update_song_metadata(
         .ok_or_else(|| database_error(format!("song with hash {hash} not found")))
 }
 
+fn map_batch_song_update_error(error: cache::BatchSongUpdateError) -> CommandError {
+    match error {
+        cache::BatchSongUpdateError::Database(err) => database_error(err.to_string()),
+        cache::BatchSongUpdateError::MissingSong(song_id) => {
+            database_error(format!("song with hash {song_id} not found"))
+        }
+    }
+}
+
 pub fn set_songs_instrumental(
     connection: &Connection,
     song_ids: &[String],
     instrumental: bool,
 ) -> CommandResult<Vec<Song>> {
-    let mut updated_songs = Vec::with_capacity(song_ids.len());
-
-    for song_id in song_ids {
-        let updated = cache::update_song_instrumental(connection, song_id, instrumental)
-            .map_err(|error| database_error(error.to_string()))?;
-        if updated == 0 {
-            return Err(database_error(format!(
-                "song with hash {song_id} not found"
-            )));
-        }
-
-        let song = cache::get_song_by_hash(connection, song_id)
-            .map_err(|error| database_error(error.to_string()))?
-            .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
-        updated_songs.push(song);
-    }
-
-    Ok(updated_songs)
+    cache::update_songs_instrumental_batch(connection, song_ids, instrumental)
+        .map_err(map_batch_song_update_error)
 }
 
 pub fn set_songs_language(
@@ -55,24 +48,8 @@ pub fn set_songs_language(
     song_ids: &[String],
     language: Option<&str>,
 ) -> CommandResult<Vec<Song>> {
-    let mut updated_songs = Vec::with_capacity(song_ids.len());
-
-    for song_id in song_ids {
-        let updated = cache::update_song_language(connection, song_id, language)
-            .map_err(|error| database_error(error.to_string()))?;
-        if updated == 0 {
-            return Err(database_error(format!(
-                "song with hash {song_id} not found"
-            )));
-        }
-
-        let song = cache::get_song_by_hash(connection, song_id)
-            .map_err(|error| database_error(error.to_string()))?
-            .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
-        updated_songs.push(song);
-    }
-
-    Ok(updated_songs)
+    cache::update_songs_language_batch(connection, song_ids, language)
+        .map_err(map_batch_song_update_error)
 }
 
 /// Callers that serve remote libraries must ensure remote working-copy files

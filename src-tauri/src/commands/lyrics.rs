@@ -36,6 +36,7 @@ pub async fn fetch_lyrics(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<LyricsPayload> {
+    let trace = crate::logging::RequestTrace::start("fetch_lyrics");
     let state = state.inner().clone();
     let app_handle = app_handle.clone();
     #[cfg(feature = "streaming-sources")]
@@ -43,13 +44,15 @@ pub async fn fetch_lyrics(
         crate::catalog::streaming_preview_reference(&song_id)
     {
         return tauri::async_runtime::spawn_blocking(move || {
-            fetch_preview_lyrics(&state, &app_handle, song_id, &source_id, &remote_track_id)
+            trace.in_scope(|| {
+                fetch_preview_lyrics(&state, &app_handle, song_id, &source_id, &remote_track_id)
+            })
         })
         .await
         .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")));
     }
     tauri::async_runtime::spawn_blocking(move || {
-        fetch_lyrics_on_thread(&state, &app_handle, &song_id)
+        trace.in_scope(|| fetch_lyrics_on_thread(&state, &app_handle, &song_id))
     })
     .await
     .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?

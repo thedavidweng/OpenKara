@@ -172,12 +172,18 @@ impl AmllClient {
         include_album: bool,
     ) -> Result<Option<Vec<AmllSongItem>>, LyricsError> {
         let url = format!("{}/v1/lyrics/search", self.base_url);
-        let mut request = http.get(&url).query(&[
-            ("musicName", query.track_name.as_str()),
-            ("artistName", query.artist_name.as_str()),
-            ("page", "1"),
-            ("pageSize", "5"),
-        ]);
+        let mut request = http
+            .get(&url)
+            .header(
+                crate::logging::REQUEST_ID_HEADER,
+                crate::logging::active_or_new_request_id(),
+            )
+            .query(&[
+                ("musicName", query.track_name.as_str()),
+                ("artistName", query.artist_name.as_str()),
+                ("page", "1"),
+                ("pageSize", "5"),
+            ]);
         if include_album {
             if let Some(album_name) = query.album_name.as_deref().map(str::trim) {
                 if !album_name.is_empty() {
@@ -232,12 +238,18 @@ impl AmllClient {
         include_album: bool,
     ) -> Result<Option<Vec<AmllSongItem>>, LyricsError> {
         let url = format!("{}/v1/lyrics/search", self.base_url);
-        let mut request = http.get(&url).query(&[
-            ("musicName", query.track_name.as_str()),
-            ("artistName", query.artist_name.as_str()),
-            ("page", "1"),
-            ("pageSize", "5"),
-        ]);
+        let mut request = http
+            .get(&url)
+            .header(
+                crate::logging::REQUEST_ID_HEADER,
+                crate::logging::active_or_new_request_id(),
+            )
+            .query(&[
+                ("musicName", query.track_name.as_str()),
+                ("artistName", query.artist_name.as_str()),
+                ("page", "1"),
+                ("pageSize", "5"),
+            ]);
         if include_album {
             if let Some(album_name) = query.album_name.as_deref().map(str::trim) {
                 if !album_name.is_empty() {
@@ -265,26 +277,28 @@ impl AmllClient {
         interpret_search_body(parsed).map(|data| data.map(|data| data.items))
     }
 
+    fn get_url(&self) -> String {
+        format!("{}/v1/lyrics/get", self.base_url)
+    }
+
     fn get_word_timed_lyrics(
         &self,
         http: &reqwest::blocking::Client,
         id: i64,
     ) -> Result<Option<String>, LyricsError> {
-        let url = format!("{}/v1/lyrics/get", self.base_url);
-        let response = http.get(url).query(&[("id", id)]).send().map_err(|error| {
-            LyricsError::NetworkUnavailable(format!("failed to request AMLL lyrics get: {error}"))
-        })?;
-        let http_status = response.status();
-        if let Some(miss_or_error) = classify_http_status(http_status.as_u16(), "get") {
+        let req_id = crate::logging::active_or_new_request_id();
+        let response = http
+            .get(self.get_url())
+            .header(crate::logging::REQUEST_ID_HEADER, req_id)
+            .query(&[("id", id)])
+            .send()
+            .map_err(|e| amll_net_err("request AMLL lyrics get", e))?;
+        if let Some(miss_or_error) = classify_http_status(response.status().as_u16(), "get") {
             return miss_or_error;
         }
         let parsed = response
             .json::<AmllApiResponse<AmllSongItem>>()
-            .map_err(|error| {
-                LyricsError::NetworkUnavailable(format!(
-                    "failed to deserialize AMLL get response: {error}"
-                ))
-            })?;
+            .map_err(|e| amll_net_err("deserialize AMLL get response", e))?;
         interpret_get_body(parsed)
     }
 
@@ -293,31 +307,27 @@ impl AmllClient {
         http: &reqwest::Client,
         id: i64,
     ) -> Result<Option<String>, LyricsError> {
-        let url = format!("{}/v1/lyrics/get", self.base_url);
+        let req_id = crate::logging::active_or_new_request_id();
         let response = http
-            .get(url)
+            .get(self.get_url())
+            .header(crate::logging::REQUEST_ID_HEADER, req_id)
             .query(&[("id", id)])
             .send()
             .await
-            .map_err(|error| {
-                LyricsError::NetworkUnavailable(format!(
-                    "failed to request AMLL lyrics get: {error}"
-                ))
-            })?;
-        let http_status = response.status();
-        if let Some(miss_or_error) = classify_http_status(http_status.as_u16(), "get") {
+            .map_err(|e| amll_net_err("request AMLL lyrics get", e))?;
+        if let Some(miss_or_error) = classify_http_status(response.status().as_u16(), "get") {
             return miss_or_error;
         }
         let parsed = response
             .json::<AmllApiResponse<AmllSongItem>>()
             .await
-            .map_err(|error| {
-                LyricsError::NetworkUnavailable(format!(
-                    "failed to deserialize AMLL get response: {error}"
-                ))
-            })?;
+            .map_err(|e| amll_net_err("deserialize AMLL get response", e))?;
         interpret_get_body(parsed)
     }
+}
+
+fn amll_net_err(action: &str, error: reqwest::Error) -> LyricsError {
+    LyricsError::NetworkUnavailable(format!("failed to {action}: {error}"))
 }
 
 fn select_confident_item(
