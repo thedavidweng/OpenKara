@@ -1587,7 +1587,12 @@ mod tests {
         fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
         fs::write(&temp_path, b"stale").unwrap();
         let past = std::time::SystemTime::now() - std::time::Duration::from_secs(25 * 3600);
-        filetime::set_file_mtime(&temp_path, filetime::FileTime::from_system_time(past)).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&temp_path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
 
         let report = check_library_integrity(&library).unwrap();
         assert!(
@@ -1610,7 +1615,12 @@ mod tests {
         fs::write(&temp_path, b"fresh").unwrap();
         let past =
             std::time::SystemTime::now() - std::time::Duration::from_secs(23 * 3600 + 59 * 60);
-        filetime::set_file_mtime(&temp_path, filetime::FileTime::from_system_time(past)).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&temp_path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
 
         let report = check_library_integrity(&library).unwrap();
         assert!(

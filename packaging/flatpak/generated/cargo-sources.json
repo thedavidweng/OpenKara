@@ -1042,14 +1042,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/cookie/cookie-0.18.2.crate",
-    "sha256": "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87",
-    "dest": "cargo/vendor/cookie-0.18.2"
+    "url": "https://static.crates.io/crates/cookie/cookie-0.18.3.crate",
+    "sha256": "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a",
+    "dest": "cargo/vendor/cookie-0.18.3"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87\",\"files\":{}}",
-    "dest": "cargo/vendor/cookie-0.18.2",
+    "contents": "{\"package\":\"d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a\",\"files\":{}}",
+    "dest": "cargo/vendor/cookie-0.18.3",
     "dest-filename": ".cargo-checksum.json"
   },
   {
