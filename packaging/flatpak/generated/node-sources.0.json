@@ -833,9 +833,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@playwright/test/-/test-1.65.0.tgz",
-    "sha512": "8865112c6b8a0cb6a448497b3e07eff21edff972d3f95f3ad567e1cf4ce5125e67c85b8a528a5d90504f2aa4e5953529d3a68ec0fb87f22b9411bdf2a773296d",
-    "dest-filename": "@playwright__test-1.65.0.tgz",
+    "url": "https://registry.npmjs.org/@playwright/test/-/test-1.65.1.tgz",
+    "sha512": "cbe3422119b62ef638b255155af1a1d67ba327c445fe1122b08b2ada6b543e07500b82fbd356eae61646321ae97978c00afc2f3bdb63e5d26a86f33a4cff656f",
+    "dest-filename": "@playwright__test-1.65.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1008,86 +1008,86 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.12.4.tgz",
-    "sha512": "3b1a8a49c90892827abd7d808e27c82694dab050b41db768a3b8048829808dab8004edd4f26d8c46c2d67be413881c03c75988aef800fabbc8eedbc39db9c756",
-    "dest-filename": "@tauri-apps__cli-darwin-arm64-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.12.6.tgz",
+    "sha512": "5289309358457c9a06e78fa40fc894d12b77de300890dbe88e78c47c167a51b2f9ae7335d00885c144bfd831d327d478fca6dae14e38bfb7637ccb961534207a",
+    "dest-filename": "@tauri-apps__cli-darwin-arm64-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.12.4.tgz",
-    "sha512": "7f3efaffbef030c24e69a50dea7dc2c9b446d0ffcc4c48e3a9893cd6618fca18bd9ba51ee53f8b5819c93ff0243e8a0d6ad04f236bedba51aaa26c8c278e2509",
-    "dest-filename": "@tauri-apps__cli-darwin-x64-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.12.6.tgz",
+    "sha512": "5a16a1ab37321c2a42ce1e1369fd196c19ba9c692fb8e4a1e5f7eb80e3bb11d61a61ef910502bc2ce945bbe6db8ee979bfd71d2c38b791ca3ed3eec8959b5354",
+    "dest-filename": "@tauri-apps__cli-darwin-x64-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.12.4.tgz",
-    "sha512": "2b4c3c0687fa2edf1028b018851cb4cb2dfa647e6203fdf956e48ebe7c728ef09467e03724ab144e500bbe21ffb15800962b1a3f3ce6789487f173a7e10d8704",
-    "dest-filename": "@tauri-apps__cli-linux-arm-gnueabihf-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.12.6.tgz",
+    "sha512": "181eb078dfa2147c62159f5238a5ba7c8362b3b827c688683a5751eecaf205eeee69abe414668c09ad3242ce678de5cf5afce513d593435df3f280e39aa2be5b",
+    "dest-filename": "@tauri-apps__cli-linux-arm-gnueabihf-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.12.4.tgz",
-    "sha512": "8f9ace9e39915305ab9b5a28b1fd330589780fe7eac9d81444e14293486f299c6f6d34fc48e1117acd1007bac157f5d6372fa433aa422b36f7a129b6b11825ce",
-    "dest-filename": "@tauri-apps__cli-linux-arm64-gnu-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.12.6.tgz",
+    "sha512": "99d1e850560a7f3b54b4f284d02da1846904a3b8fab305e383ee724512920fb03680b9113d01485d60ff0c062188975e024c80f0c08fea7bef2af83fe18af259",
+    "dest-filename": "@tauri-apps__cli-linux-arm64-gnu-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.12.4.tgz",
-    "sha512": "68eb9edc5cba25befea1671f01552c5477de4f26d20add82668534e9a3b88efe1dd8ab3f2a76933f03002b708b11db863af04b63595b041ac8ca89aa2cb1f94a",
-    "dest-filename": "@tauri-apps__cli-linux-arm64-musl-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.12.6.tgz",
+    "sha512": "d81c41fbd6b7251374789d2dd2a19ef082897e004b3990c4f1ae3df4e5c7fb283827d6cca522b5a075c1c671ee48715685bcb842743fb7eb017fbb510b451978",
+    "dest-filename": "@tauri-apps__cli-linux-arm64-musl-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.12.4.tgz",
-    "sha512": "171e864a163f46f493fade8b3254c703077aebed6d11a0001ab9d4edccac55f6a244fd412a7839565eab5663baad22ce0354a9d5d4733583387f43964066fba8",
-    "dest-filename": "@tauri-apps__cli-linux-riscv64-gnu-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.12.6.tgz",
+    "sha512": "b1be7c46c3477b1f5056a1dd37571ff4c3256a651602d935373bb14d96a55270541df6e521b7bbd617e6748eb084367ce0cb9f80e75e83f6f3be1adb652d6bd3",
+    "dest-filename": "@tauri-apps__cli-linux-riscv64-gnu-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.12.4.tgz",
-    "sha512": "b4dcd949aefd6759d1a47c44a50dfc96c005a4a945958be85f38d357e951467ff349fdf0add502df09cb72ad9711a75c84fbb8b6d2b4ce2be1633afe5c60f5f5",
-    "dest-filename": "@tauri-apps__cli-linux-x64-gnu-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.12.6.tgz",
+    "sha512": "6406f8fc21d199adc4ae32f64467c78c84d350122ce33c927f4848962f4175d3ad11d4b1d337b484483197e1df0557393845bf4266e2676136f829241dcf0f72",
+    "dest-filename": "@tauri-apps__cli-linux-x64-gnu-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.12.4.tgz",
-    "sha512": "8e6675a6bd3112a521b84bac5adb7d62df8617a9429c61d49882fe288927a5b8cafd7436aa48430616b12bf24c1ccd80f1d01a7155c2c57264d845e9c214147c",
-    "dest-filename": "@tauri-apps__cli-linux-x64-musl-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.12.6.tgz",
+    "sha512": "b9e4b33360eeeabe22d5dfe56f2f6412fae13e75f0e7333f558bdc5b595d1164a9914c95a21b015e4983f94eef32c9045b9b5778251e9e48bb9d8571c86046a5",
+    "dest-filename": "@tauri-apps__cli-linux-x64-musl-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.12.4.tgz",
-    "sha512": "7c6a3ca6010767175262067f27df26d6eb09ecd1ca98a6eaee4eae4f4c75ae93aae81836615cf3a5a01b95693bd747f92c76012482f9408152e48ac3fb88264e",
-    "dest-filename": "@tauri-apps__cli-win32-arm64-msvc-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.12.6.tgz",
+    "sha512": "e9b98eb7605049ed016dafb908971329230bed53980f1ca200ac81ae3a3ce95c4c742d6eb08426925bb75dcf37b374282b5ace330c1b00d94f17a8b94769af22",
+    "dest-filename": "@tauri-apps__cli-win32-arm64-msvc-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.12.4.tgz",
-    "sha512": "7b397cb1021c8d8b327b74d49d31f955c5a65b371c6404a5426ee1959b74758ca3d570f4aa9556e3bbb6c5856b20aba2d05f2e42fffb406662c5d5a20a506c6e",
-    "dest-filename": "@tauri-apps__cli-win32-ia32-msvc-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.12.6.tgz",
+    "sha512": "f6af5914db85ade05ccf0c89ba1865ac4381cc60a5c165188ab43618197ae98e8468d975ec874b1fc4d1aa863dc180752e772d3418be15afd6306b4503806d15",
+    "dest-filename": "@tauri-apps__cli-win32-ia32-msvc-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.12.4.tgz",
-    "sha512": "0c9843782aa32c334c598172ed94bc71f7801d7d912b445b40c2e20376cc5559174432783416221eb886aac521b2bf621b8d5a4dbf9d2469053e63f0d605b057",
-    "dest-filename": "@tauri-apps__cli-win32-x64-msvc-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.12.6.tgz",
+    "sha512": "8a89fb0a16e3db544ec4c4698d0ec6f2bcf9b0839a23b228050ba6d68ab9b25d55e73196c9cfe86270ab42156a3b64f12bf9410d6c6deb8f01ccb8b4d926375e",
+    "dest-filename": "@tauri-apps__cli-win32-x64-msvc-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.12.4.tgz",
-    "sha512": "248f5b1dfb9d4912629063ab8db5c49ba463cf3be62ae2dcf898b1075344f21373424365082202de94c44b7bb2a6447d9711ebb1bc737274b0848d88c4142987",
-    "dest-filename": "@tauri-apps__cli-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.12.6.tgz",
+    "sha512": "fdc39e420aaaf0f0433ce0ce8e34f4607b38ab12821dc40c58c8819b8acb33724dafd99913e3c734a38ae3302484852d60c34bff47f0796e3c54dbf30f501ba8",
+    "dest-filename": "@tauri-apps__cli-2.12.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1134,9 +1134,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@testing-library/user-event/-/user-event-14.6.10.tgz",
-    "sha512": "b40e2cb46369de62c63863be961f3b500e7a4f3e1cf0d546052932205e7c3be5bf6ecd917bd04223dc628672fbd3e0ec4e19dc1739c4d2c912f3c48cd43da1ca",
-    "dest-filename": "@testing-library__user-event-14.6.10.tgz",
+    "url": "https://registry.npmjs.org/@testing-library/user-event/-/user-event-14.6.13.tgz",
+    "sha512": "d8b5591a9b6e079ba7d42bbfbb7d68f5a7640b06ec513329e01e29d38c6ea48eeea1bbd322980a89d49d4a1a998917a8fe6426bd1f718e07604e081ee2801b60",
+    "dest-filename": "@testing-library__user-event-14.6.13.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1834,9 +1834,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/i18next/-/i18next-27.1.3.tgz",
-    "sha512": "42287912bc3c9bda893e6b8d523a1288172dbad6247e083e9a1ccb690ef16e7d98f5edadb01f1d361632301d347d47c146deafd144c58cf3c24913893e7f7725",
-    "dest-filename": "i18next-27.1.3.tgz",
+    "url": "https://registry.npmjs.org/i18next/-/i18next-27.2.6.tgz",
+    "sha512": "49c4471cbfe8007684822efc2bbef45c80d098e8aadc12e30f8cf11280debdae0d2d75cb3dbf379b37928c5c3b49e7e4c021292cd0bee7ad0f83443706708bb0",
+    "dest-filename": "i18next-27.2.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1890,16 +1890,16 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/jsdom/-/jsdom-31.0.0.tgz",
-    "sha512": "c409210fdcf57b2142e7e4148bd2b6e0269926074243618e18b5b519d543a10be4a7f031107f53434a40a653ce948895f7685f7209c53800d9ca96e381b053e9",
-    "dest-filename": "jsdom-31.0.0.tgz",
+    "url": "https://registry.npmjs.org/jsdom/-/jsdom-31.0.1.tgz",
+    "sha512": "09b8492fc65083778ab30c5266d87840ef6d5b48cf221991d2fb525d049b2927d66f0213ea1a11735ef07472154d0e37288d26755e624c9af7dbcd480e0559e6",
+    "dest-filename": "jsdom-31.0.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/knip/-/knip-6.44.2.tgz",
-    "sha512": "e9444eee99eab4e9f2bd2b177d6ebef02f63d657dc89cc540b2b173b446032d1d367de87a825e1dbda29f2269b7905b925e21cf1d256c3349d255583a2479271",
-    "dest-filename": "knip-6.44.2.tgz",
+    "url": "https://registry.npmjs.org/knip/-/knip-6.45.1.tgz",
+    "sha512": "ce9df35cacb67195a222db5d9565397e2b0ac5541a2d253ae3bd5e8f4286cf519d1dd687c69cd300efcb23214d737814defd56ecb25aaaf62e9a83b797fbbee8",
+    "dest-filename": "knip-6.45.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2009,9 +2009,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.73.0.tgz",
-    "sha512": "7d53b31af88bf664df1de9c6d4f6c27c871e6afc86967a5835262bf9a1991cb47298027b0d33fa287baab74b81902280a1e9ebd54564c126c3218b76c487ac11",
-    "dest-filename": "lucide-react-1.73.0.tgz",
+    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.78.0.tgz",
+    "sha512": "eb5345753e597c063cc6cdcb58a901efc1957ae8827236051177875b158ffa64213fe5162c6b00f6125940fb48c9744384ebd3f248265b0008c87e4bed122100",
+    "dest-filename": "lucide-react-1.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2033,13 +2033,6 @@
     "url": "https://registry.npmjs.org/magic-string/-/magic-string-1.4.3.tgz",
     "sha512": "cf5d8ec6668f184d05e3196919d8ee0147248a92e94254c0b809b21a13680fb383a58533bc37efb7151b8ccfe3c339f23f5efca23bbf2837728b6db4c0d27445",
     "dest-filename": "magic-string-1.4.3.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/magic-string/-/magic-string-1.4.5.tgz",
-    "sha512": "a0b2c2dbe62f4147c06bebf1a2e7c4ff273589c6fceccf625c846a02847fd84844ffc71bdd217ff868b4736072d41fb9573d9edaf42d52f1e2bb5fbadd99e1fb",
-    "dest-filename": "magic-string-1.4.5.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2156,16 +2149,16 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.65.0.tgz",
-    "sha512": "bcd48a807e98aad37b71d4ff2f7df8ce8d1af98c24ae989ccab1c995658f226fd0f8d9f64962278a5d35a13d266eef7a5381a0a11b426100fd0b3250823bbe94",
-    "dest-filename": "playwright-core-1.65.0.tgz",
+    "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.65.1.tgz",
+    "sha512": "86a3e9cfb6e548c3f1595768784d728814b35ec2a254e77693e9230af994cb00f618f3b60ddf477dc5a7abd34dd061db3590c5819f497c116bf97e7f04ba34ab",
+    "dest-filename": "playwright-core-1.65.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/playwright/-/playwright-1.65.0.tgz",
-    "sha512": "17700c59c478e2a301b7892afba29bea65fb6e3197b2192d28538f50b77bade103e992567af8db351ab2b0feeaf8001313d91d3c464189b7b1d4162cbe956878",
-    "dest-filename": "playwright-1.65.0.tgz",
+    "url": "https://registry.npmjs.org/playwright/-/playwright-1.65.1.tgz",
+    "sha512": "bc9d45ba83ab37038a1d421512f4adde34f52fec238c3a7087022cb4ab5fbd387c5c81b8146e1b205baf35d3318bcd4b19f02152051995e54568e2d8e1121453",
+    "dest-filename": "playwright-1.65.1.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2212,9 +2205,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-18.0.2.tgz",
-    "sha512": "83b61f0714c30bd758744b1bdc5ee8d2946bea3835e1fd3c5391ba3770d352a4a01adfe7abb0187f6efd1124631370f2f90fd81bb38655deefb62ca5c537d5e3",
-    "dest-filename": "react-i18next-18.0.2.tgz",
+    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-18.0.3.tgz",
+    "sha512": "4bce2bb55b9a2ae891b6808eb296c611a0e516391af8abcafc0e5808eaf82d0e355c5de224eac9e6ba904c3fe324715551fe97d62e1930de4f186829cfc34dea",
+    "dest-filename": "react-i18next-18.0.3.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2317,9 +2310,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/tinybench/-/tinybench-6.2.4.tgz",
-    "sha512": "490e768c49dc5f16cc0b326e63603f8c621b6c0bba358b01596ee0af3da9344f849f341da066a805fa64e2a0bfa2913baa251c1a61a0686233e44a07752d4ef7",
-    "dest-filename": "tinybench-6.2.4.tgz",
+    "url": "https://registry.npmjs.org/tinybench/-/tinybench-6.2.2.tgz",
+    "sha512": "9c8676376745a6306c8368608ad2aeee603e16fb0826e1893b0cac4678265514665a047f5323e3c098fc73f7d3fdd866f049079c5e443a88117fed19daaae298",
+    "dest-filename": "tinybench-6.2.2.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2429,9 +2422,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/unbash/-/unbash-6.0.1.tgz",
-    "sha512": "d1d6fd792e62ab26eec78d732e45faf6793dd0a4dc8bb17b799fa05f3106fd0ec4d2d02a1018518797e466f93537b8d3ed09065aaab7e22f121463c511ed55f0",
-    "dest-filename": "unbash-6.0.1.tgz",
+    "url": "https://registry.npmjs.org/unbash/-/unbash-6.0.4.tgz",
+    "sha512": "b773a9b5402b7b083d3a96060ec9134a5c61c8b0da85f999e1ddfa844e3811f6f5cb71d12cba73b15ab01fe030055ca63f8b7ba4fef5c4dfa79ddbae767d9ac0",
+    "dest-filename": "unbash-6.0.4.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2551,13 +2544,6 @@
     "url": "https://registry.npmjs.org/yuku-parser/-/yuku-parser-0.19.0.tgz",
     "sha512": "5eb061f598902b9989551c59040bc3e8bc11c8062b2b7305b47dfea27caec452f98450f8e040b740e9880b51634e3e87d8c330ab8ebf34023e359c4b64f660c6",
     "dest-filename": "yuku-parser-0.19.0.tgz",
-    "dest": "flatpak-node/pnpm-tarballs"
-  },
-  {
-    "type": "file",
-    "url": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
-    "sha512": "83c5b60f6914e9af2e9ed734e777d7d6e5412b333bcaa0315bfdf3c24f37fba472176f9228eb95f9cd30043854c335753da19aa66647fab99c5333dffb7086c2",
-    "dest-filename": "zod-4.6.7.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
