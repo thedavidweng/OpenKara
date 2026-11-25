@@ -24,10 +24,10 @@
         "model": {
           "cache_key": "htdemucs-spectral-fp32-model-spectral-v1.0.0",
           "compatible_runtime_ids": [
-            "onnxruntime-1.32.0-aarch64-apple-darwin",
-            "onnxruntime-1.32.0-aarch64-unknown-linux-gnu",
-            "onnxruntime-1.32.0-x86_64-unknown-linux-gnu",
-            "onnxruntime-1.32.0-x86_64-pc-windows-msvc",
+            "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
+            "onnxruntime-1.32.0-aarch64-unknown-linux-gnu-8eaf45dd093a0e69",
+            "onnxruntime-1.32.0-x86_64-pc-windows-msvc-bbd20d9c2a7692a1",
+            "onnxruntime-1.32.0-x86_64-unknown-linux-gnu-05fa93b4f3204701",
             "onnxruntime-1.32.0-x86_64-apple-darwin-a3b2691f53534069"
           ],
           "format": "onnx",
@@ -102,10 +102,10 @@
         "model": {
           "cache_key": "htdemucs-ft-spectral-fp32-model-ft-spectral-v1.0.0",
           "compatible_runtime_ids": [
-            "onnxruntime-1.32.0-aarch64-apple-darwin",
-            "onnxruntime-1.32.0-aarch64-unknown-linux-gnu",
-            "onnxruntime-1.32.0-x86_64-unknown-linux-gnu",
-            "onnxruntime-1.32.0-x86_64-pc-windows-msvc",
+            "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
+            "onnxruntime-1.32.0-aarch64-unknown-linux-gnu-8eaf45dd093a0e69",
+            "onnxruntime-1.32.0-x86_64-pc-windows-msvc-bbd20d9c2a7692a1",
+            "onnxruntime-1.32.0-x86_64-unknown-linux-gnu-05fa93b4f3204701",
             "onnxruntime-1.32.0-x86_64-apple-darwin-a3b2691f53534069"
           ],
           "format": "onnx",
@@ -264,170 +264,46 @@
     "runtimes": [
       {
         "arch": "aarch64",
-        "archive_digest": "8ddca23f532b9d4fbb279ba9b08dab6c0ac94fdc9aec2eb44a1db7049216c043",
-        "artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
-        "byte_size": 38721388,
+        "archive_digest": "f065719b890657e3e1a2b03453dc6f969f9434dfbedbfb4b2568f4ae96e544d9",
+        "artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
+        "byte_size": 13567868,
         "deprecation": {
           "deprecated": false,
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
-        "download_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.32.0/onnxruntime-osx-arm64-1.32.0.tgz",
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-25-001/onnxruntime-1.32.0-openkara-aarch64-apple-darwin.tar.gz",
         "extracted_file_digests": {
-          "onnxruntime-osx-arm64-1.32.0/GIT_COMMIT_ID": {
-            "sha256": "e351056e1c50baccb5b9375d73be620d011d0cead790637cf27fd3659e12c091",
-            "size": 41
-          },
           "onnxruntime-osx-arm64-1.32.0/LICENSE": {
-            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-            "size": 1073
-          },
-          "onnxruntime-osx-arm64-1.32.0/Privacy.md": {
-            "sha256": "ea592b16d154ff2de759ba5210350c64593c378c1bbd0a2aa4ddef777edbf358",
-            "size": 6571
-          },
-          "onnxruntime-osx-arm64-1.32.0/README.md": {
-            "sha256": "d9de78283cf00a77f907f2183fb8df1dda8706b79e4ab3517f2a06c6de0c6a4c",
-            "size": 3087
+            "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+            "size": 1094
           },
           "onnxruntime-osx-arm64-1.32.0/ThirdPartyNotices.txt": {
-            "sha256": "d8696258afcf9df7827a5e01d6b6d55ee9b461b4e82020f5f48242deb9cc2270",
-            "size": 334795
+            "sha256": "bf8073fd6a112ac2a656bb60799652127e881689e51d37ad20df446cd5188b2d",
+            "size": 341120
           },
-          "onnxruntime-osx-arm64-1.32.0/VERSION_NUMBER": {
-            "sha256": "fb5d06054a807b4dfb034f1f4574148a59fe45cdbc0d0587f729b26e9b32a16f",
-            "size": 7
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/core/providers/custom_op_context.h": {
-            "sha256": "c1f2a96c0de1978b0f2fbf60bf1b2d50c6412d487c1f5d68ac5ffa8e01b46ee4",
-            "size": 296
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/core/providers/resource.h": {
-            "sha256": "65480b7886a180f09f40999aaead120e41cb872b2efa187938d610bfe1977473",
-            "size": 365
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/coreml_provider_factory.h": {
-            "sha256": "343910ccaf1d31ccf2d771b40d8e14ec8f8a5594d950651a61e28b645b2a15be",
-            "size": 5833
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/cpu_provider_factory.h": {
-            "sha256": "0de52d129c718c07ee71a16b4953d8d483df019746a11caad77a0650a2f4ed47",
-            "size": 397
+          "onnxruntime-osx-arm64-1.32.0/build-manifest.json": {
+            "sha256": "f997527c9feeb3c0c6b207e2f0e94fbefe1ea36270e47572342a8a2c4a8c1c3e",
+            "size": 2411
           },
           "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_c_api.h": {
-            "sha256": "4a8df643e1667147db6a9de16570aac452cc17fb2423984530c964363d6ff5f8",
-            "size": 433257
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_cxx_api.h": {
-            "sha256": "ff6d027e767d8249942c075789aedbb0a2bbeef826cb87064a276c5abf4fa265",
-            "size": 176350
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_cxx_inline.h": {
-            "sha256": "58f9c4ca7a329fc398743fde87bfa16d3f768f0de6c30fca5532c2787a9dbeb0",
-            "size": 165836
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_env_config_keys.h": {
-            "sha256": "2d531fef7dd4ffd22f35d219e1a795dbaa1c94a4a7fd29397c0982232e4ca332",
-            "size": 1315
+            "sha256": "46b146f79b611682cff95e000a3f9b58983e7a915687159e12d0e9a29f0d948c",
+            "size": 442638
           },
           "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_ep_c_api.h": {
-            "sha256": "7ca769301114baeb8cb7e0aed901b44a0b3726079fd908daada68fb47bd33bb2",
-            "size": 169708
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_ep_device_ep_metadata_keys.h": {
-            "sha256": "818cb7e71ad80d4bac78aabdb1c05bda92823fe3549b719701a340432edcacc9",
-            "size": 9358
+            "sha256": "2e6c2de471dedfda120e8579c4a5e23052a4883d45ce8848c40dd0f5b7f896a1",
+            "size": 173074
           },
           "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_error_code.h": {
-            "sha256": "5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721",
-            "size": 2775
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_experimental_c_api.h": {
-            "sha256": "df35c3ae482aa90e877a7c6590675ae7574ac3b0e8c563dd239c21353658f3b1",
-            "size": 3211
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_experimental_c_api.inc": {
-            "sha256": "2e5babe86fc28e5ff75a5f35ad8b300607729c7560df2e19a46475ffa9c5f552",
-            "size": 2311
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_experimental_cxx_api.h": {
-            "sha256": "54a2d59b047f483bc889bbdbc57e3f0e286060fae022c57e3293ee6dcb92840f",
-            "size": 4935
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_float16.h": {
-            "sha256": "88b242845d25981633a0bbd1c148e273cf8bfb016ea3f57c4af41a06530f72b0",
-            "size": 17991
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_lite_custom_op.h": {
-            "sha256": "5ac84897a95ee5fa5b5bbbeb84dd51f0768e83b293716b147f114e63b28fdf85",
-            "size": 62296
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_run_options_config_keys.h": {
-            "sha256": "973037c14b0f1af0854ae25cd676776f79dbcfd2a6791f6ee17a5374c2a62550",
-            "size": 2952
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_session_options_config_keys.h": {
-            "sha256": "81c3b6485da629f57d02af8abf9225b64f3b2d2edf1702b4a3d031fd389f2a8c",
-            "size": 83405
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/onnxruntime_type_conversion.h": {
-            "sha256": "8b06109b83d2e4d45c3a2e56c1269fa4f6422dd339a321eaac854df58781c676",
-            "size": 1441
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/provider_options.h": {
-            "sha256": "cb7206ffd06ba31b9f7e5f6089a6206f0c720c10c3adcc61db7f829c86691cfc",
-            "size": 480
-          },
-          "onnxruntime-osx-arm64-1.32.0/include/webgpu_provider_factory.h": {
-            "sha256": "515c412b7c3e3b5890980f35384c022fe63090c3de842462d0abfbff45f91229",
-            "size": 2560
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfig.cmake": {
-            "sha256": "880b8c3ceae1ac013b7442b852ae4f7674a439803a2f8dcb875f5043913e62bc",
-            "size": 939
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfigVersion.cmake": {
-            "sha256": "983fbb7aa8870705a569e555942d2e7b184b0dbb46c8cf33a92d040b7706f98a",
-            "size": 2765
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets-release.cmake": {
-            "sha256": "547bd01e1262c322b61a2bef4932e1abe60550647f295f1e86c5de60a7bc1ecd",
-            "size": 933
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets.cmake": {
-            "sha256": "0b84a062f97cfdb408a8eb17e5a2cc72df2bb171521785ff2f67aae39310da2a",
-            "size": 4173
+            "sha256": "6690bf0df3f7a7a9c4f38597dc3232042e432b48ea166cb5672f72a49d32b742",
+            "size": 2873
           },
           "onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib": {
-            "sha256": "51c5a25a3dfafd74f62f403e6e0dc7881d97c0e627c703a4d9548c5677abc8fd",
-            "size": 47589736
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib.dSYM/Contents/Info.plist": {
-            "sha256": "f84fa4d1d145824e1481e769ebc62d3f81de460af4dd55bfe1c9778f1c244065",
-            "size": 656
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib.dSYM/Contents/Resources/DWARF/libonnxruntime.1.32.0.dylib": {
-            "sha256": "bddcc1a5247af93a74b16f1b4fa92c7c90dc13ca71256818f4d47c61baf0a703",
-            "size": 56200890
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib.dSYM/Contents/Resources/Relocations/aarch64/libonnxruntime.1.32.0.dylib.yml": {
-            "sha256": "945801f12c89c7a90e4093fee28a01c5308ab04407283717450bd3cf5f7258d1",
-            "size": 1677540
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.dylib": {
-            "sha256": "51c5a25a3dfafd74f62f403e6e0dc7881d97c0e627c703a4d9548c5677abc8fd",
-            "size": 47589736
-          },
-          "onnxruntime-osx-arm64-1.32.0/lib/pkgconfig/libonnxruntime.pc": {
-            "sha256": "2b307dd32f6ac8e16aa3d0cc04b211515b4bf6252f58acb06e6d050c95658828",
-            "size": 330
-          },
-          "onnxruntime-osx-arm64-1.32.0/testdata/libcustom_op_library.dylib": {
-            "sha256": "80c8336d8398fa69abeeb112bb95504feadf65ebe8b7380328f87cf22f84d216",
-            "size": 260120
+            "sha256": "21ff304871400e846a30c8a1165d15173add56598afb45f98227e2dfc716a497",
+            "size": 47622768
           }
         },
-        "filename": "onnxruntime-osx-arm64-1.32.0.tgz",
+        "filename": "onnxruntime-1.32.0-openkara-aarch64-apple-darwin.tar.gz",
         "kind": "runtime",
         "os": "macos",
         "runtime": {
@@ -448,7 +324,7 @@
         "toolchain": {
           "cmake_flags": [],
           "compiler": "Microsoft official build",
-          "image": "Microsoft official release"
+          "image": "nuget.org Microsoft.ML.OnnxRuntime 1.32.0"
         },
         "upstream": {
           "commit_sha": "fab30a46491a40f5e4c968b80e8a59acbbb91b53",
@@ -459,131 +335,39 @@
       },
       {
         "arch": "aarch64",
-        "archive_digest": "81a46251dd90da4122f4b9ceb4433f836fbc79ee1eddffca7c09033af81a1939",
-        "artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu",
-        "byte_size": 11167120,
+        "archive_digest": "8eaf45dd093a0e694b042dc95db68c8725595ca3e7194c5bd8878af9da9b083d",
+        "artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu-8eaf45dd093a0e69",
+        "byte_size": 11043593,
         "deprecation": {
           "deprecated": false,
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
-        "download_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.32.0/onnxruntime-linux-aarch64-1.32.0.tgz",
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-25-001/onnxruntime-1.32.0-openkara-aarch64-unknown-linux-gnu.tar.gz",
         "extracted_file_digests": {
-          "onnxruntime-linux-aarch64-1.32.0/GIT_COMMIT_ID": {
-            "sha256": "e351056e1c50baccb5b9375d73be620d011d0cead790637cf27fd3659e12c091",
-            "size": 41
-          },
           "onnxruntime-linux-aarch64-1.32.0/LICENSE": {
-            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-            "size": 1073
-          },
-          "onnxruntime-linux-aarch64-1.32.0/Privacy.md": {
-            "sha256": "ea592b16d154ff2de759ba5210350c64593c378c1bbd0a2aa4ddef777edbf358",
-            "size": 6571
-          },
-          "onnxruntime-linux-aarch64-1.32.0/README.md": {
-            "sha256": "d9de78283cf00a77f907f2183fb8df1dda8706b79e4ab3517f2a06c6de0c6a4c",
-            "size": 3087
+            "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+            "size": 1094
           },
           "onnxruntime-linux-aarch64-1.32.0/ThirdPartyNotices.txt": {
-            "sha256": "d8696258afcf9df7827a5e01d6b6d55ee9b461b4e82020f5f48242deb9cc2270",
-            "size": 334795
+            "sha256": "bf8073fd6a112ac2a656bb60799652127e881689e51d37ad20df446cd5188b2d",
+            "size": 341120
           },
-          "onnxruntime-linux-aarch64-1.32.0/VERSION_NUMBER": {
-            "sha256": "fb5d06054a807b4dfb034f1f4574148a59fe45cdbc0d0587f729b26e9b32a16f",
-            "size": 7
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/core/providers/custom_op_context.h": {
-            "sha256": "c1f2a96c0de1978b0f2fbf60bf1b2d50c6412d487c1f5d68ac5ffa8e01b46ee4",
-            "size": 296
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/core/providers/resource.h": {
-            "sha256": "65480b7886a180f09f40999aaead120e41cb872b2efa187938d610bfe1977473",
-            "size": 365
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/cpu_provider_factory.h": {
-            "sha256": "0de52d129c718c07ee71a16b4953d8d483df019746a11caad77a0650a2f4ed47",
-            "size": 397
+          "onnxruntime-linux-aarch64-1.32.0/build-manifest.json": {
+            "sha256": "bc29cf01960ca878bede9a68f525ddefa3e868a1b36236b13c66c6b68c0d6ccc",
+            "size": 2642
           },
           "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_c_api.h": {
-            "sha256": "4a8df643e1667147db6a9de16570aac452cc17fb2423984530c964363d6ff5f8",
-            "size": 433257
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_cxx_api.h": {
-            "sha256": "ff6d027e767d8249942c075789aedbb0a2bbeef826cb87064a276c5abf4fa265",
-            "size": 176350
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_cxx_inline.h": {
-            "sha256": "58f9c4ca7a329fc398743fde87bfa16d3f768f0de6c30fca5532c2787a9dbeb0",
-            "size": 165836
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_env_config_keys.h": {
-            "sha256": "2d531fef7dd4ffd22f35d219e1a795dbaa1c94a4a7fd29397c0982232e4ca332",
-            "size": 1315
+            "sha256": "46b146f79b611682cff95e000a3f9b58983e7a915687159e12d0e9a29f0d948c",
+            "size": 442638
           },
           "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_ep_c_api.h": {
-            "sha256": "7ca769301114baeb8cb7e0aed901b44a0b3726079fd908daada68fb47bd33bb2",
-            "size": 169708
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_ep_device_ep_metadata_keys.h": {
-            "sha256": "818cb7e71ad80d4bac78aabdb1c05bda92823fe3549b719701a340432edcacc9",
-            "size": 9358
+            "sha256": "2e6c2de471dedfda120e8579c4a5e23052a4883d45ce8848c40dd0f5b7f896a1",
+            "size": 173074
           },
           "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_error_code.h": {
-            "sha256": "5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721",
-            "size": 2775
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_experimental_c_api.h": {
-            "sha256": "df35c3ae482aa90e877a7c6590675ae7574ac3b0e8c563dd239c21353658f3b1",
-            "size": 3211
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_experimental_c_api.inc": {
-            "sha256": "2e5babe86fc28e5ff75a5f35ad8b300607729c7560df2e19a46475ffa9c5f552",
-            "size": 2311
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_experimental_cxx_api.h": {
-            "sha256": "54a2d59b047f483bc889bbdbc57e3f0e286060fae022c57e3293ee6dcb92840f",
-            "size": 4935
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_float16.h": {
-            "sha256": "88b242845d25981633a0bbd1c148e273cf8bfb016ea3f57c4af41a06530f72b0",
-            "size": 17991
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_lite_custom_op.h": {
-            "sha256": "5ac84897a95ee5fa5b5bbbeb84dd51f0768e83b293716b147f114e63b28fdf85",
-            "size": 62296
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_run_options_config_keys.h": {
-            "sha256": "973037c14b0f1af0854ae25cd676776f79dbcfd2a6791f6ee17a5374c2a62550",
-            "size": 2952
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_session_options_config_keys.h": {
-            "sha256": "81c3b6485da629f57d02af8abf9225b64f3b2d2edf1702b4a3d031fd389f2a8c",
-            "size": 83405
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/onnxruntime_type_conversion.h": {
-            "sha256": "8b06109b83d2e4d45c3a2e56c1269fa4f6422dd339a321eaac854df58781c676",
-            "size": 1441
-          },
-          "onnxruntime-linux-aarch64-1.32.0/include/provider_options.h": {
-            "sha256": "cb7206ffd06ba31b9f7e5f6089a6206f0c720c10c3adcc61db7f829c86691cfc",
-            "size": 480
-          },
-          "onnxruntime-linux-aarch64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfig.cmake": {
-            "sha256": "880b8c3ceae1ac013b7442b852ae4f7674a439803a2f8dcb875f5043913e62bc",
-            "size": 939
-          },
-          "onnxruntime-linux-aarch64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfigVersion.cmake": {
-            "sha256": "983fbb7aa8870705a569e555942d2e7b184b0dbb46c8cf33a92d040b7706f98a",
-            "size": 2765
-          },
-          "onnxruntime-linux-aarch64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets-release.cmake": {
-            "sha256": "105cf265e0fe3e3eef7def8c1e0327ba654fdd38bf5f2b05236fdd250e229d6c",
-            "size": 921
-          },
-          "onnxruntime-linux-aarch64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets.cmake": {
-            "sha256": "0b84a062f97cfdb408a8eb17e5a2cc72df2bb171521785ff2f67aae39310da2a",
-            "size": 4173
+            "sha256": "6690bf0df3f7a7a9c4f38597dc3232042e432b48ea166cb5672f72a49d32b742",
+            "size": 2873
           },
           "onnxruntime-linux-aarch64-1.32.0/lib/libonnxruntime.so.1.32.0": {
             "sha256": "fd1db07c49cb1ad11370ef4393a405eef959fa9622fb5b2880f85d025757e719",
@@ -592,13 +376,9 @@
           "onnxruntime-linux-aarch64-1.32.0/lib/libonnxruntime_providers_shared.so": {
             "sha256": "f91fa2b0a2b8dba9cbc319254d342fa8201fd94b5912b9ce717f82e2207ee3d5",
             "size": 198792
-          },
-          "onnxruntime-linux-aarch64-1.32.0/lib/pkgconfig/libonnxruntime.pc": {
-            "sha256": "7a8477f74e6d3f49eee696de16a0c2b574b0ed22af779a5c31821082a82fcde1",
-            "size": 332
           }
         },
-        "filename": "onnxruntime-linux-aarch64-1.32.0.tgz",
+        "filename": "onnxruntime-1.32.0-openkara-aarch64-unknown-linux-gnu.tar.gz",
         "kind": "runtime",
         "os": "linux",
         "runtime": {
@@ -618,7 +398,7 @@
         "toolchain": {
           "cmake_flags": [],
           "compiler": "Microsoft official build",
-          "image": "Microsoft official release"
+          "image": "nuget.org Microsoft.ML.OnnxRuntime 1.32.0"
         },
         "upstream": {
           "commit_sha": "fab30a46491a40f5e4c968b80e8a59acbbb91b53",
@@ -629,348 +409,50 @@
       },
       {
         "arch": "x86_64",
-        "archive_digest": "bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503",
-        "artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu",
-        "byte_size": 13425244,
+        "archive_digest": "bbd20d9c2a7692a18c0ab7d67c925d1107e2d34c623bd6a0ae62b5dc55c798bc",
+        "artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc-bbd20d9c2a7692a1",
+        "byte_size": 7358296,
         "deprecation": {
           "deprecated": false,
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
-        "download_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.32.0/onnxruntime-linux-x64-1.32.0.tgz",
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-25-001/onnxruntime-1.32.0-openkara-x86_64-pc-windows-msvc.zip",
         "extracted_file_digests": {
-          "onnxruntime-linux-x64-1.32.0/GIT_COMMIT_ID": {
-            "sha256": "e351056e1c50baccb5b9375d73be620d011d0cead790637cf27fd3659e12c091",
-            "size": 41
-          },
-          "onnxruntime-linux-x64-1.32.0/LICENSE": {
-            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-            "size": 1073
-          },
-          "onnxruntime-linux-x64-1.32.0/Privacy.md": {
-            "sha256": "ea592b16d154ff2de759ba5210350c64593c378c1bbd0a2aa4ddef777edbf358",
-            "size": 6571
-          },
-          "onnxruntime-linux-x64-1.32.0/README.md": {
-            "sha256": "d9de78283cf00a77f907f2183fb8df1dda8706b79e4ab3517f2a06c6de0c6a4c",
-            "size": 3087
-          },
-          "onnxruntime-linux-x64-1.32.0/ThirdPartyNotices.txt": {
-            "sha256": "d8696258afcf9df7827a5e01d6b6d55ee9b461b4e82020f5f48242deb9cc2270",
-            "size": 334795
-          },
-          "onnxruntime-linux-x64-1.32.0/VERSION_NUMBER": {
-            "sha256": "fb5d06054a807b4dfb034f1f4574148a59fe45cdbc0d0587f729b26e9b32a16f",
-            "size": 7
-          },
-          "onnxruntime-linux-x64-1.32.0/include/core/providers/custom_op_context.h": {
-            "sha256": "c1f2a96c0de1978b0f2fbf60bf1b2d50c6412d487c1f5d68ac5ffa8e01b46ee4",
-            "size": 296
-          },
-          "onnxruntime-linux-x64-1.32.0/include/core/providers/resource.h": {
-            "sha256": "65480b7886a180f09f40999aaead120e41cb872b2efa187938d610bfe1977473",
-            "size": 365
-          },
-          "onnxruntime-linux-x64-1.32.0/include/cpu_provider_factory.h": {
-            "sha256": "0de52d129c718c07ee71a16b4953d8d483df019746a11caad77a0650a2f4ed47",
-            "size": 397
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_c_api.h": {
-            "sha256": "4a8df643e1667147db6a9de16570aac452cc17fb2423984530c964363d6ff5f8",
-            "size": 433257
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_cxx_api.h": {
-            "sha256": "ff6d027e767d8249942c075789aedbb0a2bbeef826cb87064a276c5abf4fa265",
-            "size": 176350
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_cxx_inline.h": {
-            "sha256": "58f9c4ca7a329fc398743fde87bfa16d3f768f0de6c30fca5532c2787a9dbeb0",
-            "size": 165836
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_env_config_keys.h": {
-            "sha256": "2d531fef7dd4ffd22f35d219e1a795dbaa1c94a4a7fd29397c0982232e4ca332",
-            "size": 1315
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_ep_c_api.h": {
-            "sha256": "7ca769301114baeb8cb7e0aed901b44a0b3726079fd908daada68fb47bd33bb2",
-            "size": 169708
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_ep_device_ep_metadata_keys.h": {
-            "sha256": "818cb7e71ad80d4bac78aabdb1c05bda92823fe3549b719701a340432edcacc9",
-            "size": 9358
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_error_code.h": {
-            "sha256": "5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721",
-            "size": 2775
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_experimental_c_api.h": {
-            "sha256": "df35c3ae482aa90e877a7c6590675ae7574ac3b0e8c563dd239c21353658f3b1",
-            "size": 3211
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_experimental_c_api.inc": {
-            "sha256": "2e5babe86fc28e5ff75a5f35ad8b300607729c7560df2e19a46475ffa9c5f552",
-            "size": 2311
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_experimental_cxx_api.h": {
-            "sha256": "54a2d59b047f483bc889bbdbc57e3f0e286060fae022c57e3293ee6dcb92840f",
-            "size": 4935
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_float16.h": {
-            "sha256": "88b242845d25981633a0bbd1c148e273cf8bfb016ea3f57c4af41a06530f72b0",
-            "size": 17991
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_lite_custom_op.h": {
-            "sha256": "5ac84897a95ee5fa5b5bbbeb84dd51f0768e83b293716b147f114e63b28fdf85",
-            "size": 62296
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_run_options_config_keys.h": {
-            "sha256": "973037c14b0f1af0854ae25cd676776f79dbcfd2a6791f6ee17a5374c2a62550",
-            "size": 2952
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_session_options_config_keys.h": {
-            "sha256": "81c3b6485da629f57d02af8abf9225b64f3b2d2edf1702b4a3d031fd389f2a8c",
-            "size": 83405
-          },
-          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_type_conversion.h": {
-            "sha256": "8b06109b83d2e4d45c3a2e56c1269fa4f6422dd339a321eaac854df58781c676",
-            "size": 1441
-          },
-          "onnxruntime-linux-x64-1.32.0/include/provider_options.h": {
-            "sha256": "cb7206ffd06ba31b9f7e5f6089a6206f0c720c10c3adcc61db7f829c86691cfc",
-            "size": 480
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfig.cmake": {
-            "sha256": "880b8c3ceae1ac013b7442b852ae4f7674a439803a2f8dcb875f5043913e62bc",
-            "size": 939
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfigVersion.cmake": {
-            "sha256": "983fbb7aa8870705a569e555942d2e7b184b0dbb46c8cf33a92d040b7706f98a",
-            "size": 2765
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets-release.cmake": {
-            "sha256": "105cf265e0fe3e3eef7def8c1e0327ba654fdd38bf5f2b05236fdd250e229d6c",
-            "size": 921
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets.cmake": {
-            "sha256": "0b84a062f97cfdb408a8eb17e5a2cc72df2bb171521785ff2f67aae39310da2a",
-            "size": 4173
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/libonnxruntime.so.1.32.0": {
-            "sha256": "4213d6d8c42ac4754865849cb139d31fc39127db6a326babf90bbc81a6eb52fc",
-            "size": 34824680
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/libonnxruntime_providers_shared.so": {
-            "sha256": "8ef51f6bf2c621fc129f625b22241fa6f9a5870bc08eaf2fdd279169ec40d09a",
-            "size": 14632
-          },
-          "onnxruntime-linux-x64-1.32.0/lib/pkgconfig/libonnxruntime.pc": {
-            "sha256": "7a8477f74e6d3f49eee696de16a0c2b574b0ed22af779a5c31821082a82fcde1",
-            "size": 332
-          }
-        },
-        "filename": "onnxruntime-linux-x64-1.32.0.tgz",
-        "kind": "runtime",
-        "os": "linux",
-        "runtime": {
-          "companion_files": [],
-          "deployment_target": "n/a",
-          "execution_providers": [
-            "cpu"
-          ],
-          "ort_c_api_level": "32",
-          "supported_model_artifact_ids": [
-            "htdemucs.spectral.fp32.onnx",
-            "htdemucs_ft.spectral.fp32.onnx"
-          ],
-          "version": "v1.32.0"
-        },
-        "target_triple": "x86_64-unknown-linux-gnu",
-        "toolchain": {
-          "cmake_flags": [],
-          "compiler": "Microsoft official build",
-          "image": "Microsoft official release"
-        },
-        "upstream": {
-          "commit_sha": "fab30a46491a40f5e4c968b80e8a59acbbb91b53",
-          "project": "microsoft/onnxruntime",
-          "tag": "v1.32.0"
-        },
-        "variant": "onnxruntime"
-      },
-      {
-        "arch": "x86_64",
-        "archive_digest": "aaa1d04fcf86bd31e84b90bc0cbde80e632bd0720dcc5d8ba05c4fe45c09d127",
-        "artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc",
-        "byte_size": 96945131,
-        "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
-        },
-        "download_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.32.0/onnxruntime-win-x64-1.32.0.zip",
-        "extracted_file_digests": {
-          "onnxruntime-win-x64-1.32.0/GIT_COMMIT_ID": {
-            "sha256": "866a79854e072aeb35bec0294a8dcd999dadc8606c721c01feaf0977438318a7",
-            "size": 43
-          },
           "onnxruntime-win-x64-1.32.0/LICENSE": {
             "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
             "size": 1094
-          },
-          "onnxruntime-win-x64-1.32.0/Privacy.md": {
-            "sha256": "8c26e1fc8581d9553e475250fe014e3d1e5ea4ae9f1cb084a068ff8601703dc9",
-            "size": 6635
-          },
-          "onnxruntime-win-x64-1.32.0/README.md": {
-            "sha256": "c38719ffdef4a1c49c7e9b7e63dd7aabcad784926cd7211083d2e186fb2be4b5",
-            "size": 3139
           },
           "onnxruntime-win-x64-1.32.0/ThirdPartyNotices.txt": {
             "sha256": "bf8073fd6a112ac2a656bb60799652127e881689e51d37ad20df446cd5188b2d",
             "size": 341120
           },
-          "onnxruntime-win-x64-1.32.0/VERSION_NUMBER": {
-            "sha256": "e0105f135602beafa636969b248b5527e1da4950b9fa52f6c1ef5b09dd2b7abd",
-            "size": 8
-          },
-          "onnxruntime-win-x64-1.32.0/include/core/providers/custom_op_context.h": {
-            "sha256": "e662f11091e6b5f81651b6d0ee7be4721f146f171b20aedaa8dcf75547939a4a",
-            "size": 305
-          },
-          "onnxruntime-win-x64-1.32.0/include/core/providers/resource.h": {
-            "sha256": "c7745fb500ea28b4ade9683567c4b5f3cf49627d83b77c19e130eb7b947853b5",
-            "size": 379
-          },
-          "onnxruntime-win-x64-1.32.0/include/cpu_provider_factory.h": {
-            "sha256": "e2f658eeace78d79a8df82f233dcdeea135db498a77766156054bfc0d1d06c21",
-            "size": 416
+          "onnxruntime-win-x64-1.32.0/build-manifest.json": {
+            "sha256": "7d2ead103cd14584cbd7eacb9f614d9785f6543ec8f1400a7c8a5213c6f03c84",
+            "size": 2502
           },
           "onnxruntime-win-x64-1.32.0/include/onnxruntime_c_api.h": {
             "sha256": "46b146f79b611682cff95e000a3f9b58983e7a915687159e12d0e9a29f0d948c",
             "size": 442638
           },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_cxx_api.h": {
-            "sha256": "e38b0e509623a5992399f723a32157b942c063a6b89494dfe4e523522fbdc275",
-            "size": 180285
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_cxx_inline.h": {
-            "sha256": "82c8318cb219d2c534b26c23a48eef8686366b744fdd769b3c9220e19173f42e",
-            "size": 170286
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_env_config_keys.h": {
-            "sha256": "e56d37fd1e6497e9c8e8e5bd81732cd5414b4dc0867f3e8badb60101502d0435",
-            "size": 1339
-          },
           "onnxruntime-win-x64-1.32.0/include/onnxruntime_ep_c_api.h": {
             "sha256": "2e6c2de471dedfda120e8579c4a5e23052a4883d45ce8848c40dd0f5b7f896a1",
             "size": 173074
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_ep_device_ep_metadata_keys.h": {
-            "sha256": "527552778996aae8fd15da7912a154ab7e361eb881204fdf32e7dc4ebf93cdb7",
-            "size": 9493
           },
           "onnxruntime-win-x64-1.32.0/include/onnxruntime_error_code.h": {
             "sha256": "6690bf0df3f7a7a9c4f38597dc3232042e432b48ea166cb5672f72a49d32b742",
             "size": 2873
           },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_experimental_c_api.h": {
-            "sha256": "e2a03879158963c0ee151e19736b231fb058e2c88a4603726db9674f8fd36baa",
-            "size": 3281
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_experimental_c_api.inc": {
-            "sha256": "2b2ebcbe3af8294c7e23213d7ffca6247e4b0d7e5f0aa7cd88393bc85bb2dbd2",
-            "size": 2349
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_experimental_cxx_api.h": {
-            "sha256": "3936b60b5e67f6799a472ac43f5deee9277c4fadbeb90904f89584f5b15f0ff0",
-            "size": 5043
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_float16.h": {
-            "sha256": "9b45e1bc0fe19d9d53f272b168f5cab616e26eb00136c3a1b78f394c9b1b6757",
-            "size": 18528
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_lite_custom_op.h": {
-            "sha256": "d65413bf8ca63fb71efcb0f9e14f996736367cf72ea3421d18b3370def1e483b",
-            "size": 63413
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_run_options_config_keys.h": {
-            "sha256": "38cfec5817e67990f242bbf7177db730a4d60f5ed256b4832f02ac38c3fd6d06",
-            "size": 3006
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_session_options_config_keys.h": {
-            "sha256": "1985b8d8148d6b70ac052ad81c08657402ea5ca369cd78364cb2b3d679f69dab",
-            "size": 84609
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_training_c_api.h": {
-            "sha256": "f920338841fce3ba9976882a8ec20155462298c12486a4e0bb6af29306d26330",
-            "size": 36508
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_training_cxx_api.h": {
-            "sha256": "c4e31c020e3a087c751b31358bb97891ff1c11c5c6c47565e2fc2c1200ecf844",
-            "size": 19993
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_training_cxx_inline.h": {
-            "sha256": "0a1b67caad64a7fc5a7aa489c8e4dc57ba11ba2d3c18b398a81ee3d864a50383",
-            "size": 13166
-          },
-          "onnxruntime-win-x64-1.32.0/include/onnxruntime_type_conversion.h": {
-            "sha256": "564d1d92cde5bf079a5a24ccf2341ba19c5b3d636f596711f08bc80bda3b75c5",
-            "size": 1484
-          },
-          "onnxruntime-win-x64-1.32.0/include/provider_options.h": {
-            "sha256": "74f8accd5b30fbfe8abb24ca279e634657b446bf5b9be520badaaebcea63cade",
-            "size": 498
-          },
-          "onnxruntime-win-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfig.cmake": {
-            "sha256": "a9902f60066dad641cde9132e98f4ea7e542a1056aeb2d4854c455596b1617b8",
-            "size": 965
-          },
-          "onnxruntime-win-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeConfigVersion.cmake": {
-            "sha256": "0e359c616e04a33952f214d41bfcccf586838a78dda02c49b6f5d79d5d2a7eda",
-            "size": 2830
-          },
-          "onnxruntime-win-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets-relwithdebinfo.cmake": {
-            "sha256": "fe857302cd5832b240f1971c4ca6ab62e875c94b145aee7b7be396769dd0a3a6",
-            "size": 1011
-          },
-          "onnxruntime-win-x64-1.32.0/lib/cmake/onnxruntime/onnxruntimeTargets.cmake": {
-            "sha256": "8ddbb58dc6184e1e68ff2c521a54f4b745e0a9bc9a43f928ced9b5dde41fef4d",
-            "size": 4267
-          },
           "onnxruntime-win-x64-1.32.0/lib/onnxruntime.dll": {
             "sha256": "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
             "size": 20602168
           },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime.lib": {
-            "sha256": "3bb2e100e5b0ca0c660997ab6ae1670ff3ddf51a30182f6c1f43a57fe4fde55d",
-            "size": 2124
-          },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime.pdb": {
-            "sha256": "8ba9a2558886b642248f6f6047ea35a105fae824285adfcb6f29ab1feea51303",
-            "size": 460058624
-          },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime_providers_azure.lib": {
-            "sha256": "e613e7bac11411f810d7dae2932387719402cf91ef16ba66c30351f9dafe90f8",
-            "size": 21922042
-          },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime_providers_azure.pdb": {
-            "sha256": "cbc97aec10862eb50d196e9b09bc947ad335cf50cc3115f6cf80b3158157e835",
-            "size": 4632576
-          },
           "onnxruntime-win-x64-1.32.0/lib/onnxruntime_providers_shared.dll": {
             "sha256": "6caf57ac07c9cf72fb4e73c5bb0fe156f02dd60bbbd7385530c9a5654f10f950",
             "size": 21816
-          },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime_providers_shared.lib": {
-            "sha256": "f8c868518a86836b468ba1da145353c4775be0fc440a38da252c9e09540f9e00",
-            "size": 2314
-          },
-          "onnxruntime-win-x64-1.32.0/lib/onnxruntime_providers_shared.pdb": {
-            "sha256": "93ec2a0317525dcd4259dcb45bfced929b0f46e5c33343cf784f9ac61fd203f9",
-            "size": 405504
           }
         },
-        "filename": "onnxruntime-win-x64-1.32.0.zip",
+        "filename": "onnxruntime-1.32.0-openkara-x86_64-pc-windows-msvc.zip",
         "kind": "runtime",
         "os": "windows",
         "runtime": {
@@ -990,7 +472,81 @@
         "toolchain": {
           "cmake_flags": [],
           "compiler": "Microsoft official build",
-          "image": "Microsoft official release"
+          "image": "nuget.org Microsoft.ML.OnnxRuntime 1.32.0"
+        },
+        "upstream": {
+          "commit_sha": "fab30a46491a40f5e4c968b80e8a59acbbb91b53",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.32.0"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "x86_64",
+        "archive_digest": "05fa93b4f3204701afea0007c1af2273bfad27c3e2ae0d8c23426415a371676c",
+        "artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu-05fa93b4f3204701",
+        "byte_size": 13257869,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-11-25-001/onnxruntime-1.32.0-openkara-x86_64-unknown-linux-gnu.tar.gz",
+        "extracted_file_digests": {
+          "onnxruntime-linux-x64-1.32.0/LICENSE": {
+            "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+            "size": 1094
+          },
+          "onnxruntime-linux-x64-1.32.0/ThirdPartyNotices.txt": {
+            "sha256": "bf8073fd6a112ac2a656bb60799652127e881689e51d37ad20df446cd5188b2d",
+            "size": 341120
+          },
+          "onnxruntime-linux-x64-1.32.0/build-manifest.json": {
+            "sha256": "a55f5ee5991e413a16849df767e37a0d97c2e6dd203435b117670e4cd5a5d358",
+            "size": 2636
+          },
+          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_c_api.h": {
+            "sha256": "46b146f79b611682cff95e000a3f9b58983e7a915687159e12d0e9a29f0d948c",
+            "size": 442638
+          },
+          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_ep_c_api.h": {
+            "sha256": "2e6c2de471dedfda120e8579c4a5e23052a4883d45ce8848c40dd0f5b7f896a1",
+            "size": 173074
+          },
+          "onnxruntime-linux-x64-1.32.0/include/onnxruntime_error_code.h": {
+            "sha256": "6690bf0df3f7a7a9c4f38597dc3232042e432b48ea166cb5672f72a49d32b742",
+            "size": 2873
+          },
+          "onnxruntime-linux-x64-1.32.0/lib/libonnxruntime.so.1.32.0": {
+            "sha256": "4213d6d8c42ac4754865849cb139d31fc39127db6a326babf90bbc81a6eb52fc",
+            "size": 34824680
+          },
+          "onnxruntime-linux-x64-1.32.0/lib/libonnxruntime_providers_shared.so": {
+            "sha256": "8ef51f6bf2c621fc129f625b22241fa6f9a5870bc08eaf2fdd279169ec40d09a",
+            "size": 14632
+          }
+        },
+        "filename": "onnxruntime-1.32.0-openkara-x86_64-unknown-linux-gnu.tar.gz",
+        "kind": "runtime",
+        "os": "linux",
+        "runtime": {
+          "companion_files": [],
+          "deployment_target": "n/a",
+          "execution_providers": [
+            "cpu"
+          ],
+          "ort_c_api_level": "32",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.32.0"
+        },
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "toolchain": {
+          "cmake_flags": [],
+          "compiler": "Microsoft official build",
+          "image": "nuget.org Microsoft.ML.OnnxRuntime 1.32.0"
         },
         "upstream": {
           "commit_sha": "fab30a46491a40f5e4c968b80e8a59acbbb91b53",
@@ -1075,37 +631,37 @@
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
       "status": "supported",
       "target_triple": "aarch64-apple-darwin"
     },
     {
       "execution_provider": "coreml",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
       "status": "supported",
       "target_triple": "aarch64-apple-darwin"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu-8eaf45dd093a0e69",
       "status": "supported",
       "target_triple": "aarch64-unknown-linux-gnu"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu",
+      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc-bbd20d9c2a7692a1",
       "status": "supported",
-      "target_triple": "x86_64-unknown-linux-gnu"
+      "target_triple": "x86_64-pc-windows-msvc"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc",
+      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu-05fa93b4f3204701",
       "status": "supported",
-      "target_triple": "x86_64-pc-windows-msvc"
+      "target_triple": "x86_64-unknown-linux-gnu"
     },
     {
       "execution_provider": "cpu",
@@ -1117,37 +673,37 @@
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
       "status": "supported",
       "target_triple": "aarch64-apple-darwin"
     },
     {
       "execution_provider": "coreml",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
       "status": "supported",
       "target_triple": "aarch64-apple-darwin"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu",
+      "runtime_artifact_id": "onnxruntime-1.32.0-aarch64-unknown-linux-gnu-8eaf45dd093a0e69",
       "status": "supported",
       "target_triple": "aarch64-unknown-linux-gnu"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu",
+      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc-bbd20d9c2a7692a1",
       "status": "supported",
-      "target_triple": "x86_64-unknown-linux-gnu"
+      "target_triple": "x86_64-pc-windows-msvc"
     },
     {
       "execution_provider": "cpu",
       "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
-      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-pc-windows-msvc",
+      "runtime_artifact_id": "onnxruntime-1.32.0-x86_64-unknown-linux-gnu-05fa93b4f3204701",
       "status": "supported",
-      "target_triple": "x86_64-pc-windows-msvc"
+      "target_triple": "x86_64-unknown-linux-gnu"
     },
     {
       "execution_provider": "cpu",
@@ -1157,14 +713,14 @@
       "target_triple": "x86_64-apple-darwin"
     }
   ],
-  "created_at": "2026-11-17T15:32:58Z",
-  "generation": 17,
+  "created_at": "2026-11-25T04:45:21Z",
+  "generation": 18,
   "producer": {
-    "commit_sha": "4ca491237b48314b6d1de3c9770b6dbc69d75771",
+    "commit_sha": "cbd09471f8422120422cb9e5a4ec8bf60a3c0fd0",
     "repo": "thedavidweng/openkara-models",
-    "run_id": "manual",
-    "workflow": "Intel macOS runtime"
+    "run_id": "45548606131",
+    "workflow": "Publish v2 catalog"
   },
-  "release_id": "2026-11-17-001",
+  "release_id": "2026-11-25-001",
   "schema_version": "openkara.catalog/release-v2"
 }

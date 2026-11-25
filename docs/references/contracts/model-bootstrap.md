@@ -242,7 +242,7 @@ installation. They are separate from the model bootstrap flow.
   "downloaded_bytes": null,
   "total_bytes": null,
   "version": "v1.32.0",
-  "active_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin",
+  "active_artifact_id": "onnxruntime-1.32.0-aarch64-apple-darwin-f065719b890657e3",
   "target_triple": "aarch64-apple-darwin",
   "candidate_version": null,
   "restart_required": false,
