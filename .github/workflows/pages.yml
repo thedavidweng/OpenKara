@@ -23,16 +23,11 @@ env:
   PNPM_CONFIG_MANAGE_PACKAGE_MANAGER_VERSIONS: "false"
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
-      pages: write # Needed by actions/deploy-pages to publish the built site.
-      id-token: write # Needed by actions/deploy-pages for GitHub Pages OIDC deployment.
 
     steps:
       - name: Checkout
@@ -59,6 +54,21 @@ jobs:
         with:
           path: website/dist
 
+  # Deploy runs as its own job: deploy-pages lists the run's artifacts, and
+  # that listing can lag a same-job upload, which made pushes to main fail
+  # with "No artifacts named github-pages".
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write # Needed by actions/deploy-pages to publish the built site.
+      id-token: write # Needed by actions/deploy-pages for GitHub Pages OIDC deployment.
+
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
