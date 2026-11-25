@@ -152,6 +152,21 @@ function isZipArchive(archivePath) {
   return archivePath.endsWith(".zip") || archivePath.endsWith(".nupkg");
 }
 
+// Windows PowerShell 5.1 must not inherit PSModulePath from a PowerShell 7
+// parent (for example a `shell: pwsh` CI step). Otherwise it loads PS7's
+// Microsoft.PowerShell.Archive, whose Expand-Archive calls a .NET overload
+// that .NET Framework lacks ("Cannot find an overload for
+// ExtractToDirectory"). Without the variable, 5.1 uses its own default path.
+function windowsPowerShellEnv() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === "psmodulepath") {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 function extractArchive(archivePath, destDir) {
   if (isZipArchive(archivePath)) {
     if (process.platform !== "win32") {
@@ -175,7 +190,7 @@ function extractArchive(archivePath, destDir) {
         "-Command",
         `Expand-Archive -LiteralPath '${zipStub}' -DestinationPath '${destDir}' -Force`,
       ],
-      { stdio: "inherit" },
+      { stdio: "inherit", env: windowsPowerShellEnv() },
     );
     if (zipStub !== archivePath) {
       rmSync(zipStub, { force: true });
