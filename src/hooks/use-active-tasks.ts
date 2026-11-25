@@ -36,7 +36,7 @@ export function useActiveTasks(): ActiveTask[] {
   const songs = useLibraryStore((s) => s.songs);
 
   return deriveActiveTasks({
-    t: (key, options) => t(key, options),
+    t: (key, options) => (options === undefined ? t(key) : t(key, options)),
     backend,
     modelBootstrap,
     runtimeBootstrap,

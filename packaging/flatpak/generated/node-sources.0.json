@@ -1001,9 +1001,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/@tauri-apps/api/-/api-2.12.4.tgz",
-    "sha512": "a5599f8acfb8cd3f07d10869df13d9c7d26eee4a73bc0eabaff3d224fcaec1fbee71343cb15b7ad4d614f4a3242bbd3750595869d1668ca0381e1c9b3ad37482",
-    "dest-filename": "@tauri-apps__api-2.12.4.tgz",
+    "url": "https://registry.npmjs.org/@tauri-apps/api/-/api-2.12.5.tgz",
+    "sha512": "1bd40832de5fcc40fe692e108552b7c351d62caa4b2301ff327a42afdcf5ba01841e74b63919aaacb91cd2e00b3a344ae2a5c9cbee188b0f0b0e5fca89c0b51e",
+    "dest-filename": "@tauri-apps__api-2.12.5.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -1834,9 +1834,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/i18next/-/i18next-26.7.2.tgz",
-    "sha512": "46c398dc179a083764939d8d78948501710b436ad05c13bfb4eb9be8bf2e7b62023df47f1510d60ce7c40e0e3130f7754aa3b982855843a8bbdaa584501fcf3f",
-    "dest-filename": "i18next-26.7.2.tgz",
+    "url": "https://registry.npmjs.org/i18next/-/i18next-27.2.6.tgz",
+    "sha512": "49c4471cbfe8007684822efc2bbef45c80d098e8aadc12e30f8cf11280debdae0d2d75cb3dbf379b37928c5c3b49e7e4c021292cd0bee7ad0f83443706708bb0",
+    "dest-filename": "i18next-27.2.6.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2009,9 +2009,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.70.0.tgz",
-    "sha512": "8024cf3cdd4c950501b5481db14bfed020148fe5fc8627d1522441c38139bfb96f0c8388a71d0465ecdd1903128a64bca4a03a7acbee96526e6f8198af49821c",
-    "dest-filename": "lucide-react-1.70.0.tgz",
+    "url": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.78.0.tgz",
+    "sha512": "eb5345753e597c063cc6cdcb58a901efc1957ae8827236051177875b158ffa64213fe5162c6b00f6125940fb48c9744384ebd3f248265b0008c87e4bed122100",
+    "dest-filename": "lucide-react-1.78.0.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
@@ -2205,9 +2205,9 @@
   },
   {
     "type": "file",
-    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-17.1.13.tgz",
-    "sha512": "67184e4a5c8a48a3ed6d434f2f060c984df0ddb8687348da64967a6dcef018e4fa70b6eb6ecfffea6d351f108bb457528c7bc5a70170a0f871c732251d2b3d73",
-    "dest-filename": "react-i18next-17.1.13.tgz",
+    "url": "https://registry.npmjs.org/react-i18next/-/react-i18next-18.0.3.tgz",
+    "sha512": "4bce2bb55b9a2ae891b6808eb296c611a0e516391af8abcafc0e5808eaf82d0e355c5de224eac9e6ba904c3fe324715551fe97d62e1930de4f186829cfc34dea",
+    "dest-filename": "react-i18next-18.0.3.tgz",
     "dest": "flatpak-node/pnpm-tarballs"
   },
   {
