@@ -3,6 +3,9 @@ retries = 0
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 3 }
 
+[test-groups]
+ort-inference = { max-threads = 1 }
+
 # Demucs CPU inference is not a hang. The four-stem run over 8x fixture audio
 # measures ~126s on a healthy macos-14 runner and crossed the global 180s cap
 # on two consecutive main runs (2026-10-23 00:50Z and 01:04Z), turning main
@@ -11,3 +14,14 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 [[profile.default.overrides]]
 filter = 'test(/^phase3_inference::/)'
 slow-timeout = { period = "90s", terminate-after = 3 }
+
+# Every real Demucs run opens an ORT session sized to all cores (see
+# `intra_thread_count` in src/separator/model.rs). Running several at once on
+# a 3-core macOS runner oversubscribes the CPU: on 2026-11-26 the scheduled
+# main run had the long-window test sharing the runner with two other
+# phase3_inference runs plus phase3_job and phase5_flow, and it crossed the
+# 270s cap (it takes 78-207s otherwise). Run the inference tests one at a
+# time so each gets the cores its session was sized for.
+[[profile.default.overrides]]
+filter = 'test(/^(phase3_inference|phase3_job|phase5_flow)::/)'
+test-group = 'ort-inference'
