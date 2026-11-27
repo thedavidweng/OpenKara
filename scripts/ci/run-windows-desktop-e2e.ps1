@@ -2171,7 +2171,21 @@ function Invoke-StepAction {
                 $closeStarted = [DateTime]::UtcNow
                 if (-not (Close-Settings-Overlay)) { throw "Settings overlay did not close before Alt+F4" }
                 Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
-                $exited = $script:process.WaitForExit($StepTimeoutMs)
+                # #722: on Windows runners a synthetic Alt+F4 is sometimes dropped. The
+                # 2026-11-27 nightly showed the window still visible and responding 30s
+                # later, so the app never saw the key. If the window is still up after a
+                # short wait, press Alt+F4 once more. A hung app or a hung shutdown still
+                # fails the step, because the total wait stays at $StepTimeoutMs.
+                $firstWaitMs = [Math]::Min(10000, [int]($StepTimeoutMs / 3))
+                $exited = $script:process.WaitForExit($firstWaitMs)
+                if (-not $exited) {
+                    $firstHandle = [IntPtr]$script:mainWindowHandle
+                    if (($firstHandle -ne [IntPtr]::Zero) -and [OpenKaraWin32]::IsWindow($firstHandle) -and [OpenKaraWin32]::IsWindowVisible($firstHandle)) {
+                        Write-Host "Window still visible $($firstWaitMs)ms after Alt+F4; pressing Alt+F4 again."
+                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
+                    }
+                    $exited = $script:process.WaitForExit([Math]::Max(0, $StepTimeoutMs - $firstWaitMs))
+                }
                 $hangState = ""
                 if (-not $exited) {
                     # Record whether the window survived Alt+F4 (key not delivered) or the
