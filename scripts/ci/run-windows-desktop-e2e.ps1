@@ -2176,15 +2176,22 @@ function Invoke-StepAction {
                 # later, so the app never saw the key. If the window is still up after a
                 # short wait, press Alt+F4 once more. A hung app or a hung shutdown still
                 # fails the step, because the total wait stays at $StepTimeoutMs.
+                $closeDeadline = [DateTime]::UtcNow.AddMilliseconds($StepTimeoutMs)
                 $firstWaitMs = [Math]::Min(10000, [int]($StepTimeoutMs / 3))
                 $exited = $script:process.WaitForExit($firstWaitMs)
                 if (-not $exited) {
                     $firstHandle = [IntPtr]$script:mainWindowHandle
                     if (($firstHandle -ne [IntPtr]::Zero) -and [OpenKaraWin32]::IsWindow($firstHandle) -and [OpenKaraWin32]::IsWindowVisible($firstHandle)) {
                         Write-Host "Window still visible $($firstWaitMs)ms after Alt+F4; pressing Alt+F4 again."
-                        Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
+                        try {
+                            Invoke-ProbeAction -ProcessId $script:process.Id -Action "press-key" -Key "alt+f4" | Out-Null
+                        } catch {
+                            # The window can close after the visibility check; the wait below decides.
+                            Write-Host "Second Alt+F4 probe failed: $($_.Exception.Message)"
+                        }
                     }
-                    $exited = $script:process.WaitForExit([Math]::Max(0, $StepTimeoutMs - $firstWaitMs))
+                    $remainingMs = [int][Math]::Max(0, ($closeDeadline - [DateTime]::UtcNow).TotalMilliseconds)
+                    $exited = $script:process.WaitForExit($remainingMs)
                 }
                 $hangState = ""
                 if (-not $exited) {
