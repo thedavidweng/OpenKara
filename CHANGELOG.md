@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.2](https://github.com/thedavidweng/OpenKara/compare/v0.21.1...v0.21.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **ci:** isolate Windows PowerShell zip extraction from PS7 module path ([#754](https://github.com/thedavidweng/OpenKara/issues/754)) ([c6ca170](https://github.com/thedavidweng/OpenKara/commit/c6ca1704f269d5fde222b71ae236a54e52bee517))
+
 ## [0.21.1](https://github.com/thedavidweng/OpenKara/compare/v0.21.0...v0.21.1) (2026-11-25)
 
 
